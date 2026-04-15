@@ -1,0 +1,42 @@
+{
+  "name": "nana",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "bun run build.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^3.0.35",
+    "@ai-sdk/openai": "^3.0.38",
+    "@heroicons/react": "^2.2.0",
+    "@uiw/react-md-editor": "^4.0.11",
+    "@zvec/bindings-linux-arm64": "^0.2.3",
+    "@zvec/bindings-linux-x64": "^0.2.3",
+    "@zvec/zvec": "^0.2.3",
+    "ai": "^6.0.105",
+    "ai-sdk-ollama": "^3.8.0",
+    "bun-plugin-tailwind": "^0.1.2",
+    "jotai": "^2.18.0",
+    "jszip": "^3.10.1",
+    "pocketbase": "^0.26.8",
+    "rate-limiter-flexible": "^9.1.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.1",
+    "rehype-sanitize": "^6.0.0",
+    "tailwindcss": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.9",
+    "@types/jszip": "^3.4.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "source-map-explorer": "^2.5.3"
+  },
+  "trustedDependencies": [
+    "bun"
+  ]
+}

@@ -1,0 +1,34 @@
+services:
+  nana:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+      args:
+        TARGETARCH: ${TARGETARCH:-amd64} # for arm, use arm64
+    container_name: nana-dev
+    ports:
+      - "3000:3000"
+      - "8090:8090"
+    volumes:
+      - ./pocketbase/pb_data:/app/pocketbase/pb_data
+    environment:
+      - TZ=${TZ:-UTC}
+    #  - POCKETBASE_URL=http://127.0.0.1:8090
+    #  - SITE_URL=https://nana.example.com
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+        - action: sync
+          path: ./pocketbase/pb_hooks
+          target: /app/pocketbase/pb_hooks
+        - action: sync
+          path: ./pocketbase/pb_migrations
+          target: /app/pocketbase/pb_migrations
+        - action: rebuild
+          path: ./package.json
+          target: /app/package.json
+        - action: rebuild
+          path: ./Dockerfile

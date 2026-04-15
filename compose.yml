@@ -1,0 +1,13 @@
+services:
+  nana:
+    image: ghcr.io/zbejas/nana:latest
+    container_name: nana
+    ports:
+      - "3000:3000"
+    #  - "8090:8090"  # PocketBase admin port, avoid exposing in production
+    environment:
+      - TZ=${TZ:-Europe/Ljubljana}
+    #  - SITE_URL=https://nana.example.com
+    volumes:
+      - ./pocketbase/pb_data:/app/pocketbase/pb_data
+    restart: unless-stopped
