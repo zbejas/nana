@@ -6,9 +6,6 @@ import tailwindLogo from "../../assets/tech_logos/tailwind.svg";
 import pocketbaseLogo from "../../assets/tech_logos/pocketbase.svg";
 
 export function AboutTab() {
-  const runtimePackages = Object.entries(packageJson.dependencies ?? {}).sort(([a], [b]) => a.localeCompare(b));
-  const devPackages = Object.entries(packageJson.devDependencies ?? {}).sort(([a], [b]) => a.localeCompare(b));
-
   return (
     <div className="min-h-full flex flex-col">
       <div className="flex-1 rounded-lg border border-white/10 bg-white/5 p-6">
@@ -133,48 +130,6 @@ export function AboutTab() {
           </div>
         </div>
 
-        <section className="border-t border-white/10 pt-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Packages</h3>
-            <span className="text-xs text-gray-500">
-              {runtimePackages.length} runtime, {devPackages.length} dev
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-            <ul className="space-y-1 rounded-lg border border-white/10 bg-black/20 p-3">
-              {runtimePackages.map(([name, version]) => (
-                <li key={name} className="flex items-center justify-between gap-3 text-xs">
-                  <a 
-                    href={`https://www.npmjs.com/package/${name}`} 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="text-gray-300 hover:text-blue-400 transition-colors"
-                  >
-                    {name}
-                  </a>
-                  <span className="text-gray-500">{version}</span>
-                </li>
-              ))}
-            </ul>
-
-            <ul className="space-y-1 rounded-lg border border-white/10 bg-black/20 p-3">
-              {devPackages.map(([name, version]) => (
-                <li key={name} className="flex items-center justify-between gap-3 text-xs">
-                  <a 
-                    href={`https://www.npmjs.com/package/${name}`} 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="text-gray-300 hover:text-blue-400 transition-colors"
-                  >
-                    {name}
-                  </a>
-                  <span className="text-gray-500">{version}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
       </div>
       <footer className="mt-6 border-t border-white/10 pt-6">
         <div className="flex items-center justify-between text-xs text-gray-500">
