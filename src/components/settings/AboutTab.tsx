@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import packageJson from "../../../package.json";
 import logo from "../../assets/nana.svg";
 import bunLogo from "../../assets/tech_logos/bun.svg";
@@ -5,7 +6,47 @@ import reactLogo from "../../assets/tech_logos/react.svg";
 import tailwindLogo from "../../assets/tech_logos/tailwind.svg";
 import pocketbaseLogo from "../../assets/tech_logos/pocketbase.svg";
 
+const RELEASES_URL = "https://github.com/zbejas/nana/releases";
+
+interface AppVersionResponse {
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  releasesUrl: string;
+}
+
 export function AboutTab() {
+  const [versionInfo, setVersionInfo] = useState<AppVersionResponse>({
+    currentVersion: packageJson.version,
+    latestVersion: null,
+    updateAvailable: false,
+    releasesUrl: RELEASES_URL,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadVersionInfo() {
+      try {
+        const response = await fetch("/api/app/version");
+        if (!response.ok) return;
+
+        const data = await response.json() as AppVersionResponse;
+        if (!cancelled) {
+          setVersionInfo(data);
+        }
+      } catch {
+        // Keep the local package version if the remote check fails.
+      }
+    }
+
+    void loadVersionInfo();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="min-h-full flex flex-col">
       <div className="flex-1 rounded-lg border border-white/10 bg-white/5 p-6">
@@ -36,7 +77,17 @@ export function AboutTab() {
               <div className="space-y-3 text-sm">
                 <div className="flex items-center gap-3">
                   <span className="text-gray-500 w-24">App Version</span>
-                  <span className="text-white font-medium">{packageJson.version}</span>
+                  <a
+                    href={versionInfo.releasesUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-white transition-colors hover:text-blue-400"
+                  >
+                    <span>{versionInfo.currentVersion}</span>
+                    {versionInfo.updateAvailable && versionInfo.latestVersion && (
+                      <span className="text-amber-300"> ({versionInfo.latestVersion} available)</span>
+                    )}
+                  </a>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-gray-500 w-24">License</span>

@@ -7,6 +7,7 @@ import { handlePocketBaseProxy } from "./api/pocketbase-proxy";
 import { handleExport } from "./api/export/index";
 import { handleChat } from "./api/chat/index";
 import { handleEmbeddings } from "./api/embeddings/index";
+import { handleAppVersion } from "./api/app-version";
 import { closeAll as closeAllZvecCollections } from "./api/embeddings/zvec";
 import { createStaticFileHandler } from "./api/static-files";
 import { checkRateLimit, reloadRateLimiter } from "./api/rate-limiter";
@@ -188,6 +189,12 @@ const server = serve({
       const blocked = await checkRateLimit(req, server);
       if (blocked) return withSecurityHeaders(blocked);
       return withSecurityHeaders(await handleEmbeddings(req));
+    },
+
+    "/api/app/version": async (req): Promise<Response> => {
+      const blocked = await checkRateLimit(req, server);
+      if (blocked) return withSecurityHeaders(blocked);
+      return withSecurityHeaders(await handleAppVersion(req));
     },
 
     // Admin endpoint: reload rate-limit config at runtime
