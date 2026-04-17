@@ -62,7 +62,7 @@ Or run the container directly:
 docker run -d \
 	--name nana \
 	-p 3000:3000 \
-	-v ./pb_data:/app/pocketbase/pb_data \
+	-v ~/nana/pb_data:/app/pocketbase/pb_data \
 	--restart unless-stopped \
 	ghcr.io/zbejas/nana:latest
 ```
