@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { getDocument, type Document } from '../../lib/documents';
 import { useDocumentEditor, useSidebar, useToasts } from '../../state/hooks';
@@ -145,6 +145,7 @@ export function useDocumentEditorState() {
         newAttachments,
         removedAttachments,
         folderId,
+        creationSessionId,
         isSavingRef,
         onSave: save,
         onReset: reset,
@@ -230,8 +231,11 @@ export function useDocumentEditorState() {
         }
         setNewAttachments([]);
         setRemovedAttachments([]);
-        setGlobalUnsavedChanges(false);
     }
+
+    useLayoutEffect(() => {
+        setGlobalUnsavedChanges(false);
+    }, [lastSyncedDocId, lastSyncedSession, setGlobalUnsavedChanges]);
 
     // Scroll to top when a new document is loaded
     useEffect(() => {

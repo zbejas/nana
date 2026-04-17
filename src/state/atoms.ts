@@ -289,19 +289,34 @@ export const selectDocumentAtom = atom(
     }
 );
 
+interface SaveDocumentRequest {
+    document: Document;
+    creationSessionId?: number;
+}
+
 /**
  * Action atom to handle document save
  */
 export const saveDocumentAtom = atom(
     null,
-    (get, set, document: Document) => {
-        // If the user already started a new document (startNewDocumentAtom fired
-        // after this save began), don't overwrite their blank editor state.
+    (get, set, { document, creationSessionId }: SaveDocumentRequest) => {
+        // While creating a new document, only the active creation session is
+        // allowed to promote a saved document into the editor. This prevents
+        // stale loader/realtime updates from re-selecting the previously open
+        // document after the user has switched to /document/new.
         if (get(isCreatingDocumentAtom)) {
-            return;
+            if (
+                creationSessionId === undefined ||
+                creationSessionId !== get(creationSessionIdAtom)
+            ) {
+                return;
+            }
         }
         set(selectedDocumentAtom, document);
         set(isCreatingDocumentAtom, false);
+        set(createInFolderAtom, undefined);
+        set(initialDocumentTitleAtom, undefined);
+        set(initialDocumentContentAtom, undefined);
         // Don't trigger refresh - real-time subscriptions handle this
     }
 );
