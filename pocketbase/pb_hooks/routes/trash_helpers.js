@@ -95,7 +95,7 @@ function saveTrashDocumentVersion(versionRecord, trashDocumentId, userId, delete
     original_document_id: originalDocumentId,
     author: userId,
     deleted_at: deletedAt,
-    source_created_at: versionRecord.get("created") || null,
+    source_created_at: versionRecord.get("source_created_at") || versionRecord.get("created") || null,
     source_version_record: versionRecord.id,
   })
   $app.save(trashVersion)

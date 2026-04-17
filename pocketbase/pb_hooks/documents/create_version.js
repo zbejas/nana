@@ -23,6 +23,7 @@ onModelUpdate((e) => {
   
   // Create version from OLD content (before update) with formatted timestamp
   const now = new Date()
+  const createdAt = now.toISOString()
   const formattedDate = now.toLocaleString('en-GB', { 
     year: 'numeric', 
     month: 'numeric', 
@@ -38,6 +39,7 @@ onModelUpdate((e) => {
   version.set("version_number", versionNumber)
   version.set("change_summary", `Published on ${formattedDate}`)
   version.set("created_by", e.model.get("author"))
+  version.set("source_created_at", createdAt)
   
   $app.save(version)
   
