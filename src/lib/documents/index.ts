@@ -50,6 +50,7 @@ export {
     getAttachmentUrls,
     getAttachmentUrlWithFreshToken,
     isPdfFile,
+    isImageFile,
     isViewableFile,
 } from './attachments';
 
