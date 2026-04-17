@@ -17,9 +17,10 @@ interface UseDocumentActionsOptions {
     newAttachments: File[];
     removedAttachments: string[];
     folderId?: string | null;
+    creationSessionId: number;
     isReadOnly: boolean;
     isSavingRef: React.MutableRefObject<boolean>;
-    onSave: (document: Document) => void;
+    onSave: (document: Document, options?: { creationSessionId?: number }) => void;
     onReset: () => void;
     onSetSaving: (saving: boolean) => void;
     onSetPublishing: (publishing: boolean) => void;
@@ -37,6 +38,7 @@ export function useDocumentActions({
     newAttachments,
     removedAttachments,
     folderId,
+    creationSessionId,
     isReadOnly,
     isSavingRef,
     onSave,
@@ -50,6 +52,11 @@ export function useDocumentActions({
     const location = useLocation();
     const saveResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const cancelNavigateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const creationSessionIdRef = useRef(creationSessionId);
+
+    useEffect(() => {
+        creationSessionIdRef.current = creationSessionId;
+    }, [creationSessionId]);
 
     useEffect(() => {
         return () => {
@@ -76,6 +83,7 @@ export function useDocumentActions({
         onSetError(null);
 
         try {
+            const sessionAtStart = creationSessionIdRef.current;
             const saveTitle = title.trim() || 'Untitled';
             let savedDocument: Document;
 
@@ -107,10 +115,15 @@ export function useDocumentActions({
                 }
 
                 logger.info('New document created', { id: savedDocument.id });
+
+                if (creationSessionIdRef.current !== sessionAtStart) {
+                    logger.debug('Skipping post-save navigation — a new document session started');
+                    return;
+                }
             }
 
             // Update the global state with saved document
-            onSave(savedDocument);
+            onSave(savedDocument, { creationSessionId: sessionAtStart });
 
             // If we just created a new document (from /document/new), navigate to its URL
             if (urlDocumentId === 'new') {
@@ -139,6 +152,7 @@ export function useDocumentActions({
         removedAttachments,
         document,
         folderId,
+        creationSessionId,
         urlDocumentId,
         navigate,
         isSavingRef,
@@ -176,7 +190,7 @@ export function useDocumentActions({
             });
 
             // Update global state
-            onSave(publishedDocument);
+            onSave(publishedDocument, { creationSessionId: creationSessionIdRef.current });
 
             onShowToast('Version published successfully', 'success');
         } catch (err: any) {

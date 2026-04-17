@@ -22,7 +22,7 @@ interface UseAutoSaveOptions {
     folderId?: string | null;
     creationSessionId: number;
     isSavingRef: React.MutableRefObject<boolean>;
-    onSave: (document: Document) => void;
+    onSave: (document: Document, options?: { creationSessionId?: number }) => void;
     onSetIsAutoSaving: (saving: boolean) => void;
     onShowToast: (message: string, type: 'error' | 'success' | 'info') => void;
 }
@@ -165,12 +165,15 @@ export function useAutoSave({
                         return;
                     }
 
+                    onSaveRef.current(savedDocument, { creationSessionId: sessionAtStart });
+
                     // Navigate to the new document URL
                     navigateRef.current(`/document/${savedDocument.id}`, { replace: true });
                 }
 
-                // Update the global state
-                onSaveRef.current(savedDocument);
+                if (urlDocumentId !== 'new' || document?.id) {
+                    onSaveRef.current(savedDocument, { creationSessionId: sessionAtStart });
+                }
 
                 // Ensure spinner shows for minimum 500ms for better UX
                 const elapsedTime = Date.now() - saveStartTime;

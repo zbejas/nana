@@ -1,4 +1,5 @@
 import { useAtom, useSetAtom } from 'jotai';
+import { useCallback } from 'react';
 import {
     selectedDocumentAtom,
     isCreatingDocumentAtom,
@@ -13,6 +14,7 @@ import {
     selectDocumentAtom,
     saveDocumentAtom,
 } from '../atoms';
+import type { Document } from '../../lib/documents/types';
 
 /**
  * Hook for document editor state and actions
@@ -30,7 +32,10 @@ export function useDocumentEditor() {
     const reset = useSetAtom(resetEditorAtom);
     const startNew = useSetAtom(startNewDocumentAtom);
     const select = useSetAtom(selectDocumentAtom);
-    const save = useSetAtom(saveDocumentAtom);
+    const saveDocument = useSetAtom(saveDocumentAtom);
+    const save = useCallback((document: Document, options?: { creationSessionId?: number }) => {
+        saveDocument({ document, creationSessionId: options?.creationSessionId });
+    }, [saveDocument]);
 
     return {
         selectedDocument,
