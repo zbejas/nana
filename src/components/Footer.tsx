@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { getDocumentVersions, restoreDocumentVersion, getAttachmentUrls, type DocumentVersion, type Document } from '../lib/documents';
-import { getAttachmentUrlWithFreshToken } from '../lib/documents';
+import { getDocumentVersions, restoreDocumentVersion, getAttachmentUrls, getAttachmentUrlWithFreshToken, isPdfFile, isViewableFile, type DocumentVersion, type Document } from '../lib/documents';
 import { useToasts } from '../state/hooks';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('Footer');
 import { VersionPreviewModal } from './modals/VersionPreviewModal';
+import { LazyAttachmentViewer } from './modals/LazyAttachmentViewer';
 import { 
   DocumentTextIcon, 
   ClockIcon, 
@@ -19,7 +19,8 @@ import {
   DocumentIcon,
   CheckIcon,
   XMarkIcon,
-  BookmarkIcon
+  BookmarkIcon,
+  EyeIcon
 } from '@heroicons/react/24/outline';
 
 interface FooterProps {
@@ -59,6 +60,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
   const versionButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingDeleteFilename, setPendingDeleteFilename] = useState<string | null>(null);
+  const [viewerAttachment, setViewerAttachment] = useState<{ url: string; filename: string } | null>(null);
   const [attachmentsPosition, setAttachmentsPosition] = useState<{ top?: number; bottom?: number; left?: number; right?: number }>({});
   const [versionPosition, setVersionPosition] = useState<{ top?: number; bottom?: number; left?: number; right?: number }>({});
   const { showToast } = useToasts();
@@ -312,6 +314,10 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
                                       }
                                     }}
                                   />
+                                ) : isPdfFile(att.filename) ? (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <DocumentTextIcon className="w-4 h-4 text-red-400" />
+                                  </div>
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center">
                                     <DocumentIcon className="w-4 h-4 text-gray-400" />
@@ -329,6 +335,20 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
                             </div>
 
                             <div className="flex items-center gap-1">
+                              {!isMarkedForRemoval && isViewableFile(att.filename) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setViewerAttachment({ url: att.url, filename: att.displayName });
+                                    setShowAttachments(false);
+                                  }}
+                                  className="p-1 text-purple-400 hover:text-purple-300 hover:bg-purple-600/20 rounded transition-colors"
+                                  title="Open"
+                                >
+                                  <EyeIcon className="w-4 h-4" />
+                                </button>
+                              )}
                               {!isMarkedForRemoval && (
                                 <button
                                   onClick={async (e) => {
@@ -554,6 +574,14 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
         onClose={() => setShowPreviewModal(false)}
         onRevert={handleRevertVersion}
         onCreateNew={handleCreateNewFromVersion}
+      />
+
+      {/* Attachment Viewer Modal */}
+      <LazyAttachmentViewer
+        isOpen={!!viewerAttachment}
+        url={viewerAttachment?.url ?? ''}
+        filename={viewerAttachment?.filename ?? ''}
+        onClose={() => setViewerAttachment(null)}
       />
     </footer>
   );

@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Document } from '../../lib/documents';
 import { MarkdownPreview } from '../MarkdownPreview';
-import { getAttachmentUrls, getAttachmentUrlWithFreshToken } from '../../lib/documents';
-import { PaperClipIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { getAttachmentUrls, getAttachmentUrlWithFreshToken, isPdfFile, isViewableFile } from '../../lib/documents';
+import { PaperClipIcon, ArrowDownTrayIcon, DocumentTextIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { LazyAttachmentViewer } from './LazyAttachmentViewer';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('TrashPreview');
@@ -18,6 +20,8 @@ export function TrashDocumentPreview({
   document,
   onClose,
 }: TrashDocumentPreviewProps) {
+  const [viewerAttachment, setViewerAttachment] = useState<{ url: string; filename: string } | null>(null);
+
   if (!isOpen || !document) return null;
 
   const formatDate = (dateString: string) => {
@@ -31,7 +35,7 @@ export function TrashDocumentPreview({
     });
   };
 
-  return createPortal(
+  const modal = createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
@@ -118,6 +122,10 @@ export function TrashDocumentPreview({
                             }
                           }}
                         />
+                      ) : isPdfFile(att.filename) ? (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <DocumentTextIcon className="w-5 h-5 text-red-400" />
+                        </div>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <PaperClipIcon className="w-5 h-5 text-gray-400" />
@@ -127,30 +135,45 @@ export function TrashDocumentPreview({
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-200 truncate">{att.displayName}</p>
                     </div>
-                    <button
-                      onClick={async (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        try {
-                          const response = await fetch(att.url);
-                          const blob = await response.blob();
-                          const url = window.URL.createObjectURL(blob);
-                          const a = window.document.createElement('a');
-                          a.href = url;
-                          a.download = att.displayName;
-                          window.document.body.appendChild(a);
-                          a.click();
-                          window.document.body.removeChild(a);
-                          window.URL.revokeObjectURL(url);
-                        } catch (error) {
-                          log.error('Failed to download file', error);
-                        }
-                      }}
-                      className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-600/20 rounded transition-colors flex-shrink-0"
-                      title="Download"
-                    >
-                      <ArrowDownTrayIcon className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {isViewableFile(att.filename) && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setViewerAttachment({ url: att.url, filename: att.displayName });
+                          }}
+                          className="p-2 text-purple-400 hover:text-purple-300 hover:bg-purple-600/20 rounded transition-colors"
+                          title="Open"
+                        >
+                          <EyeIcon className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          try {
+                            const response = await fetch(att.url);
+                            const blob = await response.blob();
+                            const url = window.URL.createObjectURL(blob);
+                            const a = window.document.createElement('a');
+                            a.href = url;
+                            a.download = att.displayName;
+                            window.document.body.appendChild(a);
+                            a.click();
+                            window.document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
+                          } catch (error) {
+                            log.error('Failed to download file', error);
+                          }
+                        }}
+                        className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-600/20 rounded transition-colors"
+                        title="Download"
+                      >
+                        <ArrowDownTrayIcon className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -184,5 +207,17 @@ export function TrashDocumentPreview({
       </div>
     </div>,
     window.document.body
+  );
+
+  return (
+    <>
+      {modal}
+      <LazyAttachmentViewer
+        isOpen={!!viewerAttachment}
+        url={viewerAttachment?.url ?? ''}
+        filename={viewerAttachment?.filename ?? ''}
+        onClose={() => setViewerAttachment(null)}
+      />
+    </>
   );
 }
