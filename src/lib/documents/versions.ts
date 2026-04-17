@@ -25,6 +25,7 @@ async function createDocumentVersion(
         version_number: versionNumber,
         change_summary: changeSummary,
         created_by: pb.authStore.record?.id || '',
+        source_created_at: new Date().toISOString(),
     });
 }
 

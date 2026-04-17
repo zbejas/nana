@@ -91,7 +91,7 @@ export function VersionPreviewModal({
               Version {version.version_number} Preview
             </h3>
             <p className="text-sm text-gray-400 mt-1">
-              Created {formatDate(version.created)}
+              Created {formatDate(version.source_created_at || version.created)}
             </p>
             {version.change_summary && (
               <p className="text-sm text-gray-500 mt-1 italic">

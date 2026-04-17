@@ -21,6 +21,7 @@ export interface DocumentVersion extends RecordModel {
     version_number: number;
     change_summary: string;
     created_by: string; // User ID
+    source_created_at?: string;
     created: string;
 }
 

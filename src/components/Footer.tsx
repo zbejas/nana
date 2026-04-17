@@ -532,7 +532,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
                             Version {version.version_number}
                           </span>
                           <span className="text-xs text-gray-500">
-                            {formatDate(version.created)}
+                            {formatDate(version.source_created_at || version.created)}
                           </span>
                         </div>
                         <p className="text-xs text-gray-400">{version.change_summary}</p>
