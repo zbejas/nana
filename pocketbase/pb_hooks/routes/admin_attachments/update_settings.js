@@ -19,18 +19,21 @@ routerAdd("PATCH", "/api/admin/attachments", (c) => {
 			})
 		}
 
-		const collection = $app.findCollectionByNameOrId("documents")
-		const attachmentsField = collection?.fields?.getByName("attachments")
-
-		if (!collection || !attachmentsField) {
-			throw new BadRequestError("Documents attachments field not found")
-		}
-
 		const maxAttachmentSizeBytes = maxAttachmentSizeMB * 1024 * 1024
-		attachmentsField.maxSize = maxAttachmentSizeBytes
-		attachmentsField.maxSelect = maxAttachments
 
-		$app.save(collection)
+		for (const collectionName of ["documents", "trash_documents"]) {
+			const collection = $app.findCollectionByNameOrId(collectionName)
+			const attachmentsField = collection?.fields?.getByName("attachments")
+
+			if (!collection || !attachmentsField) {
+				throw new BadRequestError(`${collectionName} attachments field not found`)
+			}
+
+			attachmentsField.maxSize = maxAttachmentSizeBytes
+			attachmentsField.maxSelect = maxAttachments
+
+			$app.save(collection)
+		}
 
 		return c.json(200, {
 			success: true,

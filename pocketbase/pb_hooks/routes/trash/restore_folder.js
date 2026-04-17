@@ -70,20 +70,25 @@ routerAdd("POST", "/api/trash/restore-folder", (c) => {
             const targetFolderId = restoredFolderMap[trashDocFolderId]
             const originalDocumentId = String(trashDoc.get("original_document_id") || "").trim()
             let restoredDocument = null
+            let originalDocument = null
 
             if (originalDocumentId) {
                 try {
-                    const originalDocument = $app.findRecordById("documents", originalDocumentId)
+                    originalDocument = $app.findRecordById("documents", originalDocumentId)
                     h.assertOwned(originalDocument, userId, "Document")
-                    h.copyFields(trashDoc, originalDocument, {
-                        published: false,
-                        folder: targetFolderId,
-                    })
-                    $app.save(originalDocument)
-                    restoredDocument = originalDocument
                 } catch (_) {
-                    restoredDocument = null
+                    originalDocument = null
                 }
+            }
+
+            if (originalDocument) {
+                h.copyFields(trashDoc, originalDocument, {
+                    attachments: [],
+                    published: false,
+                    folder: targetFolderId,
+                })
+                h.saveRecordWithClonedAttachments(trashDoc, originalDocument)
+                restoredDocument = originalDocument
             }
 
             if (!restoredDocument) {
@@ -95,7 +100,7 @@ routerAdd("POST", "/api/trash/restore-folder", (c) => {
                     published: false,
                     folder: targetFolderId,
                 })
-                $app.save(restoredDocument)
+                h.saveRecordWithClonedAttachments(trashDoc, restoredDocument)
             }
 
             restoredDocumentIds.push(restoredDocument.id)
