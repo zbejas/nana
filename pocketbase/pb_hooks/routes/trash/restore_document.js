@@ -29,20 +29,25 @@ routerAdd("POST", "/api/trash/restore-document", (c) => {
 
         const originalDocumentId = String(trashDocument.get("original_document_id") || "").trim()
         let restoredDocument = null
+        let originalDocument = null
 
         if (originalDocumentId) {
             try {
-                const originalDocument = $app.findRecordById("documents", originalDocumentId)
+                originalDocument = $app.findRecordById("documents", originalDocumentId)
                 h.assertOwned(originalDocument, userId, "Document")
-                h.copyFields(trashDocument, originalDocument, {
-                    published: false,
-                    folder: restoreFolderId,
-                })
-                $app.save(originalDocument)
-                restoredDocument = originalDocument
             } catch (_) {
-                restoredDocument = null
+                originalDocument = null
             }
+        }
+
+        if (originalDocument) {
+            h.copyFields(trashDocument, originalDocument, {
+                attachments: [],
+                published: false,
+                folder: restoreFolderId,
+            })
+            h.saveRecordWithClonedAttachments(trashDocument, originalDocument)
+            restoredDocument = originalDocument
         }
 
         if (!restoredDocument) {
@@ -54,7 +59,7 @@ routerAdd("POST", "/api/trash/restore-document", (c) => {
                 published: false,
                 folder: restoreFolderId,
             })
-            $app.save(restoredDocument)
+            h.saveRecordWithClonedAttachments(trashDocument, restoredDocument)
         }
 
         h.restoreDocumentVersions(trashDocument.id, restoredDocument.id)

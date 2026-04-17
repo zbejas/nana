@@ -39,6 +39,53 @@ function copyFields(source, target, overrides) {
   }
 }
 
+function buildRecordFileKey(record, filename) {
+  const baseFilesPath = String(record.baseFilesPath() || "").replace(/\/+$/, "")
+  const cleanFilename = String(filename || "").replace(/^\/+/, "")
+
+  if (!baseFilesPath || !cleanFilename) {
+    throw new Error("Cannot build file key for record attachment")
+  }
+
+  return `${baseFilesPath}/${cleanFilename}`
+}
+
+function getFileFieldFilenames(record, fieldName) {
+  const value = record.get(fieldName)
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).map((item) => String(item))
+  }
+
+  if (!value) {
+    return []
+  }
+
+  return [String(value)]
+}
+
+// PocketBase file fields store filenames only, so cross-collection moves must reupload the files.
+function saveRecordWithClonedAttachments(source, target) {
+  const attachments = getFileFieldFilenames(source, "attachments")
+  if (!attachments.length) {
+    target.set("attachments", [])
+    $app.save(target)
+    return
+  }
+
+  const filesystem = $app.newFilesystem()
+
+  try {
+    const clonedFiles = attachments.map((filename) => {
+      return filesystem.getReuploadableFile(buildRecordFileKey(source, filename), true)
+    })
+
+    target.set("attachments", clonedFiles)
+    $app.save(target)
+  } finally {
+    filesystem.close()
+  }
+}
+
 function saveTrashDocumentVersion(versionRecord, trashDocumentId, userId, deletedAt, originalDocumentId) {
   const collection = $app.findCollectionByNameOrId("trash_document_versions")
   const trashVersion = new Record(collection)
@@ -103,7 +150,7 @@ function moveDocumentToTrashById(documentId, userId, options) {
     deleted: true,
     deleted_at: deletedAt,
   })
-  $app.save(trashDocument)
+  saveRecordWithClonedAttachments(document, trashDocument)
 
   const versions = $app.findRecordsByFilter(
     "document_versions",
@@ -139,6 +186,7 @@ module.exports = {
   assertOwned,
   parseBody,
   copyFields,
+  saveRecordWithClonedAttachments,
   restoreDocumentVersions,
   permanentlyDeleteTrashVersions,
   moveDocumentToTrashById,
