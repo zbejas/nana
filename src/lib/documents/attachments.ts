@@ -176,6 +176,21 @@ export function getOriginalFilename(filename: string): string {
     return filename; // Return as-is if pattern doesn't match
 }
 
+// Check if a file is a PDF
+export function isPdfFile(filename: string): boolean {
+    return /\.pdf$/i.test(filename);
+}
+
+// Check if a file is a viewable image
+export function isImageFile(filename: string): boolean {
+    return /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i.test(filename);
+}
+
+// Check if a file can be opened in the in-app viewer (extensible for future types)
+export function isViewableFile(filename: string): boolean {
+    return isPdfFile(filename) || isImageFile(filename);
+}
+
 // Get all attachment URLs for a document
 export function getAttachmentUrls(document: Document): { filename: string; displayName: string; url: string; thumbUrl: string }[] {
     if (!document.attachments || document.attachments.length === 0) {

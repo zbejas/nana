@@ -49,6 +49,9 @@ export {
     getOriginalFilename,
     getAttachmentUrls,
     getAttachmentUrlWithFreshToken,
+    isPdfFile,
+    isImageFile,
+    isViewableFile,
 } from './attachments';
 
 // Re-export utilities
