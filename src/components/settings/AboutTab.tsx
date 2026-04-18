@@ -49,8 +49,7 @@ export function AboutTab() {
 
   return (
     <div className="min-h-full flex flex-col">
-      <div className="flex-1 rounded-lg border border-white/10 bg-white/5 p-6">
-      <div className="flex-1 space-y-6">
+      <div className="flex-1 rounded-lg border border-white/10 bg-white/5 p-6 space-y-6">
         <header className="flex items-center gap-4">
           <div className="flex-shrink-0">
             <img 
@@ -103,7 +102,7 @@ export function AboutTab() {
               </div>
 
               <div className="mt-5">
-                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Built with</h4>
+                <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Built with</h4>
                 <div className="grid grid-cols-2 gap-1.5 max-w-sm">
                   <a
                     href="https://bun.sh"
@@ -181,18 +180,28 @@ export function AboutTab() {
           </div>
         </div>
 
-      </div>
-      <footer className="mt-6 border-t border-white/10 pt-6">
+      <footer className="border-t border-white/10 pt-6">
         <div className="flex items-center justify-between text-xs text-gray-500">
           <span>© 2026 <a href="https://github.com/zbejas" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 transition-colors">Zbejas</a></span>
-          <a 
-            href="https://github.com/zbejas/nana" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-blue-400 hover:text-blue-300 transition-colors"
-          >
-            View on GitHub →
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href="https://nana.fyi"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              Official Site
+            </a>
+            <span className="text-white/10">|</span>
+            <a 
+              href="https://github.com/zbejas/nana" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              GitHub
+            </a>
+          </div>
         </div>
       </footer>
       </div>
