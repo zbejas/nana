@@ -24,3 +24,5 @@ require(`${__hooks}/routes/trash.js`);
 
 // Guard hooks
 require(`${__hooks}/guards/user_guards.js`);
+require(`${__hooks}/guards/trash_guards.js`);
+require(`${__hooks}/guards/version_guards.js`);
