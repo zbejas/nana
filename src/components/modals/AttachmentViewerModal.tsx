@@ -249,7 +249,7 @@ export default function AttachmentViewerModal({
         role="dialog"
         aria-modal="true"
         aria-label={`Viewing ${filename}`}
-        className="relative flex flex-col w-full h-full max-w-6xl mx-auto my-4 md:my-8 bg-black/95 backdrop-blur-sm border border-white/10 rounded-lg shadow-2xl overflow-hidden"
+        className="relative flex flex-col w-full h-full max-w-6xl mx-2 md:mx-auto my-4 md:my-8 bg-black/95 backdrop-blur-sm border border-white/10 rounded-lg shadow-2xl overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">

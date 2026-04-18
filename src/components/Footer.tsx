@@ -20,7 +20,8 @@ import {
   CheckIcon,
   XMarkIcon,
   BookmarkIcon,
-  EyeIcon
+  EyeIcon,
+  EllipsisVerticalIcon
 } from '@heroicons/react/24/outline';
 
 interface FooterProps {
@@ -61,6 +62,9 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingDeleteFilename, setPendingDeleteFilename] = useState<string | null>(null);
   const [viewerAttachment, setViewerAttachment] = useState<{ url: string; filename: string } | null>(null);
+  const [openAttachmentMenu, setOpenAttachmentMenu] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [attachmentsPosition, setAttachmentsPosition] = useState<{ top?: number; bottom?: number; left?: number; right?: number }>({});
   const [versionPosition, setVersionPosition] = useState<{ top?: number; bottom?: number; left?: number; right?: number }>({});
   const { showToast } = useToasts();
@@ -83,6 +87,18 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
       return () => window.document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [showVersionHistory, showAttachments]);
+
+  // Close attachment action menu when clicking outside
+  useEffect(() => {
+    if (!openAttachmentMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenAttachmentMenu(null);
+      }
+    };
+    window.document.addEventListener('mousedown', handleClick);
+    return () => window.document.removeEventListener('mousedown', handleClick);
+  }, [openAttachmentMenu]);
 
   // Load version history
   const handleShowVersionHistory = async () => {
@@ -283,12 +299,57 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
                       {/* Existing attachments */}
                       {existingAttachments.map((att) => {
                         const isMarkedForRemoval = removedAttachments.includes(att.filename);
+                        const viewable = isViewableFile(att.filename);
+
+                        const handleRowClick = () => {
+                          if (isMarkedForRemoval) return;
+                          if (viewable) {
+                            setViewerAttachment({ url: att.url, filename: att.displayName });
+                            setShowAttachments(false);
+                          } else {
+                            // Download non-viewable files
+                            fetch(att.url)
+                              .then(res => res.blob())
+                              .then(blob => {
+                                const url = window.URL.createObjectURL(blob);
+                                const a = window.document.createElement('a');
+                                a.href = url;
+                                a.download = att.displayName;
+                                window.document.body.appendChild(a);
+                                a.click();
+                                window.document.body.removeChild(a);
+                                window.URL.revokeObjectURL(url);
+                              })
+                              .catch(error => log.error('Failed to download file', error));
+                          }
+                        };
+
+                        const handleDownload = (e: React.MouseEvent) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setOpenAttachmentMenu(null);
+                          fetch(att.url)
+                            .then(res => res.blob())
+                            .then(blob => {
+                              const url = window.URL.createObjectURL(blob);
+                              const a = window.document.createElement('a');
+                              a.href = url;
+                              a.download = att.displayName;
+                              window.document.body.appendChild(a);
+                              a.click();
+                              window.document.body.removeChild(a);
+                              window.URL.revokeObjectURL(url);
+                            })
+                            .catch(error => log.error('Failed to download file', error));
+                        };
+
                         return (
                           <div
                             key={att.filename}
                             className={`px-3 py-2 hover:bg-white/5 transition-colors border-b border-white/5 last:border-b-0 ${
-                              isMarkedForRemoval ? 'bg-red-900/20 border-red-500/30' : ''
+                              isMarkedForRemoval ? 'bg-red-900/20 border-red-500/30' : 'cursor-pointer'
                             }`}
+                            onClick={handleRowClick}
                           >
                             <div className="flex items-center gap-2">
                               <div className={`w-8 h-8 flex-shrink-0 rounded overflow-hidden ${
@@ -339,40 +400,59 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
                             </div>
 
                             <div className="flex items-center gap-1">
-                              {!isMarkedForRemoval && isViewableFile(att.filename) && (
+                              {!isMarkedForRemoval && viewable && (
                                 <button
+                                  onMouseDown={(e) => e.stopPropagation()}
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    setViewerAttachment({ url: att.url, filename: att.displayName });
-                                    setShowAttachments(false);
-                                  }}
-                                  className="p-1 text-purple-400 hover:text-purple-300 hover:bg-purple-600/20 rounded transition-colors"
-                                  title="Open"
-                                >
-                                  <EyeIcon className="w-4 h-4" />
-                                </button>
-                              )}
-                              {!isMarkedForRemoval && (
-                                <button
-                                  onClick={async (e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    try {
-                                      const response = await fetch(att.url);
-                                      const blob = await response.blob();
-                                      const url = window.URL.createObjectURL(blob);
-                                      const a = window.document.createElement('a');
-                                      a.href = url;
-                                      a.download = att.displayName;
-                                      window.document.body.appendChild(a);
-                                      a.click();
-                                      window.document.body.removeChild(a);
-                                      window.URL.revokeObjectURL(url);
-                                    } catch (error) {
-                                      log.error('Failed to download file', error);
+                                    if (openAttachmentMenu === att.filename) {
+                                      setOpenAttachmentMenu(null);
+                                      setMenuPosition(null);
+                                    } else {
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setMenuPosition({ top: rect.top, left: rect.right });
+                                      setOpenAttachmentMenu(att.filename);
                                     }
                                   }}
+                                  className="p-1 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
+                                  title="More actions"
+                                >
+                                  <EllipsisVerticalIcon className="w-4 h-4" />
+                                </button>
+                              )}
+                              {!isMarkedForRemoval && viewable && openAttachmentMenu === att.filename && menuPosition && createPortal(
+                                <div
+                                  ref={menuRef}
+                                  className="fixed z-[10003] bg-gray-800 border border-white/10 rounded-lg shadow-xl py-1 min-w-[120px]"
+                                  style={{ top: menuPosition.top, left: menuPosition.left, transform: 'translate(-100%, -100%)' }}
+                                >
+                                  <button
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setOpenAttachmentMenu(null);
+                                      setViewerAttachment({ url: att.url, filename: att.displayName });
+                                      setShowAttachments(false);
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10 transition-colors"
+                                  >
+                                    <EyeIcon className="w-3.5 h-3.5" />
+                                    Open
+                                  </button>
+                                  <button
+                                    onClick={handleDownload}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10 transition-colors"
+                                  >
+                                    <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                    Download
+                                  </button>
+                                </div>,
+                                window.document.body
+                              )}
+                              {!isMarkedForRemoval && !viewable && (
+                                <button
+                                  onClick={handleDownload}
                                   className="p-1 text-blue-400 hover:text-blue-300 hover:bg-blue-600/20 rounded transition-colors"
                                   title="Download"
                                 >
