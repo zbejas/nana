@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { getDocumentVersions, restoreDocumentVersion, getAttachmentUrls, getAttachmentUrlWithFreshToken, isPdfFile, isViewableFile, type DocumentVersion, type Document } from '../lib/documents';
+import { getDocumentVersions, restoreDocumentVersion, getAttachmentUrls, getAttachmentUrlWithFreshToken, isPdfFile, isTextFile, isViewableFile, type DocumentVersion, type Document } from '../lib/documents';
 import { useToasts } from '../state/hooks';
 import { createLogger } from '../lib/logger';
 
@@ -317,6 +317,10 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
                                 ) : isPdfFile(att.filename) ? (
                                   <div className="w-full h-full flex items-center justify-center">
                                     <DocumentTextIcon className="w-4 h-4 text-red-400" />
+                                  </div>
+                                ) : isTextFile(att.filename) ? (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <DocumentTextIcon className="w-4 h-4 text-blue-400" />
                                   </div>
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center">

@@ -5,7 +5,7 @@ import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/default-layout/lib/styles/index.css';
 import { XMarkIcon, PlusIcon, MinusIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
-import { isPdfFile, isImageFile } from '../../lib/documents';
+import { isPdfFile, isImageFile, isTextFile } from '../../lib/documents';
 
 const PDFJS_WORKER_URL = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
@@ -25,6 +25,49 @@ function PdfContent({ url }: { url: string }) {
         <Viewer fileUrl={url} plugins={[defaultLayoutPluginInstance]} theme="dark" />
       </div>
     </Worker>
+  );
+}
+
+function TextContent({ url }: { url: string }) {
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setText(null);
+    setError(null);
+
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load file (${res.status})`);
+        return res.text();
+      })
+      .then((content) => { if (!cancelled) setText(content); })
+      .catch((err) => { if (!cancelled) setError(err.message); });
+
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full text-red-400 text-sm">
+        {error}
+      </div>
+    );
+  }
+
+  if (text === null) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+        Loading…
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-auto p-4">
+      <pre className="text-sm text-gray-200 font-mono whitespace-pre-wrap break-words leading-relaxed">{text}</pre>
+    </div>
   );
 }
 
@@ -174,6 +217,14 @@ export default function AttachmentViewerModal({
               <ArrowsPointingOutIcon className="w-4 h-4" />
             </button>
           </div>
+        </div>
+      );
+    }
+
+    if (isTextFile(filename)) {
+      return (
+        <div className="flex-1" style={{ height: '100%' }}>
+          <TextContent url={url} />
         </div>
       );
     }

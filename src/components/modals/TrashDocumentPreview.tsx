@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Document } from '../../lib/documents';
 import { MarkdownPreview } from '../MarkdownPreview';
-import { getAttachmentUrls, getAttachmentUrlWithFreshToken, isPdfFile, isViewableFile } from '../../lib/documents';
+import { getAttachmentUrls, getAttachmentUrlWithFreshToken, isPdfFile, isTextFile, isViewableFile } from '../../lib/documents';
 import { PaperClipIcon, ArrowDownTrayIcon, DocumentTextIcon, EyeIcon } from '@heroicons/react/24/outline';
 import { LazyAttachmentViewer } from './LazyAttachmentViewer';
 import { createLogger } from '../../lib/logger';
@@ -125,6 +125,10 @@ export function TrashDocumentPreview({
                       ) : isPdfFile(att.filename) ? (
                         <div className="w-full h-full flex items-center justify-center">
                           <DocumentTextIcon className="w-5 h-5 text-red-400" />
+                        </div>
+                      ) : isTextFile(att.filename) ? (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <DocumentTextIcon className="w-5 h-5 text-blue-400" />
                         </div>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
