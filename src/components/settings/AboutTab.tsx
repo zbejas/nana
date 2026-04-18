@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { HeartIcon } from "@heroicons/react/24/solid";
 import packageJson from "../../../package.json";
 import logo from "../../assets/nana.svg";
 import bunLogo from "../../assets/tech_logos/bun.svg";
@@ -48,9 +49,8 @@ export function AboutTab() {
   }, []);
 
   return (
-    <div className="min-h-full flex flex-col">
-      <div className="flex-1 rounded-lg border border-white/10 bg-white/5 p-6">
-      <div className="flex-1 space-y-6">
+    <div className="min-h-full flex flex-col gap-4">
+      <div className="flex-1 rounded-lg border border-white/10 bg-white/5 p-6 space-y-6">
         <header className="flex items-center gap-4">
           <div className="flex-shrink-0">
             <img 
@@ -103,7 +103,7 @@ export function AboutTab() {
               </div>
 
               <div className="mt-5">
-                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Built with</h4>
+                <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Built with</h4>
                 <div className="grid grid-cols-2 gap-1.5 max-w-sm">
                   <a
                     href="https://bun.sh"
@@ -181,20 +181,51 @@ export function AboutTab() {
           </div>
         </div>
 
-      </div>
-      <footer className="mt-6 border-t border-white/10 pt-6">
+      <footer className="border-t border-white/10 pt-6">
         <div className="flex items-center justify-between text-xs text-gray-500">
           <span>© 2026 <a href="https://github.com/zbejas" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 transition-colors">Zbejas</a></span>
-          <a 
-            href="https://github.com/zbejas/nana" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-blue-400 hover:text-blue-300 transition-colors"
-          >
-            View on GitHub →
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href="https://nana.fyi"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              Official Site
+            </a>
+            <span className="text-white/10">|</span>
+            <a 
+              href="https://github.com/zbejas/nana" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              GitHub
+            </a>
+          </div>
         </div>
       </footer>
+      </div>
+      <div className="rounded-lg border border-white/10 bg-white/5 p-6">
+        <div className="flex flex-col items-center text-center gap-3">
+          <div className="flex items-center gap-2">
+            <HeartIcon className="h-5 w-5 text-pink-500" />
+            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Support Nana</h3>
+          </div>
+          <p className="text-gray-400 text-sm max-w-md leading-relaxed">
+            Nana is free and open source, built with love in spare time.
+            If it's made your life a little easier, consider supporting its development.
+          </p>
+          <a
+            href="https://github.com/sponsors/zbejas"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg border border-pink-500/30 bg-pink-500/10 px-4 py-2 text-sm font-medium text-pink-400 hover:bg-pink-500/20 hover:text-pink-300 transition-colors"
+          >
+            <HeartIcon className="h-4 w-4" />
+            <span>Sponsor on GitHub</span>
+          </a>
+        </div>
       </div>
     </div>
   );

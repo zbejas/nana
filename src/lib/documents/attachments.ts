@@ -186,9 +186,48 @@ export function isImageFile(filename: string): boolean {
     return /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i.test(filename);
 }
 
+// Check if a file is a text-based file that can be displayed as plain text
+const TEXT_FILE_RE = new RegExp(
+    '\\.(' +
+    // Plain text / documentation
+    'txt|md|mdx|markdown|rst|adoc|asciidoc|tex|latex|org|csv|tsv|log|nfo|' +
+    // Data / config
+    'json|jsonc|json5|xml|yaml|yml|toml|ini|cfg|conf|env|properties|plist|' +
+    'editorconfig|prettierrc|eslintrc|babelrc|stylelintrc|npmrc|nvmrc|' +
+    // Web
+    'html|htm|xhtml|css|scss|sass|less|styl|stylus|js|mjs|cjs|jsx|ts|mts|cts|tsx|' +
+    'vue|svelte|astro|hbs|handlebars|ejs|pug|jade|mustache|njk|twig|liquid|' +
+    // Systems / scripting
+    'sh|bash|zsh|fish|bat|cmd|ps1|psm1|psd1|' +
+    // Languages
+    'py|pyi|pyw|rb|rbw|gemspec|rake|go|rs|java|kt|kts|groovy|gradle|scala|sbt|' +
+    'c|h|cpp|cxx|cc|hpp|hxx|hh|cs|fs|fsx|fsi|' +
+    'swift|m|mm|' +
+    'r|rmd|julia|jl|lua|perl|pl|pm|php|phtml|' +
+    'dart|elm|erl|hrl|ex|exs|clj|cljs|cljc|edn|' +
+    'zig|nim|v|d|ada|adb|ads|pas|pp|lpr|' +
+    'hs|lhs|ml|mli|ocaml|lisp|cl|el|scm|rkt|' +
+    // SQL / query
+    'sql|graphql|gql|prisma|' +
+    // Ops / infra
+    'dockerfile|dockerignore|vagrantfile|' +
+    'tf|tfvars|hcl|' +
+    'nginx|htaccess|' +
+    // Build / project
+    'makefile|cmake|meson|build|rake|gemfile|podfile|' +
+    'gitignore|gitattributes|gitmodules|' +
+    // Other
+    'diff|patch|svg' +
+    ')$', 'i'
+);
+
+export function isTextFile(filename: string): boolean {
+    return TEXT_FILE_RE.test(filename);
+}
+
 // Check if a file can be opened in the in-app viewer (extensible for future types)
 export function isViewableFile(filename: string): boolean {
-    return isPdfFile(filename) || isImageFile(filename);
+    return isPdfFile(filename) || isImageFile(filename) || isTextFile(filename);
 }
 
 // Get all attachment URLs for a document

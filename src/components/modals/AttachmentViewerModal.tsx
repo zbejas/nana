@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Viewer, Worker } from '@react-pdf-viewer/core';
+import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import '@react-pdf-viewer/core/lib/styles/index.css';
+import '@react-pdf-viewer/default-layout/lib/styles/index.css';
 import { XMarkIcon, PlusIcon, MinusIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
-import { isPdfFile, isImageFile } from '../../lib/documents';
+import { isPdfFile, isImageFile, isTextFile } from '../../lib/documents';
 
 const PDFJS_WORKER_URL = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
@@ -12,6 +14,61 @@ export interface AttachmentViewerModalProps {
   url: string;
   filename: string;
   onClose: () => void;
+}
+
+function PdfContent({ url }: { url: string }) {
+  const defaultLayoutPluginInstance = defaultLayoutPlugin();
+
+  return (
+    <Worker workerUrl={PDFJS_WORKER_URL}>
+      <div className="h-full [&_.rpv-core__viewer]:h-full [&_.rpv-default-layout__container]:h-full [&_.rpv-default-layout__body]:h-full [&_.rpv-default-layout__container]:border-none">
+        <Viewer fileUrl={url} plugins={[defaultLayoutPluginInstance]} theme="dark" />
+      </div>
+    </Worker>
+  );
+}
+
+function TextContent({ url }: { url: string }) {
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setText(null);
+    setError(null);
+
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load file (${res.status})`);
+        return res.text();
+      })
+      .then((content) => { if (!cancelled) setText(content); })
+      .catch((err) => { if (!cancelled) setError(err.message); });
+
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full text-red-400 text-sm">
+        {error}
+      </div>
+    );
+  }
+
+  if (text === null) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+        Loading…
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-auto p-4">
+      <pre className="text-sm text-gray-200 font-mono whitespace-pre-wrap break-words leading-relaxed">{text}</pre>
+    </div>
+  );
 }
 
 export default function AttachmentViewerModal({
@@ -103,24 +160,9 @@ export default function AttachmentViewerModal({
   const renderContent = () => {
     if (isPdfFile(filename)) {
       return (
-        <Worker workerUrl={PDFJS_WORKER_URL}>
-          <div className="flex-1 overflow-auto" style={{ height: '100%' }}>
-            <Viewer
-              fileUrl={url}
-              withCredentials={false}
-              renderError={(error) => (
-                <div className="flex items-center justify-center h-full text-red-400 text-sm p-8 text-center">
-                  <p>Failed to load PDF. Try downloading instead.<br /><span className="text-red-500/60 text-xs">{String(error.message)}</span></p>
-                </div>
-              )}
-              renderLoader={(percentages) => (
-                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                  Loading… {Math.round(percentages)}%
-                </div>
-              )}
-            />
-          </div>
-        </Worker>
+        <div className="flex-1" style={{ height: '100%' }}>
+          <PdfContent url={url} />
+        </div>
       );
     }
 
@@ -179,6 +221,14 @@ export default function AttachmentViewerModal({
       );
     }
 
+    if (isTextFile(filename)) {
+      return (
+        <div className="flex-1" style={{ height: '100%' }}>
+          <TextContent url={url} />
+        </div>
+      );
+    }
+
     return (
       <div className="flex items-center justify-center h-full text-gray-400 text-sm">
         Preview not available for this file type.
@@ -199,7 +249,7 @@ export default function AttachmentViewerModal({
         role="dialog"
         aria-modal="true"
         aria-label={`Viewing ${filename}`}
-        className="relative flex flex-col w-full h-full max-w-6xl mx-auto my-4 md:my-8 bg-black/95 backdrop-blur-sm border border-white/10 rounded-lg shadow-2xl overflow-hidden"
+        className="relative flex flex-col w-full h-full max-w-6xl mx-2 md:mx-auto my-4 md:my-8 bg-black/95 backdrop-blur-sm border border-white/10 rounded-lg shadow-2xl overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">

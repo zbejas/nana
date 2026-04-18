@@ -3,7 +3,7 @@ import { createLogger } from "../lib/logger";
 
 const log = createLogger("AppVersion");
 
-const APP_VERSION = packageJson.version;
+export const APP_VERSION = packageJson.version;
 const GITHUB_OWNER = "zbejas";
 const GITHUB_REPO = "nana";
 const RELEASES_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases`;
