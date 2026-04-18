@@ -29,12 +29,9 @@ export function EditorReadOnlyOverlay({ visible }: EditorReadOnlyOverlayProps) {
   }
 
   return (
-    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm border border-white/10 z-30 flex items-center justify-center">
-      <div className="rounded-xl border border-white/15 bg-black/70 px-4 py-3 text-center">
-        <LockClosedIcon className="w-6 h-6 text-yellow-300 mx-auto mb-2" />
-        <p className="text-sm font-medium text-white">Read-only trash document</p>
-        <p className="text-xs text-gray-300 mt-1">Restore the document to edit it.</p>
-      </div>
+    <div className="flex items-center gap-2 px-4 py-2 mx-2 mt-1 mb-1 rounded-lg border border-yellow-500/30 bg-yellow-900/20 text-yellow-300">
+      <LockClosedIcon className="w-4 h-4 shrink-0" />
+      <p className="text-xs font-medium">Read-only trash document — Restore to edit</p>
     </div>
   );
 }

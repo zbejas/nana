@@ -81,7 +81,6 @@ export function DocumentEditor() {
       <EditorDragOverlay visible={isDraggingFile && isMouseOverEditor} />
 
       <div className="relative md:flex-1 flex-1 min-h-0 flex flex-col">
-        <EditorReadOnlyOverlay visible={isTrashDocument} />
 
         <div
           className="md:sticky md:top-0 md:z-10 relative overflow-hidden transition-all duration-300 ease-in-out"
@@ -128,6 +127,8 @@ export function DocumentEditor() {
             onRemoveTag={handleRemoveTag}
           />
         </div>
+
+        <EditorReadOnlyOverlay visible={isTrashDocument} />
 
         <div className="md:flex-1 flex-1 min-h-0 md:pb-12 overflow-hidden">
           <EditorContent
