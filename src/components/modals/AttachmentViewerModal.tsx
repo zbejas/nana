@@ -7,7 +7,7 @@ import '@react-pdf-viewer/default-layout/lib/styles/index.css';
 import { XMarkIcon, PlusIcon, MinusIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { isPdfFile, isImageFile, isTextFile } from '../../lib/documents';
 
-const PDFJS_WORKER_URL = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+const PDFJS_WORKER_URL = '/pdfjs/pdf.worker.min.js';
 
 export interface AttachmentViewerModalProps {
   isOpen: boolean;

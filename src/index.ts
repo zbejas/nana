@@ -22,6 +22,7 @@ const distDir = resolve(import.meta.dir, "../dist");
 const iconSvg = resolve(import.meta.dir, "assets/nana.svg");
 const icon192 = resolve(import.meta.dir, "assets/nana-192.png");
 const icon512 = resolve(import.meta.dir, "assets/nana-512.png");
+const pdfWorkerScript = resolve(import.meta.dir, "../node_modules/pdfjs-dist/build/pdf.worker.min.js");
 
 const manifest = {
   name: "Nana",
@@ -63,11 +64,18 @@ self.addEventListener('activate', (event) => {
 });
 `;
 
+if (!existsSync(pdfWorkerScript)) {
+  log.warn("PDF worker script is missing; PDF previews will be unavailable", {
+    path: pdfWorkerScript,
+  });
+}
+
 // ── Content Security Policy ──────────────────────────────────────────
 const cspPolicy = isProduction
   ? [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline'",
+    "worker-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "connect-src 'self'",
@@ -80,6 +88,7 @@ const cspPolicy = isProduction
     // Development: allow HMR websockets and inline scripts injected by Bun
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline'",
+    "worker-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "connect-src 'self' ws: wss:",
@@ -134,6 +143,21 @@ const server = serve({
           },
         })
       ),
+
+    "/pdfjs/pdf.worker.min.js": (): Response => {
+      if (!existsSync(pdfWorkerScript)) {
+        return withSecurityHeaders(new Response("PDF worker not available", { status: 404 }));
+      }
+
+      return withSecurityHeaders(
+        new Response(Bun.file(pdfWorkerScript), {
+          headers: {
+            "Content-Type": "application/javascript; charset=utf-8",
+            "Cache-Control": "public, max-age=31536000, immutable",
+          },
+        })
+      );
+    },
 
     "/nana.svg": (): Response => withSecurityHeaders(new Response(Bun.file(iconSvg))),
     "/nana-192.png": (): Response => withSecurityHeaders(new Response(Bun.file(icon192))),
