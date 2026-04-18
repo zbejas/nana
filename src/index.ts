@@ -7,7 +7,7 @@ import { handlePocketBaseProxy } from "./api/pocketbase-proxy";
 import { handleExport } from "./api/export/index";
 import { handleChat } from "./api/chat/index";
 import { handleEmbeddings } from "./api/embeddings/index";
-import { handleAppVersion } from "./api/app-version";
+import { APP_VERSION, handleAppVersion } from "./api/app-version";
 import { closeAll as closeAllZvecCollections } from "./api/embeddings/zvec";
 import { createStaticFileHandler } from "./api/static-files";
 import { checkRateLimit, reloadRateLimiter } from "./api/rate-limiter";
@@ -270,4 +270,4 @@ function gracefulShutdown(signal: string) {
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-log.info(`🚀 Server running at ${server.url}`);
+log.info(`Server running on port ${serverConfig.port} | version ${APP_VERSION}`);
