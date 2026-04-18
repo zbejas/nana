@@ -16,6 +16,7 @@
         "bun-plugin-tailwind": "^0.1.2",
         "jotai": "^2.19.1",
         "jszip": "^3.10.1",
+        "pdfjs-dist": "^3.11.174",
         "pocketbase": "^0.26.8",
         "rate-limiter-flexible": "^11.0.0",
         "react": "^19.2.5",
