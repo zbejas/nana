@@ -46,9 +46,10 @@ interface FooterProps {
   onPublish?: () => void;
   publishing?: boolean;
   usePortal?: boolean;
+  readOnly?: boolean;
 }
 
-export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPowerMode = false, document, documentId, words = 0, readingTime = 0, characters = 0, lastUpdated, newAttachments, removedAttachments, onDocumentRestored, onCreateNewFromVersion, onAttachmentsChange, onAttachmentRemove, onImmediateAttachmentDelete, onAutoSaveAttachments, onPublish, publishing = false, usePortal = false }: FooterProps) {
+export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPowerMode = false, document, documentId, words = 0, readingTime = 0, characters = 0, lastUpdated, newAttachments, removedAttachments, onDocumentRestored, onCreateNewFromVersion, onAttachmentsChange, onAttachmentRemove, onImmediateAttachmentDelete, onAutoSaveAttachments, onPublish, publishing = false, usePortal = false, readOnly = false }: FooterProps) {
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
@@ -272,12 +273,14 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
               >
                 <div className="p-3 border-b border-white/10 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-200">Attachments</h3>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className={addButtonClass}
-                  >
-                    + Add
-                  </button>
+                  {!readOnly && (
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className={addButtonClass}
+                    >
+                      + Add
+                    </button>
+                  )}
                 </div>
                 
                 <input
@@ -459,7 +462,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
                                   <ArrowDownTrayIcon className="w-4 h-4" />
                                 </button>
                               )}
-                              {pendingDeleteFilename === att.filename ? (
+                              {!readOnly && (pendingDeleteFilename === att.filename ? (
                                 <div className="flex items-center gap-1">
                                   <button
                                     onClick={async (e) => {
@@ -511,7 +514,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
                                     <TrashIcon className="w-4 h-4" />
                                   )}
                                 </button>
-                              )}
+                              ))}
                             </div>
                           </div>
                         </div>
@@ -534,17 +537,19 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPow
                               <p className="text-xs text-blue-400/60">{formatFileSize(file.size)}</p>
                             </div>
 
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                onAttachmentRemove(file.name, false);
-                              }}
-                              className="p-1 text-red-400 hover:text-red-300 hover:bg-red-600/20 rounded transition-colors"
-                              title="Remove"
-                            >
-                              <TrashIcon className="w-4 h-4" />
-                            </button>
+                            {!readOnly && (
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  onAttachmentRemove(file.name, false);
+                                }}
+                                className="p-1 text-red-400 hover:text-red-300 hover:bg-red-600/20 rounded transition-colors"
+                                title="Remove"
+                              >
+                                <TrashIcon className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       ))}

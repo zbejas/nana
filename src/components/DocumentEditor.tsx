@@ -171,6 +171,7 @@ export function DocumentEditor() {
             onAutoSaveAttachments={handleAutoSaveAttachments}
             onPublish={handlePublish}
             publishing={publishing}
+            readOnly={isTrashDocument}
           />
         </div>
       )}
@@ -198,6 +199,7 @@ export function DocumentEditor() {
             onAutoSaveAttachments={handleAutoSaveAttachments}
             onPublish={handlePublish}
             publishing={publishing}
+            readOnly={isTrashDocument}
             usePortal
           />
         </div>
