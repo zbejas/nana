@@ -1,34 +1,6 @@
 import { pb } from '../pocketbase';
 import type { DocumentVersion } from './types';
 
-// Create a version snapshot
-async function createDocumentVersion(
-    documentId: string,
-    content: string,
-    changeSummary: string
-): Promise<DocumentVersion> {
-    // Get latest version number
-    const versions = await pb.collection('document_versions').getList<DocumentVersion>(
-        1,
-        1,
-        {
-            filter: `document="${documentId}"`,
-            sort: '-version_number',
-        }
-    );
-
-    const versionNumber = versions.items.length > 0 ? versions.items[0]!.version_number + 1 : 1;
-
-    return await pb.collection('document_versions').create<DocumentVersion>({
-        document: documentId,
-        content,
-        version_number: versionNumber,
-        change_summary: changeSummary,
-        created_by: pb.authStore.record?.id || '',
-        source_created_at: new Date().toISOString(),
-    });
-}
-
 // Get version history for a document
 export async function getDocumentVersions(
     documentId: string,
