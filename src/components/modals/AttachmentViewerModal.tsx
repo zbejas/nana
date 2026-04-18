@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Viewer, Worker } from '@react-pdf-viewer/core';
+import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import '@react-pdf-viewer/core/lib/styles/index.css';
+import '@react-pdf-viewer/default-layout/lib/styles/index.css';
 import { XMarkIcon, PlusIcon, MinusIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { isPdfFile, isImageFile } from '../../lib/documents';
 
@@ -12,6 +14,18 @@ export interface AttachmentViewerModalProps {
   url: string;
   filename: string;
   onClose: () => void;
+}
+
+function PdfContent({ url }: { url: string }) {
+  const defaultLayoutPluginInstance = defaultLayoutPlugin();
+
+  return (
+    <Worker workerUrl={PDFJS_WORKER_URL}>
+      <div className="h-full [&_.rpv-core__viewer]:h-full [&_.rpv-default-layout__container]:h-full [&_.rpv-default-layout__body]:h-full [&_.rpv-default-layout__container]:border-none">
+        <Viewer fileUrl={url} plugins={[defaultLayoutPluginInstance]} theme="dark" />
+      </div>
+    </Worker>
+  );
 }
 
 export default function AttachmentViewerModal({
@@ -103,24 +117,9 @@ export default function AttachmentViewerModal({
   const renderContent = () => {
     if (isPdfFile(filename)) {
       return (
-        <Worker workerUrl={PDFJS_WORKER_URL}>
-          <div className="flex-1 overflow-auto" style={{ height: '100%' }}>
-            <Viewer
-              fileUrl={url}
-              withCredentials={false}
-              renderError={(error) => (
-                <div className="flex items-center justify-center h-full text-red-400 text-sm p-8 text-center">
-                  <p>Failed to load PDF. Try downloading instead.<br /><span className="text-red-500/60 text-xs">{String(error.message)}</span></p>
-                </div>
-              )}
-              renderLoader={(percentages) => (
-                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                  Loading… {Math.round(percentages)}%
-                </div>
-              )}
-            />
-          </div>
-        </Worker>
+        <div className="flex-1" style={{ height: '100%' }}>
+          <PdfContent url={url} />
+        </div>
       );
     }
 
