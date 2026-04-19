@@ -2,7 +2,6 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import logo from '../assets/nana.svg';
 import { pb } from '../lib/pocketbase';
-import { AuthFooter } from '../components/AuthFooter';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('ResetPwd');
@@ -94,7 +93,6 @@ export function ResetPasswordPage() {
             </button>
           </div>
         </div>
-        <AuthFooter />
       </div>
     );
   }
@@ -181,7 +179,6 @@ export function ResetPasswordPage() {
           )}
         </div>
       </div>
-      <AuthFooter />
     </div>
   );
 }

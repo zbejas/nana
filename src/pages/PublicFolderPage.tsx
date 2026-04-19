@@ -161,10 +161,10 @@ export function PublicFolderPage() {
     }
 
     return (
-        <div className="min-h-screen flex flex-col bg-black/25 backdrop-blur-sm px-4 py-6 sm:px-6 lg:px-10 overflow-x-hidden">
+        <div className="min-h-screen flex flex-col bg-black/25 backdrop-blur-sm px-4 py-6 sm:px-6 lg:px-10">
 
             <div className="mx-auto w-full max-w-7xl flex flex-col gap-6 lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
-                <aside className="overflow-hidden rounded-2xl border border-white/15 bg-white/8 p-5 sm:p-8 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
+                <aside className="overflow-hidden rounded-2xl border border-white/15 bg-white/8 px-5 pb-5 pt-3 sm:px-8 sm:pb-8 sm:pt-4 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
                     <div>
                         <h1 className="text-2xl font-semibold text-white">{data.rootFolder.name}</h1>
                         {data.author && <p className="mt-2 text-sm text-stone-300">Shared by {data.author.name}</p>}
@@ -174,7 +174,7 @@ export function PublicFolderPage() {
                             </div>
                         )}
 
-                        <div className="mt-6 border-t border-white/10 pt-4">
+                        <div className="mt-4">
                             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
                                 <ListBulletIcon className="h-4 w-4 text-amber-300" />
                                 Navigation
@@ -191,14 +191,14 @@ export function PublicFolderPage() {
 
                 </aside>
 
-                <main className="min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-white/8 p-5 sm:p-8">
+                <main className="min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-white/8 px-5 pb-5 pt-3 sm:px-8 sm:pb-8 sm:pt-4">
                     <div key={activeDocument?.id || 'empty'} className="public-content-enter">
                         {activeDocument ? (
                             <>
-                                <div className="border-b border-white/10 pb-6">
+                                <div className="border-b border-white/10 pb-4">
                                     <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
                                         <div className="min-w-0 flex-1">
-                                            <h2 className="text-4xl font-semibold tracking-tight text-white">{activeDocument.title || 'Untitled'}</h2>
+                                            <h2 className="text-3xl font-semibold tracking-tight text-white">{activeDocument.title || 'Untitled'}</h2>
                                         </div>
 
                                         {hasAttachments && (

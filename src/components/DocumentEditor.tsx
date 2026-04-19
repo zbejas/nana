@@ -12,7 +12,6 @@ export function DocumentEditor() {
     document,
     sidebarOpen,
     sidebarWidth,
-    lowPowerMode,
     titleInputRef,
     title,
     setTitle,
@@ -154,7 +153,6 @@ export function DocumentEditor() {
             sidebarOpen={sidebarOpen}
             sidebarWidth={sidebarWidth}
             isDesktop={false}
-            lowPowerMode={lowPowerMode}
             document={document || undefined}
             documentId={document?.id}
             words={contentStats.words}
@@ -182,7 +180,6 @@ export function DocumentEditor() {
             sidebarOpen={sidebarOpen}
             sidebarWidth={sidebarWidth}
             isDesktop
-            lowPowerMode={lowPowerMode}
             document={document || undefined}
             documentId={document?.id}
             words={contentStats.words}

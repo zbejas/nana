@@ -20,7 +20,7 @@ const PublicDocumentPage = lazy(() => import("./pages/PublicDocumentPage"));
 const PublicFolderPage = lazy(() => import("./pages/PublicFolderPage"));
 import { useSidebar, useDocumentEditor, useDocumentData } from "./state/hooks";
 import { initialLoadDoneAtom } from './state/atoms';
-import { useSidebarWidth, useLowPowerMode, setLastNonDocumentRoute } from "./lib/settings";
+import { useSidebarWidth, setLastNonDocumentRoute } from "./lib/settings";
 import "./index.css";
 
 const MOBILE_ROUTE_ORDER = ['/timeline', '/folders', '/chat', '/settings'] as const;
@@ -81,7 +81,6 @@ function AppContent() {
   const { reset } = useDocumentEditor();
   const location = useLocation();
   const sidebarWidth = useSidebarWidth();
-  const lowPowerMode = useLowPowerMode();
   
   // Initialize data subscriptions ONCE at top level - DO NOT call this hook anywhere else
   // All data is stored in Jotai atoms and accessible from child components

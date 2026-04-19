@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import logo from '../assets/nana.svg';
 import { pb } from '../lib/pocketbase';
 import { useAuth } from '../lib/auth';
-import { AuthFooter } from '../components/AuthFooter';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('EmailChange');
@@ -89,7 +88,6 @@ export function ConfirmEmailChangePage() {
             </button>
           </div>
         </div>
-        <AuthFooter />
       </div>
     );
   }
@@ -172,7 +170,6 @@ export function ConfirmEmailChangePage() {
           )}
         </div>
       </div>
-      <AuthFooter />
     </div>
   );
 }

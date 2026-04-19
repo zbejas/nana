@@ -8,7 +8,6 @@ const logger = createLogger('DocEditor');
 import { type ViewMode } from './EditorHeader';
 import {
     useSidebarWidth,
-    useLowPowerMode,
     useAutoSaveDelay,
     setAutoSaveDelay,
     MIN_AUTO_SAVE_DELAY,
@@ -38,7 +37,6 @@ export function useDocumentEditorState() {
     const { isOpen: sidebarOpen } = useSidebar();
     const { showToast: showAppToast } = useToasts();
     const sidebarWidth = useSidebarWidth();
-    const lowPowerMode = useLowPowerMode();
     const autoSaveDelay = useAutoSaveDelay();
 
     const titleInputRef = useRef<HTMLInputElement>(null);
@@ -358,7 +356,6 @@ export function useDocumentEditorState() {
         document,
         sidebarOpen,
         sidebarWidth,
-        lowPowerMode,
         titleInputRef,
         title,
         setTitle,

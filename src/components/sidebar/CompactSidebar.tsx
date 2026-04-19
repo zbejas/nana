@@ -17,7 +17,6 @@ interface CompactSidebarProps {
   onRequestSignOut: () => void;
   onNavigateSettings: () => void;
   user: RecordModel;
-  lowPowerMode?: boolean;
 }
 
 const viewItems = [
@@ -36,7 +35,6 @@ export function CompactSidebar({
   onRequestSignOut,
   onNavigateSettings,
   user,
-  lowPowerMode = false,
 }: CompactSidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();

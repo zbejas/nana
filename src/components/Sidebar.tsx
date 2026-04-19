@@ -43,7 +43,7 @@ import { CompactSidebar } from "./sidebar/CompactSidebar";
 import { useContextMenuState, useContextMenuHandlers } from "./file-folder-handling";
 import { PublicShareModal } from "./modals/PublicShareModal";
 import { usePublicShareModalState } from "./modals/usePublicShareModalState";
-import { useSidebarWidth, useLowPowerMode } from "../lib/settings";
+import { useSidebarWidth } from "../lib/settings";
 
 const noopLoadFolderDocuments = async (_folderId: string, _isTrash?: boolean) => {};
 
@@ -74,7 +74,6 @@ export function Sidebar() {
   const loadFolderDocuments = useAtomValue(loadFolderDocumentsAtom) ?? noopLoadFolderDocuments;
 
   const sidebarWidth = useSidebarWidth();
-  const lowPowerMode = useLowPowerMode();
 
   const { isOpen, toggle } = sidebarHook;
 
@@ -162,7 +161,6 @@ export function Sidebar() {
         onRequestSignOut={handleLogoutClick}
         onNavigateSettings={() => handleViewNavigation('/settings')}
         user={user}
-        lowPowerMode={lowPowerMode}
       />
 
 

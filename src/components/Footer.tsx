@@ -28,7 +28,6 @@ interface FooterProps {
   sidebarOpen: boolean;
   sidebarWidth?: number;
   isDesktop?: boolean;
-  lowPowerMode?: boolean;
   document?: Document;
   documentId?: string;
   words?: number;
@@ -49,7 +48,7 @@ interface FooterProps {
   readOnly?: boolean;
 }
 
-export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, lowPowerMode = false, document, documentId, words = 0, readingTime = 0, characters = 0, lastUpdated, newAttachments, removedAttachments, onDocumentRestored, onCreateNewFromVersion, onAttachmentsChange, onAttachmentRemove, onImmediateAttachmentDelete, onAutoSaveAttachments, onPublish, publishing = false, usePortal = false, readOnly = false }: FooterProps) {
+export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, document, documentId, words = 0, readingTime = 0, characters = 0, lastUpdated, newAttachments, removedAttachments, onDocumentRestored, onCreateNewFromVersion, onAttachmentsChange, onAttachmentRemove, onImmediateAttachmentDelete, onAutoSaveAttachments, onPublish, publishing = false, usePortal = false, readOnly = false }: FooterProps) {
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);

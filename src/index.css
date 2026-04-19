@@ -404,12 +404,6 @@ body.public-route-active::before {
   scrollbar-color: rgb(75 85 99) transparent;
 }
 
-/* Low power mode: disable background animation only */
-:root[data-low-power="true"] body::before {
-  animation: none;
-  display: none;
-}
-
 .w-md-editor-text::-webkit-scrollbar,
 .w-md-editor-preview::-webkit-scrollbar,
 .wmde-markdown::-webkit-scrollbar {
