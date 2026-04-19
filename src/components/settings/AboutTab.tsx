@@ -166,6 +166,10 @@ export function AboutTab() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-blue-500 mt-0.5">•</span>
+                  <span>Public sharing for documents and folders</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-500 mt-0.5">•</span>
                   <span>Multi-user support with user management</span>
                 </li>
                 <li className="flex items-start gap-2">
