@@ -131,17 +131,19 @@ body::before {
   background-size: 256px;
   background-repeat: repeat;
   transform: rotate(-12deg) scale(1.35);
-  animation: slide 31536000s linear infinite;
   pointer-events: none;
-  will-change: background-position;
-  /* Force hardware acceleration to prevent animation resets */
-  backface-visibility: hidden;
-  perspective: 1000px;
-  contain: layout style paint;
 }
 
 :root.light body::before {
   opacity: 0.03;
+}
+
+body.public-route-active {
+  background: #090909;
+}
+
+body.public-route-active::before {
+  opacity: 0;
 }
 
 @keyframes slide {
@@ -243,6 +245,64 @@ body::before {
   }
 }
 
+@keyframes public-content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes public-attachment-item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes public-attachment-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 1200px;
+  }
+}
+
+.public-content-enter {
+  animation: public-content-enter 220ms ease-out;
+  will-change: opacity, transform;
+}
+
+.public-attachment-item {
+  animation: public-attachment-item-enter 220ms ease-out backwards;
+}
+
+.public-attachment-panel-enter {
+  overflow: hidden;
+  animation: public-attachment-panel-enter 260ms ease-out forwards;
+  will-change: opacity, transform, max-height;
+}
+
+.public-chevron-rotate {
+  transition: transform 220ms ease-out;
+}
+
+.public-chevron-rotate.is-open {
+  transform: rotate(90deg);
+}
+
 .settings-tab-content-enter {
   animation: mobile-route-enter 180ms ease-out;
   will-change: opacity, transform;
@@ -271,6 +331,7 @@ body::before {
   ::before,
   ::after {
     animation: none !important;
+    transition: none !important;
   }
 }
 
@@ -326,6 +387,12 @@ body::before {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
   transition: scrollbar-color 0.3s;
+}
+
+.wmde-markdown table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
 }
 
 .w-md-editor-text:hover,

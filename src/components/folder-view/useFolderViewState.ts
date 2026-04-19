@@ -93,11 +93,25 @@ function findPathToFolder(nodes: FolderTreeNode[], folderId: string): FolderTree
     return [];
 }
 
+function collectPublicFolders(nodes: FolderTreeNode[]): FolderTreeNode[] {
+    const result: FolderTreeNode[] = [];
+    for (const node of nodes) {
+        if (node.is_public) {
+            result.push(node);
+        }
+        if (node.subfolders.length > 0) {
+            result.push(...collectPublicFolders(node.subfolders));
+        }
+    }
+    return result;
+}
+
 export function useFolderViewState() {
     const navigate = useNavigate();
     const location = useLocation();
     const { folderId: routeFolderId, trashFolderId } = useParams<{ folderId?: string; trashFolderId?: string }>();
     const isTrashMode = location.pathname.startsWith('/folders/trash');
+    const isSharedMode = location.pathname === '/folders/shared';
     const folders = useAtomValue(foldersAtom);
     const trashFolders = useAtomValue(trashFoldersAtom);
     const trashDocuments = useAtomValue(trashDocumentsAtom);
@@ -162,9 +176,11 @@ export function useFolderViewState() {
 
     const displayedFolders = isRouteFolderPending
         ? []
-        : currentFolder
-            ? currentFolder.subfolders
-            : activeTree;
+        : isSharedMode
+            ? collectPublicFolders(folders)
+            : currentFolder
+                ? currentFolder.subfolders
+                : activeTree;
 
     useEffect(() => {
         try {
@@ -177,6 +193,25 @@ export function useFolderViewState() {
     const displayedDocuments = useMemo<Document[]>(() => {
         if (isRouteFolderPending) {
             return [];
+        }
+
+        if (isSharedMode) {
+            const allPublicDocs: Document[] = [];
+            // Collect public root documents
+            for (const doc of rootDocuments) {
+                if (doc.is_public) {
+                    allPublicDocs.push(doc);
+                }
+            }
+            // Collect public documents from all loaded folders
+            for (const docs of folderDocuments.values()) {
+                for (const doc of docs) {
+                    if (doc.is_public) {
+                        allPublicDocs.push(doc);
+                    }
+                }
+            }
+            return allPublicDocs;
         }
 
         if (isTrashMode) {
@@ -205,6 +240,7 @@ export function useFolderViewState() {
         return folderDocuments.get(currentFolderId) || [];
     }, [
         isRouteFolderPending,
+        isSharedMode,
         isTrashMode,
         currentFolderId,
         rootDocuments,
@@ -1091,7 +1127,15 @@ export function useFolderViewState() {
         navigate('/folders', { preventScrollReset: true });
     };
 
-    const dragHandlers = isTrashMode
+    const openShared = () => {
+        navigate('/folders/shared', { preventScrollReset: true });
+    };
+
+    const exitShared = () => {
+        navigate('/folders', { preventScrollReset: true });
+    };
+
+    const dragHandlers = (isTrashMode || isSharedMode)
         ? {
             handleDragStart: (_event: React.DragEvent, _documentId: string, _folderId?: string) => undefined,
             handleDragEnd: () => undefined,
@@ -1117,6 +1161,7 @@ export function useFolderViewState() {
         viewMode,
         setViewMode,
         isTrashMode,
+        isSharedMode,
         currentFolderId,
         currentFolder,
         breadcrumbPath,
@@ -1148,6 +1193,8 @@ export function useFolderViewState() {
         handleBreadcrumbClick,
         openTrash,
         exitTrash,
+        openShared,
+        exitShared,
         handleDocumentClick,
         handleDocumentDoubleClick,
         handleSelectAll,

@@ -16,6 +16,8 @@ import { useAuth } from "./lib/auth";
 // Lazy load heavy routes for code splitting
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DocumentEditor = lazy(() => import("./components/DocumentEditor"));
+const PublicDocumentPage = lazy(() => import("./pages/PublicDocumentPage"));
+const PublicFolderPage = lazy(() => import("./pages/PublicFolderPage"));
 import { useSidebar, useDocumentEditor, useDocumentData } from "./state/hooks";
 import { initialLoadDoneAtom } from './state/atoms';
 import { useSidebarWidth, useLowPowerMode, setLastNonDocumentRoute } from "./lib/settings";
@@ -187,7 +189,16 @@ function AppContent() {
     '/confirm-email-change',
     '/onboarding',
     '/'
-  ].includes(location.pathname);
+  ].includes(location.pathname) || location.pathname.startsWith('/public/');
+  const isPublicRoute = location.pathname.startsWith('/public/');
+
+  useEffect(() => {
+    document.body.classList.toggle('public-route-active', isPublicRoute);
+
+    return () => {
+      document.body.classList.remove('public-route-active');
+    };
+  }, [isPublicRoute]);
 
   const shouldShowSidebar = user && !isStandalonePage;
   const isDocumentRoute = location.pathname.startsWith('/document/');
@@ -217,7 +228,7 @@ function AppContent() {
       {/* <NavigationProgress /> */}
       {shouldShowSidebar && <Sidebar />}
       <div 
-        className={`w-full min-w-0 flex-1 flex flex-col overflow-x-hidden ${isMobile && (isDocumentRoute || isChatRoute) ? 'overflow-y-hidden' : 'overflow-y-auto md:overflow-hidden'}`}
+        className={`w-full min-w-0 flex-1 flex flex-col overflow-x-hidden ${isMobile && (isDocumentRoute || isChatRoute) ? 'overflow-y-hidden' : isPublicRoute ? 'overflow-y-auto' : 'overflow-y-auto md:overflow-hidden'}`}
         style={{
           paddingLeft: shouldShowSidebar && shouldDockSidebar
             ? (sidebarOpen ? `${sidebarWidth}px` : `${COMPACT_SIDEBAR_WIDTH}px`)
@@ -229,7 +240,7 @@ function AppContent() {
       >
         <div
           key={isMobile ? getMobileRouteKey(location.pathname) : 'desktop-routes'}
-          className="h-full w-full min-w-0 flex flex-col"
+          className={`${isPublicRoute ? 'min-h-full' : 'h-full'} w-full min-w-0 flex flex-col`}
           style={{
             animation: isMobile && mobileAnimationName
               ? `${mobileAnimationName} 240ms ease-out`
@@ -249,9 +260,12 @@ function AppContent() {
               <Route path="/onboarding" element={<OnboardingPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />
+              <Route path="/public/document/:shareToken" element={<PublicDocumentPage />} />
+              <Route path="/public/folder/:shareToken" element={<PublicFolderPage />} />
               <Route path="/folders" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/folders/trash" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/folders/trash/:trashFolderId" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
+              <Route path="/folders/shared" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/folders/:folderId" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/timeline" element={<ProtectedRoute><TimelinePage /></ProtectedRoute>} />
               <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />

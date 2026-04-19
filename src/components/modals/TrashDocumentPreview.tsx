@@ -58,7 +58,7 @@ export function TrashDocumentPreview({
       />
 
       {/* Modal */}
-      <div className="relative bg-black/95 backdrop-blur-sm border border-white/10 rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+      <div className="relative bg-black/70 backdrop-blur-xl border border-white/15 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="p-6 border-b border-white/10 flex items-center justify-between">
           <div className="flex-1 min-w-0">

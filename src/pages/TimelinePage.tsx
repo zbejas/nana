@@ -23,6 +23,8 @@ import { useTimelinePageState } from '../components/timeline/useTimelinePageStat
 import { useContextMenuState } from '../components/file-folder-handling';
 import { DocumentContextMenu } from '../components/file-folder-handling/context-menu/DocumentContextMenu';
 import { ConfirmDialog } from '../components/modals/ConfirmDialog';
+import { PublicShareModal } from '../components/modals/PublicShareModal';
+import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
 
 export function TimelinePage() {
   const usePreviewCardVariant = true;
@@ -31,6 +33,7 @@ export function TimelinePage() {
   const startNewDocument = useSetAtom(startNewDocumentAtom);
   const folders = useAtomValue(foldersAtom);
   const { showToast } = useToasts();
+  const publicShareModal = usePublicShareModalState();
   const [deleteConfirmState, setDeleteConfirmState] = useState<{ id: string; title: string } | null>(null);
   const { contextMenu, isClosingContextMenu, setContextMenu, contextMenuRef, closeContextMenu } = useContextMenuState();
   const {
@@ -364,6 +367,12 @@ export function TimelinePage() {
             onAddFolder={() => undefined}
             onAddDocument={() => undefined}
             onRenameDocument={() => undefined}
+            onMakePublicDocument={() => {
+              if (contextMenu?.documentId) {
+                void publicShareModal.openDocument(contextMenu.documentId);
+                closeContextMenu();
+              }
+            }}
             onDeleteDocument={handleDeleteDocument}
             onRestoreDocument={() => undefined}
             onPermanentlyDeleteDocument={() => undefined}
@@ -386,6 +395,14 @@ export function TimelinePage() {
         saveLabel=""
         discardLabel="Delete"
         cancelLabel="Cancel"
+      />
+
+      <PublicShareModal
+        target={publicShareModal.target}
+        isOpen={publicShareModal.isOpen}
+        isSaving={publicShareModal.isSaving}
+        onClose={publicShareModal.close}
+        onSave={publicShareModal.save}
       />
     </div>
   );

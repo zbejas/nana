@@ -1,4 +1,4 @@
-import { FolderIcon, ChevronRightIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
+import { FolderIcon, ChevronRightIcon, EllipsisVerticalIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
 import { useState, useRef, useEffect } from 'react';
 import type { FolderTreeNode } from "../../lib/folders";
 import type { Document } from "../../lib/documents";
@@ -228,6 +228,9 @@ export function FolderTree({
                   </span>
                   <FolderIcon className={`w-4 h-4 flex-shrink-0 ${isExpanded ? 'text-yellow-400' : 'text-yellow-500/70'}`} />
                   <span className="text-[13px] text-gray-300 truncate flex-1 leading-tight">{folder.name}</span>
+                  {folder.is_public && (
+                    <GlobeAltIcon className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400/70" title="Public" />
+                  )}
                 </button>
 
                 {/* Drop indicator line - below */}

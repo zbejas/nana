@@ -7,6 +7,9 @@ export interface Document extends RecordModel {
     attachments: string[]; // File names
     tags: string[];
     published: boolean;
+    is_public: boolean;
+    public_share_token?: string;
+    public_expires_at?: string;
     author: string; // User ID
     folder?: string; // Folder ID
     word_count: number;
@@ -38,6 +41,9 @@ export interface UpdateDocumentData {
     content?: string;
     tags?: string[];
     published?: boolean;
+    is_public?: boolean;
+    public_share_token?: string | null;
+    public_expires_at?: string | null;
     folder?: string;
     attachments?: File[]; // New files to add
     removeAttachments?: string[]; // File names to remove

@@ -116,6 +116,18 @@ export async function updateDocument(
             formData.append('published', String(data.published));
         }
 
+        if (data.is_public !== undefined) {
+            formData.append('is_public', String(data.is_public));
+        }
+
+        if (data.public_share_token !== undefined) {
+            formData.append('public_share_token', data.public_share_token || '');
+        }
+
+        if (data.public_expires_at !== undefined) {
+            formData.append('public_expires_at', data.public_expires_at || '');
+        }
+
         // Handle folder field - relation fields don't accept empty strings
         if (data.folder !== undefined) {
             formData.append('folder', data.folder || '');

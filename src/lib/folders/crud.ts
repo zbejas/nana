@@ -43,6 +43,9 @@ export async function updateFolder(id: string, data: UpdateFolderData): Promise<
     if (data.name !== undefined) updates.name = data.name;
     if (data.parent !== undefined) updates.parent = data.parent;
     if (data.color !== undefined) updates.color = data.color;
+    if (data.is_public !== undefined) updates.is_public = data.is_public;
+    if (data.public_share_token !== undefined) updates.public_share_token = data.public_share_token || '';
+    if (data.public_expires_at !== undefined) updates.public_expires_at = data.public_expires_at || '';
 
     return await pb.collection('folders').update<Folder>(id, updates);
 }

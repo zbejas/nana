@@ -27,6 +27,15 @@ export const sanitizeSchema: SanitizeSchema = {
             ...(defaultSchema.attributes?.span || []),
             ['className', /^(hljs|token|language-)/],
         ],
+        // Allow className on div/p for GitHub-style alerts (> [!NOTE], etc.)
+        div: [
+            ...(defaultSchema.attributes?.div || []),
+            ['className', /^markdown-alert/],
+        ],
+        p: [
+            ...(defaultSchema.attributes?.p || []),
+            ['className', /^markdown-alert/],
+        ],
     },
 };
 
