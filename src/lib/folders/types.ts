@@ -6,6 +6,9 @@ export interface Folder extends RecordModel {
     author: string; // User ID
     color?: string;
     published: boolean;
+    is_public: boolean;
+    public_share_token?: string;
+    public_expires_at?: string;
     created: string;
     updated: string;
 }
@@ -24,4 +27,7 @@ export interface UpdateFolderData {
     name?: string;
     parent?: string;
     color?: string;
+    is_public?: boolean;
+    public_share_token?: string | null;
+    public_expires_at?: string | null;
 }

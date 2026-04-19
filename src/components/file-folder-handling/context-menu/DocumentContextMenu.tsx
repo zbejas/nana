@@ -12,6 +12,7 @@ interface DocumentContextMenuProps {
   onAddFolder: () => void;
   onAddDocument: () => void;
   onRenameDocument: () => void;
+  onMakePublicDocument: () => void;
   onDeleteDocument: () => void;
   onRestoreDocument: () => void;
   onPermanentlyDeleteDocument: () => void;
@@ -27,6 +28,7 @@ export function DocumentContextMenu({
   onAddFolder,
   onAddDocument,
   onRenameDocument,
+  onMakePublicDocument,
   onDeleteDocument,
   onRestoreDocument,
   onPermanentlyDeleteDocument,
@@ -230,6 +232,15 @@ export function DocumentContextMenu({
                   </>
                 )}
                 <button
+                  onClick={() => { onMakePublicDocument(); onClose(); }}
+                  className="w-full px-6 py-4 text-left text-cyan-200 active:bg-cyan-500/20 transition-colors flex items-center gap-3 border-t border-white/10"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" />
+                  </svg>
+                  <span className="text-base">Share Options</span>
+                </button>
+                <button
                   onClick={() => setShowExportSubmenu(true)}
                   className="w-full px-6 py-4 text-left text-blue-300 active:bg-blue-500/20 transition-colors flex items-center gap-3 border-t border-white/10"
                 >
@@ -326,6 +337,15 @@ export function DocumentContextMenu({
                 </button>
               </>
             )}
+            <button
+              onClick={onMakePublicDocument}
+              className="w-full px-4 py-3 text-left text-cyan-200 hover:bg-cyan-500/20 active:bg-cyan-500/30 hover:text-white transition-colors flex items-center gap-2 border-t border-white/10"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" />
+              </svg>
+              Share Options
+            </button>
             <div 
               className="relative border-t border-white/10"
               onMouseEnter={() => setShowExportSubmenu(true)}

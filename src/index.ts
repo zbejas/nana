@@ -22,7 +22,7 @@ const distDir = resolve(import.meta.dir, "../dist");
 const iconSvg = resolve(import.meta.dir, "assets/nana.svg");
 const icon192 = resolve(import.meta.dir, "assets/nana-192.png");
 const icon512 = resolve(import.meta.dir, "assets/nana-512.png");
-const pdfWorkerScript = resolve(import.meta.dir, "../node_modules/pdfjs-dist/build/pdf.worker.min.js");
+const pdfWorkerScript = resolve(import.meta.dir, "../node_modules/pdfjs-dist/build/pdf.worker.min.mjs");
 
 const manifest = {
   name: "Nana",
@@ -144,7 +144,7 @@ const server = serve({
         })
       ),
 
-    "/pdfjs/pdf.worker.min.js": (): Response => {
+    "/pdfjs/pdf.worker.min.mjs": (): Response => {
       if (!existsSync(pdfWorkerScript)) {
         return withSecurityHeaders(new Response("PDF worker not available", { status: 404 }));
       }

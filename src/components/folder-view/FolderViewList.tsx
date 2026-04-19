@@ -1,4 +1,4 @@
-import { DocumentTextIcon, EllipsisVerticalIcon, FolderIcon } from '@heroicons/react/24/outline';
+import { DocumentTextIcon, EllipsisVerticalIcon, FolderIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
 import type React from 'react';
 import type { FolderTreeNode } from '../../lib/folders';
 import type { Document } from '../../lib/documents';
@@ -186,6 +186,9 @@ export function FolderViewList({
             >
               <FolderIcon className="w-5 h-5 text-blue-300" />
               <span className="text-gray-100 font-medium truncate">{folder.name}</span>
+              {folder.is_public && (
+                <GlobeAltIcon className="w-4 h-4 flex-shrink-0 text-emerald-400/70" title="Public" />
+              )}
               <span className="ml-auto text-xs text-gray-500">{isSelected ? 'Selected' : 'Folder'}</span>
             </button>
           )}
@@ -266,6 +269,9 @@ export function FolderViewList({
             >
               <DocumentTextIcon className="w-5 h-5 text-gray-400" />
               <span className="text-gray-200 truncate flex-1">{document.title || 'Untitled'}</span>
+              {document.is_public && (
+                <GlobeAltIcon className="w-4 h-4 flex-shrink-0 text-emerald-400/70" title="Public" />
+              )}
               {document.tags.length > 0 && (
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {document.tags.slice(0, 2).map((tag) => (

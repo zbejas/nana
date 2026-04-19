@@ -16,6 +16,7 @@ type FolderViewHeaderProps = {
   viewMode: ViewMode;
   currentFolderId: string | null;
   isTrashMode: boolean;
+  isSharedMode: boolean;
   breadcrumbPath: FolderTreeNode[];
   dropZone: string | null;
   isDesktop: boolean;
@@ -33,6 +34,7 @@ export function FolderViewHeader({
   viewMode,
   currentFolderId,
   isTrashMode,
+  isSharedMode,
   breadcrumbPath,
   dropZone,
   isDesktop,
@@ -134,9 +136,9 @@ export function FolderViewHeader({
 
         <button
           onClick={() => onBreadcrumbClick(null)}
-          onDragOver={(event) => !isTrashMode && onDragOver(event, undefined, 'into')}
+          onDragOver={(event) => !isTrashMode && !isSharedMode && onDragOver(event, undefined, 'into')}
           onDragLeave={onDragLeave}
-          onDrop={(event) => !isTrashMode && void onDrop(event, undefined)}
+          onDrop={(event) => !isTrashMode && !isSharedMode && void onDrop(event, undefined)}
           className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border transition-colors ${
             dropZone === 'root'
               ? 'border-blue-400 bg-blue-500/20 text-blue-100'
@@ -150,9 +152,9 @@ export function FolderViewHeader({
           <button
             key={folder.id}
             onClick={() => onBreadcrumbClick(folder.id)}
-            onDragOver={(event) => !isTrashMode && onDragOver(event, folder.id, 'into')}
+            onDragOver={(event) => !isTrashMode && !isSharedMode && onDragOver(event, folder.id, 'into')}
             onDragLeave={onDragLeave}
-            onDrop={(event) => !isTrashMode && void onDrop(event, folder.id, folder.parent || undefined)}
+            onDrop={(event) => !isTrashMode && !isSharedMode && void onDrop(event, folder.id, folder.parent || undefined)}
             className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border whitespace-nowrap transition-colors ${
               dropZone === folder.id
                 ? 'border-blue-400 bg-blue-500/20 text-blue-100'

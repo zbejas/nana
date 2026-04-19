@@ -64,7 +64,7 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={messageId}
-        className="relative bg-black/95 backdrop-blur-sm border border-white/10 rounded-lg shadow-2xl max-w-md w-full p-6"
+        className="relative bg-black/70 backdrop-blur-xl border border-white/15 rounded-2xl shadow-2xl max-w-md w-full p-6"
       >
         <h3 id={titleId} className="text-lg font-semibold text-white mb-2">{title}</h3>
         <p id={messageId} className="text-gray-400 mb-6">{message}</p>

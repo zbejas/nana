@@ -1,13 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Viewer, Worker } from '@react-pdf-viewer/core';
-import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
-import '@react-pdf-viewer/core/lib/styles/index.css';
-import '@react-pdf-viewer/default-layout/lib/styles/index.css';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
 import { XMarkIcon, PlusIcon, MinusIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { isPdfFile, isImageFile, isTextFile } from '../../lib/documents';
 
-const PDFJS_WORKER_URL = '/pdfjs/pdf.worker.min.js';
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.mjs';
 
 export interface AttachmentViewerModalProps {
   isOpen: boolean;
@@ -16,15 +15,91 @@ export interface AttachmentViewerModalProps {
   onClose: () => void;
 }
 
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 3;
+const SCALE_STEP = 0.25;
+
 function PdfContent({ url }: { url: string }) {
-  const defaultLayoutPluginInstance = defaultLayoutPlugin();
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [baseWidth, setBaseWidth] = useState<number>(800);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width) setBaseWidth(Math.min(width - 32, 1200));
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -SCALE_STEP : SCALE_STEP;
+      setScale((s) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s + delta)));
+    };
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => container.removeEventListener('wheel', onWheel);
+  }, []);
 
   return (
-    <Worker workerUrl={PDFJS_WORKER_URL}>
-      <div className="h-full [&_.rpv-core__viewer]:h-full [&_.rpv-default-layout__container]:h-full [&_.rpv-default-layout__body]:h-full [&_.rpv-default-layout__container]:border-none">
-        <Viewer fileUrl={url} plugins={[defaultLayoutPluginInstance]} theme="dark" />
+    <div ref={containerRef} className="h-full overflow-auto bg-[#1a1a1a] relative">
+      <Document
+        file={url}
+        onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+        loading={<div className="flex items-center justify-center h-full text-gray-400 text-sm">Loading PDF…</div>}
+        error={<div className="flex items-center justify-center h-full text-red-400 text-sm">Failed to load PDF.</div>}
+      >
+        {numPages && Array.from({ length: numPages }, (_, i) => (
+          <div key={i + 1} className="flex justify-center py-2">
+            <Page
+              pageNumber={i + 1}
+              width={baseWidth * scale}
+              renderAnnotationLayer
+              renderTextLayer
+            />
+          </div>
+        ))}
+      </Document>
+
+      {/* Zoom controls */}
+      <div
+        className="sticky bottom-4 left-0 right-0 flex justify-center pointer-events-none z-10"
+      >
+        <div className="flex items-center gap-1 bg-black/70 backdrop-blur-sm border border-white/15 rounded-lg px-2 py-1.5 shadow-lg pointer-events-auto">
+          <button
+            onClick={() => setScale((s) => Math.max(MIN_SCALE, s - SCALE_STEP))}
+            className="p-1 text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors"
+            title="Zoom out"
+          >
+            <MinusIcon className="w-4 h-4" />
+          </button>
+          <span className="text-xs text-gray-300 w-12 text-center tabular-nums">{Math.round(scale * 100)}%</span>
+          <button
+            onClick={() => setScale((s) => Math.min(MAX_SCALE, s + SCALE_STEP))}
+            className="p-1 text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors"
+            title="Zoom in"
+          >
+            <PlusIcon className="w-4 h-4" />
+          </button>
+          <div className="w-px h-4 bg-white/15 mx-0.5" />
+          <button
+            onClick={() => setScale(1)}
+            className="p-1 text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors"
+            title="Reset zoom"
+          >
+            <ArrowsPointingOutIcon className="w-4 h-4" />
+          </button>
+        </div>
       </div>
-    </Worker>
+    </div>
   );
 }
 
@@ -65,7 +140,7 @@ function TextContent({ url }: { url: string }) {
   }
 
   return (
-    <div className="h-full overflow-auto p-4">
+    <div className="h-full overflow-auto px-4 py-4 md:px-6 md:py-5">
       <pre className="text-sm text-gray-200 font-mono whitespace-pre-wrap break-words leading-relaxed">{text}</pre>
     </div>
   );
@@ -160,7 +235,7 @@ export default function AttachmentViewerModal({
   const renderContent = () => {
     if (isPdfFile(filename)) {
       return (
-        <div className="flex-1" style={{ height: '100%' }}>
+        <div className="flex-1 min-h-0" style={{ height: '100%' }}>
           <PdfContent url={url} />
         </div>
       );
@@ -192,7 +267,10 @@ export default function AttachmentViewerModal({
           </div>
 
           {/* Zoom controls */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/70 backdrop-blur-sm border border-white/15 rounded-lg px-2 py-1.5 shadow-lg">
+          <div
+            className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/70 backdrop-blur-sm border border-white/15 rounded-lg px-2 py-1.5 shadow-lg"
+            style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+          >
             <button
               onClick={(e) => { e.stopPropagation(); setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP)); }}
               className="p-1 text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors"
@@ -223,7 +301,7 @@ export default function AttachmentViewerModal({
 
     if (isTextFile(filename)) {
       return (
-        <div className="flex-1" style={{ height: '100%' }}>
+        <div className="flex-1 min-h-0" style={{ height: '100%' }}>
           <TextContent url={url} />
         </div>
       );
@@ -237,7 +315,7 @@ export default function AttachmentViewerModal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[10002] flex flex-col">
+    <div className="fixed inset-0 z-[10002] flex items-stretch md:items-center md:justify-center md:p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-md"
@@ -249,24 +327,24 @@ export default function AttachmentViewerModal({
         role="dialog"
         aria-modal="true"
         aria-label={`Viewing ${filename}`}
-        className="relative flex flex-col w-full h-full max-w-6xl mx-2 md:mx-auto my-4 md:my-8 bg-black/95 backdrop-blur-sm border border-white/10 rounded-lg shadow-2xl overflow-hidden"
+        className="relative flex h-full w-full flex-col overflow-hidden bg-black/95 backdrop-blur-sm md:max-h-[90vh] md:max-w-6xl md:rounded-2xl md:border md:border-white/10 md:shadow-2xl"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
-          <h3 className="text-sm font-medium text-gray-200 truncate mr-4">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] md:px-4 md:py-3 flex-shrink-0">
+          <h3 className="text-sm font-medium text-gray-200 truncate mr-4 md:text-sm">
             {filename}
           </h3>
           <button
             onClick={onClose}
             aria-label="Close viewer"
-            className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10 flex-shrink-0"
+            className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10 flex-shrink-0"
           >
             <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 bg-black/40">
           {renderContent()}
         </div>
       </div>

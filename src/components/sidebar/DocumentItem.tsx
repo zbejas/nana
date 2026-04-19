@@ -1,4 +1,4 @@
-import { DocumentTextIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
+import { DocumentTextIcon, EllipsisVerticalIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
 import type { Document } from "../../lib/documents";
 import type { OnDragStartDocument, OnDragEnd } from '../file-folder-handling';
 
@@ -60,6 +60,9 @@ export function DocumentItem({
               <span className="text-[10px] text-gray-500">+{document.tags.length - 2}</span>
             )}
           </div>
+        )}
+        {document.is_public && (
+          <GlobeAltIcon className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400/70" title="Public" />
         )}
       </button>
       <button

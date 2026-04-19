@@ -14,12 +14,6 @@ export type TimelineGroup = {
 
 export type TimelineViewMode = 'timeline' | 'calendar';
 
-type TimelineStats = {
-    loadedDocuments: number;
-    totalWords: number;
-    totalReadingTime: number;
-};
-
 type TimelineCacheState = {
     documents: Document[];
     page: number;
@@ -375,23 +369,6 @@ export function useTimelinePageState() {
         return Array.from(grouped.entries()).map(([label, items]) => ({ label, items }));
     }, [filteredDocuments]);
 
-    const stats = useMemo<TimelineStats>(() => {
-        return filteredDocuments.reduce<TimelineStats>((accumulator, document) => {
-            const wordCount = getDocumentWordCount(document);
-            const readingTime = getDocumentReadingTime(document);
-
-            return {
-                loadedDocuments: accumulator.loadedDocuments + 1,
-                totalWords: accumulator.totalWords + wordCount,
-                totalReadingTime: accumulator.totalReadingTime + readingTime,
-            };
-        }, {
-            loadedDocuments: 0,
-            totalWords: 0,
-            totalReadingTime: 0,
-        });
-    }, [filteredDocuments]);
-
     const toggleCalendar = () => {
         setIsCalendarOpen((prev) => !prev);
         setCalendarError(null);
@@ -490,7 +467,6 @@ export function useTimelinePageState() {
 
     return {
         groups,
-        stats,
         searchQuery,
         setSearchQuery,
         viewMode,

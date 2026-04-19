@@ -11,7 +11,6 @@ const MAX_SIDEBAR_WIDTH = 600;
 const DEFAULT_SIDEBAR_WIDTH = 320;
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'nana-sidebar-width';
-const LOW_POWER_STORAGE_KEY = 'nana-low-power-mode';
 const AUTO_SAVE_DELAY_STORAGE_KEY = 'nana-auto-save-delay';
 const DEFAULT_HOMEPAGE_STORAGE_KEY = 'nana-default-homepage';
 const LAST_NON_DOCUMENT_ROUTE_STORAGE_KEY = 'nana-last-non-document-route';
@@ -52,53 +51,6 @@ export function setSidebarWidth(width: number): void {
 
 // Export constraints for use in components
 export { MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH };
-
-// ===== LOW POWER MODE =====
-
-export function getLowPowerMode(): boolean {
-    try {
-        const stored = localStorage.getItem(LOW_POWER_STORAGE_KEY);
-        if (stored !== null) {
-            return stored === 'true';
-        }
-        // Default to enabled on mobile if no preference stored
-        if (typeof window !== 'undefined' && window.innerWidth < 768) {
-            return true;
-        }
-    } catch (error) {
-        log.error('Failed to read low power mode from localStorage', error);
-    }
-    return false;
-}
-
-export function setLowPowerMode(enabled: boolean): void {
-    try {
-        localStorage.setItem(LOW_POWER_STORAGE_KEY, String(enabled));
-        window.dispatchEvent(new CustomEvent('low-power-mode-change', { detail: enabled }));
-    } catch (error) {
-        log.error('Failed to save low power mode to localStorage', error);
-    }
-}
-
-export function useLowPowerMode() {
-    const [enabled, setEnabled] = React.useState(() => getLowPowerMode());
-
-    React.useEffect(() => {
-        const handleChange = (event: Event) => {
-            const customEvent = event as CustomEvent<boolean>;
-            setEnabled(typeof customEvent.detail === 'boolean' ? customEvent.detail : getLowPowerMode());
-        };
-
-        window.addEventListener('low-power-mode-change', handleChange);
-        return () => window.removeEventListener('low-power-mode-change', handleChange);
-    }, []);
-
-    React.useEffect(() => {
-        document.documentElement.setAttribute('data-low-power', enabled ? 'true' : 'false');
-    }, [enabled]);
-
-    return enabled;
-}
 
 // Hook to use sidebar width with live updates
 export function useSidebarWidth() {

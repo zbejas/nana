@@ -2,7 +2,6 @@ import { Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import logo from "../assets/nana.svg";
 import { AuthForm } from "../components/AuthForm";
-import { AuthFooter } from "../components/AuthFooter";
 import { useAuth } from "../lib/auth";
 import { getDefaultHomepageRoute } from "../lib/settings";
 import { createLogger } from "../lib/logger";
@@ -62,7 +61,6 @@ export function SignInPage() {
         </p>
         <AuthForm />
       </div>
-      <AuthFooter />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { DocumentTextIcon, EllipsisVerticalIcon, FolderIcon } from '@heroicons/react/24/outline';
+import { DocumentTextIcon, EllipsisVerticalIcon, FolderIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
 import type React from 'react';
 import type { FolderTreeNode } from '../../lib/folders';
 import type { Document } from '../../lib/documents';
@@ -184,7 +184,12 @@ export function FolderViewGrid({
                 }`}
               >
                 <FolderIcon className="w-10 h-10 text-blue-300 mb-2" />
-                <div className="text-sm text-gray-100 font-medium truncate">{folder.name}</div>
+                <div className="text-sm text-gray-100 font-medium truncate flex items-center gap-1.5">
+                  {folder.name}
+                  {folder.is_public && (
+                    <GlobeAltIcon className="w-4 h-4 flex-shrink-0 text-emerald-400/70" title="Public" />
+                  )}
+                </div>
               </button>
             )}
 
@@ -263,7 +268,7 @@ export function FolderViewGrid({
                     : 'border-white/10 bg-white/5 hover:bg-white/10'
                 }`}
               >
-                {document.tags.length > 0 && (
+                {(document.tags.length > 0) && (
                   <div className="absolute bottom-2 right-2 flex items-center justify-end gap-1">
                     {document.tags.slice(0, 2).map((tag) => (
                       <span
@@ -279,7 +284,12 @@ export function FolderViewGrid({
                   </div>
                 )}
                 <DocumentTextIcon className="w-10 h-10 text-gray-400 mb-2" />
-                <div className="text-sm text-gray-200 truncate">{document.title || 'Untitled'}</div>
+                <div className="text-sm text-gray-200 truncate flex items-center gap-1.5">
+                  {document.title || 'Untitled'}
+                  {document.is_public && (
+                    <GlobeAltIcon className="w-4 h-4 flex-shrink-0 text-emerald-400/70" title="Public" />
+                  )}
+                </div>
               </button>
             )}
 

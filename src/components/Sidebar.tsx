@@ -41,7 +41,9 @@ import { useDialogState } from "./sidebar/useDialogState";
 import { useMobileState } from "./sidebar/useMobileState";
 import { CompactSidebar } from "./sidebar/CompactSidebar";
 import { useContextMenuState, useContextMenuHandlers } from "./file-folder-handling";
-import { useSidebarWidth, useLowPowerMode } from "../lib/settings";
+import { PublicShareModal } from "./modals/PublicShareModal";
+import { usePublicShareModalState } from "./modals/usePublicShareModalState";
+import { useSidebarWidth } from "../lib/settings";
 
 const noopLoadFolderDocuments = async (_folderId: string, _isTrash?: boolean) => {};
 
@@ -72,7 +74,6 @@ export function Sidebar() {
   const loadFolderDocuments = useAtomValue(loadFolderDocumentsAtom) ?? noopLoadFolderDocuments;
 
   const sidebarWidth = useSidebarWidth();
-  const lowPowerMode = useLowPowerMode();
 
   const { isOpen, toggle } = sidebarHook;
 
@@ -110,6 +111,7 @@ export function Sidebar() {
     showDeleteDialog, deleteDialogConfig, openDeleteDialog, closeDeleteDialog,
     showLogoutDialog, setShowLogoutDialog 
   } = useDialogState();
+  const publicShareModal = usePublicShareModalState();
 
   // Context menu handlers
   const contextMenuHandlers = useContextMenuHandlers({
@@ -159,7 +161,6 @@ export function Sidebar() {
         onRequestSignOut={handleLogoutClick}
         onNavigateSettings={() => handleViewNavigation('/settings')}
         user={user}
-        lowPowerMode={lowPowerMode}
       />
 
 
@@ -321,6 +322,12 @@ export function Sidebar() {
           onAddFolder={contextMenuHandlers.handleAddFolder}
           onAddDocument={contextMenuHandlers.handleAddDocument}
           onRenameDocument={contextMenuHandlers.handleRenameDocument}
+          onMakePublicDocument={() => {
+            if (contextMenu?.documentId) {
+              void publicShareModal.openDocument(contextMenu.documentId);
+              closeContextMenu();
+            }
+          }}
           onDeleteDocument={contextMenuHandlers.handleDeleteDocument}
           onRestoreDocument={contextMenuHandlers.handleRestoreDocument}
           onPermanentlyDeleteDocument={contextMenuHandlers.handlePermanentlyDeleteDocument}
@@ -343,6 +350,12 @@ export function Sidebar() {
           onAddFolder={contextMenuHandlers.handleAddFolder}
           onAddDocument={contextMenuHandlers.handleAddDocument}
           onRenameFolder={contextMenuHandlers.handleRenameFolder}
+          onMakePublicFolder={() => {
+            if (contextMenu?.folderId) {
+              void publicShareModal.openFolder(contextMenu.folderId);
+              closeContextMenu();
+            }
+          }}
           onDeleteFolder={contextMenuHandlers.handleDeleteFolder}
           onRestoreFolder={contextMenuHandlers.handleRestoreFolder}
           onPermanentlyDeleteFolder={contextMenuHandlers.handlePermanentlyDeleteFolder}
@@ -378,6 +391,14 @@ export function Sidebar() {
         showLogoutDialog={showLogoutDialog}
         onLogoutConfirm={handleLogoutConfirm}
         onLogoutCancel={() => setShowLogoutDialog(false)}
+      />
+
+      <PublicShareModal
+        target={publicShareModal.target}
+        isOpen={publicShareModal.isOpen}
+        isSaving={publicShareModal.isSaving}
+        onClose={publicShareModal.close}
+        onSave={publicShareModal.save}
       />
     </>
   );

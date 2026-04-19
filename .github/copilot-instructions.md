@@ -64,7 +64,7 @@ Jotai atoms in `src/state/atoms.ts`. Critical rules:
 - Write-only action atoms: `resetEditorAtom`, `startNewDocumentAtom`, `selectDocumentAtom`, `saveDocumentAtom`.
 - Folder documents lazy-loaded on expand via `useFolderLazyLoading()`.
 - Realtime updates via PocketBase SSE in `useRealtimeSubscriptions()` (called once per session).
-- Client settings (sidebar width, auto-save delay, homepage, low-power mode) are in `src/lib/settings.ts` — stored in localStorage, not atoms.
+- Client settings (sidebar width, auto-save delay, homepage) are in `src/lib/settings.ts` — stored in localStorage, not atoms.
 
 ## PocketBase Collections
 

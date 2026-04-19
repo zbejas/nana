@@ -6,13 +6,17 @@ import { FolderViewList } from '../components/folder-view/FolderViewList';
 import { FolderViewGrid } from '../components/folder-view/FolderViewGrid';
 import { useFolderViewState } from '../components/folder-view/useFolderViewState';
 import { ConfirmDialog } from '../components/modals/ConfirmDialog';
-import { TrashIcon } from '@heroicons/react/24/outline';
+import { PublicShareModal } from '../components/modals/PublicShareModal';
+import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
+import { TrashIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
 
 export function FolderViewPage() {
+  const publicShareModal = usePublicShareModalState();
   const {
     viewMode,
     setViewMode,
     isTrashMode,
+    isSharedMode,
     currentFolderId,
     currentFolder,
     breadcrumbPath,
@@ -50,6 +54,8 @@ export function FolderViewPage() {
     handleBreadcrumbClick,
     openTrash,
     exitTrash,
+    openShared,
+    exitShared,
     handleDocumentClick,
     handleDocumentDoubleClick,
     handleSelectAll,
@@ -96,6 +102,7 @@ export function FolderViewPage() {
           viewMode={viewMode}
           currentFolderId={currentFolderId}
           isTrashMode={isTrashMode}
+          isSharedMode={isSharedMode}
           breadcrumbPath={breadcrumbPath}
           dropZone={dropZone}
           isDesktop={isDesktop}
@@ -123,14 +130,42 @@ export function FolderViewPage() {
           <div className="mb-4 flex items-center gap-2">
             <button
               onClick={isTrashMode ? exitTrash : openTrash}
-              className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+              disabled={isSharedMode}
+              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold shadow-sm transition-colors ${
                 isTrashMode
-                  ? 'border-blue-500/30 bg-blue-500/20 text-blue-100 hover:bg-blue-500/30'
-                  : 'border-white/10 bg-white/5 text-gray-200 hover:bg-white/10'
-              }`}
+                  ? 'border-amber-400/50 bg-amber-400/20 text-amber-50 hover:bg-amber-400/30'
+                  : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
+              } ${isSharedMode ? 'opacity-50 cursor-not-allowed' : ''}`}
               aria-pressed={isTrashMode}
+              aria-label={isTrashMode ? 'Return to folders from trash' : 'Open trash'}
+              title={isTrashMode ? 'Return to folders' : 'Open trash'}
             >
-              <TrashIcon className="w-3.5 h-3.5" /> Trash
+              <span className={`inline-flex h-5 w-5 items-center justify-center rounded-md ${
+                isTrashMode ? 'bg-amber-400/25' : 'bg-amber-400/15'
+              }`}>
+                <TrashIcon className="w-3.5 h-3.5" />
+              </span>
+              Trash
+            </button>
+
+            <button
+              onClick={isSharedMode ? exitShared : openShared}
+              disabled={isTrashMode}
+              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold shadow-sm transition-colors ${
+                isSharedMode
+                  ? 'border-emerald-400/50 bg-emerald-400/20 text-emerald-50 hover:bg-emerald-400/30'
+                  : 'border-emerald-400/35 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20'
+              } ${isTrashMode ? 'opacity-50 cursor-not-allowed' : ''}`}
+              aria-pressed={isSharedMode}
+              aria-label={isSharedMode ? 'Return to folders from public' : 'Show public items'}
+              title={isSharedMode ? 'Return to folders' : 'Show public items'}
+            >
+              <span className={`inline-flex h-5 w-5 items-center justify-center rounded-md ${
+                isSharedMode ? 'bg-emerald-400/25' : 'bg-emerald-400/15'
+              }`}>
+                <GlobeAltIcon className="w-3.5 h-3.5" />
+              </span>
+              Public
             </button>
 
             <div className="ml-auto flex items-center gap-2">
@@ -138,7 +173,7 @@ export function FolderViewPage() {
                 onClick={() => {
                   void handleAddFolder();
                 }}
-                disabled={isTrashMode}
+                disabled={isTrashMode || isSharedMode}
                 className="inline-flex h-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-gray-200 hover:bg-white/10 transition-colors"
               >
                 New folder
@@ -147,7 +182,7 @@ export function FolderViewPage() {
                 onClick={() => {
                   void handleAddDocument();
                 }}
-                disabled={isTrashMode}
+                disabled={isTrashMode || isSharedMode}
                 className="inline-flex h-8 items-center justify-center rounded-lg border border-blue-500/30 bg-blue-500/20 px-3 py-2 text-xs font-semibold text-blue-100 hover:bg-blue-500/30 transition-colors"
               >
                 New document
@@ -159,7 +194,7 @@ export function FolderViewPage() {
             {isLoadingCurrentFolder ? (
               <div className="h-full flex items-center justify-center text-sm text-gray-400">Loading folder...</div>
             ) : !hasItems ? (
-              <div className="h-full flex items-center justify-center text-sm text-gray-500">No folders or documents here.</div>
+              <div className="h-full flex items-center justify-center text-sm text-gray-500">{isSharedMode ? 'No public folders or documents.' : 'No folders or documents here.'}</div>
             ) : viewMode === 'list' ? (
               <FolderViewList
                 displayedFolders={displayedFolders}
@@ -298,6 +333,12 @@ export function FolderViewPage() {
             onAddFolder={handleAddFolder}
             onAddDocument={handleAddDocument}
             onRenameDocument={handleRenameDocument}
+            onMakePublicDocument={() => {
+              if (contextMenu?.documentId) {
+                void publicShareModal.openDocument(contextMenu.documentId);
+                closeContextMenu();
+              }
+            }}
             onDeleteDocument={handleDeleteDocument}
             onRestoreDocument={handleRestoreDocument}
             onPermanentlyDeleteDocument={handlePermanentlyDeleteDocument}
@@ -322,6 +363,12 @@ export function FolderViewPage() {
             onAddFolder={handleAddFolder}
             onAddDocument={handleAddDocument}
             onRenameFolder={handleRenameFolder}
+            onMakePublicFolder={() => {
+              if (contextMenu?.folderId) {
+                void publicShareModal.openFolder(contextMenu.folderId);
+                closeContextMenu();
+              }
+            }}
             onDeleteFolder={handleDeleteFolder}
             onRestoreFolder={handleRestoreFolder}
             onPermanentlyDeleteFolder={handlePermanentlyDeleteFolder}
@@ -344,6 +391,14 @@ export function FolderViewPage() {
         saveLabel=""
         discardLabel={deleteConfirmState?.isPermanent ? 'Delete Forever' : 'Delete'}
         cancelLabel="Cancel"
+      />
+
+      <PublicShareModal
+        target={publicShareModal.target}
+        isOpen={publicShareModal.isOpen}
+        isSaving={publicShareModal.isSaving}
+        onClose={publicShareModal.close}
+        onSave={publicShareModal.save}
       />
     </div>
   );
