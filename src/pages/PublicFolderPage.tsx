@@ -2,6 +2,7 @@ import { ChevronRightIcon, ListBulletIcon, PaperClipIcon } from '@heroicons/reac
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { PublicAttachmentList } from '../components/public/PublicAttachmentList';
+import { PublicTopBar } from '../components/public/PublicTopBar';
 import logo from '../assets/nana.svg';
 import { MarkdownPreview } from '../components/MarkdownPreview';
 import { PublicFolderTree } from '../components/public/PublicFolderTree';
@@ -160,76 +161,73 @@ export function PublicFolderPage() {
         );
     }
 
+    const topBarRight = data.expiresAt ? (
+        <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-100 whitespace-nowrap">
+            Expires {new Date(data.expiresAt).toLocaleString()}
+        </div>
+    ) : undefined;
+
     return (
-        <div className="min-h-screen flex flex-col bg-black/25 backdrop-blur-sm px-4 py-6 sm:px-6 lg:px-10">
+        <div className="min-h-screen flex flex-col bg-black/25 backdrop-blur-sm">
 
-            <div className="mx-auto w-full max-w-7xl flex flex-col gap-6 lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
-                <aside className="overflow-hidden rounded-2xl border border-white/15 bg-white/8 px-5 pb-5 pt-3 sm:px-8 sm:pb-8 sm:pt-4 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
+            <PublicTopBar
+                subtitle={data.rootFolder.name}
+                author={data.author?.name}
+                title={activeDocument?.title || 'Untitled'}
+                rightContent={topBarRight}
+            />
+
+            <div className="mx-auto mt-4 w-full max-w-7xl px-4 sm:px-6 lg:px-10 grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-6 lg:items-start">
+                <aside className="overflow-hidden rounded-2xl border border-white/15 bg-white/8 px-5 pb-5 pt-5 sm:px-8 sm:pb-8 sm:pt-6 lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto">
                     <div>
-                        <h1 className="text-2xl font-semibold text-white">{data.rootFolder.name}</h1>
-                        {data.author && <p className="mt-2 text-sm text-stone-300">Shared by {data.author.name}</p>}
-                        {data.expiresAt && (
-                            <div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                                Expires {new Date(data.expiresAt).toLocaleString()}
-                            </div>
-                        )}
-
-                        <div className="mt-4">
-                            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
-                                <ListBulletIcon className="h-4 w-4 text-amber-300" />
-                                Navigation
-                            </div>
-                            <PublicFolderTree
-                                nodes={folderTree}
-                                documentsByFolderId={documentsByFolderId}
-                                selectedDocumentId={activeDocument?.id || null}
-                                onSelectDocument={handleSelectDocument}
-                                rootFolderId={data.rootFolder.id}
-                            />
+                        <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
+                            <ListBulletIcon className="h-4 w-4 text-amber-300" />
+                            Navigation
                         </div>
+                    <PublicFolderTree
+                            nodes={folderTree}
+                            documentsByFolderId={documentsByFolderId}
+                            selectedDocumentId={activeDocument?.id || null}
+                            onSelectDocument={handleSelectDocument}
+                            rootFolderId={data.rootFolder.id}
+                        />
                     </div>
 
                 </aside>
 
-                <main className="min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-white/8 px-5 pb-5 pt-3 sm:px-8 sm:pb-8 sm:pt-4">
+                <main className="min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-white/8 px-5 pb-5 pt-5 sm:px-8 sm:pb-8 sm:pt-6 lg:mt-1.5">
                     <div key={activeDocument?.id || 'empty'} className="public-content-enter">
                         {activeDocument ? (
                             <>
-                                <div className="border-b border-white/10 pb-4">
-                                    <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-                                        <div className="min-w-0 flex-1">
-                                            <h2 className="text-3xl font-semibold tracking-tight text-white">{activeDocument.title || 'Untitled'}</h2>
-                                        </div>
+                                <MarkdownPreview content={renderedContent} className="text-stone-100" />
 
-                                        {hasAttachments && (
-                                            <section className="w-full shrink-0 xl:w-[280px]">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setAttachmentsExpanded((current) => !current)}
-                                                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
-                                                    aria-expanded={attachmentsExpanded}
-                                                >
-                                                    <span className="flex items-center gap-2">
-                                                        <PaperClipIcon className="h-4 w-4 text-amber-300" />
-                                                        Attachments
-                                                    </span>
-                                                    <ChevronRightIcon className={`h-4 w-4 text-stone-400 public-chevron-rotate ${attachmentsExpanded ? 'is-open' : ''}`} />
-                                                </button>
+                                {hasAttachments && (
+                                    <div className="border-t border-white/10 pt-6 mt-8">
+                                        <section>
+                                            <button
+                                                type="button"
+                                                onClick={() => setAttachmentsExpanded((current) => !current)}
+                                                className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-white/10"
+                                                aria-expanded={attachmentsExpanded}
+                                            >
+                                                <span className="flex items-center gap-2">
+                                                    <PaperClipIcon className="h-4 w-4 text-amber-300" />
+                                                    Attachments
+                                                </span>
+                                                <ChevronRightIcon className={`h-4 w-4 text-stone-400 public-chevron-rotate ${attachmentsExpanded ? 'is-open' : ''}`} />
+                                            </button>
 
-                                                {attachmentsExpanded && (
-                                                    <div className="mt-4 public-attachment-panel-enter">
-                                                        <PublicAttachmentList
-                                                            attachments={activeDocument.attachments}
-                                                            getAttachmentUrl={(filename) => getPublicFolderAttachmentUrl(shareToken, activeDocument.id, filename)}
-                                                        />
-                                                    </div>
-                                                )}
-                                            </section>
-                                        )}
+                                            {attachmentsExpanded && (
+                                                <div className="mt-4 public-attachment-panel-enter">
+                                                    <PublicAttachmentList
+                                                        attachments={activeDocument.attachments}
+                                                        getAttachmentUrl={(filename) => getPublicFolderAttachmentUrl(shareToken, activeDocument.id, filename)}
+                                                    />
+                                                </div>
+                                            )}
+                                        </section>
                                     </div>
-                                </div>
-
-                                <MarkdownPreview content={renderedContent} className="mt-8 text-stone-100" />
+                                )}
                             </>
                         ) : (
                             <div className="rounded-lg border border-white/10 bg-white/5 p-8 text-stone-300">
@@ -240,7 +238,7 @@ export function PublicFolderPage() {
                 </main>
             </div>
 
-            <footer className="mt-auto pt-6 pb-4 pr-2 text-center sm:text-right text-sm text-stone-500">
+            <footer className="mt-auto pt-6 pb-4 px-4 sm:px-6 lg:px-10 text-center sm:text-right text-sm text-stone-500">
                 Powered by <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-amber-200/80 hover:text-amber-100 transition-colors">Nana</a>
             </footer>
         </div>

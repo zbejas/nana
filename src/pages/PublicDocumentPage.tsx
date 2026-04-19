@@ -2,6 +2,7 @@ import { ClockIcon, PaperClipIcon } from '@heroicons/react/24/outline';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { PublicAttachmentList } from '../components/public/PublicAttachmentList';
+import { PublicTopBar } from '../components/public/PublicTopBar';
 import logo from '../assets/nana.svg';
 import { MarkdownPreview } from '../components/MarkdownPreview';
 import {
@@ -111,58 +112,53 @@ export function PublicDocumentPage() {
 
     const hasAttachments = data.document.attachments.length > 0;
 
+    const topBarRight = (
+        <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs text-stone-300 whitespace-nowrap">
+                <ClockIcon className="h-3.5 w-3.5 text-amber-300" />
+                <span>{data.document.reading_time || 0} min</span>
+            </div>
+            {data.expiresAt && (
+                <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-100 whitespace-nowrap">
+                    Expires {new Date(data.expiresAt).toLocaleString()}
+                </div>
+            )}
+        </div>
+    );
+
     return (
-        <div className="min-h-screen flex flex-col bg-black/25 backdrop-blur-sm px-4 py-6 sm:px-6 lg:px-10 overflow-x-hidden">
+        <div className="min-h-screen flex flex-col bg-black/25 backdrop-blur-sm overflow-x-hidden">
 
-            <div className="mx-auto w-full max-w-7xl flex flex-col gap-6 lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
-                <aside className="overflow-hidden rounded-2xl border border-white/15 bg-white/8 p-5 sm:p-8 lg:sticky lg:top-6 lg:h-fit">
-                    <div>
-                        <h1 className="text-2xl font-semibold text-white">{data.document.title || 'Untitled'}</h1>
-                        {data.author && <p className="mt-2 text-sm text-stone-300">Shared by {data.author.name}</p>}
+            <PublicTopBar
+                author={data.author?.name}
+                title={data.document.title || 'Untitled'}
+                rightContent={topBarRight}
+            />
 
-                        <div className="mt-5 space-y-3 text-sm text-stone-300">
-                            <div className="flex items-center gap-2">
-                                <ClockIcon className="h-4 w-4 text-amber-300" />
-                                <span>{data.document.reading_time || 0} min read</span>
-                            </div>
-                            {data.expiresAt && (
-                                <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                                    Expires {new Date(data.expiresAt).toLocaleString()}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </aside>
-
+            <div className="mx-auto mt-4 w-full max-w-5xl px-4 sm:px-6 lg:px-10">
                 <main className="min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-white/8 p-5 sm:p-8">
                     <div className="public-content-enter">
-                        <div className="border-b border-white/10 pb-6">
-                            <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-                                <div className="min-w-0 flex-1">
-                                    <h2 className="text-4xl font-semibold tracking-tight text-white">{data.document.title || 'Untitled'}</h2>
-                                </div>
+                        <MarkdownPreview content={renderedContent} className="text-stone-100" />
 
-                                {hasAttachments && (
-                                    <section className="w-full shrink-0 xl:w-[280px]">
-                                        <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
-                                            <PaperClipIcon className="h-4 w-4 text-amber-300" />
-                                            Attachments
-                                        </div>
-                                        <PublicAttachmentList
-                                            attachments={data.document.attachments}
-                                            getAttachmentUrl={(filename) => getPublicDocumentAttachmentUrl(shareToken, filename)}
-                                        />
-                                    </section>
-                                )}
+                        {hasAttachments && (
+                            <div className="border-t border-white/10 pt-6 mt-8">
+                                <section>
+                                    <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
+                                        <PaperClipIcon className="h-4 w-4 text-amber-300" />
+                                        Attachments
+                                    </div>
+                                    <PublicAttachmentList
+                                        attachments={data.document.attachments}
+                                        getAttachmentUrl={(filename) => getPublicDocumentAttachmentUrl(shareToken, filename)}
+                                    />
+                                </section>
                             </div>
-                        </div>
-
-                        <MarkdownPreview content={renderedContent} className="mt-8 text-stone-100" />
+                        )}
                     </div>
                 </main>
             </div>
 
-            <footer className="mt-auto pt-6 pb-4 pr-2 text-center sm:text-right text-sm text-stone-500">
+            <footer className="mx-auto w-full max-w-5xl mt-auto pt-6 pb-4 px-4 sm:px-6 lg:px-10 text-center sm:text-right text-sm text-stone-500">
                 Powered by <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-amber-200/80 hover:text-amber-100 transition-colors">Nana</a>
             </footer>
         </div>
