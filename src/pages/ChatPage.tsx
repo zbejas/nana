@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   SparklesIcon,
@@ -10,15 +11,16 @@ import {
   ChevronDownIcon,
   MagnifyingGlassIcon,
   PaperClipIcon,
-  CheckIcon,
   DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import { pb } from '../lib/pocketbase';
 import { MarkdownPreview } from '../components/MarkdownPreview';
 import { getRecentChatId, setLastChat, clearLastChat } from '../lib/settings';
+import { highlightText } from '../lib/highlightText';
 import { useToasts } from '../state/hooks';
 import { listDocuments } from '../lib/documents/crud';
 import type { Document } from '../lib/documents/types';
+import { useDocumentSearch } from '../lib/documents/useDocumentSearch';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -68,6 +70,13 @@ const streamStore = {
 
 function notifyStream() {
   streamStore.onUpdate?.();
+}
+
+function formatDocumentDate(value: string) {
+  return new Date(value).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 // ── API helpers ──────────────────────────────────────────────────────
@@ -125,10 +134,15 @@ export function ChatPage() {
   const [showDocPicker, setShowDocPicker] = useState(false);
   const [docSearchQuery, setDocSearchQuery] = useState('');
 
+  const attachedDocIds = useMemo(() => new Set(attachedDocs.map(doc => doc.id)), [attachedDocs]);
+  const trimmedDocSearchQuery = docSearchQuery.trim();
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const inputThickRef = useRef<HTMLTextAreaElement>(null);
+  const docPickerRef = useRef<HTMLDivElement>(null);
+  const docPickerToggleRef = useRef<HTMLButtonElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const isAutoScrollEnabled = useRef(true);
   const didRedirectRef = useRef(false);
@@ -161,25 +175,88 @@ export function ChatPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // ── Document picker filtering ────────────────────────────────────
+  const closeDocPicker = useCallback(() => {
+    setShowDocPicker(false);
+    setDocSearchQuery('');
+  }, []);
 
-  const filteredDocuments = useMemo(() => {
-    const q = docSearchQuery.toLowerCase();
-    return allDocuments.filter(d => !q || d.title.toLowerCase().includes(q));
-  }, [allDocuments, docSearchQuery]);
+  const toggleDocPicker = useCallback(() => {
+    setShowDocPicker(prev => !prev);
+    setDocSearchQuery('');
+  }, []);
 
-  const docPickerRef = useRef<HTMLDivElement>(null);
+  const toggleAttachedDocument = useCallback((doc: Pick<Document, 'id' | 'title'>) => {
+    const nextTitle = doc.title || 'Untitled';
+
+    setAttachedDocs(prev => (
+      prev.some(item => item.id === doc.id)
+        ? prev.filter(item => item.id !== doc.id)
+        : [...prev, { id: doc.id, title: nextTitle }]
+    ));
+  }, []);
+
+  const { results: searchedDocuments, isLoading: isSearchingDocuments } = useDocumentSearch(docSearchQuery, {
+    debounceMs: 250,
+    enabled: showDocPicker && trimmedDocSearchQuery.length > 0,
+    limit: isMobile ? 16 : 12,
+  });
+
+  const browseDocuments = useMemo(() => {
+    if (attachedDocIds.size === 0) return allDocuments;
+
+    const selected: Document[] = [];
+    const available: Document[] = [];
+
+    for (const doc of allDocuments) {
+      if (attachedDocIds.has(doc.id)) {
+        selected.push(doc);
+      } else {
+        available.push(doc);
+      }
+    }
+
+    return [...selected, ...available];
+  }, [allDocuments, attachedDocIds]);
 
   useEffect(() => {
     if (!showDocPicker) return;
+
     const handleClickOutside = (e: MouseEvent) => {
-      if (docPickerRef.current && !docPickerRef.current.contains(e.target as Node)) {
-        setShowDocPicker(false);
+      const target = e.target as Node;
+      if (docPickerRef.current?.contains(target) || docPickerToggleRef.current?.contains(target)) {
+        return;
       }
+
+      closeDocPicker();
     };
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showDocPicker]);
+  }, [showDocPicker, closeDocPicker]);
+
+  useEffect(() => {
+    if (!showDocPicker) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeDocPicker();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showDocPicker, closeDocPicker]);
+
+  useEffect(() => {
+    if (!isMobile || !showDocPicker) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMobile, showDocPicker]);
 
   // ── Mobile keyboard viewport fix ─────────────────────────────────
 
@@ -390,10 +467,10 @@ export function ChatPage() {
   // ── Focus input ──────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!isStreaming) {
+    if (!isStreaming && !isMobile) {
       inputRef.current?.focus();
     }
-  }, [isStreaming, conversationId]);
+  }, [isStreaming, conversationId, isMobile]);
 
   // ── Send message ─────────────────────────────────────────────────
 
@@ -406,7 +483,7 @@ export function ChatPage() {
 
     setInput('');
     setAttachedDocs([]);
-    setShowDocPicker(false);
+    closeDocPicker();
     setError(null);
 
     // Re-enable auto-scroll when user sends a message
@@ -551,7 +628,7 @@ export function ChatPage() {
     } finally {
       abortRef.current = null;
     }
-  }, [input, isStreaming, conversationId, navigate, loadConversations, attachedDocs]);
+  }, [input, isStreaming, conversationId, navigate, loadConversations, attachedDocs, closeDocPicker]);
 
   // ── Delete conversation ──────────────────────────────────────────
 
@@ -604,55 +681,155 @@ export function ChatPage() {
 
   const renderDocPicker = () => {
     if (!showDocPicker) return null;
-    return (
-      <div
-        ref={docPickerRef}
-        className="absolute bottom-full left-0 right-0 mb-1 z-50 rounded-xl bg-gray-900/95 border border-white/10 backdrop-blur-xl shadow-2xl"
-      >
-        <div className="p-2 border-b border-white/5">
-          <div className="relative">
-            <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+    const pickerDocuments = trimmedDocSearchQuery ? searchedDocuments : browseDocuments;
+    const emptyLabel = trimmedDocSearchQuery
+      ? 'No documents match that search'
+      : 'No documents available yet';
+
+    const pickerContent = (
+      <>
+        <div className={`${isMobile ? 'px-4 pb-4 pt-3' : 'px-3 py-3'} border-b border-white/8`}>
+          {isMobile && <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-white/20" />}
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-white">Document context</p>
+              <p className="mt-1 text-xs text-gray-400">
+                {attachedDocs.length > 0
+                  ? `${attachedDocs.length} selected for this chat`
+                  : 'Attach documents to steer the reply'}
+              </p>
+            </div>
+            {isMobile && (
+              <button
+                type="button"
+                onClick={closeDocPicker}
+                className="rounded-xl border border-white/10 bg-white/5 p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label="Close document picker"
+              >
+                <XMarkIcon className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <div className="relative mt-3">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
             <input
               type="text"
               value={docSearchQuery}
               onChange={e => setDocSearchQuery(e.target.value)}
               placeholder="Search documents..."
-              className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/30"
-              autoFocus
+              className="w-full rounded-xl border border-white/10 bg-white/5 pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 transition-colors focus:outline-none focus:border-blue-500/30 focus:bg-white/8"
+              autoFocus={!isMobile}
             />
           </div>
         </div>
-        <div className="max-h-56 overflow-y-auto scrollbar-autohide p-1">
-          {filteredDocuments.length === 0 ? (
-            <p className="text-xs text-gray-500 text-center py-4">No documents found</p>
+
+        <div className={`overflow-y-auto scrollbar-autohide ${isMobile ? 'max-h-[min(60vh,32rem)] px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]' : 'max-h-[min(22rem,45vh)] p-2'}`}>
+          {isSearchingDocuments ? (
+            <div className="flex items-center justify-center gap-2 px-3 py-5 text-xs text-gray-500">
+              <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4Zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647Z" />
+              </svg>
+              Searching documents...
+            </div>
+          ) : pickerDocuments.length === 0 ? (
+            <div className="px-3 py-6 text-center">
+              <p className="text-sm text-gray-400">{emptyLabel}</p>
+              <p className="mt-1 text-xs text-gray-600">
+                {trimmedDocSearchQuery ? 'Try a shorter title or tag search.' : 'Create a document to use it as chat context.'}
+              </p>
+            </div>
           ) : (
-            filteredDocuments.map(doc => {
-              const isAttached = attachedDocs.some(d => d.id === doc.id);
-              return (
-                <button
-                  key={doc.id}
-                  type="button"
-                  onClick={() => {
-                    if (isAttached) {
-                      setAttachedDocs(prev => prev.filter(d => d.id !== doc.id));
-                    } else {
-                      setAttachedDocs(prev => [...prev, { id: doc.id, title: doc.title }]);
-                    }
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-sm transition-colors ${
-                    isAttached
-                      ? 'bg-blue-500/15 text-blue-200'
-                      : 'text-gray-300 hover:bg-white/5'
-                  }`}
-                >
-                  <DocumentTextIcon className="w-4 h-4 shrink-0 text-gray-500" />
-                  <span className="flex-1 truncate">{doc.title}</span>
-                  {isAttached && <CheckIcon className="w-4 h-4 shrink-0 text-blue-400" />}
-                </button>
-              );
-            })
+            <div className="space-y-1 py-2">
+              {pickerDocuments.map(doc => {
+                const isAttached = attachedDocIds.has(doc.id);
+                const visibleTags = doc.tags.slice(0, 2);
+
+                return (
+                  <button
+                    key={doc.id}
+                    type="button"
+                    onClick={() => toggleAttachedDocument(doc)}
+                    className={`group flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                      isAttached
+                        ? 'border-blue-500/30 bg-blue-500/12 text-blue-100'
+                        : 'border-transparent text-gray-200 hover:border-white/10 hover:bg-white/6'
+                    }`}
+                  >
+                    <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                      isAttached
+                        ? 'border-blue-400/20 bg-blue-400/10 text-blue-300'
+                        : 'border-white/8 bg-white/5 text-gray-500 group-hover:text-gray-300'
+                    }`}>
+                      <DocumentTextIcon className="w-4 h-4" />
+                    </span>
+
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-start justify-between gap-3">
+                        <span className="min-w-0 block flex-1 truncate text-sm font-medium leading-5">
+                          {highlightText(doc.title || 'Untitled', trimmedDocSearchQuery, 'bg-blue-500/25 text-blue-100')}
+                        </span>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] ${
+                          isAttached
+                            ? 'border-blue-400/20 bg-blue-400/10 text-blue-200'
+                            : 'border-white/10 text-gray-500 group-hover:text-gray-300'
+                        }`}>
+                          {isAttached ? 'Added' : 'Add'}
+                        </span>
+                      </span>
+
+                      <span className={`mt-1 flex items-center gap-1.5 overflow-hidden text-[11px] ${
+                        isAttached ? 'text-blue-200/70' : 'text-gray-500'
+                      }`}>
+                        <span className="truncate">
+                          {visibleTags.length > 0 ? (
+                            visibleTags.map((tag, index) => (
+                              <span key={`${doc.id}-${tag}`}>
+                                {index > 0 && ' • '}
+                                {highlightText(tag, trimmedDocSearchQuery, 'bg-blue-500/20 text-blue-100')}
+                              </span>
+                            ))
+                          ) : (
+                            'No tags'
+                          )}
+                        </span>
+                        <span className={isAttached ? 'shrink-0 text-blue-300/30' : 'shrink-0 text-gray-700'}>•</span>
+                        <span className="shrink-0">Updated {formatDocumentDate(doc.updated)}</span>
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
+      </>
+    );
+
+    if (isMobile) {
+      return createPortal(
+        <div className="fixed inset-0 z-[80]">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={closeDocPicker}
+          />
+          <div
+            ref={docPickerRef}
+            className="absolute inset-x-0 bottom-0 overflow-hidden rounded-t-[1.75rem] border border-white/10 border-b-0 bg-black/95 shadow-2xl backdrop-blur-xl"
+          >
+            {pickerContent}
+          </div>
+        </div>,
+        document.body,
+      );
+    }
+
+    return (
+      <div
+        ref={docPickerRef}
+        className="absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-2xl border border-white/10 bg-black/90 shadow-2xl backdrop-blur-xl"
+      >
+        {pickerContent}
       </div>
     );
   };
@@ -666,14 +843,14 @@ export function ChatPage() {
         {attachedDocs.map(doc => (
           <span
             key={doc.id}
-            className="inline-flex items-center gap-1 rounded-lg bg-blue-500/15 border border-blue-500/20 px-2 py-0.5 text-xs text-blue-300"
+            className="inline-flex max-w-[10rem] items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/12 px-2.5 py-1 text-[11px] text-blue-200 sm:max-w-[12rem]"
           >
             <DocumentTextIcon className="w-3 h-3 shrink-0" />
-            <span className="truncate max-w-[150px]">{doc.title}</span>
+            <span className="truncate">{doc.title}</span>
             <button
               type="button"
               onClick={() => setAttachedDocs(prev => prev.filter(d => d.id !== doc.id))}
-              className="ml-0.5 rounded p-0.5 hover:bg-blue-500/20 transition-colors"
+              className="rounded-full p-0.5 transition-colors hover:bg-blue-500/20"
             >
               <XMarkIcon className="w-3 h-3" />
             </button>
@@ -706,17 +883,19 @@ export function ChatPage() {
         {renderAttachedDocs()}
         <div className="flex items-center justify-between px-3 py-2 border-t border-white/5">
           <button
+            ref={docPickerToggleRef}
             type="button"
-            onClick={() => { setShowDocPicker(prev => !prev); setDocSearchQuery(''); }}
+            onClick={toggleDocPicker}
             className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
-              attachedDocs.length > 0
+              showDocPicker || attachedDocs.length > 0
                 ? 'bg-blue-500/15 text-blue-300 hover:bg-blue-500/25'
                 : 'text-gray-500 hover:bg-white/5 hover:text-gray-400'
             }`}
             title="Attach documents for context"
+            aria-expanded={showDocPicker}
           >
             <PaperClipIcon className="w-3.5 h-3.5" />
-            {attachedDocs.length > 0 ? `${attachedDocs.length} doc${attachedDocs.length > 1 ? 's' : ''}` : 'Attach docs'}
+            {attachedDocs.length > 0 ? `${attachedDocs.length} doc${attachedDocs.length > 1 ? 's' : ''}` : (isMobile ? 'Docs' : 'Attach docs')}
           </button>
           <button
             type="button"
@@ -754,17 +933,19 @@ export function ChatPage() {
         {renderAttachedDocs()}
         <div className="flex items-center justify-between px-4 py-2.5 border-t border-white/5">
           <button
+            ref={docPickerToggleRef}
             type="button"
-            onClick={() => { setShowDocPicker(prev => !prev); setDocSearchQuery(''); }}
+            onClick={toggleDocPicker}
             className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
-              attachedDocs.length > 0
+              showDocPicker || attachedDocs.length > 0
                 ? 'bg-blue-500/15 text-blue-300 hover:bg-blue-500/25'
                 : 'text-gray-500 hover:bg-white/5 hover:text-gray-400'
             }`}
             title="Attach documents for context"
+            aria-expanded={showDocPicker}
           >
             <PaperClipIcon className="w-3.5 h-3.5" />
-            {attachedDocs.length > 0 ? `${attachedDocs.length} doc${attachedDocs.length > 1 ? 's' : ''}` : 'Attach docs'}
+            {attachedDocs.length > 0 ? `${attachedDocs.length} doc${attachedDocs.length > 1 ? 's' : ''}` : (isMobile ? 'Docs' : 'Attach docs')}
           </button>
           <button
             type="button"
