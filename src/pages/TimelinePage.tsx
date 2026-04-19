@@ -35,7 +35,6 @@ export function TimelinePage() {
   const { contextMenu, isClosingContextMenu, setContextMenu, contextMenuRef, closeContextMenu } = useContextMenuState();
   const {
     groups,
-    stats,
     searchQuery,
     setSearchQuery,
     viewMode,
@@ -319,25 +318,7 @@ export function TimelinePage() {
 
           <aside className="hidden lg:block w-[22rem] pl-6 pb-2 ml-auto">
             <div className="sticky top-0 space-y-4">
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] backdrop-blur-sm p-4">
-                <h2 className="text-[11px] uppercase tracking-wide text-gray-400 mb-3">Stats</h2>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="rounded-md border border-white/10 bg-white/5 px-2 py-2 text-center">
-                    <div className="text-[10px] uppercase tracking-wide text-gray-500">Docs</div>
-                    <div className="mt-1 text-sm font-semibold text-white">{stats.loadedDocuments}</div>
-                  </div>
-                  <div className="rounded-md border border-white/10 bg-white/5 px-2 py-2 text-center">
-                    <div className="text-[10px] uppercase tracking-wide text-gray-500">Words</div>
-                    <div className="mt-1 text-sm font-semibold text-white">{stats.totalWords.toLocaleString()}</div>
-                  </div>
-                  <div className="rounded-md border border-white/10 bg-white/5 px-2 py-2 text-center">
-                    <div className="text-[10px] uppercase tracking-wide text-gray-500">Read time</div>
-                    <div className="mt-1 text-sm font-semibold text-white">{stats.totalReadingTime} min</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="relative">
+              <div className="relative mt-2">
                 <input
                   type="text"
                   value={searchQuery}
