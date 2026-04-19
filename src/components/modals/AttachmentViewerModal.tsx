@@ -65,7 +65,7 @@ function TextContent({ url }: { url: string }) {
   }
 
   return (
-    <div className="h-full overflow-auto p-4">
+    <div className="h-full overflow-auto px-4 py-4 md:px-6 md:py-5">
       <pre className="text-sm text-gray-200 font-mono whitespace-pre-wrap break-words leading-relaxed">{text}</pre>
     </div>
   );
@@ -160,7 +160,7 @@ export default function AttachmentViewerModal({
   const renderContent = () => {
     if (isPdfFile(filename)) {
       return (
-        <div className="flex-1" style={{ height: '100%' }}>
+        <div className="flex-1 min-h-0" style={{ height: '100%' }}>
           <PdfContent url={url} />
         </div>
       );
@@ -192,7 +192,10 @@ export default function AttachmentViewerModal({
           </div>
 
           {/* Zoom controls */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/70 backdrop-blur-sm border border-white/15 rounded-lg px-2 py-1.5 shadow-lg">
+          <div
+            className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/70 backdrop-blur-sm border border-white/15 rounded-lg px-2 py-1.5 shadow-lg"
+            style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+          >
             <button
               onClick={(e) => { e.stopPropagation(); setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP)); }}
               className="p-1 text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors"
@@ -223,7 +226,7 @@ export default function AttachmentViewerModal({
 
     if (isTextFile(filename)) {
       return (
-        <div className="flex-1" style={{ height: '100%' }}>
+        <div className="flex-1 min-h-0" style={{ height: '100%' }}>
           <TextContent url={url} />
         </div>
       );
@@ -237,7 +240,7 @@ export default function AttachmentViewerModal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[10002] flex flex-col">
+    <div className="fixed inset-0 z-[10002] flex items-stretch md:items-center md:justify-center md:p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-md"
@@ -249,24 +252,24 @@ export default function AttachmentViewerModal({
         role="dialog"
         aria-modal="true"
         aria-label={`Viewing ${filename}`}
-        className="relative flex flex-col w-full h-full max-w-6xl mx-2 md:mx-auto my-4 md:my-8 bg-black/95 backdrop-blur-sm border border-white/10 rounded-lg shadow-2xl overflow-hidden"
+        className="relative flex h-full w-full flex-col overflow-hidden bg-black/95 backdrop-blur-sm md:max-h-[90vh] md:max-w-6xl md:rounded-2xl md:border md:border-white/10 md:shadow-2xl"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
-          <h3 className="text-sm font-medium text-gray-200 truncate mr-4">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] md:px-4 md:py-3 flex-shrink-0">
+          <h3 className="text-sm font-medium text-gray-200 truncate mr-4 md:text-sm">
             {filename}
           </h3>
           <button
             onClick={onClose}
             aria-label="Close viewer"
-            className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10 flex-shrink-0"
+            className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10 flex-shrink-0"
           >
             <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 bg-black/40">
           {renderContent()}
         </div>
       </div>
