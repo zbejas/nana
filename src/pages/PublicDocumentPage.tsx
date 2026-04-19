@@ -127,7 +127,7 @@ export function PublicDocumentPage() {
     );
 
     return (
-        <div className="min-h-screen flex flex-col bg-black/25 backdrop-blur-sm overflow-x-hidden">
+        <div className="min-h-screen flex flex-col overflow-x-hidden">
 
             <PublicTopBar
                 author={data.author?.name}

@@ -13,7 +13,7 @@ interface PublicTopBarProps {
 
 export function PublicTopBar({ subtitle, author, title, rightContent }: PublicTopBarProps) {
     return (
-        <header className="sticky top-0 z-20 border-b border-white/15 bg-white/8 backdrop-blur-xl px-4 py-2.5 sm:px-6">
+        <header className="sticky top-0 z-20 border-b border-white/10 bg-white/5 backdrop-blur-xl px-4 py-2.5 sm:px-6">
             {/* Mobile: stacked rows. Desktop: single row with left/center/right */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:flex-nowrap">
                 {/* Left: folder name + author */}
