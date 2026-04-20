@@ -80,6 +80,15 @@ export function useRealtimeSubscriptions({
 
         // Function to fetch and organize all data
         const loadAllData = async () => {
+            const LOAD_TIMEOUT_MS = 20_000;
+            let timedOut = false;
+            const timeoutId = setTimeout(() => {
+                timedOut = true;
+                logger.warn('Initial data load timed out after 20s, unblocking app');
+                setIsDataLoading(false);
+                setInitialLoadDone(true);
+            }, LOAD_TIMEOUT_MS);
+
             try {
                 // Load in priority order: recents → root → folders → trash
 
@@ -116,8 +125,11 @@ export function useRealtimeSubscriptions({
                     logger.error('Failed to load initial data', { error: error.message });
                 }
             } finally {
-                setIsDataLoading(false);
-                setInitialLoadDone(true);
+                clearTimeout(timeoutId);
+                if (!timedOut) {
+                    setIsDataLoading(false);
+                    setInitialLoadDone(true);
+                }
             }
         };
 

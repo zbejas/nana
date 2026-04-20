@@ -489,15 +489,21 @@ export async function getTimelineDocumentsPage(
     try {
         logger.debug('Fetching timeline documents page', { page, perPage });
 
-        const result = await pb.collection('documents').getList<Document>(
-            page,
-            perPage,
-            {
-                filter: `author="${userId}"`,
-                sort: '-updated',
-                requestKey: `documents/timeline:${page}:${perPage}`,
-            }
-        );
+        const timeoutMs = 15_000;
+        const result = await Promise.race([
+            pb.collection('documents').getList<Document>(
+                page,
+                perPage,
+                {
+                    filter: `author="${userId}"`,
+                    sort: '-updated',
+                    requestKey: `documents/timeline:${page}:${perPage}`,
+                }
+            ),
+            new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('Timeline request timed out')), timeoutMs)
+            ),
+        ]);
 
         return {
             items: result.items,
@@ -517,7 +523,7 @@ export async function getTimelineDocumentsPage(
             perPage,
             message: error.message,
         });
-        return { items: [], page, perPage, totalItems: 0, totalPages: 0 };
+        throw error;
     }
 }
 

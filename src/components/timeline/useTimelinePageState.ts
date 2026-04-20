@@ -223,6 +223,23 @@ export function useTimelinePageState() {
         setTimelineError(null);
     }, [currentUserId]);
 
+    // Safety-net: if initialLoadDone stays false for too long (e.g. stale PB connection),
+    // bypass the gate and attempt to load the timeline directly.
+    useEffect(() => {
+        if (initialLoadDone) {
+            return;
+        }
+
+        const SAFETY_TIMEOUT_MS = 10_000;
+        const timerId = setTimeout(() => {
+            if (!isFetchingRef.current) {
+                void loadTimelineFirstPage({ showLoading: true, syncTick: timelineRealtimeTickRef.current });
+            }
+        }, SAFETY_TIMEOUT_MS);
+
+        return () => clearTimeout(timerId);
+    }, [initialLoadDone, loadTimelineFirstPage]);
+
     useEffect(() => {
         if (!initialLoadDone) {
             return;
@@ -338,6 +355,8 @@ export function useTimelinePageState() {
                     });
                     setPage(nextPage);
                     setHasMore(result.page < result.totalPages);
+                } catch {
+                    setHasMore(false);
                 } finally {
                     isFetchingRef.current = false;
                     setIsLoadingMore(false);
