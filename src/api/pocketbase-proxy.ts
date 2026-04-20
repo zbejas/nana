@@ -42,7 +42,7 @@ function triggerAutoEmbed(authHeader: string, documentId: string, userId: string
         })
         .then((count) => {
             if (count !== undefined) {
-                log.info(`AutoEmbed: embedded ${count} chunks for document ${documentId}`);
+                log.debug(`AutoEmbed: embedded ${count} chunks for document ${documentId}`);
             }
         })
         .catch((err) => {
