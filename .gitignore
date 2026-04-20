@@ -43,3 +43,6 @@ cache/
 pocketbase/pb_data/*
 !pocketbase/pb_data/types.d.ts
 pocketbase/pb_logs/
+
+# Dev start script
+dev-start.sh
