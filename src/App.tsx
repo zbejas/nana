@@ -103,6 +103,12 @@ function AppContent() {
   const previousMobilePathRef = useRef(location.pathname);
 
   // Reload app when returning after long inactivity (tab switch, app switch, sleep/wake)
+  // Only applies to the document editor — other pages stay fresh via realtime subscriptions
+  const isDocumentRouteRef = useRef(location.pathname.startsWith('/document/'));
+  useEffect(() => {
+    isDocumentRouteRef.current = location.pathname.startsWith('/document/');
+  }, [location.pathname]);
+
   const inactiveSinceRef = useRef<number | null>(null);
   const INACTIVE_RELOAD_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -119,12 +125,11 @@ function AppContent() {
       if (!inactiveSince) return;
 
       const inactiveDuration = Date.now() - inactiveSince;
-      if (inactiveDuration >= INACTIVE_RELOAD_THRESHOLD_MS) {
-        window.location.reload();
-        return;
-      }
-
       inactiveSinceRef.current = null;
+
+      if (inactiveDuration >= INACTIVE_RELOAD_THRESHOLD_MS && isDocumentRouteRef.current) {
+        window.location.reload();
+      }
     };
 
     const handleVisibilityChange = () => {
