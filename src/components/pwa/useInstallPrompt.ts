@@ -31,6 +31,12 @@ function ensureInstallPromptListener() {
     }
 
     window.addEventListener('beforeinstallprompt', (event: Event) => {
+        const isPublicRoute = window.location.pathname.startsWith('/public/');
+        if (isPublicRoute) {
+            event.preventDefault();
+            return;
+        }
+
         if (!isMobileDevice()) {
             return;
         }
