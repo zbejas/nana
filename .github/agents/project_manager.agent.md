@@ -2,7 +2,7 @@
 name: Project Manager
 description: "Orchestrates multi-step tasks by breaking them into subtasks and delegating to specialist agents. Use when: complex features spanning multiple areas, refactoring across frontend+backend, planning implementation, coordinating cross-cutting changes."
 argument-hint: "A high-level task to plan and delegate (e.g., 'add a document sharing feature' or 'refactor the trash system')"
-tools: [read, search, agent, todo]
+tools: [read, search, agent, todo, github/*]
 agents:
     [
         React Doctor Agent,
@@ -12,6 +12,8 @@ agents:
         Bun Server Agent,
         AI Agent,
     ]
+user-invocable: true
+disable-model-invocation: false
 ---
 
 # Project Manager
@@ -71,6 +73,7 @@ Browser → Bun (:3000)
 - ALWAYS verify agent output before moving to the next step.
 - For review-only tasks (code quality, design), use React Doctor or React Designer — they are read-only agents.
 - For implementation tasks involving React/frontend code, do the work yourself or provide very specific instructions.
+- When GitHub tools are available, use them to collect issue, PR, and review context before planning or delegating.
 
 ## Output Format
 

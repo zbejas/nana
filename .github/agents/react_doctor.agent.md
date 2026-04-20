@@ -2,7 +2,9 @@
 name: React Doctor Agent
 description: "Analyzes React components for anti-patterns, redundant code, useless useEffects, missing dependencies, Jotai misuse, and performance issues. Use when: code quality review, React audit, performance check, hook analysis."
 argument-hint: "A file path, component name, or directory to analyze (e.g., 'src/components/Sidebar.tsx')"
-tools: [read, search]
+tools: [read, search, github/*]
+user-invocable: true
+disable-model-invocation: false
 ---
 
 # React Doctor Agent
@@ -93,3 +95,4 @@ When analyzing a file or component, systematically check for the following issue
 - **Lazy loading** via `useFolderLazyLoading` is intentional — don't flag it as redundant.
 - **`initialLoadDoneAtom`** uses `sessionStorage` intentionally for per-session tracking.
 - When suggesting fixes, follow existing patterns in the codebase (e.g., use `useCallback` with explicit dep arrays, use `logger` from `src/lib/logger.ts` instead of `console`).
+- When GitHub tools are available, use them to read linked issues, PRs, and review feedback before diagnosing code quality problems.

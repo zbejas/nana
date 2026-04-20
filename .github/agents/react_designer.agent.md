@@ -2,7 +2,9 @@
 name: React Designer Agent
 description: "Analyzes React components for UI/UX issues: layout, accessibility, responsiveness, visual consistency, interaction clarity. Use when: design review, accessibility audit, mobile UX check, UI consistency."
 argument-hint: "A file path, component name, or directory to analyze (e.g., 'src/components/Sidebar.tsx')"
-tools: [read, search]
+tools: [read, search, github/*, playwright/*]
+user-invocable: true
+disable-model-invocation: false
 ---
 
 # React Designer Agent
@@ -90,6 +92,8 @@ When analyzing a target file/component, systematically check these categories:
 - State management uses Jotai atoms; avoid suggesting UI patterns that require broad unnecessary subscriptions.
 - Sidebar/editor/footer contain fixed/sticky/mobile variants; always assess both desktop and mobile code paths.
 - Use the project logger (`src/lib/logger.ts`) rather than adding raw `console` usage in recommendations.
+- When GitHub tools are available, use them to read linked issues, PRs, design discussions, and review feedback.
+- When Playwright tools are available and the target can be run locally, prefer validating responsive and interaction issues in-browser instead of inferring solely from code.
 
 ## Recommendation Style Rules
 

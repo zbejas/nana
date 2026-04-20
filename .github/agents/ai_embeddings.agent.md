@@ -2,7 +2,9 @@
 name: AI Agent
 description: "Specialist for AI chat, LLM providers, embeddings pipeline, RAG search, vector store, chunking strategies, and conversation management. Use when: AI features, chat system, embeddings, RAG, vector search, LLM provider config, conversation CRUD."
 argument-hint: "An AI/chat/embeddings task (e.g., 'add a new chunking strategy' or 'fix RAG context injection')"
-tools: [read, search, edit, execute]
+tools: [read, search, edit, execute, github/*]
+user-invocable: true
+disable-model-invocation: false
 ---
 
 # AI & Embeddings Agent
@@ -86,6 +88,7 @@ Document saved → pocketbase-proxy.ts intercepts → embedDocument() (async, fi
 - ALWAYS use the superuser token for server-side PB access (never hardcode credentials).
 - ALWAYS maintain fire-and-forget pattern for auto-embed (don't block user responses).
 - Use `createLogger("AI")` or `createLogger("Embeddings")` for logging.
+- When GitHub tools are available, use them to read linked issues, PRs, and review feedback before editing.
 
 ## Approach
 
