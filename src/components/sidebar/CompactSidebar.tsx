@@ -160,7 +160,7 @@ export function CompactSidebar({
         ref={mobileNavRef}
         className={`md:hidden fixed bottom-0 left-0 right-0 z-[45] border-t backdrop-blur-sm px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 transition-opacity duration-200 ease-in-out ${mobileNavSurfaceClass} ${isExpanded ? 'opacity-85' : 'opacity-100'}`}
       >
-        <div className="grid grid-cols-[2fr_3fr_3fr_3fr] gap-2">
+        <div className="grid grid-cols-4 gap-2">
           <button
             onClick={onToggleExpanded}
             className={`${getItemClass(false)} h-14 flex-col gap-0.5`}
