@@ -1,5 +1,5 @@
 import { LinkIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Document } from '../../lib/documents';
 import type { Folder } from '../../lib/folders';
@@ -39,6 +39,8 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
     const [expirationEnabled, setExpirationEnabled] = useState(true);
     const [expirationValue, setExpirationValue] = useState('');
     const [validationError, setValidationError] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
+    const copiedTimer = useRef<ReturnType<typeof setTimeout>>();
 
     useEffect(() => {
         if (!target) {
@@ -68,6 +70,9 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
         }
 
         await navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+        clearTimeout(copiedTimer.current);
+        copiedTimer.current = setTimeout(() => setCopied(false), 2000);
     };
 
     const handleSubmit = async () => {
@@ -170,7 +175,7 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
                                     onClick={() => { void handleCopyLink(); }}
                                     className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10"
                                 >
-                                    Copy Link
+                                    {copied ? 'Copied!' : 'Copy Link'}
                                 </button>
                                 <a
                                     href={shareUrl}
