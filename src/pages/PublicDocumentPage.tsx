@@ -149,8 +149,8 @@ export function PublicDocumentPage() {
                 logo={logo}
             />
 
-            <div className="mx-auto mt-4 w-full max-w-5xl px-4 sm:px-6 lg:px-10">
-                <main className="min-w-0 overflow-hidden rounded-2xl border border-stone-700/60 bg-stone-900/90 ring-1 ring-white/[0.06] p-5 sm:p-8 shadow-lg shadow-black/20">
+            <div className="relative z-10 mx-auto mt-6 mb-8 w-full max-w-6xl px-4 sm:px-6 lg:px-10 flex-1">
+                <main className="min-w-0 overflow-hidden rounded-2xl border border-stone-700/60 bg-stone-900/90 ring-1 ring-white/[0.06] p-5 sm:p-8 lg:p-10 shadow-lg shadow-black/20">
                     <div className="public-content-enter">
                         <MarkdownPreview content={renderedContent} className="text-stone-100" />
 
@@ -172,7 +172,7 @@ export function PublicDocumentPage() {
                 </main>
             </div>
 
-            <footer className="mx-auto w-full max-w-5xl mt-auto pt-8 pb-5 px-4 sm:px-6 lg:px-10 text-center sm:text-right text-sm text-stone-500">
+            <footer className="mx-auto w-full max-w-6xl mt-auto pt-8 pb-5 px-4 sm:px-6 lg:px-10 text-center sm:text-right text-sm text-stone-500">
                 Powered by <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-amber-200/80 hover:text-amber-100 transition-colors">Nana</a>
             </footer>
         </div>
