@@ -1,10 +1,9 @@
-import { ClockIcon, PaperClipIcon } from '@heroicons/react/24/outline';
+import { ClockIcon } from '@heroicons/react/24/outline';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { PublicAttachmentList } from '../components/public/PublicAttachmentList';
+import { PublicDocumentView } from '../components/public/PublicDocumentView';
 import { PublicTopBar } from '../components/public/PublicTopBar';
 import logo from '../assets/nana.svg';
-import { MarkdownPreview } from '../components/MarkdownPreview';
 import {
     fetchPublicDocumentShare,
     getPublicDocumentAttachmentUrl,
@@ -67,7 +66,8 @@ export function PublicDocumentPage() {
 
     if (loading) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#0c0a09] via-[#1c1412] to-[#0c0a09]">
+            <div className="flex min-h-screen items-center justify-center bg-[#0a0908]">
+                <div className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-[#0a0908] via-[#141010] to-[#0a0908]" aria-hidden="true" />
                 <div className="flex flex-col items-center gap-3">
                     <div className="h-8 w-8 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-400" />
                     <span className="text-sm text-stone-400">Loading public document…</span>
@@ -78,7 +78,8 @@ export function PublicDocumentPage() {
 
     if (error || !data) {
         return (
-            <div className="min-h-full bg-gradient-to-br from-stone-950 via-stone-900 to-stone-950 px-4 py-6 sm:px-6 lg:px-10">
+            <div className="min-h-full bg-stone-950 px-4 py-6 sm:px-6 lg:px-10">
+                <div className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-stone-950 via-stone-900 to-stone-950" aria-hidden="true" />
                 <div className="mx-auto flex min-h-full max-w-4xl items-center justify-center py-8 sm:py-14">
                     <section className="w-full overflow-hidden rounded-2xl border border-stone-700/60 bg-stone-900/80 backdrop-blur-xl p-6 text-white shadow-2xl sm:p-10">
                         <div>
@@ -117,8 +118,6 @@ export function PublicDocumentPage() {
         );
     }
 
-    const hasAttachments = data.document.attachments.length > 0;
-
     const topBarRight = (
         <div className="flex flex-wrap items-center justify-center sm:justify-end gap-x-3 gap-y-1">
             <div className="flex items-center gap-1.5 text-xs text-stone-300 whitespace-nowrap">
@@ -139,7 +138,8 @@ export function PublicDocumentPage() {
     );
 
     return (
-        <div className="min-h-screen flex flex-col overflow-x-hidden bg-gradient-to-br from-[#0c0a09] via-[#1c1412] to-[#0c0a09]">
+        <div className="min-h-screen flex flex-col overflow-x-hidden bg-[#0a0908]">
+            <div className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-[#0a0908] via-[#141010] to-[#0a0908]" aria-hidden="true" />
             <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_top,rgba(217,119,6,0.04),transparent_50%)]" aria-hidden="true" />
 
             <PublicTopBar
@@ -150,29 +150,15 @@ export function PublicDocumentPage() {
             />
 
             <div className="relative z-10 mx-auto mt-6 mb-8 w-full max-w-6xl px-4 sm:px-6 lg:px-10 flex-1">
-                <main className="min-w-0 overflow-hidden rounded-2xl border border-stone-700/60 bg-stone-900/90 ring-1 ring-white/[0.06] p-5 sm:p-8 lg:p-10 shadow-lg shadow-black/20">
-                    <div className="public-content-enter">
-                        <MarkdownPreview content={renderedContent} className="text-stone-100" />
-
-                        {hasAttachments && (
-                            <div className="border-t border-stone-700/60 pt-6 mt-8">
-                                <section>
-                                    <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
-                                        <PaperClipIcon className="h-4 w-4 text-amber-300" />
-                                        Attachments
-                                    </div>
-                                    <PublicAttachmentList
-                                        attachments={data.document.attachments}
-                                        getAttachmentUrl={(filename) => getPublicDocumentAttachmentUrl(shareToken, filename)}
-                                    />
-                                </section>
-                            </div>
-                        )}
-                    </div>
-                </main>
+                <PublicDocumentView
+                    content={renderedContent}
+                    attachments={data.document.attachments}
+                    getAttachmentUrl={(filename) => getPublicDocumentAttachmentUrl(shareToken, filename)}
+                    className="p-5 sm:p-8 lg:p-10"
+                />
             </div>
 
-            <footer className="mx-auto w-full max-w-6xl mt-auto pt-8 pb-5 px-4 sm:px-6 lg:px-10 text-center sm:text-right text-sm text-stone-500">
+            <footer className="relative z-10 mt-auto pt-8 pb-5 px-4 sm:px-6 lg:px-10 text-center sm:text-right text-sm text-stone-500">
                 Powered by <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-amber-200/80 hover:text-amber-100 transition-colors">Nana</a>
             </footer>
         </div>

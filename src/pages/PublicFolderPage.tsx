@@ -1,10 +1,9 @@
-import { ChevronRightIcon, ListBulletIcon, PaperClipIcon } from '@heroicons/react/24/outline';
+import { ListBulletIcon } from '@heroicons/react/24/outline';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
-import { PublicAttachmentList } from '../components/public/PublicAttachmentList';
+import { PublicDocumentView } from '../components/public/PublicDocumentView';
 import { PublicTopBar } from '../components/public/PublicTopBar';
 import logo from '../assets/nana.svg';
-import { MarkdownPreview } from '../components/MarkdownPreview';
 import { PublicFolderTree } from '../components/public/PublicFolderTree';
 import {
     buildPublicFolderTree,
@@ -20,7 +19,6 @@ export function PublicFolderPage() {
     const [data, setData] = useState<PublicFolderShareResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
     const [shareTokenCopied, setShareTokenCopied] = useState(false);
 
     useEffect(() => {
@@ -108,8 +106,6 @@ export function PublicFolderPage() {
         setSearchParams(nextSearchParams, { replace: true });
     };
 
-    const hasAttachments = Boolean(activeDocument && activeDocument.attachments.length > 0);
-
     const handleCopyShareToken = async () => {
         await navigator.clipboard.writeText(shareToken);
         setShareTokenCopied(true);
@@ -118,7 +114,8 @@ export function PublicFolderPage() {
 
     if (loading) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#0c0a09] via-[#1c1412] to-[#0c0a09]">
+            <div className="flex min-h-screen items-center justify-center bg-[#0a0908]">
+                <div className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-[#0a0908] via-[#141010] to-[#0a0908]" aria-hidden="true" />
                 <div className="flex flex-col items-center gap-3">
                     <div className="h-8 w-8 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-400" />
                     <span className="text-sm text-stone-400">Loading public docs…</span>
@@ -129,7 +126,8 @@ export function PublicFolderPage() {
 
     if (error || !data) {
         return (
-            <div className="min-h-full bg-gradient-to-br from-stone-950 via-stone-900 to-stone-950 px-4 py-6 sm:px-6 lg:px-10">
+            <div className="min-h-full bg-stone-950 px-4 py-6 sm:px-6 lg:px-10">
+                <div className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-stone-950 via-stone-900 to-stone-950" aria-hidden="true" />
                 <div className="mx-auto flex min-h-full max-w-4xl items-center justify-center py-8 sm:py-14">
                     <section className="w-full overflow-hidden rounded-2xl border border-stone-700/60 bg-stone-900/80 backdrop-blur-xl p-6 text-white shadow-2xl sm:p-10">
                         <div>
@@ -184,7 +182,8 @@ export function PublicFolderPage() {
     );
 
     return (
-        <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#0c0a09] via-[#1c1412] to-[#0c0a09]">
+        <div className="min-h-screen flex flex-col bg-[#0a0908]">
+            <div className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-[#0a0908] via-[#141010] to-[#0a0908]" aria-hidden="true" />
             <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_top,rgba(217,119,6,0.04),transparent_50%)]" aria-hidden="true" />
 
             <PublicTopBar
@@ -195,14 +194,14 @@ export function PublicFolderPage() {
                 logo={logo}
             />
 
-            <div className="mx-auto mt-4 w-full max-w-7xl px-4 sm:px-6 lg:px-10 grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-6 lg:items-start">
-                <aside className="overflow-hidden rounded-2xl border border-stone-700/60 bg-stone-900/90 ring-1 ring-white/[0.06] px-5 pb-5 pt-5 sm:px-8 sm:pb-8 sm:pt-6 lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto shadow-lg shadow-black/20">
+            <div className="relative z-10 mx-auto mt-4 mb-6 w-full max-w-7xl flex-1 px-4 sm:px-6 lg:px-10 flex flex-col lg:flex-row gap-4 lg:gap-6 lg:items-start">
+                <aside className="w-full lg:w-[280px] shrink-0 overflow-hidden rounded-2xl border border-stone-700/60 bg-stone-900/70 ring-1 ring-white/[0.06] px-5 pb-5 pt-5 sm:px-8 sm:pb-8 sm:pt-6 lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto shadow-lg shadow-black/20">
                     <div>
                         <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
                             <ListBulletIcon className="h-4 w-4 text-amber-300" />
                             Navigation
                         </div>
-                    <PublicFolderTree
+                        <PublicFolderTree
                             nodes={folderTree}
                             documentsByFolderId={documentsByFolderId}
                             selectedDocumentId={activeDocument?.id || null}
@@ -210,53 +209,31 @@ export function PublicFolderPage() {
                             rootFolderId={data.rootFolder.id}
                         />
                     </div>
-
                 </aside>
 
-                <main className="min-w-0 overflow-hidden rounded-2xl border border-stone-700/60 bg-stone-900/90 ring-1 ring-white/[0.06] px-5 pb-5 pt-5 sm:px-8 sm:pb-8 sm:pt-6 lg:mt-1.5 shadow-lg shadow-black/20">
-                    <div key={activeDocument?.id || 'empty'} className="public-content-enter">
-                        {activeDocument ? (
-                            <>
-                                <MarkdownPreview content={renderedContent} className="text-stone-100" />
-
-                                {hasAttachments && (
-                                    <div className="border-t border-stone-700/60 pt-6 mt-8">
-                                        <section>
-                                            <button
-                                                type="button"
-                                                onClick={() => setAttachmentsExpanded((current) => !current)}
-                                                className="flex w-full items-center justify-between gap-3 rounded-lg border border-stone-700/60 bg-stone-800/50 px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-stone-800/80"
-                                                aria-expanded={attachmentsExpanded}
-                                            >
-                                                <span className="flex items-center gap-2">
-                                                    <PaperClipIcon className="h-4 w-4 text-amber-300" />
-                                                    Attachments
-                                                </span>
-                                                <ChevronRightIcon className={`h-4 w-4 text-stone-400 public-chevron-rotate ${attachmentsExpanded ? 'is-open' : ''}`} />
-                                            </button>
-
-                                            {attachmentsExpanded && (
-                                                <div className="mt-4 public-attachment-panel-enter">
-                                                    <PublicAttachmentList
-                                                        attachments={activeDocument.attachments}
-                                                        getAttachmentUrl={(filename) => getPublicFolderAttachmentUrl(shareToken, activeDocument.id, filename)}
-                                                    />
-                                                </div>
-                                            )}
-                                        </section>
-                                    </div>
-                                )}
-                            </>
-                        ) : (
-                            <div className="rounded-lg border border-stone-700/60 bg-stone-800/30 p-8 text-stone-300">
-                                No documents are available in this public folder.
-                            </div>
-                        )}
-                    </div>
-                </main>
+                <div className="min-w-0 flex-1 lg:mt-1">
+                    {activeDocument ? (
+                        <PublicDocumentView
+                            content={renderedContent}
+                            attachments={activeDocument.attachments}
+                            getAttachmentUrl={(filename) => getPublicFolderAttachmentUrl(shareToken, activeDocument.id, filename)}
+                            collapsibleAttachments
+                            animationKey={activeDocument.id}
+                            className="px-5 pb-5 pt-5 sm:px-8 sm:pb-8 sm:pt-6"
+                        />
+                    ) : (
+                        <PublicDocumentView
+                            content=""
+                            attachments={[]}
+                            getAttachmentUrl={() => ''}
+                            emptyMessage="No documents are available in this public folder."
+                            className="px-5 pb-5 pt-5 sm:px-8 sm:pb-8 sm:pt-6"
+                        />
+                    )}
+                </div>
             </div>
 
-            <footer className="mt-auto pt-8 pb-5 px-4 sm:px-6 lg:px-10 text-center sm:text-right text-sm text-stone-500">
+            <footer className="relative z-10 mt-auto pt-8 pb-5 px-4 sm:px-6 lg:px-10 text-center sm:text-right text-sm text-stone-500">
                 Powered by <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-amber-200/80 hover:text-amber-100 transition-colors">Nana</a>
             </footer>
         </div>
