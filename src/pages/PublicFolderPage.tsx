@@ -161,11 +161,20 @@ export function PublicFolderPage() {
         );
     }
 
-    const topBarRight = data.expiresAt ? (
-        <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-100 whitespace-nowrap">
-            Expires {new Date(data.expiresAt).toLocaleString()}
+    const topBarRight = (
+        <div className="flex items-center gap-3">
+            {activeDocument?.updated && (
+                <div className="flex items-center gap-1.5 text-xs text-stone-400 whitespace-nowrap">
+                    <span>Updated {new Date(activeDocument.updated).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                </div>
+            )}
+            {data.expiresAt && (
+                <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-100 whitespace-nowrap">
+                    Expires {new Date(data.expiresAt).toLocaleString()}
+                </div>
+            )}
         </div>
-    ) : undefined;
+    );
 
     return (
         <div className="min-h-screen flex flex-col">

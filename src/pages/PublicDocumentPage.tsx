@@ -118,6 +118,11 @@ export function PublicDocumentPage() {
                 <ClockIcon className="h-3.5 w-3.5 text-amber-300" />
                 <span>{data.document.reading_time || 0} min</span>
             </div>
+            {data.document.updated && (
+                <div className="flex items-center gap-1.5 text-xs text-stone-400 whitespace-nowrap">
+                    <span>Updated {new Date(data.document.updated).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                </div>
+            )}
             {data.expiresAt && (
                 <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-100 whitespace-nowrap">
                     Expires {new Date(data.expiresAt).toLocaleString()}
