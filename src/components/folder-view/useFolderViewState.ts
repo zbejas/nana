@@ -93,13 +93,24 @@ function findPathToFolder(nodes: FolderTreeNode[], folderId: string): FolderTree
     return [];
 }
 
+function collectAllDescendants(node: FolderTreeNode): FolderTreeNode[] {
+    const result: FolderTreeNode[] = [];
+    for (const child of node.subfolders) {
+        result.push(child);
+        result.push(...collectAllDescendants(child));
+    }
+    return result;
+}
+
 function collectPublicFolders(nodes: FolderTreeNode[]): FolderTreeNode[] {
     const result: FolderTreeNode[] = [];
     for (const node of nodes) {
         if (node.is_public) {
             result.push(node);
-        }
-        if (node.subfolders.length > 0) {
+            // Include all descendants — they inherit public access from this folder
+            result.push(...collectAllDescendants(node));
+        } else if (node.subfolders.length > 0) {
+            // Keep traversing to find nested public folders
             result.push(...collectPublicFolders(node.subfolders));
         }
     }

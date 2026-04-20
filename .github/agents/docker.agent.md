@@ -2,7 +2,9 @@
 name: Docker Agent
 description: "Specialist for Docker, Dockerfile, compose files, entrypoint scripts, multi-stage builds, volume mounts, and deployment. Use when: Docker issues, compose config, Dockerfile changes, entrypoint fixes, deployment, container debugging."
 argument-hint: "A Docker/deployment task (e.g., 'fix entrypoint to handle graceful shutdown' or 'add healthcheck to compose')"
-tools: [read, search, edit, execute]
+tools: [read, search, edit, execute, github/*]
+user-invocable: true
+disable-model-invocation: false
 ---
 
 # Docker Agent
@@ -55,6 +57,7 @@ You are a Docker and deployment specialist for the Nana project. You handle all 
 - ALWAYS run migrations before starting services.
 - NEVER expose port 8090 in production unless explicitly asked.
 - Keep `pb_data` volume mount — it's the persistent database.
+- When GitHub tools are available, use them to read linked issues, PRs, and review feedback before editing.
 
 ## Approach
 

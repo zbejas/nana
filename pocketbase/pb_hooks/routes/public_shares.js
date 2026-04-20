@@ -129,6 +129,14 @@ routerAdd("GET", "/api/public/documents/{shareToken}/files/{filename}", (c) => {
       return `${baseFilesPath}/${cleanFilename}`
     }
 
+    const getOriginalFilename = (filename) => {
+      const match = filename.match(/^(.+?)_[a-zA-Z0-9]+(\.[^.]+)$/)
+      if (match && match[1] && match[2]) {
+        return match[1] + match[2]
+      }
+      return filename
+    }
+
     const toIsoOrNull = (value) => {
       if (!value) {
         return null
@@ -200,7 +208,7 @@ routerAdd("GET", "/api/public/documents/{shareToken}/files/{filename}", (c) => {
     const filesystem = $app.newFilesystem()
 
     try {
-      filesystem.serve(c.response, c.request, buildRecordFileKey(documentRecord, filename), filename)
+      filesystem.serve(c.response, c.request, buildRecordFileKey(documentRecord, filename), getOriginalFilename(filename))
     } finally {
       filesystem.close()
     }
@@ -409,6 +417,14 @@ routerAdd("GET", "/api/public/folders/{shareToken}/files/{documentId}/{filename}
       return `${baseFilesPath}/${cleanFilename}`
     }
 
+    const getOriginalFilename = (filename) => {
+      const match = filename.match(/^(.+?)_[a-zA-Z0-9]+(\.[^.]+)$/)
+      if (match && match[1] && match[2]) {
+        return match[1] + match[2]
+      }
+      return filename
+    }
+
     const toIsoOrNull = (value) => {
       if (!value) {
         return null
@@ -517,7 +533,7 @@ routerAdd("GET", "/api/public/folders/{shareToken}/files/{documentId}/{filename}
     const filesystem = $app.newFilesystem()
 
     try {
-      filesystem.serve(c.response, c.request, buildRecordFileKey(documentRecord, filename), filename)
+      filesystem.serve(c.response, c.request, buildRecordFileKey(documentRecord, filename), getOriginalFilename(filename))
     } finally {
       filesystem.close()
     }

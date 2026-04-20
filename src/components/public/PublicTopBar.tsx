@@ -9,33 +9,46 @@ interface PublicTopBarProps {
     title: string;
     /** Right slot: badges, metadata */
     rightContent?: ReactNode;
+    /** Optional logo image src */
+    logo?: string;
 }
 
-export function PublicTopBar({ subtitle, author, title, rightContent }: PublicTopBarProps) {
+export function PublicTopBar({ subtitle, author, title, rightContent, logo }: PublicTopBarProps) {
     return (
-        <header className="sticky top-0 z-20 border-b border-white/10 bg-white/5 backdrop-blur-xl px-4 py-2.5 sm:px-6">
-            {/* Mobile: stacked rows. Desktop: single row with left/center/right */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:flex-nowrap">
-                {/* Left: folder name + author */}
-                {(subtitle || author) && (
-                    <div className="flex items-center gap-2 text-xs text-stone-400 shrink-0 max-sm:basis-full max-sm:justify-center">
-                        {subtitle && <span className="font-semibold text-stone-300">{subtitle}</span>}
-                        {subtitle && author && <span className="text-stone-500">&middot;</span>}
-                        {author && <span>Shared by {author}</span>}
-                    </div>
-                )}
-
-                {/* Center: document title */}
-                <div className="flex-1 min-w-0 text-center max-sm:basis-full">
-                    <h1 className="truncate text-base font-semibold text-white sm:text-lg">{title || 'Untitled'}</h1>
+        <header className="sticky top-0 z-20 border-b border-amber-500/10 bg-stone-900/90 backdrop-blur-xl px-4 py-3 sm:px-6 shadow-[0_1px_12px_0_rgba(217,119,6,0.06)]">
+            {/* Mobile: stacked rows */}
+            <div className="flex flex-col items-center gap-1 sm:hidden">
+                <div className="flex items-center gap-2 text-xs text-stone-400">
+                    {logo && <img src={logo} alt="Nana" className="h-5 w-5" />}
+                    {subtitle && <span className="font-semibold text-stone-300">{subtitle}</span>}
+                    {subtitle && author && <span className="text-stone-500">&middot;</span>}
+                    {author && <span>Shared by {author}</span>}
                 </div>
-
-                {/* Right: metadata */}
+                <h1 className="truncate text-base font-semibold text-white max-w-full">{title || 'Untitled'}</h1>
                 {rightContent && (
-                    <div className="shrink-0 flex items-center gap-3 max-sm:basis-full max-sm:justify-center">
+                    <div className="flex items-center gap-3">
                         {rightContent}
                     </div>
                 )}
+            </div>
+
+            {/* Desktop: absolute-centered title with left/right flanks */}
+            <div className="hidden sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-4">
+                {/* Left: logo + folder name + author */}
+                <div className="flex items-center gap-2 text-xs text-stone-400">
+                    {logo && <img src={logo} alt="Nana" className="h-5 w-5" />}
+                    {subtitle && <span className="font-semibold text-stone-300">{subtitle}</span>}
+                    {subtitle && author && <span className="text-stone-500">&middot;</span>}
+                    {author && <span>Shared by {author}</span>}
+                </div>
+
+                {/* Center: document title — always centered */}
+                <h1 className="truncate text-lg font-semibold text-white text-center max-w-md">{title || 'Untitled'}</h1>
+
+                {/* Right: metadata */}
+                <div className="flex items-center justify-end gap-3">
+                    {rightContent}
+                </div>
             </div>
         </header>
     );

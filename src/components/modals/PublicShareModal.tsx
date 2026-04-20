@@ -1,5 +1,6 @@
 import { LinkIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
-import { useEffect, useMemo, useState } from 'react';
+import { DateTimePicker } from './DateTimePicker';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Document } from '../../lib/documents';
 import type { Folder } from '../../lib/folders';
@@ -39,6 +40,8 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
     const [expirationEnabled, setExpirationEnabled] = useState(true);
     const [expirationValue, setExpirationValue] = useState('');
     const [validationError, setValidationError] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
+    const copiedTimer = useRef<ReturnType<typeof setTimeout>>();
 
     useEffect(() => {
         if (!target) {
@@ -68,6 +71,9 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
         }
 
         await navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+        clearTimeout(copiedTimer.current);
+        copiedTimer.current = setTimeout(() => setCopied(false), 2000);
     };
 
     const handleSubmit = async () => {
@@ -96,16 +102,17 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
     const title = target.type === 'document' ? target.record.title || 'Untitled' : target.record.name;
 
     return createPortal(
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur-sm">
-            <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-white/15 bg-black/70 backdrop-blur-xl p-6 text-white shadow-2xl">
-                <div>
-                    <h2 className="text-2xl font-semibold">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 px-4 py-4 backdrop-blur-sm">
+            <div className="flex w-full max-w-xl max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/70 backdrop-blur-xl text-white shadow-2xl">
+                <div className="flex-1 overflow-y-auto p-5 sm:p-6">
+                    <div>
+                        <h2 className="text-2xl font-semibold">
                         {target.type === 'document' ? 'Share Document' : 'Share Folder'}
                     </h2>
                     <p className="mt-2 text-sm text-stone-300">{title}</p>
                 </div>
 
-                <div className="mt-6 space-y-5">
+                    <div className="mt-5 space-y-4 sm:mt-6 sm:space-y-5">
                     <label className="flex items-start justify-between gap-4 rounded-lg border border-white/10 bg-white/5 p-4">
                         <div>
                             <div className="flex items-center gap-2 text-sm font-medium text-white">
@@ -145,12 +152,10 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
 
                         <div>
                             <label className="mb-2 block text-xs uppercase tracking-[0.22em] text-stone-400">Expires At</label>
-                            <input
-                                type="datetime-local"
+                            <DateTimePicker
                                 value={expirationValue}
                                 disabled={!publicEnabled || !expirationEnabled}
-                                onChange={(event) => setExpirationValue(event.target.value)}
-                                className="w-full rounded-lg border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-amber-400/40"
+                                onChange={setExpirationValue}
                             />
                         </div>
                     </div>
@@ -170,7 +175,7 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
                                     onClick={() => { void handleCopyLink(); }}
                                     className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10"
                                 >
-                                    Copy Link
+                                    {copied ? 'Copied!' : 'Copy Link'}
                                 </button>
                                 <a
                                     href={shareUrl}
@@ -184,10 +189,11 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
                         </div>
                     )}
 
-                    {validationError && <p className="text-sm text-red-300">{validationError}</p>}
+                        {validationError && <p className="text-sm text-red-300">{validationError}</p>}
+                    </div>
                 </div>
 
-                <div className="mt-8 flex flex-wrap justify-end gap-3">
+                <div className="flex flex-wrap justify-end gap-3 border-t border-white/10 px-5 py-4 sm:px-6">
                     <button
                         type="button"
                         onClick={onClose}

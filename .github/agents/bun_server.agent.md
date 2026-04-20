@@ -2,7 +2,9 @@
 name: Bun Server Agent
 description: "Specialist for the Bun HTTP server, API routes, PocketBase proxy, rate limiting, auth middleware, export system, and server-side config. Use when: adding API routes, fixing proxy issues, server middleware, rate limiting, export features, server config."
 argument-hint: "A server-side task (e.g., 'add a new API endpoint' or 'fix rate limiter configuration')"
-tools: [read, search, edit, execute]
+tools: [read, search, edit, execute, github/*]
+user-invocable: true
+disable-model-invocation: false
 ---
 
 # Bun Server Agent
@@ -68,6 +70,7 @@ GET  /*                          → SPA (dev: HMR, prod: dist/)
 - ALWAYS use `createLogger()` instead of `console.log`.
 - ALWAYS read config from `serverConfig` / `clientConfig`, not `process.env`.
 - New routes MUST be registered in `src/index.ts`.
+- When GitHub tools are available, use them to read linked issues, PRs, and review feedback before editing.
 
 ## Approach
 

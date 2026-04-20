@@ -31,10 +31,10 @@ function PublicFolderBranch({
             <button
                 type="button"
                 onClick={() => setExpanded((current) => !current)}
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-stone-200 transition-colors hover:bg-white/5"
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-stone-200 transition-colors hover:bg-amber-500/5"
             >
                 {hasChildren ? (
-                    expanded ? <ChevronDownIcon className="h-4 w-4 text-stone-500" /> : <ChevronRightIcon className="h-4 w-4 text-stone-500" />
+                    expanded ? <ChevronDownIcon className="h-4 w-4 text-amber-500/50" /> : <ChevronRightIcon className="h-4 w-4 text-amber-500/50" />
                 ) : (
                     <span className="h-4 w-4" />
                 )}
@@ -43,7 +43,7 @@ function PublicFolderBranch({
             </button>
 
             {expanded && (
-                <div className="ml-5 space-y-1 border-l border-white/10 pl-3">
+                <div className="ml-5 space-y-1 border-l border-amber-500/10 pl-3">
                     {documents.map((document) => {
                         const isSelected = selectedDocumentId === document.id;
 
@@ -54,8 +54,8 @@ function PublicFolderBranch({
                                 onClick={() => onSelectDocument(document.id)}
                                 className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors ${
                                     isSelected
-                                        ? 'bg-amber-500/15 text-amber-100 ring-1 ring-amber-500/30'
-                                        : 'text-stone-300 hover:bg-white/5 hover:text-white'
+                                        ? 'bg-amber-500/20 text-amber-100 ring-1 ring-amber-400/40 shadow-sm shadow-amber-500/10'
+                                        : 'text-stone-300 hover:bg-amber-500/5 hover:text-white'
                                 }`}
                             >
                                 <DocumentTextIcon className="h-4 w-4 shrink-0" />
