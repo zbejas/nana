@@ -8,7 +8,8 @@ import { useFolderViewState } from '../components/folder-view/useFolderViewState
 import { ConfirmDialog } from '../components/modals/ConfirmDialog';
 import { PublicShareModal } from '../components/modals/PublicShareModal';
 import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
-import { TrashIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
+import { TrashIcon, GlobeAltIcon, EllipsisHorizontalIcon, FolderPlusIcon, DocumentPlusIcon } from '@heroicons/react/24/outline';
+import { useEffect, useRef, useState as useLocalState } from 'react';
 
 export function FolderViewPage() {
   const publicShareModal = usePublicShareModalState();
@@ -127,68 +128,14 @@ export function FolderViewPage() {
             })
           }
         >
-          <div className="mb-4 flex items-center gap-2">
-            <button
-              onClick={isTrashMode ? exitTrash : openTrash}
-              disabled={isSharedMode}
-              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold shadow-sm transition-colors ${
-                isTrashMode
-                  ? 'border-amber-400/50 bg-amber-400/20 text-amber-50 hover:bg-amber-400/30'
-                  : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
-              } ${isSharedMode ? 'opacity-50 cursor-not-allowed' : ''}`}
-              aria-pressed={isTrashMode}
-              aria-label={isTrashMode ? 'Return to folders from trash' : 'Open trash'}
-              title={isTrashMode ? 'Return to folders' : 'Open trash'}
-            >
-              <span className={`inline-flex h-5 w-5 items-center justify-center rounded-md ${
-                isTrashMode ? 'bg-amber-400/25' : 'bg-amber-400/15'
-              }`}>
-                <TrashIcon className="w-3.5 h-3.5" />
-              </span>
-              Trash
-            </button>
-
-            <button
-              onClick={isSharedMode ? exitShared : openShared}
-              disabled={isTrashMode}
-              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold shadow-sm transition-colors ${
-                isSharedMode
-                  ? 'border-emerald-400/50 bg-emerald-400/20 text-emerald-50 hover:bg-emerald-400/30'
-                  : 'border-emerald-400/35 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20'
-              } ${isTrashMode ? 'opacity-50 cursor-not-allowed' : ''}`}
-              aria-pressed={isSharedMode}
-              aria-label={isSharedMode ? 'Return to folders from public' : 'Show public items'}
-              title={isSharedMode ? 'Return to folders' : 'Show public items'}
-            >
-              <span className={`inline-flex h-5 w-5 items-center justify-center rounded-md ${
-                isSharedMode ? 'bg-emerald-400/25' : 'bg-emerald-400/15'
-              }`}>
-                <GlobeAltIcon className="w-3.5 h-3.5" />
-              </span>
-              Public
-            </button>
-
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                onClick={() => {
-                  void handleAddFolder();
-                }}
-                disabled={isTrashMode || isSharedMode}
-                className="inline-flex h-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-gray-200 hover:bg-white/10 transition-colors"
-              >
-                New folder
-              </button>
-              <button
-                onClick={() => {
-                  void handleAddDocument();
-                }}
-                disabled={isTrashMode || isSharedMode}
-                className="inline-flex h-8 items-center justify-center rounded-lg border border-blue-500/30 bg-blue-500/20 px-3 py-2 text-xs font-semibold text-blue-100 hover:bg-blue-500/30 transition-colors"
-              >
-                New document
-              </button>
-            </div>
-          </div>
+          <FolderViewActions
+            isTrashMode={isTrashMode}
+            isSharedMode={isSharedMode}
+            onToggleTrash={isTrashMode ? exitTrash : openTrash}
+            onToggleShared={isSharedMode ? exitShared : openShared}
+            onAddFolder={() => { void handleAddFolder(); }}
+            onAddDocument={() => { void handleAddDocument(); }}
+          />
 
           <div className={`min-h-0 flex-1 ${hasItems ? 'overflow-y-auto scrollbar-autohide' : ''}`}>
             {isLoadingCurrentFolder ? (
@@ -400,6 +347,121 @@ export function FolderViewPage() {
         onClose={publicShareModal.close}
         onSave={publicShareModal.save}
       />
+    </div>
+  );
+}
+
+/* ── Dropdown actions bar ── */
+
+interface FolderViewActionsProps {
+  isTrashMode: boolean;
+  isSharedMode: boolean;
+  onToggleTrash: () => void;
+  onToggleShared: () => void;
+  onAddFolder: () => void;
+  onAddDocument: () => void;
+}
+
+function FolderViewActions({ isTrashMode, isSharedMode, onToggleTrash, onToggleShared, onAddFolder, onAddDocument }: FolderViewActionsProps) {
+  const [open, setOpen] = useLocalState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const disabled = isTrashMode || isSharedMode;
+
+  return (
+    <div className="mb-4 flex items-center gap-2">
+      {/* Left: active view badge */}
+      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+        isTrashMode
+          ? 'bg-amber-400/15 text-amber-200/90'
+          : isSharedMode
+            ? 'bg-emerald-400/15 text-emerald-200/90'
+            : 'bg-white/8 text-gray-400'
+      }`}>
+        {isTrashMode ? <TrashIcon className="w-3 h-3" /> : isSharedMode ? <GlobeAltIcon className="w-3 h-3" /> : <FolderPlusIcon className="w-3 h-3" />}
+        {isTrashMode ? 'Trash' : isSharedMode ? 'Public' : 'All files'}
+      </span>
+
+      {/* Right: single actions dropdown */}
+      <div className="relative ml-auto" ref={ref}>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+            open
+              ? 'border-white/20 bg-white/10 text-white'
+              : 'border-white/10 bg-white/5 text-gray-200 hover:bg-white/10'
+          }`}
+          aria-haspopup="true"
+          aria-expanded={open}
+        >
+          <EllipsisHorizontalIcon className="w-4 h-4" />
+          Actions
+        </button>
+
+        {open && (
+          <div className="absolute right-0 top-full z-30 mt-1.5 w-44 overflow-hidden rounded-lg border border-white/15 bg-stone-900/95 backdrop-blur-xl shadow-xl py-1">
+            <button
+              onClick={() => { onAddFolder(); setOpen(false); }}
+              disabled={disabled}
+              className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
+                disabled ? 'text-gray-500 cursor-not-allowed' : 'text-gray-200 hover:bg-white/10'
+              }`}
+            >
+              <FolderPlusIcon className="w-4 h-4 text-gray-400" />
+              New folder
+            </button>
+            <button
+              onClick={() => { onAddDocument(); setOpen(false); }}
+              disabled={disabled}
+              className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
+                disabled ? 'text-gray-500 cursor-not-allowed' : 'text-blue-200 hover:bg-white/10'
+              }`}
+            >
+              <DocumentPlusIcon className="w-4 h-4 text-blue-400" />
+              New document
+            </button>
+
+            <div className="my-1 border-t border-white/10" />
+
+            <button
+              onClick={() => { if (isTrashMode) onToggleTrash(); if (isSharedMode) onToggleShared(); setOpen(false); }}
+              className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
+                !isTrashMode && !isSharedMode ? 'text-white bg-white/10' : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              <FolderPlusIcon className="w-4 h-4 text-gray-400" />
+              All files
+            </button>
+            <button
+              onClick={() => { if (!isTrashMode) onToggleTrash(); if (isSharedMode) { onToggleShared(); } setOpen(false); }}
+              className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
+                isTrashMode ? 'text-amber-200 bg-amber-400/10' : 'text-amber-200/70 hover:bg-white/10'
+              }`}
+            >
+              <TrashIcon className="w-4 h-4" />
+              Trash
+            </button>
+            <button
+              onClick={() => { if (!isSharedMode) onToggleShared(); if (isTrashMode) { onToggleTrash(); } setOpen(false); }}
+              className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
+                isSharedMode ? 'text-emerald-200 bg-emerald-400/10' : 'text-emerald-200/70 hover:bg-white/10'
+              }`}
+            >
+              <GlobeAltIcon className="w-4 h-4" />
+              Public
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
