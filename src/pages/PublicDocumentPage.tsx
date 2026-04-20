@@ -66,14 +66,21 @@ export function PublicDocumentPage() {
     };
 
     if (loading) {
-        return <div className="h-full bg-black/25 backdrop-blur-sm p-6 text-stone-200">Loading public document...</div>;
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#0c0a09] via-[#1c1412] to-[#0c0a09]">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-400" />
+                    <span className="text-sm text-stone-400">Loading public document…</span>
+                </div>
+            </div>
+        );
     }
 
     if (error || !data) {
         return (
-            <div className="min-h-full bg-black/25 backdrop-blur-sm px-4 py-6 sm:px-6 lg:px-10">
+            <div className="min-h-full bg-gradient-to-br from-stone-950 via-stone-900 to-stone-950 px-4 py-6 sm:px-6 lg:px-10">
                 <div className="mx-auto flex min-h-full max-w-4xl items-center justify-center py-8 sm:py-14">
-                    <section className="w-full overflow-hidden rounded-2xl border border-white/15 bg-black/60 backdrop-blur-xl p-6 text-white shadow-2xl sm:p-10">
+                    <section className="w-full overflow-hidden rounded-2xl border border-stone-700/60 bg-stone-900/80 backdrop-blur-xl p-6 text-white shadow-2xl sm:p-10">
                         <div>
                             <div className="flex flex-col items-center text-center">
                                 <img src={logo} alt="Nana" className="h-16 w-16 sm:h-20 sm:w-20" />
@@ -88,7 +95,7 @@ export function PublicDocumentPage() {
                                 The owner may have stopped sharing it, the public link may have expired, or this URL may no longer be valid.
                             </p>
 
-                            <div className="mx-auto mt-8 max-w-xl rounded-lg border border-white/10 bg-white/5 p-4 sm:p-5">
+                            <div className="mx-auto mt-8 max-w-xl rounded-lg border border-stone-700/60 bg-stone-800/50 p-4 sm:p-5">
                                 <div className="flex items-center justify-between gap-4">
                                     <div className="min-w-0">
                                         <div className="text-[11px] uppercase tracking-[0.22em] text-stone-400">Share token</div>
@@ -97,7 +104,7 @@ export function PublicDocumentPage() {
                                     <button
                                         type="button"
                                         onClick={() => { void handleCopyShareToken(); }}
-                                        className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10"
+                                        className="shrink-0 rounded-lg border border-stone-700/60 bg-stone-800/50 px-3 py-2 text-sm text-white transition-colors hover:bg-stone-700/60"
                                     >
                                         {shareTokenCopied ? 'Copied' : 'Copy'}
                                     </button>
@@ -132,21 +139,23 @@ export function PublicDocumentPage() {
     );
 
     return (
-        <div className="min-h-screen flex flex-col overflow-x-hidden">
+        <div className="min-h-screen flex flex-col overflow-x-hidden bg-gradient-to-br from-[#0c0a09] via-[#1c1412] to-[#0c0a09]">
+            <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_top,rgba(217,119,6,0.04),transparent_50%)]" aria-hidden="true" />
 
             <PublicTopBar
                 author={data.author?.name}
                 title={data.document.title || 'Untitled'}
                 rightContent={topBarRight}
+                logo={logo}
             />
 
             <div className="mx-auto mt-4 w-full max-w-5xl px-4 sm:px-6 lg:px-10">
-                <main className="min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-white/8 p-5 sm:p-8">
+                <main className="min-w-0 overflow-hidden rounded-2xl border border-stone-700/60 bg-stone-900/90 ring-1 ring-white/[0.06] p-5 sm:p-8 shadow-lg shadow-black/20">
                     <div className="public-content-enter">
                         <MarkdownPreview content={renderedContent} className="text-stone-100" />
 
                         {hasAttachments && (
-                            <div className="border-t border-white/10 pt-6 mt-8">
+                            <div className="border-t border-stone-700/60 pt-6 mt-8">
                                 <section>
                                     <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
                                         <PaperClipIcon className="h-4 w-4 text-amber-300" />
@@ -163,7 +172,7 @@ export function PublicDocumentPage() {
                 </main>
             </div>
 
-            <footer className="mx-auto w-full max-w-5xl mt-auto pt-6 pb-4 px-4 sm:px-6 lg:px-10 text-center sm:text-right text-sm text-stone-500">
+            <footer className="mx-auto w-full max-w-5xl mt-auto pt-8 pb-5 px-4 sm:px-6 lg:px-10 text-center sm:text-right text-sm text-stone-500">
                 Powered by <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-amber-200/80 hover:text-amber-100 transition-colors">Nana</a>
             </footer>
         </div>

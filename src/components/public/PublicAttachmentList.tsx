@@ -43,9 +43,9 @@ export function PublicAttachmentList({ attachments, getAttachmentUrl }: PublicAt
                         target="_blank"
                         rel="noreferrer"
                         style={{ animationDelay: `${index * 40}ms` }}
-                        className="group public-attachment-item flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-stone-200 transition-colors hover:bg-white/10"
+                        className="group public-attachment-item flex items-center gap-3 rounded-2xl border border-stone-700/80 bg-stone-900/60 px-3 py-3 text-sm text-stone-200 transition-colors hover:bg-stone-800/80 hover:border-amber-500/20"
                     >
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-gray-700">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-stone-800">
                             <AttachmentPreview filename={filename} url={url} />
                         </div>
                         <div className="min-w-0 flex-1">
