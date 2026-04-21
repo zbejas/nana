@@ -20,6 +20,7 @@ require(`${__hooks}/mailer/auth_alert.js`);
 require(`${__hooks}/routes/admin_smtp.js`);
 require(`${__hooks}/routes/admin_users.js`);
 require(`${__hooks}/routes/admin_attachments.js`);
+require(`${__hooks}/routes/admin_oauth.js`);
 require(`${__hooks}/routes/check_users.js`);
 require(`${__hooks}/routes/public_shares.js`);
 require(`${__hooks}/routes/trash.js`);
