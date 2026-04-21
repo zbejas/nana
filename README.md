@@ -68,7 +68,7 @@ docker run -d \
 	ghcr.io/zbejas/nana:latest
 ```
 
-Open [http://localhost:3000](http://localhost:3000), create your first account, and start writing.
+Open `http://localhost:3000`, create your first account, and start writing.
 
 ## Default Access
 
