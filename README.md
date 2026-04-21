@@ -80,6 +80,21 @@ Open [http://localhost:3000](http://localhost:3000), create your first account, 
 > [!NOTE]
 > Port `8090` is for PocketBase administration. The app itself is accessed through port `3000`.
 
+## Environment Variables
+
+| Variable | Default | Notes |
+|---|---|---|
+| `PORT` | `3000` | Server listen port |
+| `POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase backend URL |
+| `NODE_ENV` | — | Set to `production` for static serving |
+| `RAM_CACHE` | `false` | Use RAM for export cache |
+| `PB_SUPERUSER_EMAIL` | — | Auto-provisioned superuser email |
+| `PB_SUPERUSER_PASSWORD` | — | Auto-provisioned superuser password |
+| `DEBUG` | `false` | Enable verbose debug logs in production |
+
+> [!TIP]
+> Set `DEBUG=true` to enable verbose debug logging in production. Useful for troubleshooting AI chat, RAG, and embedding issues.
+
 ## License
 
 Licensed under [AGPL-3.0](LICENSE).
