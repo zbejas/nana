@@ -1,12 +1,6 @@
 /**
  * Centralized configuration for environment variables
  * All environment variable access should go through this file
- * 
- * Note: PocketBase migrations use separate environment variables:
- * - MAX_ATTACHMENT_SIZE: Max attachment size in MB (default: 50)
- * - MAX_ATTACHMENTS: Max number of attachments per document (default: 20)
- * These are read via $os.getenv() in PocketBase's JavaScript runtime
- * and cannot be accessed through this config file.
  */
 
 // Check if we're in a server environment
@@ -28,6 +22,9 @@ export const serverConfig = {
 
     /** PocketBase superuser password (optional — auto-generated if not set) */
     pbSuperuserPassword: isServer ? (process.env.PB_SUPERUSER_PASSWORD || '') : '',
+
+    /** Enable verbose debug logging in production (DEBUG=true) */
+    debug: isServer && process.env.DEBUG === 'true',
 
     /** Check if running in development mode */
     get isDevelopment() {

@@ -69,7 +69,7 @@ if (import.meta.hot) {
         for (const [key, col] of collections) {
             try {
                 col.closeSync();
-                log.info(`HMR: closed collection ${key}`);
+                log.debug(`HMR: closed collection ${key}`);
             } catch { /* ignore – best effort */ }
         }
         collections.clear();
@@ -175,9 +175,9 @@ export function getCollection(provider: AIProviderKey, dimensions: number): ZVec
                     readOnly: false,
                     enableMMAP: true,
                 });
-                log.info(`Recreated collection with inverted indexes: ${key}`);
+                log.debug(`Recreated collection with inverted indexes: ${key}`);
             } else {
-                log.info(`Opened existing collection: ${key}`);
+                log.debug(`Opened existing collection: ${key}`);
             }
         } catch (err) {
             // If the error is a lock conflict, the collection is still open
@@ -200,7 +200,7 @@ export function getCollection(provider: AIProviderKey, dimensions: number): ZVec
                 readOnly: false,
                 enableMMAP: true,
             });
-            log.info(`Recreated collection: ${key}`);
+            log.debug(`Recreated collection: ${key}`);
         }
     } else {
         // Create new collection
@@ -208,7 +208,7 @@ export function getCollection(provider: AIProviderKey, dimensions: number): ZVec
             readOnly: false,
             enableMMAP: true,
         });
-        log.info(`Created new collection: ${key}`);
+        log.debug(`Created new collection: ${key}`);
     }
 
     collections.set(key, col);
@@ -353,9 +353,9 @@ export function optimize(provider: AIProviderKey, dimensions: number): void {
     const key = collectionKey(provider, dimensions);
     try {
         const col = getCollection(provider, dimensions);
-        log.info(`Optimizing collection ${key}`);
+        log.debug(`Optimizing collection ${key}`);
         col.optimizeSync();
-        log.info(`Optimized collection ${key}`);
+        log.debug(`Optimized collection ${key}`);
     } catch (err) {
         log.error(`Failed to optimize collection ${key}`, err);
     }
@@ -382,11 +382,11 @@ export function getStats(provider: AIProviderKey, dimensions: number): { docCoun
  * Close all open collections. Call on graceful shutdown.
  */
 export function closeAll(): void {
-    log.info(`Closing ${collections.size} collection(s)`);
+    log.debug(`Closing ${collections.size} collection(s)`);
     for (const [key, col] of collections) {
         try {
             col.closeSync();
-            log.info(`Closed collection: ${key}`);
+            log.debug(`Closed collection: ${key}`);
         } catch (err) {
             log.error(`Failed to close collection ${key}`, err);
         }
@@ -399,7 +399,7 @@ export function closeAll(): void {
  */
 export function destroyCollection(provider: AIProviderKey, dimensions: number): void {
     const key = collectionKey(provider, dimensions);
-    log.info(`Destroying collection ${key}`);
+    log.debug(`Destroying collection ${key}`);
     const cached = collections.get(key);
     if (cached) {
         try {
@@ -415,5 +415,5 @@ export function destroyCollection(provider: AIProviderKey, dimensions: number): 
             rmSync(path, { recursive: true, force: true });
         }
     }
-    log.info(`Destroyed collection: ${key}`);
+    log.debug(`Destroyed collection: ${key}`);
 }

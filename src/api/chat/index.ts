@@ -144,7 +144,7 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
     }
 
     const userMessage = body.message.trim();
-    log.info(`Send request: convId=${body.conversationId ?? "(new)"}, msgLen=${userMessage.length}`);
+    log.debug(`Send request: convId=${body.conversationId ?? "(new)"}, msgLen=${userMessage.length}`);
 
     // ── Fetch AI config ──────────────────────────────────────────────
     let model;
@@ -209,7 +209,7 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
                 const uniqueDocs = new Set(searchResults.map(r => r.documentId)).size;
                 const topScore = searchResults.reduce((max, r) => Math.max(max, r.score), 0);
                 const lowScore = searchResults.reduce((min, r) => Math.min(min, r.score), 1);
-                log.info(`RAG (explicit): ${searchResults.length} chunk(s) from ${uniqueDocs} doc(s), scores ${lowScore.toFixed(3)}–${topScore.toFixed(3)}`);
+                log.debug(`RAG (explicit): ${searchResults.length} chunk(s) from ${uniqueDocs} doc(s), scores ${lowScore.toFixed(3)}–${topScore.toFixed(3)}`);
 
                 const uniqueDocIds = [...new Set(searchResults.map(r => r.documentId))];
                 ragSources = await fetchDocTitles(authHeader, uniqueDocIds);
@@ -223,13 +223,13 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
                     "\n\n---\n\nUse the above context to inform your response when relevant. " +
                     "If the context isn't relevant to the question, you may ignore it.";
             } else {
-                log.info("RAG (explicit): no relevant chunks found from specified documents");
+                log.debug("RAG (explicit): no relevant chunks found from specified documents");
             }
         } catch (err) {
             log.warn("RAG (explicit): search failed, proceeding without context", err);
         }
     } else {
-        log.info("RAG: no documents attached");
+        log.debug("RAG: no documents attached");
     }
 
     // NOTE: Automatic RAG via vector search across all documents is disabled.
@@ -244,7 +244,7 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
         ...generationParams,
         messages,
         onFinish: async ({ text }) => {
-            log.info(`AI response complete: convId=${finalConversationId}, replyLen=${text.length}`);
+            log.debug(`AI response complete: convId=${finalConversationId}, replyLen=${text.length}`);
             // Persist the assistant's complete response into the conversation
             try {
                 await appendMessage(authHeader, finalConversationId, {

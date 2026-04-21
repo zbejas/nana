@@ -36,8 +36,7 @@ Server-side only (`src/lib/config.ts`):
 | `RAM_CACHE`             | `false`                 | Export cache strategy               |
 | `PB_SUPERUSER_EMAIL`    | —                       | Auto-provisioned superuser          |
 | `PB_SUPERUSER_PASSWORD` | —                       | Auto-provisioned superuser          |
-
-PocketBase hooks read their own env vars via `$os.getenv()` (e.g., `MAX_ATTACHMENT_SIZE`, `MAX_ATTACHMENTS`) — these are **not** in `config.ts`.
+| `DEBUG`                 | `false`                 | Enable verbose debug logs in prod   |
 
 Client config is just `window.location.origin + '/pb'` — never hardcode PocketBase URLs.
 

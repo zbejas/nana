@@ -305,7 +305,7 @@ export async function searchDocumentsByIds(
 
         // If no embedding results (docs not yet embedded), fall back to raw content
         if (filtered.length === 0) {
-            log.info("SearchByDocIds: no embedding hits, falling back to raw doc content");
+            log.debug("SearchByDocIds: no embedding hits, falling back to raw doc content");
             return fallbackRawContent(authHeader, documentIds);
         }
 
