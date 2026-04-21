@@ -24,8 +24,9 @@ import { buildFolderTree } from '../../lib/folders/utils';
  * Main hook for folder and document data management.
  * Orchestrates real-time subscriptions and lazy loading of folder documents.
  */
-export function useDocumentData() {
+export function useDocumentData({ enabled = true }: { enabled?: boolean } = {}) {
     const { user } = useAuth();
+    const effectiveUserId = enabled ? user?.id : undefined;
     const folders = useAtomValue(foldersAtom);
     const trashFolders = useAtomValue(trashFoldersAtom);
     const setIsDataLoading = useSetAtom(isDataLoadingAtom);
@@ -45,7 +46,7 @@ export function useDocumentData() {
 
     // Setup real-time subscriptions (runs once per user session)
     useRealtimeSubscriptions({
-        userId: user?.id,
+        userId: effectiveUserId,
         onFoldersUpdate: handleFoldersUpdate,
     });
 
@@ -53,7 +54,7 @@ export function useDocumentData() {
     const {
         loadFolderDocuments,
     } = useFolderLazyLoading({
-        userId: user?.id,
+        userId: effectiveUserId,
         folders,
         trashFolders,
     });
@@ -67,7 +68,7 @@ export function useDocumentData() {
     const prevTrigger = useRef(0);
     const refreshEpochRef = useRef(0);
     useEffect(() => {
-        if (user && refreshTrigger > 0 && refreshTrigger !== prevTrigger.current) {
+        if (enabled && user && refreshTrigger > 0 && refreshTrigger !== prevTrigger.current) {
             logger.debug('Manual refresh triggered', { count: refreshTrigger });
             prevTrigger.current = refreshTrigger;
             const epoch = ++refreshEpochRef.current;
