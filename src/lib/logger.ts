@@ -32,6 +32,12 @@ const IS_DEV =
         ? process.env.NODE_ENV !== "production"
         : true;
 
+/** Opt-in verbose logging in production via `DEBUG=true`. */
+const IS_DEBUG =
+    typeof process !== "undefined"
+        ? process.env.DEBUG === "true"
+        : false;
+
 /** True when running inside a browser (has `window`). */
 const IS_BROWSER = typeof window !== "undefined";
 
@@ -196,7 +202,7 @@ function createBrowserLogger(module: string): Logger {
     function emit(level: string, message: string, data: unknown[]) {
         const cfg = LEVELS[level];
         if (!cfg) return;
-        if (cfg.devOnly && !IS_DEV) return;
+        if (cfg.devOnly && !IS_DEV && !IS_DEBUG) return;
 
         const { icon, browserColor, method } = cfg;
         const sIcon = `color:${browserColor};font-weight:700`;
@@ -259,7 +265,7 @@ function createTerminalLogger(module: string): Logger {
     function emit(level: string, message: string, data: unknown[]) {
         const cfg = LEVELS[level];
         if (!cfg) return;
-        if (cfg.devOnly && !IS_DEV) return;
+        if (cfg.devOnly && !IS_DEV && !IS_DEBUG) return;
 
         const { icon, ansi, method } = cfg;
         const ts = timestamp();
