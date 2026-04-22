@@ -44,6 +44,8 @@ type DeleteConfirmState = {
     isPermanent?: boolean;
 };
 
+type FolderViewFilterMode = 'all' | 'trash' | 'public';
+
 const FOLDER_VIEW_MODE_STORAGE_KEY = 'nana-folder-view-mode';
 
 function getInitialFolderViewMode(): ViewMode {
@@ -1130,20 +1132,14 @@ export function useFolderViewState() {
         closeContextMenu();
     };
 
-    const openTrash = () => {
-        navigate('/folders/trash', { preventScrollReset: true });
-    };
+    const setFilterMode = (mode: FolderViewFilterMode) => {
+        const targetPath = mode === 'trash'
+            ? '/folders/trash'
+            : mode === 'public'
+                ? '/folders/shared'
+                : '/folders';
 
-    const exitTrash = () => {
-        navigate('/folders', { preventScrollReset: true });
-    };
-
-    const openShared = () => {
-        navigate('/folders/shared', { preventScrollReset: true });
-    };
-
-    const exitShared = () => {
-        navigate('/folders', { preventScrollReset: true });
+        navigate(targetPath, { preventScrollReset: true });
     };
 
     const dragHandlers = (isTrashMode || isSharedMode)
@@ -1202,10 +1198,7 @@ export function useFolderViewState() {
         handleFolderDoubleClick,
         handleNavigateUp,
         handleBreadcrumbClick,
-        openTrash,
-        exitTrash,
-        openShared,
-        exitShared,
+        setFilterMode,
         handleDocumentClick,
         handleDocumentDoubleClick,
         handleSelectAll,

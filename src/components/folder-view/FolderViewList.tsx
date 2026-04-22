@@ -268,10 +268,12 @@ export function FolderViewList({
               }`}
             >
               <DocumentTextIcon className="w-5 h-5 text-gray-400" />
-              <span className="text-gray-200 truncate flex-1">{document.title || 'Untitled'}</span>
-              {document.is_public && (
-                <GlobeAltIcon className="w-4 h-4 flex-shrink-0 text-emerald-400/70" title="Public" />
-              )}
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className="truncate text-gray-200">{document.title || 'Untitled'}</span>
+                {document.is_public && (
+                  <GlobeAltIcon className="h-4 w-4 flex-shrink-0 text-emerald-400/70" title="Public" />
+                )}
+              </div>
               {document.tags.length > 0 && (
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {document.tags.slice(0, 2).map((tag) => (

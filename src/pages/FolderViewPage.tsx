@@ -53,10 +53,7 @@ export function FolderViewPage() {
     handleFolderDoubleClick,
     handleNavigateUp,
     handleBreadcrumbClick,
-    openTrash,
-    exitTrash,
-    openShared,
-    exitShared,
+    setFilterMode,
     handleDocumentClick,
     handleDocumentDoubleClick,
     handleSelectAll,
@@ -131,8 +128,7 @@ export function FolderViewPage() {
           <FolderViewActions
             isTrashMode={isTrashMode}
             isSharedMode={isSharedMode}
-            onToggleTrash={isTrashMode ? exitTrash : openTrash}
-            onToggleShared={isSharedMode ? exitShared : openShared}
+            onSelectMode={setFilterMode}
             onAddFolder={() => { void handleAddFolder(); }}
             onAddDocument={() => { void handleAddDocument(); }}
           />
@@ -356,13 +352,12 @@ export function FolderViewPage() {
 interface FolderViewActionsProps {
   isTrashMode: boolean;
   isSharedMode: boolean;
-  onToggleTrash: () => void;
-  onToggleShared: () => void;
+  onSelectMode: (mode: 'all' | 'trash' | 'public') => void;
   onAddFolder: () => void;
   onAddDocument: () => void;
 }
 
-function FolderViewActions({ isTrashMode, isSharedMode, onToggleTrash, onToggleShared, onAddFolder, onAddDocument }: FolderViewActionsProps) {
+function FolderViewActions({ isTrashMode, isSharedMode, onSelectMode, onAddFolder, onAddDocument }: FolderViewActionsProps) {
   const [open, setOpen] = useLocalState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -433,7 +428,7 @@ function FolderViewActions({ isTrashMode, isSharedMode, onToggleTrash, onToggleS
             <div className="my-1 border-t border-white/10" />
 
             <button
-              onClick={() => { if (isTrashMode) onToggleTrash(); if (isSharedMode) onToggleShared(); setOpen(false); }}
+              onClick={() => { onSelectMode('all'); setOpen(false); }}
               className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
                 !isTrashMode && !isSharedMode ? 'text-white bg-white/10' : 'text-gray-300 hover:bg-white/10'
               }`}
@@ -442,7 +437,7 @@ function FolderViewActions({ isTrashMode, isSharedMode, onToggleTrash, onToggleS
               All files
             </button>
             <button
-              onClick={() => { if (!isTrashMode) onToggleTrash(); if (isSharedMode) { onToggleShared(); } setOpen(false); }}
+              onClick={() => { onSelectMode('trash'); setOpen(false); }}
               className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
                 isTrashMode ? 'text-amber-200 bg-amber-400/10' : 'text-amber-200/70 hover:bg-white/10'
               }`}
@@ -451,7 +446,7 @@ function FolderViewActions({ isTrashMode, isSharedMode, onToggleTrash, onToggleS
               Trash
             </button>
             <button
-              onClick={() => { if (!isSharedMode) onToggleShared(); if (isTrashMode) { onToggleTrash(); } setOpen(false); }}
+              onClick={() => { onSelectMode('public'); setOpen(false); }}
               className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
                 isSharedMode ? 'text-emerald-200 bg-emerald-400/10' : 'text-emerald-200/70 hover:bg-white/10'
               }`}

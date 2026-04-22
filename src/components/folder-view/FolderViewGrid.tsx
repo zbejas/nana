@@ -284,10 +284,10 @@ export function FolderViewGrid({
                   </div>
                 )}
                 <DocumentTextIcon className="w-10 h-10 text-gray-400 mb-2" />
-                <div className="text-sm text-gray-200 truncate flex items-center gap-1.5">
-                  {document.title || 'Untitled'}
+                <div className="flex min-w-0 items-center gap-1.5 text-sm text-gray-200">
+                  <span className="truncate">{document.title || 'Untitled'}</span>
                   {document.is_public && (
-                    <GlobeAltIcon className="w-4 h-4 flex-shrink-0 text-emerald-400/70" title="Public" />
+                    <GlobeAltIcon className="h-4 w-4 flex-shrink-0 text-emerald-400/70" title="Public" />
                   )}
                 </div>
               </button>
