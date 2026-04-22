@@ -3,6 +3,7 @@ import { pb } from '../../../../lib/pocketbase';
 import type { RecordModel } from 'pocketbase';
 import type { AIProviderKey } from '../../../../lib/ai/types';
 import { createLogger } from '../../../../lib/logger';
+import { SettingsSelect } from '../../SettingsSelect';
 
 const log = createLogger('EmbedSettings');
 
@@ -194,8 +195,6 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
 
     const inputClass =
         'w-full rounded-lg border border-white/20 bg-black/30 px-4 py-2.5 text-sm text-white placeholder-gray-500 transition-colors focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20';
-    const selectClass =
-        'w-full rounded-lg border border-white/20 bg-black/30 px-4 py-2.5 text-sm text-white transition-colors focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20';
 
     if (loading) {
         return (
@@ -276,7 +275,7 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
 
                 <div className="space-y-1.5">
                     <label className="block text-sm font-medium text-gray-300">Strategy</label>
-                    <select
+                    <SettingsSelect
                         value={config.chunkingStrategy}
                         onChange={(e) =>
                             setConfig((prev) => ({
@@ -284,14 +283,13 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
                                 chunkingStrategy: e.target.value as ChunkingStrategy,
                             }))
                         }
-                        className={selectClass}
                     >
                         {STRATEGY_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>
                                 {opt.label}
                             </option>
                         ))}
-                    </select>
+                    </SettingsSelect>
                     <p className="text-xs text-gray-500">
                         {STRATEGY_OPTIONS.find((s) => s.value === config.chunkingStrategy)?.description}
                     </p>
