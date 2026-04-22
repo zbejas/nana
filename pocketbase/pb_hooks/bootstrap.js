@@ -1,23 +1,53 @@
 /// <reference path="../pb_data/types.d.ts" />
 
 /**
- * Bootstrap hook: seeds the site_url setting from SITE_URL env var if set.
+ * Bootstrap hook: seeds the site_url setting from SITE_URL env var if set,
+ * and syncs PocketBase's meta.appURL for OAuth2 redirect URIs.
  * Runs once on PocketBase startup and is idempotent (safe to restart).
  */
 onBootstrap((e) => {
-  const siteUrl = $os.getenv("SITE_URL")
-  if (!siteUrl) return e.next()
+  e.next()
 
-  try {
-    const record = $app.findFirstRecordByFilter("settings", "key = 'site_url'")
-    record.set("value", { url: siteUrl.trim().replace(/\/+$/, "") })
-    $app.save(record)
-    console.log("Site URL seeded from environment variable: " + siteUrl)
-  } catch (err) {
-    console.error("Failed to seed site URL from environment variable:", err)
+  /** Sync PocketBase's internal meta.appURL from a URL string. */
+  const syncAppURL = (url) => {
+    if (!url) return
+    try {
+      const settings = $app.settings()
+      const cleaned = url.trim().replace(/\/+$/, "")
+      if (settings.meta.appURL !== cleaned) {
+        settings.meta.appURL = cleaned
+        $app.save(settings)
+        console.log("PocketBase appURL synced to: " + cleaned)
+      }
+    } catch (err) {
+      console.error("Failed to sync PocketBase appURL:", err)
+    }
   }
 
-  return e.next()
+  const siteUrl = $os.getenv("SITE_URL")
+
+  if (siteUrl) {
+    try {
+      const cleaned = siteUrl.trim().replace(/\/+$/, "")
+      const record = $app.findFirstRecordByFilter("settings", "key = 'site_url'")
+      record.set("value", { url: cleaned })
+      $app.save(record)
+      console.log("Site URL seeded from environment variable: " + siteUrl)
+      syncAppURL(cleaned)
+    } catch (err) {
+      console.error("Failed to seed site URL from environment variable:", err)
+    }
+  } else {
+    // No env var — sync appURL from the existing site_url setting
+    try {
+      const record = $app.findFirstRecordByFilter("settings", "key = 'site_url'")
+      const value = record.get("value")
+      const url = (value && typeof value === "object") ? (value.url || "") : ""
+      syncAppURL(url)
+    } catch (_) {
+      // No site_url record yet — nothing to sync
+    }
+  }
 })
 
 /**
