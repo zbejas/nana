@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   SparklesIcon,
@@ -21,6 +22,15 @@ import { useToasts } from '../state/hooks';
 import { listDocuments } from '../lib/documents/crud';
 import type { Document } from '../lib/documents/types';
 import { useDocumentSearch } from '../lib/documents/useDocumentSearch';
+import {
+  CHAT_ATTACHMENT_DRAFT_KEY,
+  chatAttachedDocumentsAtom,
+  clearChatAttachedDocumentsAtom,
+  moveChatAttachedDocumentsAtom,
+  removeChatAttachedDocumentAtom,
+  toggleChatAttachedDocumentAtom,
+  type ChatAttachedDocument,
+} from '../state/atoms';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -79,6 +89,8 @@ function formatDocumentDate(value: string) {
   });
 }
 
+const EMPTY_ATTACHED_DOCS: ChatAttachedDocument[] = [];
+
 // ── API helpers ──────────────────────────────────────────────────────
 
 function getAuthHeaders(): Record<string, string> {
@@ -130,9 +142,17 @@ export function ChatPage() {
 
   // Document picker
   const [allDocuments, setAllDocuments] = useState<Document[]>([]);
-  const [attachedDocs, setAttachedDocs] = useState<{ id: string; title: string }[]>([]);
   const [showDocPicker, setShowDocPicker] = useState(false);
   const [docSearchQuery, setDocSearchQuery] = useState('');
+
+  const attachedDocumentsByScope = useAtomValue(chatAttachedDocumentsAtom);
+  const toggleChatAttachedDocument = useSetAtom(toggleChatAttachedDocumentAtom);
+  const removeChatAttachedDocument = useSetAtom(removeChatAttachedDocumentAtom);
+  const clearChatAttachedDocuments = useSetAtom(clearChatAttachedDocumentsAtom);
+  const moveChatAttachedDocuments = useSetAtom(moveChatAttachedDocumentsAtom);
+
+  const activeAttachmentScopeKey = conversationId ?? streamStore.resolvedId ?? CHAT_ATTACHMENT_DRAFT_KEY;
+  const attachedDocs = attachedDocumentsByScope[activeAttachmentScopeKey] ?? EMPTY_ATTACHED_DOCS;
 
   const attachedDocIds = useMemo(() => new Set(attachedDocs.map(doc => doc.id)), [attachedDocs]);
   const trimmedDocSearchQuery = docSearchQuery.trim();
@@ -186,14 +206,21 @@ export function ChatPage() {
   }, []);
 
   const toggleAttachedDocument = useCallback((doc: Pick<Document, 'id' | 'title'>) => {
-    const nextTitle = doc.title || 'Untitled';
+    toggleChatAttachedDocument({
+      scopeKey: activeAttachmentScopeKey,
+      doc: {
+        id: doc.id,
+        title: doc.title || 'Untitled',
+      },
+    });
+  }, [activeAttachmentScopeKey, toggleChatAttachedDocument]);
 
-    setAttachedDocs(prev => (
-      prev.some(item => item.id === doc.id)
-        ? prev.filter(item => item.id !== doc.id)
-        : [...prev, { id: doc.id, title: nextTitle }]
-    ));
-  }, []);
+  const handleRemoveAttachedDocument = useCallback((docId: string) => {
+    removeChatAttachedDocument({
+      scopeKey: activeAttachmentScopeKey,
+      docId,
+    });
+  }, [activeAttachmentScopeKey, removeChatAttachedDocument]);
 
   const { results: searchedDocuments, isLoading: isSearchingDocuments } = useDocumentSearch(docSearchQuery, {
     debounceMs: 250,
@@ -482,7 +509,6 @@ export function ChatPage() {
     const docIds = attachedDocs.map(d => d.id);
 
     setInput('');
-    setAttachedDocs([]);
     closeDocPicker();
     setError(null);
 
@@ -552,7 +578,12 @@ export function ChatPage() {
       if (isNew && newConversationId) {
         streamStore.resolvedId = newConversationId;
         streamStore.isNewConversation = true;
+        moveChatAttachedDocuments({
+          fromScopeKey: CHAT_ATTACHMENT_DRAFT_KEY,
+          toScopeKey: newConversationId,
+        });
         setLastChat(newConversationId);
+        notifyStream();
       }
 
       // Stream the response
@@ -628,7 +659,16 @@ export function ChatPage() {
     } finally {
       abortRef.current = null;
     }
-  }, [input, isStreaming, conversationId, navigate, loadConversations, attachedDocs, closeDocPicker]);
+  }, [
+    input,
+    isStreaming,
+    conversationId,
+    navigate,
+    loadConversations,
+    attachedDocs,
+    closeDocPicker,
+    moveChatAttachedDocuments,
+  ]);
 
   // ── Delete conversation ──────────────────────────────────────────
 
@@ -636,6 +676,7 @@ export function ChatPage() {
     try {
       await deleteConversationApi(id);
       setConversations(prev => prev.filter(c => c.id !== id));
+      clearChatAttachedDocuments(id);
 
       // Clear last-chat if we're deleting it
       const recent = getRecentChatId();
@@ -647,7 +688,7 @@ export function ChatPage() {
     } catch {
       setError('Failed to delete conversation');
     }
-  }, [conversationId, navigate]);
+  }, [clearChatAttachedDocuments, conversationId, navigate]);
 
   // ── New chat ─────────────────────────────────────────────────────
 
@@ -849,7 +890,7 @@ export function ChatPage() {
             <span className="truncate">{doc.title}</span>
             <button
               type="button"
-              onClick={() => setAttachedDocs(prev => prev.filter(d => d.id !== doc.id))}
+              onClick={() => handleRemoveAttachedDocument(doc.id)}
               className="rounded-full p-0.5 transition-colors hover:bg-blue-500/20"
             >
               <XMarkIcon className="w-3 h-3" />
