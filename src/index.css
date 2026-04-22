@@ -13,12 +13,18 @@
     @apply w-full h-full;
   }
 
+  html,
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   :root.light {
     @apply text-gray-900 bg-gray-50;
   }
 
   body {
-    @apply min-w-[320px] min-h-screen relative m-0;
+    @apply min-w-[320px] relative m-0;
   }
 }
 

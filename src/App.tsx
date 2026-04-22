@@ -241,7 +241,6 @@ function AppContent() {
             ? (sidebarOpen ? `${sidebarWidth}px` : `${COMPACT_SIDEBAR_WIDTH}px`)
             : '0px',
           paddingBottom: shouldShowSidebar && isMobile && !isDocumentRoute ? MOBILE_NAVBAR_HEIGHT : '0px',
-          WebkitOverflowScrolling: isMobile ? 'touch' : undefined,
           transition: sidebarResizing ? 'none' : 'padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
