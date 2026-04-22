@@ -39,6 +39,8 @@ export function AISettings() {
       const merged: AIConfig = {
         ...DEFAULT_AI_CONFIG,
         ...rec.value,
+        systemPrompt: rec.value?.systemPrompt ?? DEFAULT_AI_CONFIG.systemPrompt,
+        titlePrompt: rec.value?.titlePrompt ?? DEFAULT_AI_CONFIG.titlePrompt,
         providers: {
           ...DEFAULT_AI_CONFIG.providers,
           ...(rec.value?.providers ?? {}),
@@ -166,6 +168,37 @@ export function AISettings() {
             onChange={(field, value) => handleProviderChange(key, field, value)}
           />
         ))}
+      </div>
+
+      {/* System Prompt */}
+      <div className="space-y-1.5">
+        <label className="block text-sm font-medium text-gray-300">System Prompt</label>
+        <textarea
+          value={config.systemPrompt}
+          onChange={(e) => setConfig((prev) => ({ ...prev, systemPrompt: e.target.value }))}
+          placeholder="Optional — provide a default system instruction for the AI assistant"
+          rows={4}
+          className="w-full rounded-lg border border-white/20 bg-black/30 px-4 py-2.5 text-sm text-white placeholder-gray-500 transition-colors focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 resize-y"
+        />
+        <p className="text-xs text-gray-500">
+          A global instruction sent to the AI model at the start of every chat and title generation.
+          Leave empty for default behavior.
+        </p>
+      </div>
+
+      {/* Title Prompt */}
+      <div className="space-y-1.5">
+        <label className="block text-sm font-medium text-gray-300">Title Generation Prompt</label>
+        <textarea
+          value={config.titlePrompt}
+          onChange={(e) => setConfig((prev) => ({ ...prev, titlePrompt: e.target.value }))}
+          placeholder="Instruction for auto-generating conversation titles"
+          rows={4}
+          className="w-full rounded-lg border border-white/20 bg-black/30 px-4 py-2.5 text-sm text-white placeholder-gray-500 transition-colors focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 resize-y"
+        />
+        <p className="text-xs text-gray-500">
+          Controls how the AI generates conversation titles. The default produces an emoji + short name.
+        </p>
       </div>
 
       {/* Save AI config */}
