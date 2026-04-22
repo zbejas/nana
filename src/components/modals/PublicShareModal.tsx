@@ -1,4 +1,4 @@
-import { LinkIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
+import { LinkIcon, GlobeAltIcon, EyeSlashIcon, PaperClipIcon } from '@heroicons/react/24/outline';
 import { DateTimePicker } from './DateTimePicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -37,6 +37,8 @@ function getShareUrl(target: PublicShareTarget | null) {
 
 export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: PublicShareModalProps) {
     const [publicEnabled, setPublicEnabled] = useState(false);
+    const [isPrivate, setIsPrivate] = useState(false);
+    const [shareAttachments, setShareAttachments] = useState(false);
     const [expirationEnabled, setExpirationEnabled] = useState(true);
     const [expirationValue, setExpirationValue] = useState('');
     const [validationError, setValidationError] = useState<string | null>(null);
@@ -53,7 +55,9 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
             ? new Date(target.record.public_expires_at!)
             : getDefaultPublicExpiryDate();
 
-        setPublicEnabled(true);
+        setPublicEnabled(target.record.is_public ?? false);
+        setIsPrivate(target.record.is_private ?? false);
+        setShareAttachments(target.record.share_attachments ?? false);
         setExpirationEnabled(hasExistingExpiry || !target.record.is_public);
         setExpirationValue(toDatetimeLocalValue(initialExpiry));
         setValidationError(null);
@@ -96,6 +100,8 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
             expiresAt: publicEnabled && expirationEnabled && parsedExpiration
                 ? parsedExpiration.toISOString()
                 : null,
+            isPrivate,
+            shareAttachments,
         });
     };
 
@@ -113,7 +119,8 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
                 </div>
 
                     <div className="mt-5 space-y-4 sm:mt-6 sm:space-y-5">
-                    <label className="flex items-start justify-between gap-4 rounded-lg border border-white/10 bg-white/5 p-4">
+                    <div>
+                    <label className={`flex items-start justify-between gap-4 rounded-lg border p-4 ${isPrivate ? 'border-white/5 bg-black/25 opacity-60' : 'border-white/10 bg-white/5'}`}>
                         <div>
                             <div className="flex items-center gap-2 text-sm font-medium text-white">
                                 <GlobeAltIcon className="h-5 w-5 text-amber-300" />
@@ -129,36 +136,99 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
                         <input
                             type="checkbox"
                             checked={publicEnabled}
+                            disabled={isPrivate}
                             onChange={(event) => setPublicEnabled(event.target.checked)}
                             className="mt-1 h-5 w-5 rounded border-white/20 bg-transparent text-amber-400 focus:ring-amber-400"
                         />
                     </label>
 
-                    <div className={`space-y-4 rounded-lg border p-4 ${publicEnabled ? 'border-white/10 bg-white/5' : 'border-white/5 bg-black/25 opacity-60'}`}>
-                        <label className="flex items-start justify-between gap-4">
-                            <div>
-                                <div className="text-sm font-medium text-white">Expiration</div>
-                                <p className="mt-1 text-xs text-stone-300">Enabled by default for new public links.</p>
+                    <div
+                        className="overflow-hidden transition-all duration-300 ease-in-out"
+                        style={{
+                            display: 'grid',
+                            gridTemplateRows: publicEnabled && !isPrivate ? '1fr' : '0fr',
+                            opacity: publicEnabled && !isPrivate ? 1 : 0,
+                        }}
+                    >
+                        <div className="min-h-0">
+                            <div className="mt-4 sm:mt-5 space-y-4 rounded-lg border border-white/10 bg-white/5 p-4">
+                                <label className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <div className="text-sm font-medium text-white">Expiration</div>
+                                        <p className="mt-1 text-xs text-stone-300">Enabled by default for new public links.</p>
+                                    </div>
+
+                                    <input
+                                        type="checkbox"
+                                        checked={expirationEnabled}
+                                        onChange={(event) => setExpirationEnabled(event.target.checked)}
+                                        className="mt-1 h-5 w-5 rounded border-white/20 bg-transparent text-amber-400 focus:ring-amber-400"
+                                    />
+                                </label>
+
+                                <div
+                                    className="overflow-hidden transition-all duration-300 ease-in-out"
+                                    style={{
+                                        display: 'grid',
+                                        gridTemplateRows: expirationEnabled ? '1fr' : '0fr',
+                                        opacity: expirationEnabled ? 1 : 0,
+                                    }}
+                                >
+                                    <div className="min-h-0">
+                                        <label className="mb-2 block text-xs uppercase tracking-[0.22em] text-stone-400">Expires At</label>
+                                        <DateTimePicker
+                                            value={expirationValue}
+                                            onChange={setExpirationValue}
+                                        />
+                                    </div>
+                                </div>
                             </div>
-
-                            <input
-                                type="checkbox"
-                                checked={expirationEnabled}
-                                disabled={!publicEnabled}
-                                onChange={(event) => setExpirationEnabled(event.target.checked)}
-                                className="mt-1 h-5 w-5 rounded border-white/20 bg-transparent text-amber-400 focus:ring-amber-400"
-                            />
-                        </label>
-
-                        <div>
-                            <label className="mb-2 block text-xs uppercase tracking-[0.22em] text-stone-400">Expires At</label>
-                            <DateTimePicker
-                                value={expirationValue}
-                                disabled={!publicEnabled || !expirationEnabled}
-                                onChange={setExpirationValue}
-                            />
                         </div>
                     </div>
+                    </div>
+
+                    <label className="flex items-start justify-between gap-4 rounded-lg border border-white/10 bg-white/5 p-4">
+                        <div>
+                            <div className="flex items-center gap-2 text-sm font-medium text-white">
+                                <EyeSlashIcon className="h-5 w-5 text-amber-300" />
+                                Private
+                            </div>
+                            <p className="mt-1 text-xs text-stone-300">
+                                {target.type === 'document'
+                                    ? 'Hide this document from any shared parent folder and block its own public URL.'
+                                    : 'Hide this folder from any shared parent folder and block its own public URL.'}
+                            </p>
+                        </div>
+
+                        <input
+                            type="checkbox"
+                            checked={isPrivate}
+                            onChange={(event) => setIsPrivate(event.target.checked)}
+                            className="mt-1 h-5 w-5 rounded border-white/20 bg-transparent text-amber-400 focus:ring-amber-400"
+                        />
+                    </label>
+
+                    <label className={`flex items-start justify-between gap-4 rounded-lg border p-4 ${!isPrivate ? 'border-white/10 bg-white/5' : 'border-white/5 bg-black/25 opacity-60'}`}>
+                        <div>
+                            <div className="flex items-center gap-2 text-sm font-medium text-white">
+                                <PaperClipIcon className="h-5 w-5 text-amber-300" />
+                                Share attachments
+                            </div>
+                            <p className="mt-1 text-xs text-stone-300">
+                                {target.type === 'document'
+                                    ? 'Allow public readers to download this document\u2019s attachments.'
+                                    : 'Allow public readers to download attachments from documents in this folder.'}
+                            </p>
+                        </div>
+
+                        <input
+                            type="checkbox"
+                            checked={shareAttachments}
+                            disabled={isPrivate}
+                            onChange={(event) => setShareAttachments(event.target.checked)}
+                            className="mt-1 h-5 w-5 rounded border-white/20 bg-transparent text-amber-400 focus:ring-amber-400"
+                        />
+                    </label>
 
                     {target.record.is_public && shareUrl && (
                         <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 p-4">
@@ -207,7 +277,7 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
                         disabled={isSaving}
                         className="rounded-lg border border-amber-400/30 bg-amber-500/15 px-4 py-2.5 text-sm font-medium text-amber-100 transition-colors hover:bg-amber-500/25 disabled:cursor-wait disabled:opacity-60"
                     >
-                        {isSaving ? 'Saving...' : publicEnabled ? 'Save Sharing' : 'Disable Public Access'}
+                        {isSaving ? 'Saving...' : 'Save Changes'}
                     </button>
                 </div>
             </div>

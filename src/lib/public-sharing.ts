@@ -6,6 +6,8 @@ export type ShareTargetType = 'document' | 'folder';
 export interface ShareableRecord {
     id: string;
     is_public: boolean;
+    is_private: boolean;
+    share_attachments: boolean;
     public_share_token?: string;
     public_expires_at?: string;
 }
@@ -19,6 +21,7 @@ export interface PublicDocumentShareResponse {
     type: 'document';
     shareToken: string;
     expiresAt: string | null;
+    shareAttachments: boolean;
     author: PublicAuthor | null;
     document: Document;
 }
@@ -27,6 +30,7 @@ export interface PublicFolderShareResponse {
     type: 'folder';
     shareToken: string;
     expiresAt: string | null;
+    shareAttachments: boolean;
     author: PublicAuthor | null;
     rootFolder: Folder;
     folders: Folder[];
@@ -37,6 +41,8 @@ export interface PublicFolderShareResponse {
 export interface PublicShareUpdateOptions {
     enabled: boolean;
     expiresAt: string | null;
+    isPrivate: boolean;
+    shareAttachments: boolean;
 }
 
 function baseUrl() {
@@ -109,6 +115,8 @@ async function updateDocumentShareFields(document: Document, options: PublicShar
 
     return updateDocument(document.id, {
         is_public: options.enabled,
+        is_private: options.isPrivate,
+        share_attachments: options.shareAttachments,
         public_share_token: publicShareToken,
         public_expires_at: options.enabled ? options.expiresAt : null,
     });
@@ -121,6 +129,8 @@ async function updateFolderShareFields(folder: Folder, options: PublicShareUpdat
 
     return updateFolder(folder.id, {
         is_public: options.enabled,
+        is_private: options.isPrivate,
+        share_attachments: options.shareAttachments,
         public_share_token: publicShareToken,
         public_expires_at: options.enabled ? options.expiresAt : null,
     });

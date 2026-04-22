@@ -8,6 +8,8 @@ export interface Document extends RecordModel {
     tags: string[];
     published: boolean;
     is_public: boolean;
+    is_private: boolean;
+    share_attachments: boolean;
     public_share_token?: string;
     public_expires_at?: string;
     author: string; // User ID
@@ -42,6 +44,8 @@ export interface UpdateDocumentData {
     tags?: string[];
     published?: boolean;
     is_public?: boolean;
+    is_private?: boolean;
+    share_attachments?: boolean;
     public_share_token?: string | null;
     public_expires_at?: string | null;
     folder?: string;

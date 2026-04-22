@@ -93,12 +93,16 @@ export function PublicFolderPage() {
             return '';
         }
 
+        if (!data?.shareAttachments) {
+            return activeDocument.content;
+        }
+
         return rewritePublicAttachmentUrls(
             activeDocument.content,
             activeDocument,
             (filename) => getPublicFolderAttachmentUrl(shareToken, activeDocument.id, filename),
         );
-    }, [activeDocument, shareToken]);
+    }, [activeDocument, data, shareToken]);
 
     const handleSelectDocument = (documentId: string) => {
         const nextSearchParams = new URLSearchParams(searchParams);
@@ -215,7 +219,7 @@ export function PublicFolderPage() {
                     {activeDocument ? (
                         <PublicDocumentView
                             content={renderedContent}
-                            attachments={activeDocument.attachments}
+                            attachments={data.shareAttachments ? activeDocument.attachments : []}
                             getAttachmentUrl={(filename) => getPublicFolderAttachmentUrl(shareToken, activeDocument.id, filename)}
                             collapsibleAttachments
                             animationKey={activeDocument.id}

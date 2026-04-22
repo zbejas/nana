@@ -7,6 +7,8 @@ export interface Folder extends RecordModel {
     color?: string;
     published: boolean;
     is_public: boolean;
+    is_private: boolean;
+    share_attachments: boolean;
     public_share_token?: string;
     public_expires_at?: string;
     created: string;
@@ -28,6 +30,8 @@ export interface UpdateFolderData {
     parent?: string;
     color?: string;
     is_public?: boolean;
+    is_private?: boolean;
+    share_attachments?: boolean;
     public_share_token?: string | null;
     public_expires_at?: string | null;
 }

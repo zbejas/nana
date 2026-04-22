@@ -120,6 +120,14 @@ export async function updateDocument(
             formData.append('is_public', String(data.is_public));
         }
 
+        if (data.is_private !== undefined) {
+            formData.append('is_private', String(data.is_private));
+        }
+
+        if (data.share_attachments !== undefined) {
+            formData.append('share_attachments', String(data.share_attachments));
+        }
+
         if (data.public_share_token !== undefined) {
             formData.append('public_share_token', data.public_share_token || '');
         }
