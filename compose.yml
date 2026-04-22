@@ -7,7 +7,6 @@ services:
     #  - "8090:8090"  # PocketBase admin port, avoid exposing in production
     environment:
       - TZ=${TZ:-Europe/Ljubljana}
-    #  - SITE_URL=https://nana.example.com
     volumes:
       - ./pocketbase/pb_data:/app/pocketbase/pb_data
     restart: unless-stopped
