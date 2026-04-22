@@ -419,21 +419,21 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-3">
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="rounded-lg bg-white/10 px-5 py-2.5 text-sm font-medium text-white hover:bg-white/20 disabled:opacity-50 transition-colors"
-                >
-                    {saving ? 'Saving...' : 'Save Embedding Settings'}
-                </button>
-
+            <div className="flex items-center justify-end gap-3">
                 <button
                     onClick={handleReembed}
                     disabled={reembedding}
                     className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-5 py-2.5 text-sm font-medium text-amber-300 hover:bg-amber-500/20 disabled:opacity-50 transition-colors"
                 >
                     {reembedding ? 'Re-embedding...' : 'Re-embed All Documents'}
+                </button>
+
+                <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="rounded-lg bg-white/10 px-5 py-2.5 text-sm font-medium text-white hover:bg-white/20 disabled:opacity-50 transition-colors"
+                >
+                    {saving ? 'Saving...' : 'Save Embedding Settings'}
                 </button>
             </div>
 
