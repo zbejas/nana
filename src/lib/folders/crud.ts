@@ -44,6 +44,8 @@ export async function updateFolder(id: string, data: UpdateFolderData): Promise<
     if (data.parent !== undefined) updates.parent = data.parent;
     if (data.color !== undefined) updates.color = data.color;
     if (data.is_public !== undefined) updates.is_public = data.is_public;
+    if (data.is_private !== undefined) updates.is_private = data.is_private;
+    if (data.share_attachments !== undefined) updates.share_attachments = data.share_attachments;
     if (data.public_share_token !== undefined) updates.public_share_token = data.public_share_token || '';
     if (data.public_expires_at !== undefined) updates.public_expires_at = data.public_expires_at || '';
 

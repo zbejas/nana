@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { pb } from '../../../lib/pocketbase';
+import { SettingsSelect } from '../SettingsSelect';
 
 type SMTPForm = {
   enabled: boolean;
@@ -290,15 +291,14 @@ export function SMTPSettings() {
                 Auth Method
                 <span className="text-gray-500 ml-2 text-xs">PLAIN is most common</span>
               </label>
-              <select
+              <SettingsSelect
                 value={form.authMethod}
                 onChange={(e) => handleChange('authMethod', e.target.value as SMTPForm['authMethod'])}
-                className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white disabled:text-gray-400 disabled:border-white/20 disabled:bg-black/20 [&>option]:bg-gray-900 [&>option]:text-white"
                 disabled={formDisabled}
               >
                 <option value="PLAIN">PLAIN (default)</option>
                 <option value="LOGIN">LOGIN</option>
-              </select>
+              </SettingsSelect>
             </div>
             <div className="flex items-center gap-2 pt-6">
               <label className="inline-flex items-center gap-2.5 cursor-pointer hover:text-white transition-colors group">

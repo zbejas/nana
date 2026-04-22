@@ -21,6 +21,7 @@ export function InstanceSettings() {
 
   // Form state
   const [siteUrl, setSiteUrl] = useState('');
+  const [protocol, setProtocol] = useState<'https://' | 'http://'>('https://');
 
   useEffect(() => {
     loadSettings();
@@ -34,7 +35,14 @@ export function InstanceSettings() {
       // Fetch site_url setting from the settings collection
       const record = await pb.collection('settings').getFirstListItem<SettingRecord>('key="site_url"');
       setSiteUrlRecord(record);
-      setSiteUrl(record.value?.url || '');
+      const url = record.value?.url || '';
+      if (url.startsWith('http://')) {
+        setProtocol('http://');
+        setSiteUrl(url.replace(/^http:\/\//, ''));
+      } else {
+        setProtocol('https://');
+        setSiteUrl(url.replace(/^https?:\/\//, ''));
+      }
     } catch (err: any) {
       log.error('Failed to load settings', err);
       setError(err.message || 'Failed to load settings');
@@ -49,16 +57,9 @@ export function InstanceSettings() {
       setError(null);
       setSuccessMessage(null);
 
-      // Normalize URL (remove trailing slash, ensure https)
-      let normalizedUrl = siteUrl.trim();
-      if (normalizedUrl) {
-        // Remove http:// or https:// if present
-        normalizedUrl = normalizedUrl.replace(/^https?:\/\//, '');
-        // Always add https://
-        normalizedUrl = `https://${normalizedUrl}`;
-        // Remove trailing slash
-        normalizedUrl = normalizedUrl.replace(/\/$/, '');
-      }
+      // Normalize URL
+      let host = siteUrl.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+      const normalizedUrl = host ? `${protocol}${host}` : '';
 
       if (siteUrlRecord) {
         // Update existing record
@@ -75,7 +76,19 @@ export function InstanceSettings() {
         setSiteUrlRecord(newRecord);
       }
 
-      setSiteUrl(normalizedUrl);
+      // Sync PocketBase's internal appURL (used for OAuth2 redirect URIs)
+      if (normalizedUrl) {
+        try {
+          await pb.send('/api/admin/app-url', {
+            method: 'PATCH',
+            body: { url: normalizedUrl },
+          });
+        } catch (err) {
+          log.warn('Failed to sync PocketBase appURL', err);
+        }
+      }
+
+      setSiteUrl(normalizedUrl ? host : '');
       setSuccessMessage('Settings saved successfully');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: any) {
@@ -121,14 +134,24 @@ export function InstanceSettings() {
             Site URL
           </label>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input
-              id="site_url"
-              type="text"
-              value={siteUrl}
-              onChange={(e) => setSiteUrl(e.target.value)}
-              placeholder="nana.example.com or https://nana.example.com"
-              className="w-full rounded-lg border border-white/20 bg-black/30 px-4 py-2.5 text-sm text-white placeholder-gray-500 transition-colors focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20"
-            />
+            <div className="flex w-full rounded-lg border border-white/20 bg-black/30 focus-within:border-white/30 focus-within:ring-2 focus-within:ring-white/20">
+              <select
+                value={protocol}
+                onChange={(e) => setProtocol(e.target.value as 'https://' | 'http://')}
+                className="rounded-l-lg border-r border-white/20 bg-white/5 px-2 py-2.5 text-sm text-gray-300 focus:outline-none"
+              >
+                <option value="https://">https://</option>
+                <option value="http://">http://</option>
+              </select>
+              <input
+                id="site_url"
+                type="text"
+                value={siteUrl}
+                onChange={(e) => setSiteUrl(e.target.value)}
+                placeholder="nana.example.com"
+                className="w-full bg-transparent px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none"
+              />
+            </div>
             <button
               onClick={handleSave}
               disabled={saving}
@@ -138,7 +161,7 @@ export function InstanceSettings() {
             </button>
           </div>
           <p className="text-xs text-gray-500">
-            Enter your domain (e.g., <code className="rounded bg-white/10 px-1 py-0.5">nana.example.com</code>). HTTPS will be enforced automatically.
+            Enter your domain (e.g., <code className="rounded bg-white/10 px-1 py-0.5">nana.example.com</code>).
           </p>
         </div>
       </div>

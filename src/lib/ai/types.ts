@@ -12,11 +12,24 @@ export interface AIProviderConfig {
 
 export interface AIConfig {
     activeProvider: AIProviderKey | null;
+    systemPrompt: string;
+    titlePrompt: string;
     providers: Record<AIProviderKey, AIProviderConfig>;
 }
 
+export const DEFAULT_TITLE_PROMPT =
+    'Generate a short title for the following conversation. ' +
+    'The title MUST start with a single relevant emoji, followed by a space and a concise descriptive name (max 5 words). ' +
+    'Output ONLY the title — no quotes, no extra text.\n\n' +
+    'Examples:\n' +
+    '📊 Sales Report Analysis\n' +
+    '🐛 Fix Login Bug\n' +
+    '✈️ Trip to Japan Planning';
+
 export const DEFAULT_AI_CONFIG: AIConfig = {
     activeProvider: null,
+    systemPrompt: '',
+    titlePrompt: DEFAULT_TITLE_PROMPT,
     providers: {
         openai: {
             apiKey: '',

@@ -82,9 +82,12 @@ function AppContent() {
   const location = useLocation();
   const sidebarWidth = useSidebarWidth();
   
+  // Detect public routes early — skip authenticated data loading on public pages
+  const isPublicRoute = location.pathname.startsWith('/public/');
+
   // Initialize data subscriptions ONCE at top level - DO NOT call this hook anywhere else
   // All data is stored in Jotai atoms and accessible from child components
-  useDocumentData();
+  useDocumentData({ enabled: !isPublicRoute });
 
   // Ensure startup-dependent pages (like timeline) wait for a fresh init cycle
   // before running their initial fetches.
@@ -194,7 +197,7 @@ function AppContent() {
     '/onboarding',
     '/'
   ].includes(location.pathname) || location.pathname.startsWith('/public/');
-  const isPublicRoute = location.pathname.startsWith('/public/');
+
 
   useEffect(() => {
     document.body.classList.toggle('public-route-active', isPublicRoute);
@@ -238,7 +241,6 @@ function AppContent() {
             ? (sidebarOpen ? `${sidebarWidth}px` : `${COMPACT_SIDEBAR_WIDTH}px`)
             : '0px',
           paddingBottom: shouldShowSidebar && isMobile && !isDocumentRoute ? MOBILE_NAVBAR_HEIGHT : '0px',
-          WebkitOverflowScrolling: isMobile ? 'touch' : undefined,
           transition: sidebarResizing ? 'none' : 'padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >

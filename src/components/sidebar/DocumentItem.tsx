@@ -1,4 +1,4 @@
-import { DocumentTextIcon, EllipsisVerticalIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
+import { DocumentTextIcon, EllipsisVerticalIcon, LockClosedIcon, ShareIcon } from '@heroicons/react/24/outline';
 import type { Document } from "../../lib/documents";
 import type { OnDragStartDocument, OnDragEnd } from '../file-folder-handling';
 
@@ -61,8 +61,11 @@ export function DocumentItem({
             )}
           </div>
         )}
+        {document.is_private && (
+          <LockClosedIcon className="w-3.5 h-3.5 flex-shrink-0 text-amber-400/70" title="Private" />
+        )}
         {document.is_public && (
-          <GlobeAltIcon className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400/70" title="Public" />
+          <ShareIcon className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400/70" title="Public" />
         )}
       </button>
       <button

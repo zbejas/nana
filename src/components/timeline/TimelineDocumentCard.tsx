@@ -1,4 +1,4 @@
-import { ClockIcon, DocumentTextIcon, EllipsisVerticalIcon, FolderIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
+import { ClockIcon, DocumentTextIcon, EllipsisVerticalIcon, FolderIcon, LockClosedIcon, ShareIcon } from '@heroicons/react/24/outline';
 import { useRef, type KeyboardEvent, type MouseEvent, type TouchEvent } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { rehypeSanitizePlugin } from '../../lib/sanitize';
@@ -136,8 +136,11 @@ export function TimelineDocumentCard({
               <div className="flex items-center gap-2">
                 <DocumentTextIcon className="w-4 h-4 text-gray-400" />
                 <span className="text-white font-medium truncate">{highlightText(document.title || 'Untitled', highlightQuery)}</span>
+                {document.is_private && (
+                  <LockClosedIcon className="w-4 h-4 flex-shrink-0 text-amber-400/70" title="Private" />
+                )}
                 {document.is_public && (
-                  <GlobeAltIcon className="w-4 h-4 flex-shrink-0 text-emerald-400/70" title="Public" />
+                  <ShareIcon className="w-4 h-4 flex-shrink-0 text-emerald-400/70" title="Public" />
                 )}
               </div>
               {(document.folder || attachmentCount > 0) && (
@@ -205,8 +208,11 @@ export function TimelineDocumentCard({
             <div className="min-w-0 flex items-center gap-2">
               <DocumentTextIcon className="w-4 h-4 text-gray-400" />
               <span className="text-white font-medium truncate">{highlightText(document.title || 'Untitled', highlightQuery)}</span>
+              {document.is_private && (
+                <LockClosedIcon className="w-4 h-4 flex-shrink-0 text-amber-400/70" title="Private" />
+                )}
               {document.is_public && (
-                <GlobeAltIcon className="w-4 h-4 flex-shrink-0 text-emerald-400/70" title="Public" />
+                <ShareIcon className="w-4 h-4 flex-shrink-0 text-emerald-400/70" title="Public" />
               )}
             </div>
             <button

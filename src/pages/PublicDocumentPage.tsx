@@ -51,6 +51,10 @@ export function PublicDocumentPage() {
             return '';
         }
 
+        if (!data.shareAttachments) {
+            return data.document.content;
+        }
+
         return rewritePublicAttachmentUrls(
             data.document.content,
             data.document,
@@ -152,7 +156,7 @@ export function PublicDocumentPage() {
             <div className="relative z-10 mx-auto mt-6 mb-8 w-full max-w-6xl px-4 sm:px-6 lg:px-10 flex-1">
                 <PublicDocumentView
                     content={renderedContent}
-                    attachments={data.document.attachments}
+                    attachments={data.shareAttachments ? data.document.attachments : []}
                     getAttachmentUrl={(filename) => getPublicDocumentAttachmentUrl(shareToken, filename)}
                     className="p-5 sm:p-8 lg:p-10"
                 />

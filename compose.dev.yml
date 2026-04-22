@@ -15,7 +15,6 @@ services:
     environment:
       - TZ=${TZ:-UTC}
     #  - POCKETBASE_URL=http://127.0.0.1:8090
-    #  - SITE_URL=https://nana.example.com
     develop:
       watch:
         - action: sync

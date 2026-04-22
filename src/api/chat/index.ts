@@ -6,6 +6,7 @@ import { searchDocumentsByIds } from "../embeddings/pipeline";
 import type { ChatSendRequest, ChatMessage, ChatSource } from "./types";
 import { createLogger } from "../../lib/logger";
 import { serverConfig } from "../../lib/config";
+import { DEFAULT_TITLE_PROMPT } from "../../lib/ai/types";
 
 const log = createLogger("Chat");
 const POCKETBASE_URL = serverConfig.pocketbaseUrl;
@@ -148,10 +149,14 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
 
     // ── Fetch AI config ──────────────────────────────────────────────
     let model;
+    let adminSystemPrompt = "";
+    let adminTitlePrompt = "";
     let generationParams: { temperature?: number; maxTokens?: number; topP?: number } = {};
     try {
         const aiConfig = await fetchAIConfig();
         model = getAIModel(aiConfig);
+        adminSystemPrompt = aiConfig.systemPrompt ?? "";
+        adminTitlePrompt = aiConfig.titlePrompt ?? "";
         log.debug(`Using AI provider: ${aiConfig.activeProvider}, model: ${aiConfig.providers[aiConfig.activeProvider!]?.activeModel}`);
 
         // Extract generation parameters from the active provider config
@@ -237,10 +242,11 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
 
     // ── Stream AI response ───────────────────────────────────────────
     const finalConversationId = conversationId;
+    const systemInstruction = buildSystemPrompt(adminSystemPrompt, ragContext);
 
     const result = streamText({
         model,
-        ...(ragContext ? { system: ragContext } : {}),
+        ...(systemInstruction ? { system: systemInstruction } : {}),
         ...generationParams,
         messages,
         onFinish: async ({ text }) => {
@@ -258,7 +264,7 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
 
             // Generate a smart title for new conversations after the first response
             if (isNewConversation) {
-                generateConversationTitle(model, userMessage, text, authHeader, finalConversationId);
+                generateConversationTitle(model, userMessage, text, authHeader, finalConversationId, adminSystemPrompt, adminTitlePrompt);
             }
         },
     });
@@ -282,6 +288,17 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
 }
 
 /**
+ * Compose a system instruction from the admin-configured prompt and optional RAG context.
+ * Returns undefined when both are empty.
+ */
+function buildSystemPrompt(adminPrompt: string, ragContext: string): string | undefined {
+    const parts: string[] = [];
+    if (adminPrompt.trim()) parts.push(adminPrompt.trim());
+    if (ragContext.trim()) parts.push(ragContext.trim());
+    return parts.length > 0 ? parts.join("\n\n---\n\n") : undefined;
+}
+
+/**
  * Fire-and-forget: ask the AI to generate a short title (emoji + name)
  * for a conversation based on the first user message and assistant reply,
  * then update the conversation record in PocketBase.
@@ -291,22 +308,23 @@ async function generateConversationTitle(
     userMessage: string,
     assistantReply: string,
     authHeader: string,
-    conversationId: string
+    conversationId: string,
+    adminSystemPrompt: string = "",
+    adminTitlePrompt: string = "",
 ): Promise<void> {
+    const titleInstruction = adminTitlePrompt.trim() || DEFAULT_TITLE_PROMPT;
+
+    const systemContent = adminSystemPrompt.trim()
+        ? `${adminSystemPrompt.trim()}\n\n---\n\n${titleInstruction}`
+        : titleInstruction;
+
     try {
         const { text: title } = await generateText({
             model,
             messages: [
                 {
                     role: "system",
-                    content:
-                        "Generate a short title for the following conversation. " +
-                        "The title MUST start with a single relevant emoji, followed by a space and a concise descriptive name (max 5 words). " +
-                        "Output ONLY the title — no quotes, no extra text.\n\n" +
-                        "Examples:\n" +
-                        "📊 Sales Report Analysis\n" +
-                        "🐛 Fix Login Bug\n" +
-                        "✈️ Trip to Japan Planning",
+                    content: systemContent,
                 },
                 { role: "user", content: userMessage },
                 { role: "assistant", content: assistantReply },
