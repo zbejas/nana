@@ -2,7 +2,7 @@
 name: Docker Agent
 description: "Specialist for Docker, Dockerfile, compose files, entrypoint scripts, multi-stage builds, volume mounts, and deployment. Use when: Docker issues, compose config, Dockerfile changes, entrypoint fixes, deployment, container debugging."
 argument-hint: "A Docker/deployment task (e.g., 'fix entrypoint to handle graceful shutdown' or 'add healthcheck to compose')"
-tools: [read, search, edit, execute, github/*]
+tools: [read, search, edit, execute, vscode]
 user-invocable: true
 disable-model-invocation: false
 ---

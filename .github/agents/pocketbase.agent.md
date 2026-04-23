@@ -2,7 +2,7 @@
 name: PocketBase Agent
 description: "Specialist for PocketBase hooks, migrations, collections, custom routes, guards, mailers, and the trash system. Use when: adding PocketBase hooks, writing migrations, modifying collections, creating API routes, updating guards, fixing PB hook errors."
 argument-hint: "A task involving PocketBase (e.g., 'add a new migration for tags collection' or 'fix trash restore logic')"
-tools: [read, search, edit, execute, github/*]
+tools: [read, search, edit, execute, vscode]
 user-invocable: true
 disable-model-invocation: false
 ---
