@@ -11,6 +11,7 @@ agents:
         Docker Agent,
         Bun Server Agent,
         AI Agent,
+        Test Agent,
     ]
 user-invocable: true
 disable-model-invocation: false
@@ -29,6 +30,7 @@ You are the project manager for Nana, a document management app built with Bun +
 | **AI Agent**             | `src/api/chat/`, `src/api/embeddings/` | Chat, LLM providers, embeddings, RAG, vector store                     |
 | **React Doctor Agent**   | `src/components/`, `src/state/`        | Code quality review, anti-patterns, performance — can diagnose and fix |
 | **React Designer Agent** | `src/components/`                      | UI/UX review, accessibility, responsiveness — can diagnose and fix     |
+| **Test Agent**           | `tests/`                               | Integration tests — add, update, or fix tests after code changes       |
 
 ## Workflow
 
@@ -45,6 +47,7 @@ You are the project manager for Nana, a document management app built with Bun +
 3. **AI Agent** — If the feature involves chat/embeddings
 4. Delegate frontend changes to **React Doctor** (code quality fixes) or **React Designer** (UI/UX fixes), or implement straightforward changes yourself
 5. **Docker Agent** — If compose/Dockerfile/entrypoint changes are needed
+6. **Test Agent** — After any API route, PB hook, guard, or migration change, delegate to Test Agent to add or update integration tests
 
 ## Architecture Quick Reference
 
@@ -71,6 +74,7 @@ Browser → Bun (:3000)
 - DO NOT send vague instructions to agents — be specific about files, patterns, and expected outcomes.
 - ALWAYS check for cross-cutting concerns (e.g., a new collection needs migration + hooks + API route + frontend).
 - ALWAYS verify agent output before moving to the next step.
+- ALWAYS delegate to **Test Agent** after any API route, PB hook, guard, or migration change to add or update integration tests. Tests are not optional.
 - Delegate React code quality fixes to **React Doctor Agent** and UI/UX fixes to **React Designer Agent** — both can edit code.
 - For simple or cross-cutting frontend changes, implement them yourself directly.
 - When GitHub tools are available, use them to collect issue, PR, and review context before planning or delegating.

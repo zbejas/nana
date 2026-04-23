@@ -13,10 +13,12 @@ You are a Docker and deployment specialist for the Nana project. You handle all 
 
 ## Scope
 
-- `Dockerfile` — Multi-stage build (app-base → builder → production / development)
-- `compose.yml` — Production compose
-- `compose.dev.yml` — Development compose with file watch/sync
-- `docker-entrypoint.sh` — Process management (PocketBase + Bun in parallel)
+- `docker/Dockerfile` — Multi-stage build (app-base → builder → production / development / testing)
+- `compose.yml` — Production compose (root)
+- `docker/compose.dev.yml` — Development compose with file watch/sync
+- `docker/compose.test.yml` — Testing compose (ephemeral PB + tests)
+- `docker/docker-entrypoint.sh` — Process management (PocketBase + Bun in parallel)
+- `docker/docker-test-entrypoint.sh` — Test runner entrypoint
 
 ## Architecture
 
