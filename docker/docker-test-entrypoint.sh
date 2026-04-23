@@ -74,25 +74,20 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
-# Phase 1: Bootstrap and first-user flow (must run on fresh DB before other tests create users)
-log_phase "Phase 1: Bootstrap + user guard tests..."
+# Phase 1: Bootstrap + all guard tests (bootstrap and 00-user-guards run first on fresh DB)
+log_phase "Phase 1: Bootstrap + guard tests..."
 TEST_EXIT=0
-FORCE_COLOR=1 AGENT=1 bun test ./tests/pocketbase/bootstrap.test.ts ./tests/pocketbase/guards/00-user-guards.test.ts 2>&1 \
+FORCE_COLOR=1 AGENT=1 bun test ./tests/pocketbase/bootstrap.test.ts ./tests/pocketbase/guards/ 2>&1 \
 | sed -u $'s/.*expect() calls.*/\033[2m&\033[0m/' || TEST_EXIT=$?
 
-# Phase 2: Remaining guard tests (can run in any order, users already exist)
-log_phase "Phase 2: Trash + version guard tests..."
-FORCE_COLOR=1 AGENT=1 bun test ./tests/pocketbase/guards/01-trash-guards.test.ts ./tests/pocketbase/guards/02-version-guards.test.ts 2>&1 \
+# Phase 2: PocketBase hooks & routes (auto-discovered)
+log_phase "Phase 2: PocketBase hooks & route tests..."
+FORCE_COLOR=1 AGENT=1 bun test ./tests/pocketbase/hooks/ ./tests/pocketbase/routes/ 2>&1 \
 | sed -u $'s/.*expect() calls.*/\033[2m&\033[0m/' || TEST_EXIT=$?
 
-# Phase 3: Document hook tests (stats calculation, version creation)
-log_phase "Phase 3: Document hook tests..."
-FORCE_COLOR=1 AGENT=1 bun test ./tests/pocketbase/hooks/03-document-hooks.test.ts 2>&1 \
-| sed -u $'s/.*expect() calls.*/\033[2m&\033[0m/' || TEST_EXIT=$?
-
-# Phase 4: Route tests (trash routes, admin routes, public shares)
-log_phase "Phase 4: Route tests..."
-FORCE_COLOR=1 AGENT=1 bun test ./tests/pocketbase/routes/04-trash-routes.test.ts ./tests/pocketbase/routes/05-admin-routes.test.ts ./tests/pocketbase/routes/06-public-shares.test.ts ./tests/pocketbase/routes/07-misc-routes.test.ts 2>&1 \
+# Phase 3: Bun API tests (auto-discovered)
+log_phase "Phase 3: Bun API tests..."
+FORCE_COLOR=1 AGENT=1 bun test ./tests/api/ 2>&1 \
 | sed -u $'s/.*expect() calls.*/\033[2m&\033[0m/' || TEST_EXIT=$?
 
 if [ "$TEST_EXIT" -eq 0 ]; then
