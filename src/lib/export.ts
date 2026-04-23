@@ -29,7 +29,7 @@ function parseFilename(header: string | null, fallback: string): string {
 }
 
 /**
- * Internal helper: POST to /api/export and trigger a browser download of the returned ZIP.
+ * Internal helper: POST to /api/export and trigger a browser download of the returned file.
  */
 async function requestExport(body: {
     documentIds?: string[];
@@ -65,7 +65,8 @@ async function requestExport(body: {
 }
 
 /**
- * Export a single document (downloads a ZIP with the document and its attachments).
+ * Export a single document (downloads markdown directly when there are no attachments,
+ * otherwise a ZIP with the document and its attachments).
  */
 export async function exportDocument(documentId: string): Promise<void> {
     try {

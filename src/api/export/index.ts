@@ -15,7 +15,8 @@ const log = createLogger("Export");
  *   { documentIds?: string[], folderIds?: string[], zipName?: string }
  *
  * Requires a valid PocketBase Authorization header.
- * Returns a ZIP file as an attachment download.
+ * Returns an attachment download: plain markdown for a single document with no
+ * attachments, otherwise a ZIP archive.
  */
 export async function handleExport(req: Request): Promise<Response> {
     // ── Method check ─────────────────────────────────────────────────

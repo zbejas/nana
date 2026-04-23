@@ -165,7 +165,7 @@ describe("Bun API Routes", () => {
             expect(res.status).toBe(400);
         });
 
-        test("returns 200 ZIP for a valid document", async () => {
+        test("returns markdown for a valid single document without attachments", async () => {
             // Create a test document via PocketBase API
             const createRes = await fetch(`${PB_API}/collections/documents/records`, {
                 method: "POST",
@@ -195,13 +195,17 @@ describe("Bun API Routes", () => {
             expect(exportRes.status).toBe(200);
 
             const contentType = exportRes.headers.get("Content-Type") || "";
-            expect(
-                contentType.includes("application/zip") ||
-                contentType.includes("application/octet-stream"),
-            ).toBe(true);
+            expect(contentType).toContain("text/markdown");
 
-            const body = await exportRes.arrayBuffer();
-            expect(body.byteLength).toBeGreaterThan(0);
+            const contentDisposition = exportRes.headers.get("Content-Disposition") || "";
+            expect(contentDisposition).toContain("attachment");
+            expect(contentDisposition).toContain('filename="Export_Test_Document.md"');
+
+            const body = await exportRes.text();
+            expect(body).toContain("---");
+            expect(body).toContain("title: Export Test Document");
+            expect(body).toContain("# Hello");
+            expect(body).toContain("This is a test document for export.");
         });
     });
 
