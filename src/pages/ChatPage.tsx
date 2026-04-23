@@ -43,6 +43,7 @@ interface Message {
   id?: string;
   role: 'user' | 'assistant';
   content: string;
+  reasoning?: string;
   streaming?: boolean;
   sources?: ChatSource[];
 }
@@ -592,24 +593,60 @@ export function ChatPage() {
 
       const decoder = new TextDecoder();
       let fullText = '';
+      let fullReasoning = '';
+      let streamError = '';
+      let buffer = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        fullText += chunk;
+        buffer += decoder.decode(value, { stream: true });
 
-        // Update persistent store
+        // SSE events are separated by double newlines
+        let boundary: number;
+        while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+          const event = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+
+          for (const line of event.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            const payload = line.slice(6); // strip "data: "
+            if (payload === '[DONE]') continue;
+
+            try {
+              const chunk = JSON.parse(payload);
+              if (chunk.type === 'text-delta') {
+                fullText += chunk.delta;
+              } else if (chunk.type === 'reasoning-delta') {
+                fullReasoning += chunk.delta;
+              } else if (chunk.type === 'error') {
+                streamError = chunk.errorText || 'An error occurred during streaming';
+              }
+            } catch {
+              // Skip malformed lines
+            }
+          }
+        }
+
+        // Update persistent store with both text and reasoning
         const updated = [...streamStore.messages];
         const lastIdx = updated.length - 1;
         const last = updated[lastIdx];
         if (lastIdx >= 0 && last && last.role === 'assistant') {
-          updated[lastIdx] = { ...last, content: fullText };
+          updated[lastIdx] = {
+            ...last,
+            content: fullText,
+            ...(fullReasoning ? { reasoning: fullReasoning } : {}),
+          };
         }
         streamStore.messages = updated;
-        // Notify mounted component (no-op if unmounted)
         notifyStream();
+      }
+
+      // If an error occurred during streaming, throw to trigger error handling
+      if (streamError) {
+        throw new Error(streamError);
       }
 
       // Finalize the assistant message
@@ -622,6 +659,7 @@ export function ChatPage() {
             ...last,
             content: fullText,
             streaming: false,
+            ...(fullReasoning ? { reasoning: fullReasoning } : {}),
             ...(ragSources.length > 0 ? { sources: ragSources } : {}),
           };
         }
@@ -1092,14 +1130,33 @@ export function ChatPage() {
                           ${msg.streaming && !msg.content ? 'animate-pulse' : ''}
                         `}
                       >
-                        {!msg.content ? (
+                        {/* Reasoning/thinking section */}
+                        {msg.reasoning && (
+                          <details
+                            className="mb-2 rounded-lg border border-white/5 bg-white/3"
+                            open={msg.streaming && !msg.content}
+                          >
+                            <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-400 select-none hover:text-gray-300 transition-colors [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+                              <SparklesIcon className="w-3 h-3 shrink-0" />
+                              <span>Thinking</span>
+                              {msg.streaming && !msg.content && (
+                                <span className="inline-block w-1 h-3 ml-0.5 bg-gray-400 animate-pulse rounded-sm" />
+                              )}
+                            </summary>
+                            <div className="px-2.5 pb-2 text-xs text-gray-500 whitespace-pre-wrap break-words max-h-80 overflow-y-auto scrollbar-autohide">
+                              {msg.reasoning}
+                            </div>
+                          </details>
+                        )}
+                        {/* Main content */}
+                        {!msg.content && !msg.reasoning ? (
                           <span className="text-gray-500 italic">Thinking...</span>
-                        ) : (
+                        ) : msg.content ? (
                           <MarkdownPreview
                             content={msg.content}
                             className="chat-markdown [&_p]:my-1 [&_pre]:my-2 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_code]:text-xs"
                           />
-                        )}
+                        ) : null}
                         {msg.streaming && msg.content && (
                           <span className="inline-block w-1.5 h-4 ml-0.5 bg-blue-400 animate-pulse rounded-sm align-text-bottom" />
                         )}

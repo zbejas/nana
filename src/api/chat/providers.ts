@@ -21,7 +21,7 @@ export function getAIModel(config: AIConfig): LanguageModel {
         throw new Error(`No model configured for ${activeProvider}. Set a model in Settings → AI.`);
     }
 
-    return createModelForProvider(activeProvider, providerConfig.activeModel, providerConfig.apiKey, providerConfig.baseUrl);
+    return createModelForProvider(activeProvider, providerConfig.activeModel, providerConfig.apiKey, providerConfig.baseUrl, providerConfig.thinking);
 }
 
 /**
@@ -29,7 +29,7 @@ export function getAIModel(config: AIConfig): LanguageModel {
  * Returns the embedding model for the active provider.
  * Throws if no provider is active or no embedding model is configured.
  */
-export function getEmbeddingModel(config: AIConfig): EmbeddingModel<string> {
+export function getEmbeddingModel(config: AIConfig): EmbeddingModel {
     const { activeProvider } = config;
 
     if (!activeProvider) {
@@ -48,7 +48,8 @@ function createModelForProvider(
     provider: AIProviderKey,
     model: string,
     apiKey: string,
-    baseUrl: string
+    baseUrl: string,
+    thinking: boolean
 ): LanguageModel {
     switch (provider) {
         case "openai": {
@@ -77,7 +78,7 @@ function createModelForProvider(
                     },
                 } : {}),
             });
-            return ollama(model);
+            return ollama(model, { think: thinking });
         }
 
         default:
@@ -90,7 +91,7 @@ function createEmbeddingModelForProvider(
     model: string,
     apiKey: string,
     baseUrl: string
-): EmbeddingModel<string> {
+): EmbeddingModel {
     switch (provider) {
         case "openai": {
             const openai = createOpenAI({

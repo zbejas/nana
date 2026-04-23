@@ -61,7 +61,7 @@ export function AISettings() {
     }
   };
 
-  const handleProviderChange = (provider: AIProviderKey, field: keyof AIProviderConfig, value: string | number | null) => {
+  const handleProviderChange = (provider: AIProviderKey, field: keyof AIProviderConfig, value: string | number | boolean | null) => {
     setConfig((prev) => ({
       ...prev,
       providers: {

@@ -24,6 +24,8 @@ export interface ChatSource {
 export interface ChatMessage {
     role: "user" | "assistant";
     content: string;
+    /** Reasoning/thinking tokens from models that support extended thinking */
+    reasoning?: string;
     /** Documents used as RAG context for this assistant message */
     sources?: ChatSource[];
 }
