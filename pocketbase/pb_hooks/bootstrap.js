@@ -161,9 +161,9 @@ onBootstrap((e) => {
 
 /**
  * Migration filename compatibility hook.
- * Renames old-style migration filenames (0_*, 00_*, 10_*) to timestamp-based names
+ * Renames old-style migration filenames to the 0000001_ sequential format
  * in the _migrations table. This ensures existing PocketBase instances that ran
- * migrations under the old naming scheme continue to work after the rename.
+ * migrations under the old numeric naming scheme continue to work after the rename.
  *
  * Idempotent: no-ops if filenames already match or rows don't exist.
  *
@@ -173,31 +173,21 @@ onBootstrap((e) => {
   e.next()
 
   const renames = [
-    // [oldName, newName] — covers both original and zero-padded variants
-    ["0_init_users.js",                            "1775053975_init_users.js"],
-    ["00_init_users.js",                           "1775053975_init_users.js"],
-    ["1_created_folders.js",                       "1775053976_created_folders.js"],
-    ["01_created_folders.js",                      "1775053976_created_folders.js"],
-    ["2_created_trash_collections.js",             "1775053977_created_trash_collections.js"],
-    ["02_created_trash_collections.js",            "1775053977_created_trash_collections.js"],
-    ["3_created_settings.js",                      "1775053978_created_settings.js"],
-    ["03_created_settings.js",                     "1775053978_created_settings.js"],
-    ["4_set_smtp_meta.js",                         "1775053979_set_smtp_meta.js"],
-    ["04_set_smtp_meta.js",                        "1775053979_set_smtp_meta.js"],
-    ["5_created_ai_settings.js",                   "1775053980_created_ai_settings.js"],
-    ["05_created_ai_settings.js",                  "1775053980_created_ai_settings.js"],
-    ["6_created_chat_collections.js",              "1775053981_created_chat_collections.js"],
-    ["06_created_chat_collections.js",             "1775053981_created_chat_collections.js"],
-    ["7_created_rate_limits_setting.js",           "1775053982_created_rate_limits_setting.js"],
-    ["07_created_rate_limits_setting.js",          "1775053982_created_rate_limits_setting.js"],
-    ["8_created_embedding_settings.js",            "1775053983_created_embedding_settings.js"],
-    ["08_created_embedding_settings.js",           "1775053983_created_embedding_settings.js"],
-    ["9_sync_trash_attachment_settings.js",        "1775053984_sync_trash_attachment_settings.js"],
-    ["09_sync_trash_attachment_settings.js",       "1775053984_sync_trash_attachment_settings.js"],
-    ["10_preserve_document_version_timestamps.js", "1775053985_preserve_document_version_timestamps.js"],
-    ["11_add_public_sharing.js",                   "1775053986_add_public_sharing.js"],
-    ["12_add_privacy_and_attachment_sharing.js",   "1775053987_add_privacy_and_attachment_sharing.js"],
-    ["13_add_ai_system_prompt.js",                 "1775053988_add_ai_system_prompt.js"],
+    // [oldName, newName] — covers original filename variants
+    ["0_init_users.js",                            "0000001_init_users.js"],
+    ["1_created_folders.js",                       "0000002_created_folders.js"],
+    ["2_created_trash_collections.js",             "0000003_created_trash_collections.js"],
+    ["3_created_settings.js",                      "0000004_created_settings.js"],
+    ["4_set_smtp_meta.js",                         "0000005_set_smtp_meta.js"],
+    ["5_created_ai_settings.js",                   "0000006_created_ai_settings.js"],
+    ["6_created_chat_collections.js",              "0000007_created_chat_collections.js"],
+    ["7_created_rate_limits_setting.js",           "0000008_created_rate_limits_setting.js"],
+    ["8_created_embedding_settings.js",            "0000009_created_embedding_settings.js"],
+    ["9_sync_trash_attachment_settings.js",        "0000010_sync_trash_attachment_settings.js"],
+    ["10_preserve_document_version_timestamps.js", "0000011_preserve_document_version_timestamps.js"],
+    ["11_add_public_sharing.js",                   "0000012_add_public_sharing.js"],
+    ["12_add_privacy_and_attachment_sharing.js",   "0000013_add_privacy_and_attachment_sharing.js"],
+    ["13_add_ai_system_prompt.js",                 "0000014_add_ai_system_prompt.js"],
   ]
 
   let updated = 0
