@@ -24,7 +24,12 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+PB_DATA_DIR="/app/pocketbase/pb_data"
 PB_ARGS="--dir /app/pocketbase/pb_data --hooksDir /app/pocketbase/pb_hooks --migrationsDir /app/pocketbase/pb_migrations"
+
+log "Resetting PocketBase test data..."
+rm -rf "$PB_DATA_DIR"
+mkdir -p "$PB_DATA_DIR/zvec"
 
 log "Running PocketBase migrations..."
 PB_MIGRATING=1 pocketbase migrate up $PB_ARGS >/dev/null

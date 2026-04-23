@@ -72,7 +72,7 @@ RUN bun install --frozen-lockfile --trust-dependencies
 
 COPY . .
 
-RUN mkdir -p /app/pocketbase/pb_data/zvec
+RUN rm -rf /app/pocketbase/pb_data && mkdir -p /app/pocketbase/pb_data/zvec
 RUN chmod +x /app/docker/docker-test-entrypoint.sh
 
 ENTRYPOINT ["/app/docker/docker-test-entrypoint.sh"]
