@@ -13,6 +13,9 @@ import {
   MagnifyingGlassIcon,
   PaperClipIcon,
   DocumentTextIcon,
+  ClipboardIcon,
+  ArrowPathIcon,
+  CheckIcon,
 } from '@heroicons/react/24/outline';
 import { pb } from '../lib/pocketbase';
 import { MarkdownPreview } from '../components/MarkdownPreview';
@@ -46,6 +49,7 @@ interface Message {
   reasoning?: string;
   streaming?: boolean;
   sources?: ChatSource[];
+  model?: string;
 }
 
 interface Conversation {
@@ -174,6 +178,10 @@ export function ChatPage() {
   messagesRef.current = messages;
 
   const { showToast } = useToasts();
+
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [pendingRegenerate, setPendingRegenerate] = useState(false);
+  const isRegeneratingRef = useRef(false);
 
   const isNewChat = !conversationId;
   const hasMessages = messages.length > 0;
@@ -548,9 +556,13 @@ export function ChatPage() {
           conversationId: conversationId || undefined,
           message: text,
           ...(docIds.length > 0 ? { documentIds: docIds } : {}),
+          ...(isRegeneratingRef.current ? { regenerate: true } : {}),
         }),
         signal: controller.signal,
       });
+
+      // Reset regenerate flag after sending
+      isRegeneratingRef.current = false;
 
       if (!res.ok) {
         let errMsg = 'Failed to send message';
@@ -573,6 +585,8 @@ export function ChatPage() {
           ragSources = JSON.parse(sourcesHeader);
         }
       } catch { /* ignore parse errors */ }
+
+      const modelNameHeader = res.headers.get('X-Model-Name') || '';
 
       // Persist the resolved ID immediately so the store knows the
       // server-assigned conversation even if we unmount mid-stream.
@@ -638,6 +652,7 @@ export function ChatPage() {
             ...last,
             content: fullText,
             ...(fullReasoning ? { reasoning: fullReasoning } : {}),
+            model: modelNameHeader,
           };
         }
         streamStore.messages = updated;
@@ -661,6 +676,7 @@ export function ChatPage() {
             streaming: false,
             ...(fullReasoning ? { reasoning: fullReasoning } : {}),
             ...(ragSources.length > 0 ? { sources: ragSources } : {}),
+            model: modelNameHeader,
           };
         }
         streamStore.messages = updated;
@@ -745,6 +761,41 @@ export function ChatPage() {
     setShowSidebar(false);
   }, [navigate]);
 
+  // ── Copy / Regenerate handlers ──────────────────────────────────
+
+  const copyMessage = useCallback((index: number, content: string) => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopiedId(index);
+      setTimeout(() => setCopiedId(prev => prev === index ? null : prev), 2000);
+    });
+  }, []);
+
+  const regenerateLastResponse = useCallback(() => {
+    if (isStreaming) return;
+
+    let lastUserMsg: Message | null = null;
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserMsg = messages[i];
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (!lastUserMsg) return;
+
+    // Trim messages to remove the last assistant response
+    const trimmed = messages.slice(0, lastUserIdx);
+    setMessages(trimmed);
+    messagesRef.current = trimmed;
+    streamStore.messages = trimmed;
+
+    // Set input and flag for auto-send
+    setInput(lastUserMsg.content);
+    isRegeneratingRef.current = true;
+    setPendingRegenerate(true);
+  }, [isStreaming, messages]);
+
   // ── Key handler ──────────────────────────────────────────────────
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -753,6 +804,15 @@ export function ChatPage() {
       sendMessage();
     }
   }, [sendMessage]);
+
+  // ── Auto-send on regenerate ──────────────────────────────────────
+
+  useEffect(() => {
+    if (pendingRegenerate && input.trim()) {
+      setPendingRegenerate(false);
+      sendMessage();
+    }
+  }, [pendingRegenerate, input, sendMessage]);
 
   // ── Render ───────────────────────────────────────────────────────
 
@@ -1120,66 +1180,106 @@ export function ChatPage() {
                       key={i}
                       className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
-                      <div
-                        className={`
-                          max-w-[85%] rounded-2xl px-4 py-2.5 text-sm break-words
-                          ${msg.role === 'user'
-                            ? 'bg-blue-500/20 border border-blue-500/30 text-blue-50'
-                            : 'bg-white/5 border border-white/10 text-gray-200'
-                          }
-                          ${msg.streaming && !msg.content ? 'animate-pulse' : ''}
-                        `}
-                      >
-                        {/* Reasoning/thinking section */}
-                        {msg.reasoning && (
-                          <details
-                            className="mb-2 rounded-lg border border-white/5 bg-white/3"
-                            open={msg.streaming && !msg.content}
-                          >
-                            <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-400 select-none hover:text-gray-300 transition-colors [&::-webkit-details-marker]:hidden [&::marker]:hidden">
-                              <SparklesIcon className="w-3 h-3 shrink-0" />
-                              <span>Thinking</span>
-                              {msg.streaming && !msg.content && (
-                                <span className="inline-block w-1 h-3 ml-0.5 bg-gray-400 animate-pulse rounded-sm" />
-                              )}
-                            </summary>
-                            <div className="px-2.5 pb-2 text-xs text-gray-500 whitespace-pre-wrap break-words max-h-80 overflow-y-auto scrollbar-autohide">
-                              {msg.reasoning}
+                      <div className={`max-w-[85%] ${msg.role === 'assistant' ? 'space-y-1' : ''}`}>
+                        {/* Model name label for assistant messages */}
+                        {msg.role === 'assistant' && msg.model && (
+                          <div className="flex items-center gap-1.5 px-1 mb-1">
+                            <SparklesIcon className="w-3 h-3 text-blue-400" />
+                            <span className="text-[11px] font-medium text-gray-400">{msg.model}</span>
+                          </div>
+                        )}
+                        <div
+                          className={`
+                            rounded-2xl px-4 py-2.5 text-sm break-words
+                            ${msg.role === 'user'
+                              ? 'bg-blue-500/20 border border-blue-500/30 text-blue-50'
+                              : 'bg-white/5 border border-white/10 text-gray-200'
+                            }
+                            ${msg.streaming && !msg.content ? 'animate-pulse' : ''}
+                          `}
+                        >
+                          {/* Reasoning/thinking section */}
+                          {msg.reasoning && (
+                            <details
+                              className="mb-2 rounded-lg border border-white/5 bg-white/3"
+                              open={msg.streaming && !msg.content}
+                            >
+                              <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-400 select-none hover:text-gray-300 transition-colors [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+                                <SparklesIcon className="w-3 h-3 shrink-0" />
+                                <span>Thinking</span>
+                                {msg.streaming && !msg.content && (
+                                  <span className="inline-block w-1 h-3 ml-0.5 bg-gray-400 animate-pulse rounded-sm" />
+                                )}
+                              </summary>
+                              <div className="px-2.5 pb-2 text-xs text-gray-500 break-words max-h-80 overflow-y-auto scrollbar-autohide">
+                                <MarkdownPreview
+                                  content={msg.reasoning}
+                                  className="chat-markdown text-xs text-gray-500 [&_p]:my-0.5 [&_pre]:my-1 [&_ul]:my-0.5 [&_ol]:my-0.5 [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-xs [&_code]:text-[10px]"
+                                />
+                              </div>
+                            </details>
+                          )}
+                          {/* Main content */}
+                          {!msg.content && !msg.reasoning ? (
+                            <span className="text-gray-500 italic">Thinking...</span>
+                          ) : msg.content ? (
+                            <MarkdownPreview
+                              content={msg.content}
+                              className="chat-markdown [&_p]:my-1 [&_pre]:my-2 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_code]:text-xs"
+                            />
+                          ) : null}
+                          {msg.streaming && msg.content && (
+                            <span className="inline-block w-1.5 h-4 ml-0.5 bg-blue-400 animate-pulse rounded-sm align-text-bottom" />
+                          )}
+                          {msg.sources && msg.sources.length > 0 && !msg.streaming && (
+                            <div className="mt-2 pt-2 border-t border-white/5 flex flex-wrap gap-1.5">
+                              <span className="text-[10px] text-gray-500 mr-0.5 self-center">Sources:</span>
+                              {msg.sources.map((src) => (
+                                <a
+                                  key={src.id}
+                                  href={`/document/${src.id}`}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    navigate(`/document/${src.id}`);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 text-[10px] text-blue-300 hover:bg-blue-500/20 hover:text-blue-200 transition-colors cursor-pointer"
+                                  title={src.title}
+                                >
+                                  <svg className="w-2.5 h-2.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                                  </svg>
+                                  <span className="truncate max-w-[120px]">{src.title}</span>
+                                </a>
+                              ))}
                             </div>
-                          </details>
-                        )}
-                        {/* Main content */}
-                        {!msg.content && !msg.reasoning ? (
-                          <span className="text-gray-500 italic">Thinking...</span>
-                        ) : msg.content ? (
-                          <MarkdownPreview
-                            content={msg.content}
-                            className="chat-markdown [&_p]:my-1 [&_pre]:my-2 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_code]:text-xs"
-                          />
-                        ) : null}
-                        {msg.streaming && msg.content && (
-                          <span className="inline-block w-1.5 h-4 ml-0.5 bg-blue-400 animate-pulse rounded-sm align-text-bottom" />
-                        )}
-                        {msg.sources && msg.sources.length > 0 && !msg.streaming && (
-                          <div className="mt-2 pt-2 border-t border-white/5 flex flex-wrap gap-1.5">
-                            <span className="text-[10px] text-gray-500 mr-0.5 self-center">Sources:</span>
-                            {msg.sources.map((src) => (
-                              <a
-                                key={src.id}
-                                href={`/document/${src.id}`}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  navigate(`/document/${src.id}`);
-                                }}
-                                className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 text-[10px] text-blue-300 hover:bg-blue-500/20 hover:text-blue-200 transition-colors cursor-pointer"
-                                title={src.title}
+                          )}
+                        </div>
+                        {/* Action buttons for assistant messages (only when not streaming) */}
+                        {msg.role === 'assistant' && !msg.streaming && msg.content && (
+                          <div className="flex items-center gap-0.5 px-1 mt-1">
+                            <button
+                              type="button"
+                              onClick={() => copyMessage(i, msg.content)}
+                              className="rounded-lg p-1.5 text-gray-500 hover:text-gray-300 hover:bg-white/5 transition-colors"
+                              title="Copy message"
+                            >
+                              {copiedId === i ? (
+                                <CheckIcon className="w-3.5 h-3.5 text-green-400" />
+                              ) : (
+                                <ClipboardIcon className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            {/* Only show regenerate on the last assistant message */}
+                            {i === messages.length - 1 && (
+                              <button
+                                type="button"
+                                onClick={regenerateLastResponse}
+                                className="rounded-lg p-1.5 text-gray-500 hover:text-gray-300 hover:bg-white/5 transition-colors"
+                                title="Regenerate response"
                               >
-                                <svg className="w-2.5 h-2.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-                                </svg>
-                                <span className="truncate max-w-[120px]">{src.title}</span>
-                              </a>
-                            ))}
+                                <ArrowPathIcon className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>

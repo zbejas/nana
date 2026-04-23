@@ -1,7 +1,7 @@
 import { streamText, generateText } from "ai";
 import { verifyAuth, AuthError } from "../auth";
 import { getAIModel } from "./providers";
-import { fetchAIConfig, createConversation, appendMessage, getConversationMessages, listConversations, getConversation, deleteConversation, updateConversationTitle } from "./pocketbase";
+import { fetchAIConfig, createConversation, appendMessage, getConversationMessages, listConversations, getConversation, deleteConversation, updateConversationTitle, trimLastExchange } from "./pocketbase";
 import { searchDocumentsByIds } from "../embeddings/pipeline";
 import type { ChatSendRequest, ChatMessage, ChatSource } from "./types";
 import { createLogger } from "../../lib/logger";
@@ -168,16 +168,18 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
     let model;
     let adminSystemPrompt = "";
     let adminTitlePrompt = "";
+    let modelName = "";
     let generationParams: { temperature?: number; maxTokens?: number; topP?: number } = {};
     try {
         const aiConfig = await fetchAIConfig();
         model = getAIModel(aiConfig);
         adminSystemPrompt = aiConfig.systemPrompt ?? "";
         adminTitlePrompt = aiConfig.titlePrompt ?? "";
-        log.debug(`Using AI provider: ${aiConfig.activeProvider}, model: ${aiConfig.providers[aiConfig.activeProvider!]?.activeModel}`);
+        const providerConfig = aiConfig.providers[aiConfig.activeProvider!];
+        modelName = providerConfig.activeModel;
+        log.debug(`Using AI provider: ${aiConfig.activeProvider}, model: ${providerConfig.activeModel}`);
 
         // Extract generation parameters from the active provider config
-        const providerConfig = aiConfig.providers[aiConfig.activeProvider!];
         if (providerConfig.temperature != null) generationParams.temperature = providerConfig.temperature;
         if (providerConfig.maxTokens != null) generationParams.maxTokens = providerConfig.maxTokens;
         if (providerConfig.topP != null) generationParams.topP = providerConfig.topP;
@@ -202,6 +204,10 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
         conversationId = conversation.id;
         isNewConversation = true;
     } else {
+        if (body.regenerate) {
+            // Regeneration: trim the last user+assistant pair before re-appending
+            await trimLastExchange(authHeader, conversationId);
+        }
         // Append user message to existing conversation
         await appendMessage(authHeader, conversationId, {
             role: "user",
@@ -217,6 +223,9 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
     } else {
         messages = await getConversationMessages(authHeader, conversationId);
     }
+
+    // Strip metadata fields — only send role+content to the AI model
+    const aiMessages = messages.map(({ role, content }) => ({ role, content }));
 
     // ── RAG: retrieve relevant document context ──────────────────────
     const hasExplicitDocs = Array.isArray(body.documentIds) && body.documentIds.length > 0;
@@ -267,7 +276,7 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
             model,
             ...(systemInstruction ? { system: systemInstruction } : {}),
             ...generationParams,
-            messages,
+            messages: aiMessages,
             onFinish: async ({ text, reasoningText }) => {
                 log.debug(`AI response complete: convId=${finalConversationId}, replyLen=${text.length}${reasoningText ? `, reasoningLen=${reasoningText.length}` : ''}`);
                 // Persist the assistant's complete response into the conversation
@@ -277,6 +286,7 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
                         content: text,
                         ...(reasoningText ? { reasoning: reasoningText } : {}),
                         ...(ragSources.length > 0 ? { sources: ragSources } : {}),
+                        model: modelName,
                     });
                 } catch (err) {
                     log.error("Failed to save assistant message", err);
@@ -310,6 +320,7 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
         const headers = new Headers(response.headers);
         headers.set("X-Conversation-Id", finalConversationId);
         headers.set("X-Is-New-Conversation", isNewConversation ? "true" : "false");
+        headers.set("X-Model-Name", modelName);
         if (ragSources.length > 0) {
             headers.set("X-RAG-Sources", JSON.stringify(ragSources));
         }

@@ -181,6 +181,37 @@ export async function getConversationMessages(
 }
 
 /**
+ * Remove the last user+assistant exchange from a conversation.
+ * Used for regeneration — trims from the end until one assistant
+ * and one user message have been removed.
+ */
+export async function trimLastExchange(
+    authHeader: string,
+    conversationId: string
+): Promise<void> {
+    const conv = await getConversation(authHeader, conversationId);
+    const messages = [...(conv.messages || [])];
+
+    // Remove trailing assistant message(s)
+    while (messages.length > 0 && messages.at(-1)?.role === 'assistant') {
+        messages.pop();
+    }
+    // Remove the last user message
+    if (messages.length > 0 && messages.at(-1)?.role === 'user') {
+        messages.pop();
+    }
+
+    await pbFetch<PBConversation>(
+        `/api/collections/conversations/records/${encodeURIComponent(conversationId)}`,
+        authHeader,
+        {
+            method: "PATCH",
+            body: JSON.stringify({ messages }),
+        }
+    );
+}
+
+/**
  * Delete a conversation.
  */
 export async function deleteConversation(authHeader: string, conversationId: string): Promise<void> {
