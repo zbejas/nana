@@ -70,7 +70,7 @@ async function requestExport(body: {
 export async function exportDocument(documentId: string): Promise<void> {
     try {
         logger.info('Exporting document', { documentId });
-        await requestExport({ documentIds: [documentId] }, 'export.zip');
+        await requestExport({ documentIds: [documentId] }, 'export.md');
         logger.info('Document exported successfully', { documentId });
     } catch (error) {
         logger.error('Failed to export document', { documentId, error });

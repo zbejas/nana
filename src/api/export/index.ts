@@ -1,7 +1,7 @@
 import { verifyAuth, AuthError } from "./auth";
 import { downloadDocumentAttachments, obtainFileToken } from "./attachments";
 import { createExportCache } from "./cache";
-import { resolveExportDocuments, sanitizeFilename } from "./documents";
+import { documentToMarkdown, resolveExportDocuments, sanitizeFilename } from "./documents";
 import { buildExportZip } from "./zip-builder";
 import type { ExportRequest, ResolvedDocument, AttachmentFile } from "./types";
 import { createLogger } from "../../lib/logger";
@@ -98,6 +98,23 @@ export async function handleExport(req: Request): Promise<Response> {
                 attachments = await downloadDocumentAttachments(item.doc, fileToken, cache);
             }
             entries.push({ resolved: item, attachments });
+        }
+
+        // ── Single document, no attachments → return plain markdown ──
+        if (entries.length === 1 && entries[0]!.attachments.length === 0) {
+            const entry = entries[0]!;
+            const markdown = documentToMarkdown(entry.resolved.doc);
+            const mdBytes = new TextEncoder().encode(markdown);
+            const mdFilename = `${sanitizeFilename(entry.resolved.doc.title || "export")}.md`;
+
+            return new Response(mdBytes, {
+                status: 200,
+                headers: {
+                    "Content-Type": "text/markdown; charset=utf-8",
+                    "Content-Disposition": `attachment; filename="${mdFilename}"`,
+                    "Content-Length": String(mdBytes.byteLength),
+                },
+            });
         }
 
         // ── Build ZIP ────────────────────────────────────────────────
