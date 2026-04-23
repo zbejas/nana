@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { EditorHeader } from './editor/EditorHeader';
 import { EditorTags } from './editor/EditorTags';
 import { EditorContent } from './editor/EditorContent';
@@ -5,6 +7,12 @@ import { Footer } from './Footer';
 import { useDocumentEditorState } from './editor/useDocumentEditorState';
 import { DocumentLoadingState, DocumentNotFoundState } from './editor/DocumentEditorStatus';
 import { EditorDragOverlay, EditorReadOnlyOverlay, ShowHeaderButton } from './editor/DocumentEditorOverlays';
+import { PublicShareModal } from './modals/PublicShareModal';
+import { usePublicShareModalState } from './modals/usePublicShareModalState';
+import { ConfirmDialog } from './modals/ConfirmDialog';
+import { deleteDocument } from '../lib/documents/trash';
+import { exportDocument } from '../lib/export';
+import { useToasts } from '../state/hooks';
 
 export function DocumentEditor() {
   const {
@@ -57,6 +65,43 @@ export function DocumentEditor() {
     loading,
   } = useDocumentEditorState();
 
+  const navigate = useNavigate();
+  const { showToast } = useToasts();
+  const publicShareModal = usePublicShareModalState();
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  const handleShare = () => {
+    if (document?.id) {
+      void publicShareModal.openDocument(document.id);
+    }
+  };
+
+  const handleExport = async () => {
+    if (!document?.id) return;
+    try {
+      await exportDocument(document.id);
+      showToast('Document exported successfully', 'success');
+    } catch {
+      showToast('Failed to export document', 'error');
+    }
+  };
+
+  const handleDelete = () => {
+    setDeleteConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!document?.id) return;
+    try {
+      await deleteDocument(document.id);
+      showToast('Document moved to trash', 'success');
+      setDeleteConfirm(false);
+      navigate('/');
+    } catch {
+      showToast('Failed to delete document', 'error');
+    }
+  };
+
   if (isLoadingDocument || loading) {
     return <DocumentLoadingState />;
   }
@@ -105,6 +150,9 @@ export function DocumentEditor() {
             headerVisible={!isDesktop ? headerVisible : true}
             onToggleHeader={!isDesktop ? () => setHeaderVisible(!headerVisible) : undefined}
             titleInputRef={titleInputRef}
+            onShare={handleShare}
+            onExport={handleExport}
+            onDelete={handleDelete}
           />
         </div>
 
@@ -201,6 +249,24 @@ export function DocumentEditor() {
           />
         </div>
       )}
+
+      <PublicShareModal
+        target={publicShareModal.target}
+        isOpen={publicShareModal.isOpen}
+        isSaving={publicShareModal.isSaving}
+        onClose={publicShareModal.close}
+        onSave={publicShareModal.save}
+      />
+
+      <ConfirmDialog
+        isOpen={deleteConfirm}
+        title="Delete Document"
+        message="Are you sure you want to delete this document? It will be moved to trash."
+        saveLabel="Delete"
+        onSave={confirmDelete}
+        onDiscard={() => setDeleteConfirm(false)}
+        onCancel={() => setDeleteConfirm(false)}
+      />
     </div>
   );
 }

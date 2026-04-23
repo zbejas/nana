@@ -8,6 +8,7 @@ export interface AIProviderConfig {
     temperature: number | null;
     maxTokens: number | null;
     topP: number | null;
+    thinking: boolean;
 }
 
 export interface AIConfig {
@@ -39,6 +40,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
             temperature: null,
             maxTokens: null,
             topP: null,
+            thinking: false,
         },
         google: {
             apiKey: '',
@@ -48,6 +50,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
             temperature: null,
             maxTokens: null,
             topP: null,
+            thinking: false,
         },
         ollama: {
             apiKey: '',
@@ -57,6 +60,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
             temperature: null,
             maxTokens: null,
             topP: null,
+            thinking: false,
         },
     },
 };

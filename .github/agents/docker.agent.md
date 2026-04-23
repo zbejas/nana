@@ -2,7 +2,7 @@
 name: Docker Agent
 description: "Specialist for Docker, Dockerfile, compose files, entrypoint scripts, multi-stage builds, volume mounts, and deployment. Use when: Docker issues, compose config, Dockerfile changes, entrypoint fixes, deployment, container debugging."
 argument-hint: "A Docker/deployment task (e.g., 'fix entrypoint to handle graceful shutdown' or 'add healthcheck to compose')"
-tools: [read, search, edit, execute, github/*]
+tools: [read, search, edit, execute, vscode]
 user-invocable: true
 disable-model-invocation: false
 ---
@@ -13,10 +13,12 @@ You are a Docker and deployment specialist for the Nana project. You handle all 
 
 ## Scope
 
-- `Dockerfile` — Multi-stage build (app-base → builder → production / development)
-- `compose.yml` — Production compose
-- `compose.dev.yml` — Development compose with file watch/sync
-- `docker-entrypoint.sh` — Process management (PocketBase + Bun in parallel)
+- `docker/Dockerfile` — Multi-stage build (app-base → builder → production / development / testing)
+- `compose.yml` — Production compose (root)
+- `docker/compose.dev.yml` — Development compose with file watch/sync
+- `docker/compose.test.yml` — Testing compose (ephemeral PB + tests)
+- `docker/docker-entrypoint.sh` — Process management (PocketBase + Bun in parallel)
+- `docker/docker-test-entrypoint.sh` — Test runner entrypoint
 
 ## Architecture
 

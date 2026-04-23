@@ -1,0 +1,11 @@
+services:
+  nana-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: testing
+      args:
+        TARGETARCH: ${TARGETARCH:-amd64}
+    container_name: nana-test
+    environment:
+      - TZ=${TZ:-UTC}

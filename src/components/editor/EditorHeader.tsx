@@ -1,4 +1,5 @@
 import { PencilSquareIcon, EyeIcon, ViewColumnsIcon, XMarkIcon, BookmarkIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
+import { EditorContextMenu } from './EditorContextMenu';
 
 type ViewMode = 'text' | 'preview' | 'split';
 
@@ -19,6 +20,9 @@ interface EditorHeaderProps {
   headerVisible?: boolean;
   onToggleHeader?: () => void;
   titleInputRef?: React.RefObject<HTMLInputElement | null>;
+  onShare?: () => void;
+  onExport?: () => void;
+  onDelete?: () => void;
 }
 
 export function EditorHeader({
@@ -38,6 +42,9 @@ export function EditorHeader({
   headerVisible = true,
   onToggleHeader,
   titleInputRef,
+  onShare,
+  onExport,
+  onDelete,
 }: EditorHeaderProps) {
   const handleCancel = () => {
     onCancel();
@@ -119,6 +126,16 @@ export function EditorHeader({
         >
           <BookmarkIcon className="w-5 h-5 sm:w-4 sm:h-4" />
         </button>
+
+        {onShare && onExport && onDelete && (
+          <EditorContextMenu
+            onShare={onShare}
+            onExport={onExport}
+            onDelete={onDelete}
+            disabled={readOnly}
+            isNewDocument={isNewDocument}
+          />
+        )}
 
         {onToggleHeader && (
           <button

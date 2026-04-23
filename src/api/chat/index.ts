@@ -1,7 +1,7 @@
 import { streamText, generateText } from "ai";
 import { verifyAuth, AuthError } from "../auth";
 import { getAIModel } from "./providers";
-import { fetchAIConfig, createConversation, appendMessage, getConversationMessages, listConversations, getConversation, deleteConversation, updateConversationTitle } from "./pocketbase";
+import { fetchAIConfig, createConversation, appendMessage, getConversationMessages, listConversations, getConversation, deleteConversation, updateConversationTitle, trimLastExchange } from "./pocketbase";
 import { searchDocumentsByIds } from "../embeddings/pipeline";
 import type { ChatSendRequest, ChatMessage, ChatSource } from "./types";
 import { createLogger } from "../../lib/logger";
@@ -42,6 +42,23 @@ function jsonError(message: string, status: number): Response {
         status,
         headers: { "Content-Type": "application/json" },
     });
+}
+
+/**
+ * Map AI provider errors to user-friendly messages.
+ */
+function getAIErrorMessage(errorMsg: string): string {
+    const lower = errorMsg.toLowerCase();
+    if (lower.includes("not found")) {
+        return "AI model not found. Check your model name in Settings → AI.";
+    }
+    if (lower.includes("does not support thinking")) {
+        return "This model does not support thinking mode. Disable 'Thinking' in Settings → AI → Ollama.";
+    }
+    if (lower.includes("econnrefused") || lower.includes("fetch failed") || lower.includes("connection refused")) {
+        return "Cannot connect to AI provider. Ensure it is running and the URL is correct.";
+    }
+    return errorMsg || "AI request failed";
 }
 
 /**
@@ -151,16 +168,18 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
     let model;
     let adminSystemPrompt = "";
     let adminTitlePrompt = "";
+    let modelName = "";
     let generationParams: { temperature?: number; maxTokens?: number; topP?: number } = {};
     try {
         const aiConfig = await fetchAIConfig();
         model = getAIModel(aiConfig);
         adminSystemPrompt = aiConfig.systemPrompt ?? "";
         adminTitlePrompt = aiConfig.titlePrompt ?? "";
-        log.debug(`Using AI provider: ${aiConfig.activeProvider}, model: ${aiConfig.providers[aiConfig.activeProvider!]?.activeModel}`);
+        const providerConfig = aiConfig.providers[aiConfig.activeProvider!];
+        modelName = providerConfig.activeModel;
+        log.debug(`Using AI provider: ${aiConfig.activeProvider}, model: ${providerConfig.activeModel}`);
 
         // Extract generation parameters from the active provider config
-        const providerConfig = aiConfig.providers[aiConfig.activeProvider!];
         if (providerConfig.temperature != null) generationParams.temperature = providerConfig.temperature;
         if (providerConfig.maxTokens != null) generationParams.maxTokens = providerConfig.maxTokens;
         if (providerConfig.topP != null) generationParams.topP = providerConfig.topP;
@@ -185,6 +204,10 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
         conversationId = conversation.id;
         isNewConversation = true;
     } else {
+        if (body.regenerate) {
+            // Regeneration: trim the last user+assistant pair before re-appending
+            await trimLastExchange(authHeader, conversationId);
+        }
         // Append user message to existing conversation
         await appendMessage(authHeader, conversationId, {
             role: "user",
@@ -200,6 +223,9 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
     } else {
         messages = await getConversationMessages(authHeader, conversationId);
     }
+
+    // Strip metadata fields — only send role+content to the AI model
+    const aiMessages = messages.map(({ role, content }) => ({ role, content }));
 
     // ── RAG: retrieve relevant document context ──────────────────────
     const hasExplicitDocs = Array.isArray(body.documentIds) && body.documentIds.length > 0;
@@ -244,47 +270,70 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
     const finalConversationId = conversationId;
     const systemInstruction = buildSystemPrompt(adminSystemPrompt, ragContext);
 
-    const result = streamText({
-        model,
-        ...(systemInstruction ? { system: systemInstruction } : {}),
-        ...generationParams,
-        messages,
-        onFinish: async ({ text }) => {
-            log.debug(`AI response complete: convId=${finalConversationId}, replyLen=${text.length}`);
-            // Persist the assistant's complete response into the conversation
-            try {
-                await appendMessage(authHeader, finalConversationId, {
-                    role: "assistant",
-                    content: text,
-                    ...(ragSources.length > 0 ? { sources: ragSources } : {}),
-                });
-            } catch (err) {
-                log.error("Failed to save assistant message", err);
-            }
+    let result;
+    try {
+        result = streamText({
+            model,
+            ...(systemInstruction ? { system: systemInstruction } : {}),
+            ...generationParams,
+            messages: aiMessages,
+            onFinish: async ({ text, reasoningText }) => {
+                log.debug(`AI response complete: convId=${finalConversationId}, replyLen=${text.length}${reasoningText ? `, reasoningLen=${reasoningText.length}` : ''}`);
+                // Persist the assistant's complete response into the conversation
+                try {
+                    await appendMessage(authHeader, finalConversationId, {
+                        role: "assistant",
+                        content: text,
+                        ...(reasoningText ? { reasoning: reasoningText } : {}),
+                        ...(ragSources.length > 0 ? { sources: ragSources } : {}),
+                        model: modelName,
+                    });
+                } catch (err) {
+                    log.error("Failed to save assistant message", err);
+                }
 
-            // Generate a smart title for new conversations after the first response
-            if (isNewConversation) {
-                generateConversationTitle(model, userMessage, text, authHeader, finalConversationId, adminSystemPrompt, adminTitlePrompt);
-            }
-        },
-    });
+                // Generate a smart title for new conversations after the first response
+                if (isNewConversation) {
+                    generateConversationTitle(model, userMessage, text, authHeader, finalConversationId, adminSystemPrompt, adminTitlePrompt);
+                }
+            },
+        });
+    } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        log.error("AI stream failed to start", err);
+        return jsonError(getAIErrorMessage(errMsg), 502);
+    }
 
     // Return a streaming response with the conversation ID in a custom header
     // (title generation runs in the background via onFinish)
-    const response = result.toTextStreamResponse();
+    try {
+        const response = result.toUIMessageStreamResponse({
+            sendReasoning: true,
+            onError: (error) => {
+                const msg = error instanceof Error ? error.message : String(error);
+                log.error("AI stream error", error);
+                return getAIErrorMessage(msg);
+            },
+        });
 
-    // Clone the response to add our custom header
-    const headers = new Headers(response.headers);
-    headers.set("X-Conversation-Id", finalConversationId);
-    headers.set("X-Is-New-Conversation", isNewConversation ? "true" : "false");
-    if (ragSources.length > 0) {
-        headers.set("X-RAG-Sources", JSON.stringify(ragSources));
+        // Clone the response to add our custom header
+        const headers = new Headers(response.headers);
+        headers.set("X-Conversation-Id", finalConversationId);
+        headers.set("X-Is-New-Conversation", isNewConversation ? "true" : "false");
+        headers.set("X-Model-Name", modelName);
+        if (ragSources.length > 0) {
+            headers.set("X-RAG-Sources", JSON.stringify(ragSources));
+        }
+
+        return new Response(response.body, {
+            status: response.status,
+            headers,
+        });
+    } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        log.error("AI stream response failed", err);
+        return jsonError(getAIErrorMessage(errMsg), 502);
     }
-
-    return new Response(response.body, {
-        status: response.status,
-        headers,
-    });
 }
 
 /**

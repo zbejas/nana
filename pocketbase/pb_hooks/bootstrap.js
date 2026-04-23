@@ -158,3 +158,52 @@ onBootstrap((e) => {
   } catch (_err) {
   }
 });
+
+/**
+ * Migration filename compatibility hook.
+ * Renames old-style migration filenames to the 0000001_ sequential format
+ * in the _migrations table. This ensures existing PocketBase instances that ran
+ * migrations under the old numeric naming scheme continue to work after the rename.
+ *
+ * Idempotent: no-ops if filenames already match or rows don't exist.
+ *
+ * TODO: Remove this hook in v0.3.0 or later — by then all instances will have been migrated.
+ */
+onBootstrap((e) => {
+  e.next()
+
+  const renames = [
+    // [oldName, newName] — covers original filename variants
+    ["0_init_users.js",                            "0000001_init_users.js"],
+    ["1_created_folders.js",                       "0000002_created_folders.js"],
+    ["2_created_trash_collections.js",             "0000003_created_trash_collections.js"],
+    ["3_created_settings.js",                      "0000004_created_settings.js"],
+    ["4_set_smtp_meta.js",                         "0000005_set_smtp_meta.js"],
+    ["5_created_ai_settings.js",                   "0000006_created_ai_settings.js"],
+    ["6_created_chat_collections.js",              "0000007_created_chat_collections.js"],
+    ["7_created_rate_limits_setting.js",           "0000008_created_rate_limits_setting.js"],
+    ["8_created_embedding_settings.js",            "0000009_created_embedding_settings.js"],
+    ["9_sync_trash_attachment_settings.js",        "0000010_sync_trash_attachment_settings.js"],
+    ["10_preserve_document_version_timestamps.js", "0000011_preserve_document_version_timestamps.js"],
+    ["11_add_public_sharing.js",                   "0000012_add_public_sharing.js"],
+    ["12_add_privacy_and_attachment_sharing.js",   "0000013_add_privacy_and_attachment_sharing.js"],
+    ["13_add_ai_system_prompt.js",                 "0000014_add_ai_system_prompt.js"],
+  ]
+
+  let updated = 0
+  for (const [oldName, newName] of renames) {
+    try {
+      const result = $app.db()
+        .newQuery("UPDATE _migrations SET file = {:new} WHERE file = {:old}")
+        .bind({ new: newName, old: oldName })
+        .execute()
+      if (result.rowsAffected > 0) updated++
+    } catch (_) {
+      // Ignore — row may not exist (fresh DB or already renamed)
+    }
+  }
+
+  if (updated > 0) {
+    console.log("Migration compat: renamed " + updated + " migration(s) in _migrations table")
+  }
+})

@@ -20,7 +20,7 @@ Browser → Bun (:3000)
 bun run dev                           # HMR dev server
 bun run build.ts                      # Production build → dist/
 bun src/index.ts                      # Production (needs NODE_ENV=production + dist/)
-docker compose -f compose.dev.yml up  # Docker dev (file sync + rebuild)
+docker compose -f docker/compose.dev.yml up  # Docker dev (file sync + rebuild)
 docker compose up -d                  # Docker prod
 ```
 
@@ -122,7 +122,9 @@ Jotai atoms in `src/state/atoms.ts`. Critical rules:
 
 ## Docker
 
-- **Dockerfile**: Multi-stage — `app-base` → `builder` → `production` / `development`.
-- **Entrypoint** (`docker-entrypoint.sh`): Runs PB migrations first, then launches PocketBase + Bun in parallel with prefixed logs. Traps SIGTERM/SIGINT.
-- **Dev compose**: File sync for `src/`, `pb_hooks/`, `pb_migrations/`; rebuild on `package.json` change.
+- **Dockerfile**: `docker/Dockerfile` — Multi-stage — `app-base` → `builder` → `production` / `development` / `testing`.
+- **Entrypoint** (`docker/docker-entrypoint.sh`): Runs PB migrations first, then launches PocketBase + Bun in parallel with prefixed logs. Traps SIGTERM/SIGINT.
+- **Test entrypoint** (`docker/docker-test-entrypoint.sh`): Ephemeral PB + Bun, runs `bun test`, then exits.
+- **Dev compose** (`docker/compose.dev.yml`): File sync for `src/`, `pb_hooks/`, `pb_migrations/`; rebuild on `package.json` change.
+- **Test compose** (`docker/compose.test.yml`): Isolated test container.
 - **Volumes**: `pb_data` persisted for database state.

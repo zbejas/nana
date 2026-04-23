@@ -2,7 +2,7 @@
 name: React Doctor Agent
 description: "Analyzes React components for anti-patterns, redundant code, useless useEffects, missing dependencies, Jotai misuse, and performance issues — and can fix them. Use when: code quality review, React audit, performance check, hook analysis, fixing React anti-patterns."
 argument-hint: "A file path, component name, or directory to analyze (e.g., 'src/components/Sidebar.tsx')"
-tools: [read, search, edit, execute, todo, github/*]
+tools: [read, search, edit, execute, todo, vscode]
 user-invocable: true
 disable-model-invocation: false
 ---

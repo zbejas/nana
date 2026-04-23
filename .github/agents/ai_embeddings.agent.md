@@ -2,7 +2,7 @@
 name: AI Agent
 description: "Specialist for AI chat, LLM providers, embeddings pipeline, RAG search, vector store, chunking strategies, and conversation management. Use when: AI features, chat system, embeddings, RAG, vector search, LLM provider config, conversation CRUD."
 argument-hint: "An AI/chat/embeddings task (e.g., 'add a new chunking strategy' or 'fix RAG context injection')"
-tools: [read, search, edit, execute, github/*]
+tools: [read, search, edit, execute, vscode]
 user-invocable: true
 disable-model-invocation: false
 ---

@@ -12,6 +12,8 @@ export interface ChatSendRequest {
     useRag?: boolean;
     /** Explicit document IDs to use as RAG context (from # mentions) */
     documentIds?: string[];
+    /** When true, removes the previous assistant+user message pair before re-sending */
+    regenerate?: boolean;
 }
 
 /** A document source referenced by RAG */
@@ -24,8 +26,12 @@ export interface ChatSource {
 export interface ChatMessage {
     role: "user" | "assistant";
     content: string;
+    /** Reasoning/thinking tokens from models that support extended thinking */
+    reasoning?: string;
     /** Documents used as RAG context for this assistant message */
     sources?: ChatSource[];
+    /** The AI model that generated this message, e.g. "gpt-4o" or "gemma-4:e4b" */
+    model?: string;
 }
 
 /** PocketBase conversations record (messages stored inline as JSON) */

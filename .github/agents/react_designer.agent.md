@@ -2,7 +2,7 @@
 name: React Designer Agent
 description: "Analyzes React components for UI/UX issues — layout, accessibility, responsiveness, visual consistency, interaction clarity — and can implement fixes. Use when: design review, accessibility audit, mobile UX check, UI consistency, implementing design fixes."
 argument-hint: "A file path, component name, or directory to analyze (e.g., 'src/components/Sidebar.tsx')"
-tools: [read, search, edit, execute, todo, github/*, browser]
+tools: [read, search, edit, execute, todo, vscode, browser]
 user-invocable: true
 disable-model-invocation: false
 ---

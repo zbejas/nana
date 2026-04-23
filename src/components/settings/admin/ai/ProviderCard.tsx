@@ -8,7 +8,7 @@ interface ProviderCardProps {
   config: AIProviderConfig;
   isActive: boolean;
   onToggleActive: () => void;
-  onChange: (field: keyof AIProviderConfig, value: string | number | null) => void;
+  onChange: (field: keyof AIProviderConfig, value: string | number | boolean | null) => void;
 }
 
 export function ProviderCard({
@@ -217,6 +217,33 @@ export function ProviderCard({
                 </p>
               </div>
             </div>
+
+            {providerKey === 'ollama' && (
+              <div className="flex items-center justify-between pt-2">
+                <div>
+                  <span className="text-sm font-medium text-gray-300">Thinking</span>
+                  <p className="text-xs text-gray-500">
+                    Enable chain-of-thought reasoning for supported models (e.g. Gemma 4, DeepSeek R1).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onChange('thinking', !config.thinking)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-white/20 ${
+                    config.thinking ? 'bg-green-500' : 'bg-white/20'
+                  }`}
+                  role="switch"
+                  aria-checked={config.thinking}
+                  aria-label="Toggle thinking mode"
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ease-in-out ${
+                      config.thinking ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
