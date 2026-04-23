@@ -26,17 +26,6 @@ trap cleanup EXIT INT TERM
 
 PB_ARGS="--dir /app/pocketbase/pb_data --hooksDir /app/pocketbase/pb_hooks --migrationsDir /app/pocketbase/pb_migrations"
 
-# Zero-pad single-digit migration prefixes so lexicographic order matches numeric order.
-# e.g. 0_init.js → 00_init.js, 9_foo.js → 09_foo.js (10_+ already sort correctly).
-# This is only needed on fresh databases where no _migrations table exists yet.
-log "Fixing migration file ordering for fresh DB..."
-for f in /app/pocketbase/pb_migrations/[0-9]_*.js; do
-    [ -e "$f" ] || continue
-    dir=$(dirname "$f")
-    base=$(basename "$f")
-    mv "$f" "${dir}/0${base}"
-done
-
 log "Running PocketBase migrations..."
 PB_MIGRATING=1 pocketbase migrate up $PB_ARGS >/dev/null
 
