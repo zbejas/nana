@@ -75,7 +75,7 @@ for i in $(seq 1 30); do
 done
 
 # Phase 1: Bootstrap + all guard tests (bootstrap and 00-user-guards run first on fresh DB)
-log_phase "Phase 1: Bootstrap + guard tests..."
+log_phase "Phase 1: Pocketbase bootstrap + guard tests..."
 TEST_EXIT=0
 FORCE_COLOR=1 AGENT=1 bun test ./tests/pocketbase/bootstrap.test.ts ./tests/pocketbase/guards/ 2>&1 \
 | sed -u $'s/.*expect() calls.*/\033[2m&\033[0m/' || TEST_EXIT=$?
