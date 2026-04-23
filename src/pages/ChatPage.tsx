@@ -755,6 +755,7 @@ export function ChatPage() {
     streamStore.active = false;
     streamStore.error = null;
 
+    clearLastChat();
     navigate('/chat');
     setMessages([]);
     setError(null);
