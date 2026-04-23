@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll } from "bun:test";
+import JSZip from "jszip";
 import {
     BASE_URL,
     PB_API,
@@ -124,6 +125,15 @@ describe("Bun API Routes", () => {
     // ── POST /api/export ─────────────────────────────────────────────
 
     describe("POST /api/export", () => {
+        const sanitizeFilename = (name: string): string => {
+            const normalizedName = (name || "").trim() || "Untitled";
+            return normalizedName
+                .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+                .replace(/\s+/g, "_")
+                .replace(/\.+$/, "")
+                .trim();
+        };
+
         test("returns 401 without auth header", async () => {
             const res = await fetch(`${BASE_URL}/api/export`, {
                 method: "POST",
@@ -206,6 +216,110 @@ describe("Bun API Routes", () => {
             expect(body).toContain("title: Export Test Document");
             expect(body).toContain("# Hello");
             expect(body).toContain("This is a test document for export.");
+        });
+
+        test("returns a zip with nested markdown paths for a folder export", async () => {
+            const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const rootFolderName = `Export Root: ${uniqueSuffix}`;
+            const childFolderName = "ChildFolder";
+            const rootDocTitle = "RootDoc";
+            const childDocTitle = "ChildDoc";
+            const rootDocBody = "Root folder export body text.";
+            const childDocBody = "Child folder export body text.";
+
+            const rootFolderRes = await fetch(`${PB_API}/collections/folders/records`, {
+                method: "POST",
+                headers: {
+                    Authorization: userToken,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    name: rootFolderName,
+                    author: userId,
+                }),
+            });
+            expect(rootFolderRes.status).toBe(200);
+            const rootFolder = (await rootFolderRes.json()) as { id: string };
+
+            const childFolderRes = await fetch(`${PB_API}/collections/folders/records`, {
+                method: "POST",
+                headers: {
+                    Authorization: userToken,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    name: childFolderName,
+                    author: userId,
+                    parent: rootFolder.id,
+                }),
+            });
+            expect(childFolderRes.status).toBe(200);
+            const childFolder = (await childFolderRes.json()) as { id: string };
+
+            const rootDocRes = await fetch(`${PB_API}/collections/documents/records`, {
+                method: "POST",
+                headers: {
+                    Authorization: userToken,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    title: rootDocTitle,
+                    slug: `folder-export-root-${uniqueSuffix}`,
+                    content: `# Root\n\n${rootDocBody}`,
+                    author: userId,
+                    folder: rootFolder.id,
+                }),
+            });
+            expect(rootDocRes.status).toBe(200);
+
+            const childDocRes = await fetch(`${PB_API}/collections/documents/records`, {
+                method: "POST",
+                headers: {
+                    Authorization: userToken,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    title: childDocTitle,
+                    slug: `folder-export-child-${uniqueSuffix}`,
+                    content: `# Child\n\n${childDocBody}`,
+                    author: userId,
+                    folder: childFolder.id,
+                }),
+            });
+            expect(childDocRes.status).toBe(200);
+
+            const exportRes = await fetch(`${BASE_URL}/api/export`, {
+                method: "POST",
+                headers: {
+                    Authorization: userToken,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ folderIds: [rootFolder.id] }),
+            });
+            expect(exportRes.status).toBe(200);
+
+            const contentType = exportRes.headers.get("Content-Type") || "";
+            expect(contentType).toContain("application/zip");
+
+            const sanitizedRootFolderName = sanitizeFilename(rootFolderName);
+            const contentDisposition = exportRes.headers.get("Content-Disposition") || "";
+            expect(contentDisposition).toContain("attachment");
+            expect(contentDisposition).toContain(`filename="${sanitizedRootFolderName}.zip"`);
+
+            const zip = await JSZip.loadAsync(await exportRes.arrayBuffer());
+            const rootDocPath = `${sanitizedRootFolderName}/${sanitizeFilename(rootDocTitle)}.md`;
+            const childDocPath = `${sanitizedRootFolderName}/${sanitizeFilename(childFolderName)}/${sanitizeFilename(childDocTitle)}.md`;
+
+            expect(zip.file(rootDocPath)).toBeDefined();
+            expect(zip.file(childDocPath)).toBeDefined();
+
+            const rootMarkdown = await zip.file(rootDocPath)!.async("text");
+            expect(rootMarkdown).toContain("title: RootDoc");
+            expect(rootMarkdown).toContain(rootDocBody);
+
+            const childMarkdown = await zip.file(childDocPath)!.async("text");
+            expect(childMarkdown).toContain("title: ChildDoc");
+            expect(childMarkdown).toContain(childDocBody);
         });
     });
 
