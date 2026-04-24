@@ -1,5 +1,5 @@
 ARG BUN_VERSION=1.3.13
-ARG PB_VERSION=0.37.2
+ARG PB_VERSION=0.37.3
 ARG TARGETARCH
 
 FROM oven/bun:${BUN_VERSION}-slim AS app-base
@@ -29,13 +29,16 @@ RUN apt-get update && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 
+FROM app-base AS deps-full
+
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile --trust-dependencies
+
 # ---------------------------------------------------------------
 # Build stage (creates dist/)
 # ---------------------------------------------------------------
-FROM app-base AS builder
+FROM deps-full AS builder
 
-COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile --production --trust-dependencies
 COPY tsconfig.json bunfig.toml build.ts ./
 COPY src/ ./src/
 RUN bun run build.ts
@@ -47,9 +50,7 @@ FROM app-base AS development
 
 ENV NODE_ENV=development
 
-COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile --trust-dependencies
-
+COPY --from=deps-full /app/node_modules ./node_modules
 COPY . .
 
 # Ensure pb_data directory exists for PocketBase and Zvec vector store
@@ -67,9 +68,7 @@ FROM app-base AS testing
 
 ENV NODE_ENV=test
 
-COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile --trust-dependencies
-
+COPY --from=deps-full /app/node_modules ./node_modules
 COPY . .
 
 RUN rm -rf /app/pocketbase/pb_data && mkdir -p /app/pocketbase/pb_data/zvec
@@ -86,7 +85,6 @@ ENV NODE_ENV=production
 
 COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile --production --trust-dependencies
-
 COPY --from=builder /app/dist ./dist
 COPY src ./src
 
