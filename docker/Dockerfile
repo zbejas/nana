@@ -9,13 +9,12 @@ ARG TARGETARCH
 
 WORKDIR /app
 
-LABEL maintainer="Zbejas <info@zbejas.io>"
-LABEL description="A self-hosted markdown document management system with version control, designed for simplicity and privacy."
 LABEL org.opencontainers.image.source="https://github.com/zbejas/nana"
 LABEL org.opencontainers.image.documentation="https://github.com/zbejas/nana/blob/master/README.md"
 LABEL org.opencontainers.image.authors="Zbejas"
 LABEL org.opencontainers.image.licenses="AGPL-3.0"
 LABEL org.opencontainers.image.title="Nana"
+LABEL org.opencontainers.image.description="A self-hosted markdown document management system, designed for simplicity and privacy."
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates wget unzip && \

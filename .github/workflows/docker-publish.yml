@@ -32,6 +32,8 @@ jobs:
             - name: Extract metadata
               id: meta
               uses: docker/metadata-action@v5
+              env:
+                  DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
               with:
                   images: ghcr.io/${{ github.repository }}
                   tags: |
@@ -39,6 +41,8 @@ jobs:
                       type=semver,pattern={{major}}.{{minor}}
                       type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
                       type=raw,value=latest,enable={{is_default_branch}}
+                  labels: |
+                      org.opencontainers.image.description=A self-hosted markdown document management system with version control, designed for simplicity and privacy.
 
             - name: Build and push
               uses: docker/build-push-action@v5
@@ -51,5 +55,6 @@ jobs:
                   push: true
                   tags: ${{ steps.meta.outputs.tags }}
                   labels: ${{ steps.meta.outputs.labels }}
+                  annotations: ${{ steps.meta.outputs.annotations }}
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
