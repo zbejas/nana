@@ -86,7 +86,6 @@ Open `http://localhost:3000`, create your first account, and start writing.
 |---|---|---|
 | `PORT` | `3000` | Server listen port |
 | `POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase backend URL |
-| `NODE_ENV` | — | Set to `production` for static serving |
 | `RAM_CACHE` | `false` | Use RAM for export cache |
 | `PB_SUPERUSER_EMAIL` | — | Auto-provisioned superuser email |
 | `PB_SUPERUSER_PASSWORD` | — | Auto-provisioned superuser password |
