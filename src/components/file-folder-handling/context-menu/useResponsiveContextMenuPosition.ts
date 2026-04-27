@@ -22,7 +22,6 @@ export function useResponsiveContextMenuPosition({
         left: x,
         right: 'auto',
     });
-    const [submenuPosition, setSubmenuPosition] = useState<'right' | 'left'>('right');
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
     useEffect(() => {
@@ -40,7 +39,6 @@ export function useResponsiveContextMenuPosition({
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
         const MENU_GUTTER = 10;
-        const FALLBACK_SUBMENU_WIDTH = 170;
 
         const menuWidth = Math.max(1, menuRect.width);
         const menuHeight = Math.max(1, menuRect.height);
@@ -51,15 +49,11 @@ export function useResponsiveContextMenuPosition({
         const newLeft = Math.max(MENU_GUTTER, Math.min(x, maxLeft));
         const newTop = Math.max(MENU_GUTTER, Math.min(y, maxTop));
 
-        const submenuWillOverflowRight = newLeft + menuWidth + FALLBACK_SUBMENU_WIDTH > viewportWidth - MENU_GUTTER;
-        setSubmenuPosition(submenuWillOverflowRight ? 'left' : 'right');
-
         setPosition({ top: newTop, left: newLeft, right: 'auto' });
     }, [contextMenuRef, x, y]);
 
     return {
         position,
-        submenuPosition,
         isMobile,
     };
 }

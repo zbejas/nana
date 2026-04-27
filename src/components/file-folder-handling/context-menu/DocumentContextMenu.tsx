@@ -37,12 +37,11 @@ export function DocumentContextMenu({
   mode = 'default',
   isClosing = false,
 }: DocumentContextMenuProps) {
-  const [showExportSubmenu, setShowExportSubmenu] = useState(false);
   const [sheetOffsetY, setSheetOffsetY] = useState(0);
   const [isDraggingSheet, setIsDraggingSheet] = useState(false);
   const [hasEnteredMobileSheet, setHasEnteredMobileSheet] = useState(false);
   const sheetDragStartYRef = useRef<number | null>(null);
-  const { position, submenuPosition, isMobile } = useResponsiveContextMenuPosition({
+  const { position, isMobile } = useResponsiveContextMenuPosition({
     contextMenuRef,
     x: contextMenu.x,
     y: contextMenu.y,
@@ -64,7 +63,7 @@ export function DocumentContextMenu({
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [isMobile, showExportSubmenu, contextMenu.type, contextMenu.documentId]);
+  }, [isMobile, contextMenu.type, contextMenu.documentId]);
 
   const resetSheetPosition = () => {
     setSheetOffsetY(0);
@@ -94,7 +93,6 @@ export function DocumentContextMenu({
   const handleSheetTouchEnd = () => {
     if (sheetOffsetY > 80) {
       onClose();
-      setShowExportSubmenu(false);
       resetSheetPosition();
       return;
     }
@@ -110,68 +108,6 @@ export function DocumentContextMenu({
       : `translateY(${sheetOffsetY}px)`,
     transition: isDraggingSheet ? 'none' : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
   };
-
-  // Export submenu bottom sheet (mobile only)
-  if (isMobile && showExportSubmenu) {
-    return (
-      <>
-        <div
-          className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-[80] transition-opacity duration-180 ease-out ${isSheetVisible ? 'opacity-100' : 'opacity-0'}`}
-          onClick={() => {
-            setShowExportSubmenu(false);
-            resetSheetPosition();
-          }}
-        />
-        
-        <div
-          className={`fixed bottom-0 left-0 right-0 bg-black/90 backdrop-blur-xl border-t-2 border-white/15 rounded-t-2xl shadow-2xl z-[90] transition-opacity duration-180 ease-out ${isSheetVisible ? 'opacity-100' : 'opacity-0'}`}
-          style={sheetStyle}
-        >
-          <div
-            className="flex justify-center py-3 touch-pan-y"
-            onTouchStart={handleSheetTouchStart}
-            onTouchMove={handleSheetTouchMove}
-            onTouchEnd={handleSheetTouchEnd}
-            onTouchCancel={handleSheetTouchEnd}
-          >
-            <div className="w-12 h-1 bg-white/30 rounded-full" />
-          </div>
-
-          <div className="pb-safe-area-inset-bottom">
-            <button
-              onClick={() => {
-                onExportDocument();
-                setShowExportSubmenu(false);
-                onClose();
-              }}
-              className="w-full px-6 py-4 text-left text-blue-300 active:bg-blue-500/20 transition-colors flex items-center gap-3 border-t border-white/10"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-              </svg>
-              <span className="text-base">Markdown</span>
-            </button>
-            <button
-              disabled
-              className="w-full px-6 py-4 text-left text-gray-500 cursor-not-allowed transition-colors flex items-center gap-3 border-t border-white/10 opacity-50"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-              </svg>
-              <span className="text-base">PDF (Coming Soon)</span>
-            </button>
-            
-            <button
-              onClick={() => setShowExportSubmenu(false)}
-              className="w-full px-6 py-4 text-center text-gray-400 active:bg-white/5 transition-colors border-t-2 border-white/20 mt-2"
-            >
-              <span className="text-base font-medium">Back</span>
-            </button>
-          </div>
-        </div>
-      </>
-    );
-  }
 
   // Mobile bottom sheet menu
   if (isMobile) {
@@ -241,13 +177,16 @@ export function DocumentContextMenu({
                   <span className="text-base">Share Options</span>
                 </button>
                 <button
-                  onClick={() => setShowExportSubmenu(true)}
+                  onClick={() => {
+                    onExportDocument();
+                    onClose();
+                  }}
                   className="w-full px-6 py-4 text-left text-blue-300 active:bg-blue-500/20 transition-colors flex items-center gap-3 border-t border-white/10"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  <span className="text-base">Export as</span>
+                  <span className="text-base">Export</span>
                 </button>
                 <button
                   onClick={() => { onDeleteDocument(); onClose(); }}
@@ -346,43 +285,15 @@ export function DocumentContextMenu({
               </svg>
               Share Options
             </button>
-            <div 
-              className="relative border-t border-white/10"
-              onMouseEnter={() => setShowExportSubmenu(true)}
-              onMouseLeave={() => setShowExportSubmenu(false)}
+            <button
+              onClick={onExportDocument}
+              className="w-full px-4 py-3 text-left text-blue-300 hover:bg-blue-500/20 active:bg-blue-500/30 hover:text-white transition-colors flex items-center gap-2 border-t border-white/10"
             >
-              <button
-                className="w-full px-4 py-3 text-left text-blue-300 hover:bg-blue-500/20 active:bg-blue-500/30 hover:text-white transition-colors flex items-center justify-between gap-2"
-              >
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Export as
-                </div>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-              {showExportSubmenu && (
-                <div 
-                  className={`absolute ${submenuPosition === 'right' ? 'left-full' : 'right-full'} top-0 bg-black/60 backdrop-blur-xl border-2 border-white/15 rounded-lg shadow-lg min-w-[150px] z-[70] animate-in zoom-in-95 fade-in duration-150 ease-out`}
-                >
-                  <button
-                    onClick={onExportDocument}
-                    className="w-full px-4 py-3 text-left text-gray-300 hover:bg-white/10 active:bg-white/20 hover:text-white transition-colors"
-                  >
-                    Markdown
-                  </button>
-                  <button
-                    disabled
-                    className="w-full px-4 py-3 text-left text-gray-400 cursor-not-allowed opacity-60"
-                  >
-                    PDF
-                  </button>
-                </div>
-              )}
-            </div>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Export
+            </button>
             <button
               onClick={onDeleteDocument}
               className="w-full px-4 py-3 text-left text-red-300 hover:bg-red-500/20 active:bg-red-500/30 hover:text-white transition-colors flex items-center gap-2"
