@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { EditorHeader } from './editor/EditorHeader';
 import { EditorTags } from './editor/EditorTags';
 import { EditorContent } from './editor/EditorContent';
+import { ContentSizeWarning } from './editor/ContentSizeWarning';
 import { Footer } from './Footer';
 import { useDocumentEditorState } from './editor/useDocumentEditorState';
 import { DocumentLoadingState, DocumentNotFoundState } from './editor/DocumentEditorStatus';
@@ -176,6 +177,8 @@ export function DocumentEditor() {
         </div>
 
         <EditorReadOnlyOverlay visible={isTrashDocument} />
+
+        {!isTrashDocument && <ContentSizeWarning content={content} />}
 
         <div className="md:flex-1 flex-1 min-h-0 md:pb-12 overflow-hidden">
           <EditorContent

@@ -4,6 +4,8 @@
 // Notes (and their version/trash copies) can legitimately grow past that, so
 // raise the cap. Keep all four content fields in sync: a version snapshot that
 // is smaller than the document would otherwise fail to save.
+// Keep in sync with CONTENT_SIZE_HARD_LIMIT_BYTES in
+// src/components/editor/ContentSizeWarning.tsx.
 const MAX_CONTENT_SIZE_BYTES = 100 * 1024 * 1024 // 100 MB
 
 const CONTENT_FIELDS = [

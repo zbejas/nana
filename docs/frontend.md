@@ -103,6 +103,7 @@ Important behavior:
 - `creationSessionIdAtom` protects against stale autosave callbacks finishing after a new document session has started.
 - `published: true` triggers a PocketBase version snapshot of the previous content, then resets the flag.
 - Attachments are protected files; the client obtains a short-lived file token for rendering.
+- Notes over 5 MB show a warning recommending the file be uploaded as an attachment; over the 100 MB database limit the warning becomes an error. Thresholds live in `ContentSizeWarning.tsx` and must stay in sync with the PocketBase migration.
 - Markdown preview sanitizes HTML with `rehype-sanitize`.
 
 ## Sidebar, folders, and mobile

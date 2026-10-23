@@ -85,7 +85,7 @@ Rules:
 
 ### Content size limits
 
-`content` is a PocketBase `editor` field. When `maxSize` is `0`, PocketBase applies a hard 5 MB cap and rejects larger saves with `validation_content_size_limit`. Migration `0000015_raise_content_size_limit.js` raises the limit to 100 MB on `documents`, `document_versions`, `trash_documents`, and `trash_document_versions`. Keep all four in sync: a version snapshot with a smaller limit than the document fails to save large notes.
+`content` is a PocketBase `editor` field. When `maxSize` is `0`, PocketBase applies a hard 5 MB cap and rejects larger saves with `validation_content_size_limit`. Migration `0000015_raise_content_size_limit.js` raises the limit to 100 MB on `documents`, `document_versions`, `trash_documents`, and `trash_document_versions`. Keep all four in sync: a version snapshot with a smaller limit than the document fails to save large notes. The editor warns at 5 MB and switches to a hard-limit message at 100 MB; keep `ContentSizeWarning.tsx` in sync if the migration changes.
 
 ### Document and folder rules
 
