@@ -40,7 +40,7 @@ Groups:
 
 ## Migrations
 
-Files are sequential and zero-padded: `0000001_...` through `0000014_...`. **The next migration is `0000015_<description>.js`.**
+Files are sequential and zero-padded: `0000001_...` through `0000015_...`. **The next migration is `0000016_<description>.js`.**
 
 Use the migration API, not `module.exports`:
 
@@ -82,6 +82,10 @@ Rules:
 | `trash_documents` | Trashed documents | Copy of document plus `original_*`, `deleted`, `deleted_at`, `deleted_by`. |
 | `trash_folders` | Trashed folders | Copy of folder plus original parent/folder IDs. |
 | `trash_document_versions` | Trashed versions | References the trash document; original IDs preserved. |
+
+### Content size limits
+
+`content` is a PocketBase `editor` field. When `maxSize` is `0`, PocketBase applies a hard 5 MB cap and rejects larger saves with `validation_content_size_limit`. Migration `0000015_raise_content_size_limit.js` raises the limit to 100 MB on `documents`, `document_versions`, `trash_documents`, and `trash_document_versions`. Keep all four in sync: a version snapshot with a smaller limit than the document fails to save large notes.
 
 ### Document and folder rules
 
