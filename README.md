@@ -95,6 +95,15 @@ Open `http://localhost:3000`, create your first account, and start writing.
 > [!TIP]
 > Set `DEBUG=true` to enable verbose debug logging in production. Useful for troubleshooting AI chat, RAG, and embedding issues.
 
+## Development
+
+The contributor and agent guide lives in [AGENTS.md](AGENTS.md), with subsystem deep-dives in [docs/](docs/README.md). They cover architecture, coding conventions, PocketBase hooks and migrations, and verification steps.
+
+```bash
+docker compose -f docker/compose.dev.yml up --build   # dev stack (PocketBase + Bun)
+docker compose -f docker/compose.test.yml up --build --abort-on-container-exit --exit-code-from nana-test
+```
+
 ## License
 
 Licensed under [AGPL-3.0](LICENSE).
