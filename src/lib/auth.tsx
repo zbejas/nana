@@ -159,13 +159,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isChecking = true;
       try {
         await pb.collection('users').authRefresh();
-        lastValidatedAt = Date.now();
         setUser(pb.authStore.record);
       } catch (error) {
         if (isAuthFailure(error)) {
           clearSession('session rejected by server');
         }
       } finally {
+        // Throttle retries even after a network error so focus events cannot
+        // hammer auth-refresh while the backend is unreachable.
+        lastValidatedAt = Date.now();
         isChecking = false;
       }
     };
