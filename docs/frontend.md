@@ -39,11 +39,14 @@ Heavy routes are lazy-loaded: `DocumentEditor`, `SettingsPage`, `PublicDocumentP
 ## Auth flow
 
 1. `AuthProvider` reads the PocketBase auth store on mount.
-2. If a token exists, it is validated with `pb.collection('users').authRefresh()`. Invalid tokens are cleared.
-3. `checkHasUsers()` calls PB `/api/check-users` to choose onboarding vs sign-in.
-4. Sign-in uses `authWithPassword`; sign-up creates a user then signs in.
-5. On auth change, the client requests an attachment file token (see `src/lib/documents/attachments.ts`).
-6. Server-side, every protected Bun API calls `verifyAuth()`; PocketBase collection rules protect browser data access.
+2. A stored session is only trusted while its token is unexpired. Expired or half-populated stores are cleared so a stale record cannot keep the UI logged in while PocketBase treats requests as anonymous.
+3. Valid tokens are confirmed with `pb.collection('users').authRefresh()`. Auth failures clear the session and show a "session expired" toast; network failures keep the session for a later check.
+4. While the app is open, the session is re-validated on focus/visibility change and at most every five minutes. This catches backend-side invalidation and token expiry even when PocketBase answers list requests with an empty `200` instead of `401`.
+5. `pb.afterSend` clears the auth store on any `401` while a token is present, so SDK requests cannot leave a stale session behind.
+6. `checkHasUsers()` calls PB `/api/check-users` to choose onboarding vs sign-in.
+7. Sign-in uses `authWithPassword`; sign-up creates a user then signs in.
+8. On auth change, the client requests an attachment file token (see `src/lib/documents/attachments.ts`).
+9. Server-side, every protected Bun API calls `verifyAuth()`; PocketBase collection rules protect browser data access.
 
 The first user becomes an admin and is auto-verified by PocketBase hooks. Public signup is locked after that; admins create additional users from settings.
 
