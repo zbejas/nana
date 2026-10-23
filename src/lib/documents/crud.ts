@@ -621,6 +621,6 @@ export async function getDocumentStats(documentId: string) {
         total_versions: versions.totalItems,
         created: document.created,
         updated: document.updated,
-        tags_count: document.tags.length,
+        tags_count: document.tags?.length ?? 0,
     };
 }

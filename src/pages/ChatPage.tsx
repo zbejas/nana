@@ -883,7 +883,7 @@ export function ChatPage() {
             <div className="space-y-1 py-2">
               {pickerDocuments.map(doc => {
                 const isAttached = attachedDocIds.has(doc.id);
-                const visibleTags = doc.tags.slice(0, 2);
+                const visibleTags = doc.tags?.slice(0, 2) ?? [];
 
                 return (
                   <button

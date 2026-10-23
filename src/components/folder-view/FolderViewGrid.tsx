@@ -211,6 +211,7 @@ export function FolderViewGrid({
 
       {displayedDocuments.map((document) => {
         const isRenamingDocument = pendingRename?.type === 'document' && pendingRename.id === document.id;
+        const tags = document.tags ?? [];
 
         return (
           <div key={document.id} className="relative group w-full" data-selection-item="true">
@@ -271,9 +272,9 @@ export function FolderViewGrid({
                     : 'border-white/10 bg-white/5 hover:bg-white/10'
                 }`}
               >
-                {(document.tags.length > 0) && (
+                {(tags.length > 0) && (
                   <div className="absolute bottom-2 right-2 flex items-center justify-end gap-1">
-                    {document.tags.slice(0, 2).map((tag) => (
+                    {tags.slice(0, 2).map((tag) => (
                       <span
                         key={`${document.id}-${tag}`}
                         className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 border border-white/10"
@@ -281,8 +282,8 @@ export function FolderViewGrid({
                         {tag}
                       </span>
                     ))}
-                    {document.tags.length > 2 && (
-                      <span className="text-[10px] text-gray-500">+{document.tags.length - 2}</span>
+                    {tags.length > 2 && (
+                      <span className="text-[10px] text-gray-500">+{tags.length - 2}</span>
                     )}
                   </div>
                 )}

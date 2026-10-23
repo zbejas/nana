@@ -33,6 +33,7 @@ export function TimelineDocumentCard({
   variant = 'preview',
 }: TimelineDocumentCardProps) {
   const attachmentCount = document.attachments?.length || 0;
+  const tags = document.tags ?? [];
   const visibleTagLimit = isMobile ? 2 : 3;
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
@@ -169,9 +170,9 @@ export function TimelineDocumentCard({
               >
                 <EllipsisVerticalIcon className="w-4 h-4" />
               </button>
-              {document.tags.length > 0 ? (
+              {tags.length > 0 ? (
                 <div className="flex items-center justify-end gap-1 max-w-48 overflow-hidden pt-1 pb-1">
-                  {document.tags.slice(0, visibleTagLimit).map((tag) => (
+                  {tags.slice(0, visibleTagLimit).map((tag) => (
                     <span
                       key={tag}
                       className="px-1.5 py-0.5 rounded-full border border-white/15 bg-white/10 text-[10px] text-gray-200 truncate max-w-20"
@@ -180,9 +181,9 @@ export function TimelineDocumentCard({
                       {highlightText(tag, highlightQuery)}
                     </span>
                   ))}
-                  {document.tags.length > visibleTagLimit && (
+                  {tags.length > visibleTagLimit && (
                     <span className="px-1.5 py-0.5 rounded-full border border-white/15 bg-white/10 text-[10px] text-gray-300">
-                      +{document.tags.length - visibleTagLimit}
+                      +{tags.length - visibleTagLimit}
                     </span>
                   )}
                 </div>
@@ -242,9 +243,9 @@ export function TimelineDocumentCard({
             </div>
 
             <div className="text-right min-w-0 overflow-hidden">
-              {document.tags.length > 0 ? (
+              {tags.length > 0 ? (
                 <div className="inline-flex max-w-full items-center justify-end gap-1 overflow-hidden pt-1">
-                  {document.tags.slice(0, visibleTagLimit).map((tag) => (
+                  {tags.slice(0, visibleTagLimit).map((tag) => (
                     <span
                       key={tag}
                       className="px-1.5 py-0.5 rounded-full border border-white/15 bg-white/10 text-[10px] text-gray-200 truncate max-w-20"
@@ -253,9 +254,9 @@ export function TimelineDocumentCard({
                       {highlightText(tag, highlightQuery)}
                     </span>
                   ))}
-                  {document.tags.length > visibleTagLimit && (
+                  {tags.length > visibleTagLimit && (
                     <span className="px-1.5 py-0.5 rounded-full border border-white/15 bg-white/10 text-[10px] text-gray-300">
-                      +{document.tags.length - visibleTagLimit}
+                      +{tags.length - visibleTagLimit}
                     </span>
                   )}
                 </div>
