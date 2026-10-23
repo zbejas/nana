@@ -1,4 +1,4 @@
-import { pb } from '../pocketbase';
+import { pb, invalidateAuthOnUnauthorized } from '../pocketbase';
 import { createLogger } from '../logger';
 
 const logger = createLogger('DocTrash');
@@ -15,6 +15,7 @@ async function postTrashAction(path: string, payload: Record<string, unknown>) {
     });
 
     if (!response.ok) {
+        invalidateAuthOnUnauthorized(response.status);
         let message = 'Trash request failed';
         try {
             const body = await response.json();

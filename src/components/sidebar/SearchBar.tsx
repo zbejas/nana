@@ -103,7 +103,7 @@ export function SearchBar({ onDocumentClick, onContextMenu }: SearchBarProps) {
                     <p className="text-xs text-gray-500">
                       Updated {new Date(doc.updated).toLocaleDateString()}
                     </p>
-                    {doc.tags.length > 0 && (
+                    {doc.tags && doc.tags.length > 0 && (
                       <p className="text-xs text-gray-400 truncate">
                         {doc.tags.map((tag, i) => (
                           <span key={i}>

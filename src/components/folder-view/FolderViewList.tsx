@@ -212,6 +212,7 @@ export function FolderViewList({
       {displayedDocuments.map((document) => {
         const isSelected = selectedDocumentIds.includes(document.id);
         const isRenamingDocument = pendingRename?.type === 'document' && pendingRename.id === document.id;
+        const tags = document.tags ?? [];
 
         return (
         <div key={document.id} className="relative group" data-selection-item="true">
@@ -280,9 +281,9 @@ export function FolderViewList({
                   <ShareIcon className="h-4 w-4 flex-shrink-0 text-emerald-400/70" title="Public" />
                 )}
               </div>
-              {document.tags.length > 0 && (
+              {tags.length > 0 && (
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  {document.tags.slice(0, 2).map((tag) => (
+                  {tags.slice(0, 2).map((tag) => (
                     <span
                       key={`${document.id}-${tag}`}
                       className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 border border-white/10"
@@ -290,8 +291,8 @@ export function FolderViewList({
                       {tag}
                     </span>
                   ))}
-                  {document.tags.length > 2 && (
-                    <span className="text-[10px] text-gray-500">+{document.tags.length - 2}</span>
+                  {tags.length > 2 && (
+                    <span className="text-[10px] text-gray-500">+{tags.length - 2}</span>
                   )}
                 </div>
               )}

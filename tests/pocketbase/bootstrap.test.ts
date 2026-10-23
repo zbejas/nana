@@ -61,4 +61,28 @@ describe("PocketBase Bootstrap", () => {
         expect(typeof token).toBe("string");
         expect(token.length).toBeGreaterThan(0);
     });
+
+    test("editor content fields allow notes larger than the 5 MB default", async () => {
+        const token = await authenticateSuperuser();
+        const collections = [
+            "documents",
+            "document_versions",
+            "trash_documents",
+            "trash_document_versions",
+        ];
+
+        for (const name of collections) {
+            const res = await fetch(`${PB_API}/collections/${name}`, {
+                headers: { Authorization: token },
+            });
+            expect(res.status).toBe(200);
+
+            const collection = await res.json();
+            const contentField = collection.fields.find(
+                (field: { name: string; maxSize?: number }) => field.name === "content",
+            );
+            expect(contentField).toBeDefined();
+            expect(contentField.maxSize).toBeGreaterThan(5 * 1024 * 1024);
+        }
+    });
 });
