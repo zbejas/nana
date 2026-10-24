@@ -1,0 +1,92 @@
+name: Release
+
+# Cut a release when the version in package.json changes on master. The version
+# job makes reruns and package.json edits that do not bump the version no-ops.
+# Images are built and pushed before the GitHub Release is created, so a failed
+# build never leaves a release without its image.
+on:
+    push:
+        branches: [master]
+        paths:
+            - package.json
+            - .github/workflows/release.yml
+            - .github/workflows/docker-publish.yml
+    workflow_dispatch:
+        inputs:
+            force:
+                description: "Rebuild and push the image for an already-released version"
+                type: boolean
+                default: false
+
+permissions:
+    contents: read
+
+# Never cancel a run that could be mid-release; a newer version bump waits.
+concurrency:
+    group: release-${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    version:
+        name: Check package version
+        runs-on: ubuntu-latest
+        outputs:
+            should_release: ${{ steps.check.outputs.should_release }}
+            version: ${{ steps.check.outputs.version }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Read and check version
+              id: check
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  version="$(jq -r '.version // empty' package.json)"
+                  if [ -z "$version" ]; then
+                      echo "::error::package.json has no version"
+                      exit 1
+                  fi
+
+                  echo "version=$version" >> "$GITHUB_OUTPUT"
+
+                  if gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                      echo "should_release=false" >> "$GITHUB_OUTPUT"
+                      echo "::notice::Release $version already exists - skipping"
+                  else
+                      echo "should_release=true" >> "$GITHUB_OUTPUT"
+                      echo "::notice::Releasing $version"
+                  fi
+
+    docker:
+        name: Publish Docker image
+        needs: version
+        if: needs.version.outputs.should_release == 'true' || inputs.force == true
+        permissions:
+            contents: read
+            packages: write
+        uses: ./.github/workflows/docker-publish.yml
+        with:
+            version: ${{ needs.version.outputs.version }}
+
+    release:
+        name: Create GitHub Release
+        needs: [version, docker]
+        if: needs.version.outputs.should_release == 'true'
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Create GitHub Release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: |
+                  gh release create "$VERSION" \
+                      --repo "$GITHUB_REPOSITORY" \
+                      --target "$GITHUB_SHA" \
+                      --title "v$VERSION" \
+                      --generate-notes
