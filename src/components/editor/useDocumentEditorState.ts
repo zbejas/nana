@@ -144,6 +144,7 @@ export function useDocumentEditorState() {
         removedAttachments,
         folderId,
         creationSessionId,
+        isReadOnly: isTrashDocument,
         isSavingRef,
         onSave: save,
         onReset: reset,

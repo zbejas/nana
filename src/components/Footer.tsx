@@ -7,10 +7,10 @@ import { createLogger } from '../lib/logger';
 const log = createLogger('Footer');
 import { VersionPreviewModal } from './modals/VersionPreviewModal';
 import { LazyAttachmentViewer } from './modals/LazyAttachmentViewer';
-import { 
-  DocumentTextIcon, 
-  ClockIcon, 
-  HashtagIcon, 
+import {
+  DocumentTextIcon,
+  ClockIcon,
+  HashtagIcon,
   PaperClipIcon,
   ArrowDownTrayIcon,
   TrashIcon,
@@ -108,10 +108,10 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
       setShowVersionHistory(false);
       return;
     }
-    
+
     setShowVersionHistory(true);
     setLoading(true);
-    
+
     try {
       const result = await getDocumentVersions(documentId);
       setVersions(result.items);
@@ -130,7 +130,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
 
   const handleRevertVersion = async (versionId: string) => {
     if (!documentId) return;
-    
+
     try {
       await restoreDocumentVersion(documentId, versionId);
       setShowPreviewModal(false);
@@ -152,9 +152,9 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
 
   const handleFileSelect = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    
+
     const fileArray = Array.from(files);
-    
+
     // Auto-save attachments immediately if we have an existing document
     if (document?.id && onAutoSaveAttachments) {
       onAutoSaveAttachments(fileArray);
@@ -190,18 +190,18 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
 
   const footerClasses = [
     'md:fixed md:bottom-0 relative z-20 md:z-40 border-t md:transition-[left] md:duration-300 md:ease-in-out motion-reduce:transition-none',
-    'bg-white/5 dark:bg-white/5 light:bg-white/70 md:bg-black/40 md:dark:bg-black/40 md:light:bg-white/70 backdrop-blur-sm border-white/10 dark:border-white/10 light:border-gray-300'
+    'bg-canvas-deep/95 backdrop-blur-xl border-line'
   ].join(' ');
 
-  const surfaceTextClass = 'text-gray-400 dark:text-gray-400 light:text-gray-600';
+  const surfaceTextClass = 'text-ink-muted';
 
-  const badgeClass = 'bg-gray-700 text-gray-100';
-  const addButtonClass = 'text-xs px-2 py-1 bg-gray-700/80 hover:bg-gray-600 text-gray-100 rounded transition-colors';
+  const badgeClass = 'bg-ember text-on-ember';
+  const addButtonClass = 'text-[11px] font-medium px-2 py-1 bg-ember-soft text-ember rounded-[6px] hover:bg-ember/20 transition-colors';
 
   const attachmentPanelClass = [
     'fixed md:absolute left-4 right-4 md:left-auto top-full mt-2 md:top-auto md:bottom-full md:mt-0 md:mb-2 md:right-0',
-    'border-2 rounded-lg overflow-hidden shadow-lg md:min-w-[350px] max-w-[calc(100vw-2rem)] md:max-w-none max-h-[70vh] md:max-h-[500px] overflow-y-auto scrollbar-autohide z-[9999]',
-    'bg-black/70 backdrop-blur-md border-white/10'
+    'border rounded-panel overflow-hidden shadow-float md:min-w-[360px] max-w-[calc(100vw-2rem)] md:max-w-none max-h-[70vh] md:max-h-[520px] overflow-y-auto scrollbar-autohide z-[9999]',
+    'bg-surface-raised/95 backdrop-blur-xl border-line'
   ].join(' ');
 
   const footer = (
@@ -234,7 +234,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                 const viewportHeight = window.innerHeight;
                 const spaceBelow = viewportHeight - rect.bottom;
                 const spaceAbove = rect.top;
-                
+
                 if (isDesktop) {
                   // Desktop: position above the button
                   setAttachmentsPosition({
@@ -252,7 +252,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                 }
                 setShowAttachments(!showAttachments);
               }}
-              className={`inline-flex items-center justify-center gap-1 w-[150px] h-8 px-2 rounded-md border text-xs transition-colors cursor-pointer ${showAttachments ? 'border-blue-400/40 bg-blue-500/15 text-blue-100' : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10 hover:border-white/25 hover:text-gray-200'}`}
+              className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-control border px-3 text-[11px] transition-colors ${showAttachments ? 'border-ember/35 bg-ember-soft text-ember' : 'border-line bg-surface text-ink-secondary hover:border-line-strong hover:text-ink'}`}
             >
               <PaperClipIcon className="w-3.5 h-3.5" />
               <span>Attachments</span>
@@ -267,11 +267,11 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
             {showAttachments && createPortal(
               <div
                 ref={attachmentsMenuRef}
-                className="fixed bg-black/70 backdrop-blur-md border-2 border-white/15 rounded-lg overflow-hidden shadow-lg w-[calc(100vw-2rem)] md:w-auto md:min-w-[350px] md:max-w-none max-h-[70vh] md:max-h-[500px] overflow-y-auto scrollbar-autohide z-[10001]"
+                className="fixed overflow-hidden rounded-panel border border-line bg-surface-raised/95 shadow-float backdrop-blur-xl w-[calc(100vw-2rem)] md:w-auto md:min-w-[380px] md:max-w-none max-h-[70vh] md:max-h-[520px] overflow-y-auto scrollbar-autohide z-[10001]"
                 style={attachmentsPosition}
               >
-                <div className="p-3 border-b border-white/10 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-200">Attachments</h3>
+                <div className="flex items-center justify-between border-b border-line px-4 py-3">
+                  <h3 className="font-display text-base text-ink">Attachments</h3>
                   {!readOnly && (
                     <button
                       onClick={() => fileInputRef.current?.click()}
@@ -281,7 +281,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                     </button>
                   )}
                 </div>
-                
+
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -291,7 +291,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                 />
 
                 {(() => {
-                  const existingAttachments = document 
+                  const existingAttachments = document
                     ? getAttachmentUrls(document)
                     : [];
                   const hasAttachments = existingAttachments.length > 0 || newAttachments.length > 0;
@@ -348,18 +348,18 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                         return (
                           <div
                             key={att.filename}
-                            className={`px-3 py-2 hover:bg-white/5 transition-colors border-b border-white/5 last:border-b-0 ${
-                              isMarkedForRemoval ? 'bg-red-900/20 border-red-500/30' : 'cursor-pointer'
+                            className={`px-3 py-2 hover:bg-surface-raised transition-colors border-b border-line last:border-b-0 ${
+                              isMarkedForRemoval ? 'bg-danger-soft border-danger/30' : 'cursor-pointer'
                             }`}
                             onClick={handleRowClick}
                           >
                             <div className="flex items-center gap-2">
                               <div className={`w-8 h-8 flex-shrink-0 rounded overflow-hidden ${
-                                isMarkedForRemoval ? 'opacity-50 grayscale' : 'bg-gray-700'
+                                isMarkedForRemoval ? 'opacity-50 grayscale' : 'bg-surface-raised'
                               }`}>
                                 {att.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                                  <img 
-                                    src={att.thumbUrl} 
+                                  <img
+                                    src={att.thumbUrl}
                                     alt={att.displayName}
                                     className="w-full h-full object-cover"
                                     onError={async (event) => {
@@ -379,25 +379,25 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                                   />
                                 ) : isPdfFile(att.filename) ? (
                                   <div className="w-full h-full flex items-center justify-center">
-                                    <DocumentTextIcon className="w-4 h-4 text-red-400" />
+                                    <DocumentTextIcon className="w-4 h-4 text-danger" />
                                   </div>
                                 ) : isTextFile(att.filename) ? (
                                   <div className="w-full h-full flex items-center justify-center">
-                                    <DocumentTextIcon className="w-4 h-4 text-blue-400" />
+                                    <DocumentTextIcon className="w-4 h-4 text-ember" />
                                   </div>
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center">
-                                    <DocumentIcon className="w-4 h-4 text-gray-400" />
+                                    <DocumentIcon className="w-4 h-4 text-ink-secondary" />
                                   </div>
                                 )}
                               </div>
-                            
+
                             <div className="flex-1 min-w-0">
                               <p className={`text-xs truncate ${
-                                isMarkedForRemoval ? 'text-red-400 line-through' : 'text-gray-200'
+                                isMarkedForRemoval ? 'text-danger line-through' : 'text-ink'
                               }`}>{att.displayName}</p>
                               {isMarkedForRemoval && (
-                                <p className="text-xs text-red-400/60">Will be removed on save</p>
+                                <p className="text-xs text-danger/60">Will be removed on save</p>
                               )}
                             </div>
 
@@ -417,7 +417,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                                       setOpenAttachmentMenu(att.filename);
                                     }
                                   }}
-                                  className="p-1 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
+                                  className="p-1 text-ink-secondary hover:text-ink hover:bg-surface-raised rounded transition-colors"
                                   title="More actions"
                                 >
                                   <EllipsisVerticalIcon className="w-4 h-4" />
@@ -426,7 +426,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                               {!isMarkedForRemoval && viewable && openAttachmentMenu === att.filename && menuPosition && createPortal(
                                 <div
                                   ref={menuRef}
-                                  className="fixed z-[10003] bg-gray-800 border border-white/10 rounded-lg shadow-xl py-1 min-w-[120px]"
+                                  className="fixed z-[10003] bg-surface-raised border border-line rounded-control shadow-float py-1 min-w-[120px]"
                                   style={{ top: menuPosition.top, left: menuPosition.left, transform: 'translate(-100%, -100%)' }}
                                 >
                                   <button
@@ -437,14 +437,14 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                                       setViewerAttachment({ url: att.url, filename: att.displayName });
                                       setShowAttachments(false);
                                     }}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10 transition-colors"
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-surface-raised transition-colors"
                                   >
                                     <EyeIcon className="w-3.5 h-3.5" />
                                     Open
                                   </button>
                                   <button
                                     onClick={handleDownload}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10 transition-colors"
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-surface-raised transition-colors"
                                   >
                                     <ArrowDownTrayIcon className="w-3.5 h-3.5" />
                                     Download
@@ -455,7 +455,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                               {!isMarkedForRemoval && !viewable && (
                                 <button
                                   onClick={handleDownload}
-                                  className="p-1 text-blue-400 hover:text-blue-300 hover:bg-blue-600/20 rounded transition-colors"
+                                  className="p-1 text-ember hover:text-ember hover:bg-ember-soft rounded transition-colors"
                                   title="Download"
                                 >
                                   <ArrowDownTrayIcon className="w-4 h-4" />
@@ -472,7 +472,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                                       }
                                       setPendingDeleteFilename(null);
                                     }}
-                                    className="p-1 text-green-400 hover:text-green-300 hover:bg-green-600/20 rounded transition-colors"
+                                    className="p-1 text-sage hover:text-sage hover:bg-sage-soft rounded transition-colors"
                                     title="Confirm delete"
                                   >
                                     <CheckIcon className="w-4 h-4" />
@@ -483,7 +483,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                                       e.stopPropagation();
                                       setPendingDeleteFilename(null);
                                     }}
-                                    className="p-1 text-gray-400 hover:text-gray-300 hover:bg-gray-600/20 rounded transition-colors"
+                                    className="p-1 text-ink-secondary hover:text-ink-secondary hover:bg-surface-raised/20 rounded transition-colors"
                                     title="Cancel"
                                   >
                                     <XMarkIcon className="w-4 h-4" />
@@ -501,9 +501,9 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                                     }
                                   }}
                                   className={`p-1 rounded transition-colors ${
-                                    isMarkedForRemoval 
-                                      ? 'text-green-400 hover:text-green-300 hover:bg-green-600/20' 
-                                      : 'text-red-400 hover:text-red-300 hover:bg-red-600/20'
+                                    isMarkedForRemoval
+                                      ? 'text-sage hover:text-sage hover:bg-sage-soft'
+                                      : 'text-danger hover:text-danger hover:bg-danger-soft'
                                   }`}
                                   title={isMarkedForRemoval ? "Undo removal" : "Remove"}
                                 >
@@ -524,16 +524,16 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                       {newAttachments.map((file) => (
                         <div
                           key={file.name}
-                          className="px-3 py-2 bg-blue-900/10 hover:bg-blue-900/20 transition-colors border-b border-white/5 last:border-b-0"
+                          className="px-3 py-2 bg-ember-soft/50 hover:bg-ember-soft transition-colors border-b border-line last:border-b-0"
                         >
                           <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 flex-shrink-0 rounded bg-blue-900/50 flex items-center justify-center">
-                              <PlusIcon className="w-4 h-4 text-blue-400" />
+                            <div className="w-8 h-8 flex-shrink-0 rounded bg-surface-raised flex items-center justify-center">
+                              <PlusIcon className="w-4 h-4 text-ember" />
                             </div>
-                            
+
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs text-blue-300 truncate">{file.name}</p>
-                              <p className="text-xs text-blue-400/60">{formatFileSize(file.size)}</p>
+                              <p className="text-xs text-ember truncate">{file.name}</p>
+                              <p className="text-xs text-ember/60">{formatFileSize(file.size)}</p>
                             </div>
 
                             {!readOnly && (
@@ -543,7 +543,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                                   e.stopPropagation();
                                   onAttachmentRemove(file.name, false);
                                 }}
-                                className="p-1 text-red-400 hover:text-red-300 hover:bg-red-600/20 rounded transition-colors"
+                                className="p-1 text-danger hover:text-danger hover:bg-danger-soft rounded transition-colors"
                                 title="Remove"
                               >
                                 <TrashIcon className="w-4 h-4" />
@@ -554,7 +554,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                       ))}
                     </div>
                   ) : (
-                    <div className="p-6 text-center text-gray-400 text-xs">
+                    <div className="p-6 text-center text-ink-secondary text-xs">
                       <p>No attachments</p>
                     </div>
                   );
@@ -573,7 +573,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                 const viewportHeight = window.innerHeight;
                 const spaceBelow = viewportHeight - rect.bottom;
                 const spaceAbove = rect.top;
-                
+
                 if (isDesktop) {
                   // Desktop: position above the button
                   setVersionPosition({
@@ -591,7 +591,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                 }
                 handleShowVersionHistory();
               }}
-              className={`inline-flex items-center justify-center gap-1 w-[150px] h-8 px-2 rounded-md border text-xs transition-colors cursor-pointer ${showVersionHistory ? 'border-blue-400/40 bg-blue-500/15 text-blue-100' : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10 hover:border-white/25 hover:text-gray-200'}`}
+              className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-control border px-3 text-[11px] transition-colors ${showVersionHistory ? 'border-ember/35 bg-ember-soft text-ember' : 'border-line bg-surface text-ink-secondary hover:border-line-strong hover:text-ink'}`}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -603,11 +603,11 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
             {showVersionHistory && createPortal(
               <div
                 ref={versionMenuRef}
-                className="fixed bg-black/70 backdrop-blur-md border-2 border-white/15 rounded-lg overflow-hidden shadow-lg w-[calc(100vw-2rem)] md:w-[260px] max-h-[400px] overflow-y-auto scrollbar-autohide z-[10001]"
+                className="fixed overflow-hidden rounded-panel border border-line bg-surface-raised/95 shadow-float backdrop-blur-xl w-[calc(100vw-2rem)] md:w-[280px] max-h-[420px] overflow-y-auto scrollbar-autohide z-[10001]"
                 style={versionPosition}
               >
-                <div className="p-3 border-b border-white/10 flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-gray-200">Version History</h3>
+                <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+                  <h3 className="font-display text-base text-ink">Version history</h3>
                   {onPublish && (
                     <button
                       onClick={() => {
@@ -615,35 +615,35 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                         setShowVersionHistory(false);
                       }}
                       disabled={publishing}
-                      className="p-1.5 bg-white/10 text-white rounded hover:bg-white/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="rounded p-1.5 bg-surface-raised text-ink transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
                       title={publishing ? 'Publishing...' : 'Publish Version'}
                     >
                       <BookmarkIcon className="w-4 h-4" />
                     </button>
                   )}
                 </div>
-                
+
                 {loading ? (
-                  <div className="p-4 text-center text-gray-400 text-sm">Loading...</div>
+                  <div className="p-4 text-center text-ink-secondary text-sm">Loading...</div>
                 ) : versions.length === 0 ? (
-                  <div className="p-4 text-center text-gray-400 text-sm">No version history</div>
+                  <div className="p-4 text-center text-ink-secondary text-sm">No version history</div>
                 ) : (
                   <div className="py-2">
                     {versions.map((version) => (
                       <button
                         key={version.id}
                         onClick={() => handleVersionClick(version)}
-                        className="w-full px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-b-0 text-left"
+                        className="w-full px-4 py-3 hover:bg-surface-raised transition-colors border-b border-line last:border-b-0 text-left"
                       >
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-gray-200">
+                          <span className="text-sm font-medium text-ink">
                             Version {version.version_number}
                           </span>
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-ink-muted">
                             {formatDate(version.source_created_at || version.created)}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-400">{version.change_summary}</p>
+                        <p className="text-xs text-ink-secondary">{version.change_summary}</p>
                       </button>
                     ))}
                   </div>

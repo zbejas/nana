@@ -3,9 +3,15 @@ import { useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAtomValue, useSetAtom } from 'jotai';
-import { CalendarDaysIcon, MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/24/outline';
+import {
+  CalendarDaysIcon,
+  MagnifyingGlassIcon,
+  PlusIcon,
+  ViewColumnsIcon,
+} from '@heroicons/react/24/outline';
 import type { Document } from '../lib/documents';
-import { deleteDocument } from '../lib/documents';
+import { deleteDocument, getDocument } from '../lib/documents';
+import { createTaskFromDocument } from '../lib/tasks';
 import {
   foldersAtom,
   selectDocumentAtom,
@@ -22,12 +28,11 @@ const log = createLogger('Timeline');
 import { useTimelinePageState } from '../components/timeline/useTimelinePageState';
 import { useContextMenuState } from '../components/file-folder-handling';
 import { DocumentContextMenu } from '../components/file-folder-handling/context-menu/DocumentContextMenu';
-import { ConfirmDialog } from '../components/modals/ConfirmDialog';
 import { PublicShareModal } from '../components/modals/PublicShareModal';
 import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
+import { Button, Card, ConfirmDialog, EmptyState, Input, PageHeader, Spinner } from '../components/ui';
 
 export function TimelinePage() {
-  const usePreviewCardVariant = true;
   const navigate = useNavigate();
   const selectDocument = useSetAtom(selectDocumentAtom);
   const startNewDocument = useSetAtom(startNewDocumentAtom);
@@ -117,9 +122,7 @@ export function TimelinePage() {
   };
 
   const handleDeleteDocument = () => {
-    if (!contextMenu?.documentId) {
-      return;
-    }
+    if (!contextMenu?.documentId) return;
 
     const contextDocument = groups
       .flatMap((group) => group.items)
@@ -133,35 +136,46 @@ export function TimelinePage() {
   };
 
   const handleConfirmDelete = async () => {
-    if (!deleteConfirmState) {
-      return;
-    }
+    if (!deleteConfirmState) return;
 
     try {
       await deleteDocument(deleteConfirmState.id);
       removeDocumentFromTimeline(deleteConfirmState.id);
       setDeleteConfirmState(null);
+      showToast('Note moved to trash', 'info');
     } catch (error) {
       log.error('Failed to delete timeline document', error);
-      showToast('Failed to move document to trash. Please try again.', 'error');
+      showToast('Failed to move the note to trash', 'error');
     }
   };
 
   const handleExportDocument = async () => {
-    if (!contextMenu?.documentId) {
-      return;
-    }
+    if (!contextMenu?.documentId) return;
 
     try {
       await exportDocument(contextMenu.documentId);
     } catch (error) {
       log.error('Failed to export timeline document', error);
-      showToast('Failed to export document. Please try again.', 'error');
+      showToast('Failed to export the note', 'error');
     } finally {
       closeContextMenu();
     }
   };
 
+  const handleAddToBoard = async () => {
+    const documentId = contextMenu?.documentId;
+    if (!documentId) return;
+    closeContextMenu();
+
+    try {
+      const document = await getDocument(documentId);
+      await createTaskFromDocument(document);
+      showToast(`“${document.title || 'Untitled'}” added to the board`, 'success');
+    } catch (error) {
+      log.error('Failed to add timeline document to board', error);
+      showToast('Failed to add that note to the board', 'error');
+    }
+  };
 
   const folderNameById = useMemo(() => {
     const names = new Map<string, string>();
@@ -179,61 +193,60 @@ export function TimelinePage() {
     return names;
   }, [folders]);
 
-  return (
-    <div className="h-full overflow-y-auto scrollbar-autohide bg-black/40 backdrop-blur-md p-4 sm:p-6">
-      <div className="desktop-page-content-enter relative max-w-7xl mx-auto">
-        <div className="pointer-events-none hidden lg:block absolute top-0 bottom-0 right-[22rem] w-px bg-white/10" />
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-0 items-start">
-          <div className="min-w-0 max-w-3xl lg:max-w-4xl lg:pr-8">
-            <div className="mb-6 flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2 text-white">
-                  <CalendarDaysIcon className="w-5 h-5 text-blue-400" />
-                  <h1 className="text-2xl font-bold text-white">Timeline</h1>
-                </div>
-                <p className="text-xs text-gray-400 mt-1">Recent activity across your documents.</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleCreateDocument}
-                  className="inline-flex items-center justify-center rounded-lg border border-blue-500/30 bg-blue-500/20 p-2 text-blue-100 hover:bg-blue-500/30 transition-colors"
-                  title="New document"
-                  aria-label="New document"
-                >
-                  <PlusIcon className="w-5 h-5" />
-                </button>
-                <button
-                  ref={calendarTriggerRef}
-                  onClick={toggleCalendar}
-                  className={`inline-flex lg:hidden items-center justify-center rounded-lg border p-2 transition-colors ${(isCalendarOpen || viewMode === 'calendar')
-                    ? 'border-blue-500/30 bg-blue-500/20 text-blue-100 hover:bg-blue-500/30'
-                    : 'border-white/10 bg-white/5 text-gray-200 hover:bg-white/10'
-                    }`}
-                  title="Open calendar"
-                  aria-label="Open calendar"
-                >
-                  <CalendarDaysIcon className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
+  const isLoading = viewMode === 'timeline' ? isInitialLoading || isSearchLoading : isCalendarLoading;
+  const totalVisible = groups.reduce((count, group) => count + group.items.length, 0);
 
-            <div className="lg:hidden mb-4 relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search documents..."
-                className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                aria-label="Search documents"
-              />
-              <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-            </div>
+  const searchField = (
+    <div className="relative">
+      <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
+      <Input
+        type="text"
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.target.value)}
+        placeholder="Search your notes"
+        aria-label="Search documents"
+        className="h-9 pl-9 text-[13px]"
+      />
+    </div>
+  );
+
+  return (
+    <div className="h-full overflow-y-auto scrollbar-autohide">
+      <div className="desktop-page-content-enter mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <PageHeader
+          eyebrow="Library"
+          title="Timeline"
+          description="Everything you have touched, newest first. Search it, filter by date, or start something new."
+          actions={
+            <>
+              <Button
+                ref={calendarTriggerRef}
+                variant="secondary"
+                className="lg:hidden"
+                icon={<CalendarDaysIcon />}
+                onClick={toggleCalendar}
+                aria-expanded={isCalendarOpen}
+              >
+                Dates
+              </Button>
+              <Button variant="primary" icon={<PlusIcon />} onClick={handleCreateDocument}>
+                New note
+              </Button>
+            </>
+          }
+        />
+
+        <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <main className="min-w-0">
+            <div className="mb-4 lg:hidden">{searchField}</div>
 
             <div
               ref={calendarPopupRef}
-              className={`lg:hidden overflow-hidden transition-all duration-200 ease-out ${isCalendarOpen ? 'max-h-[36rem] opacity-100 mb-4' : 'max-h-0 opacity-0 mb-0'}`}
+              className={`overflow-hidden transition-all duration-200 ease-out lg:hidden ${
+                isCalendarOpen ? "mb-4 max-h-[36rem] opacity-100" : "mb-0 max-h-0 opacity-0"
+              }`}
             >
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] backdrop-blur-sm p-4">
+              <Card className="p-4">
                 <CalendarFilterPanel
                   visibleMonth={calendarVisibleMonth}
                   calendarDays={calendarDays}
@@ -244,48 +257,80 @@ export function TimelinePage() {
                   onDayClick={selectCalendarDay}
                   onApply={applyCalendarFilter}
                   onClear={clearCalendarSelection}
-                  onResetTimeline={viewMode === 'calendar' ? resetTimeline : undefined}
+                  onResetTimeline={viewMode === "calendar" ? resetTimeline : undefined}
                   error={calendarError}
                 />
-              </div>
+              </Card>
             </div>
 
-            {(viewMode === 'timeline' ? (isInitialLoading || isSearchLoading) : isCalendarLoading) ? (
-              <div className="text-center py-10 text-gray-400">Loading timeline...</div>
+            {isLoading ? (
+              <div className="space-y-3">
+                {[0, 1, 2].map((index) => (
+                  <div key={index} className="animate-pulse rounded-panel border border-line bg-surface p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="h-8 w-8 rounded-full bg-surface-raised" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-3.5 w-2/5 rounded bg-surface-raised" />
+                        <div className="h-2.5 w-1/4 rounded bg-surface-raised/70" />
+                      </div>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      <div className="h-2.5 w-full rounded bg-surface-raised/60" />
+                      <div className="h-2.5 w-4/5 rounded bg-surface-raised/50" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : viewMode === 'timeline' && timelineError ? (
-              <div className="text-center py-10">
-                <p className="text-red-300 mb-4">{timelineError}</p>
-                <button
-                  onClick={() => {
-                    void loadTimelineFirstPage();
-                  }}
-                  className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-gray-200 hover:bg-white/10 transition-colors"
-                >
-                  Retry
-                </button>
-              </div>
+              <EmptyState
+                title="The timeline could not load"
+                description={timelineError}
+                action={
+                  <Button variant="secondary" onClick={() => void loadTimelineFirstPage()}>
+                    Try again
+                  </Button>
+                }
+              />
             ) : groups.length === 0 ? (
-              <div className="text-center py-10">
-                {searchQuery.trim() ? (
-                  <p className="text-gray-500">No timeline documents match your search.</p>
-                ) : (
-                  <>
-                    <p className="text-gray-500 mb-4">No documents to show in timeline.</p>
-                    <button
-                      onClick={handleCreateFirstDocument}
-                      className="inline-flex items-center rounded-lg border border-blue-500/30 bg-blue-500/20 px-4 py-2 text-sm font-medium text-blue-100 hover:bg-blue-500/30 transition-colors"
-                    >
-                      Create your first document
-                    </button>
-                  </>
-                )}
-              </div>
+              searchQuery.trim() ? (
+                <EmptyState
+                  title="No notes match that search"
+                  description="Try a shorter phrase, or clear the search to see everything again."
+                  action={
+                    <Button variant="secondary" onClick={() => setSearchQuery('')}>
+                      Clear search
+                    </Button>
+                  }
+                />
+              ) : (
+                <EmptyState
+                  icon={<PlusIcon />}
+                  eyebrow="A blank page"
+                  title="Start your first note"
+                  description="Write in Markdown, keep the work beside it on the board, and share it when it is ready."
+                  action={
+                    <Button variant="primary" icon={<PlusIcon />} onClick={handleCreateFirstDocument}>
+                      Create a note
+                    </Button>
+                  }
+                />
+              )
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-8">
+                {searchQuery.trim() && (
+                  <p className="text-xs text-ink-muted">
+                    {totalVisible} {totalVisible === 1 ? 'note' : 'notes'} matching “{searchQuery.trim()}”
+                  </p>
+                )}
+
                 {groups.map((group) => (
                   <section key={group.label}>
-                    <h2 className="text-sm font-semibold text-gray-300 mb-3 uppercase tracking-wide">{group.label}</h2>
-                    <div className="space-y-2">
+                    <div className="mb-3 flex items-center gap-3">
+                      <h2 className="eyebrow">{group.label}</h2>
+                      <span className="h-px flex-1 bg-line" aria-hidden="true" />
+                      <span className="text-[10px] tabular-nums text-ink-muted">{group.items.length}</span>
+                    </div>
+                    <div className="space-y-2.5">
                       {group.items.map((document) => (
                         <TimelineDocumentCard
                           key={document.id}
@@ -299,7 +344,6 @@ export function TimelinePage() {
                           onLongPressMenu={(position) => handleLongPressMenu(document, position)}
                           wordCount={getWordCount(document)}
                           readingTime={getReadingTime(document)}
-                          variant={usePreviewCardVariant ? 'preview' : 'legacy'}
                         />
                       ))}
                     </div>
@@ -309,31 +353,23 @@ export function TimelinePage() {
                 {viewMode === 'timeline' && (
                   <>
                     <div ref={loadMoreRef} className="h-2" />
-
                     {isLoadingMore && (
-                      <div className="text-center py-4 text-xs text-gray-500">Loading more documents...</div>
+                      <div className="flex items-center justify-center gap-2 py-4 text-xs text-ink-muted">
+                        <Spinner className="h-3.5 w-3.5" />
+                        Loading more notes
+                      </div>
                     )}
                   </>
                 )}
               </div>
             )}
-          </div>
+          </main>
 
-          <aside className="hidden lg:block w-[22rem] pl-6 pb-2 ml-auto">
+          <aside className="hidden lg:block">
             <div className="sticky top-0 space-y-4">
-              <div className="relative mt-2">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search documents..."
-                  className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  aria-label="Search documents"
-                />
-                <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-              </div>
+              {searchField}
 
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] backdrop-blur-sm p-4">
+              <Card className="p-4">
                 <CalendarFilterPanel
                   visibleMonth={calendarVisibleMonth}
                   calendarDays={calendarDays}
@@ -347,7 +383,20 @@ export function TimelinePage() {
                   onResetTimeline={viewMode === 'calendar' ? resetTimeline : undefined}
                   error={calendarError}
                 />
-              </div>
+              </Card>
+
+              <Card className="p-4">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-ember/25 bg-ember-soft text-ember">
+                  <ViewColumnsIcon className="h-4 w-4" />
+                </div>
+                <h3 className="mt-3 font-display text-base text-ink">Notes become work</h3>
+                <p className="mt-1 text-xs leading-relaxed text-ink-secondary">
+                  Right-click any note and choose “Add to board” to turn it into a task without losing the writing.
+                </p>
+                <Button variant="ghost" size="sm" className="mt-2 px-0" onClick={() => navigate('/board')}>
+                  Open the board →
+                </Button>
+              </Card>
             </div>
           </aside>
         </div>
@@ -373,6 +422,7 @@ export function TimelinePage() {
                 closeContextMenu();
               }
             }}
+            onAddToBoard={() => void handleAddToBoard()}
             onDeleteDocument={handleDeleteDocument}
             onRestoreDocument={() => undefined}
             onPermanentlyDeleteDocument={() => undefined}
@@ -384,17 +434,17 @@ export function TimelinePage() {
         )}
 
       <ConfirmDialog
-        isOpen={!!deleteConfirmState}
-        title="Move to Trash"
-        message={deleteConfirmState ? `Move "${deleteConfirmState.title}" to trash?` : 'Move this document to trash?'}
-        onSave={() => undefined}
-        onDiscard={() => {
-          void handleConfirmDelete();
-        }}
+        open={Boolean(deleteConfirmState)}
+        title="Move this note to trash?"
+        description={
+          deleteConfirmState
+            ? `“${deleteConfirmState.title}” will be moved to trash. You can restore it later.`
+            : undefined
+        }
+        confirmLabel="Move to trash"
+        tone="danger"
+        onConfirm={() => void handleConfirmDelete()}
         onCancel={() => setDeleteConfirmState(null)}
-        saveLabel=""
-        discardLabel="Delete"
-        cancelLabel="Cancel"
       />
 
       <PublicShareModal

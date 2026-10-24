@@ -15,6 +15,7 @@ import { useAuth } from "./lib/auth";
 
 // Lazy load heavy routes for code splitting
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const BoardPage = lazy(() => import("./pages/BoardPage"));
 const DocumentEditor = lazy(() => import("./components/DocumentEditor"));
 const PublicDocumentPage = lazy(() => import("./pages/PublicDocumentPage"));
 const PublicFolderPage = lazy(() => import("./pages/PublicFolderPage"));
@@ -23,11 +24,12 @@ import { initialLoadDoneAtom } from './state/atoms';
 import { useSidebarWidth, setLastNonDocumentRoute } from "./lib/settings";
 import "./index.css";
 
-const MOBILE_ROUTE_ORDER = ['/timeline', '/folders', '/chat', '/settings'] as const;
+const MOBILE_ROUTE_ORDER = ['/timeline', '/board', '/folders', '/chat', '/settings'] as const;
 
 function getMobileRouteKey(pathname: string): string {
   if (pathname.startsWith('/document/')) return '/document';
   if (pathname.startsWith('/timeline')) return '/timeline';
+  if (pathname.startsWith('/board')) return '/board';
   if (pathname.startsWith('/folders')) return '/folders';
   if (pathname.startsWith('/chat')) return '/chat';
   if (pathname.startsWith('/settings')) return '/settings';
@@ -58,10 +60,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-black/40 backdrop-blur-md">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4 mx-auto"></div>
-          <p className="text-gray-400">Loading...</p>
+      <div className="flex h-screen items-center justify-center bg-canvas">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-9 w-9 animate-spin rounded-full border-2 border-line-strong border-t-ember" />
+          <p className="text-sm text-ink-muted">Opening your workspace…</p>
         </div>
       </div>
     );
@@ -175,7 +177,7 @@ function AppContent() {
 
   // Reset editor state when navigating away from document routes
   useEffect(() => {
-    const persistentRoutes = ['/timeline', '/folders', '/chat'];
+    const persistentRoutes = ['/timeline', '/board', '/folders', '/chat'];
     if (!location.pathname.startsWith('/document') && !persistentRoutes.includes(location.pathname)) {
       reset();
     }
@@ -254,10 +256,10 @@ function AppContent() {
           }}
         >
           <Suspense fallback={
-            <div className="h-screen flex items-center justify-center bg-black/40 backdrop-blur-md">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4 mx-auto"></div>
-                <p className="text-gray-400">Loading...</p>
+            <div className="flex h-screen items-center justify-center bg-canvas">
+              <div className="flex flex-col items-center gap-4">
+                <div className="h-9 w-9 animate-spin rounded-full border-2 border-line-strong border-t-ember" />
+                <p className="text-sm text-ink-muted">Loading…</p>
               </div>
             </div>
           }>
@@ -274,18 +276,21 @@ function AppContent() {
               <Route path="/folders/shared" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/folders/:folderId" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/timeline" element={<ProtectedRoute><TimelinePage /></ProtectedRoute>} />
+              <Route path="/board" element={<ProtectedRoute><BoardPage /></ProtectedRoute>} />
               <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
               <Route path="/chat/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
               <Route path="/settings/:tab" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+              <Route path="/settings/:tab/:section" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
               <Route path="/document/:id" element={<ProtectedRoute><DocumentEditor /></ProtectedRoute>} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
         </div>
       </div>
       {shouldShowSidebar && isMobile && (
         <div
-          className={`md:hidden fixed inset-0 z-[45] bg-black/20 backdrop-blur-sm pointer-events-none transition-opacity duration-200 ease-in-out ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}
+          className={`md:hidden fixed inset-0 z-[45] bg-surface-sunken/70 backdrop-blur-sm pointer-events-none transition-opacity duration-200 ease-in-out ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}
         />
       )}
       {shouldShowInstallPrompt && <InstallBanner />}

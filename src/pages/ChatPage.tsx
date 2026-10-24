@@ -19,6 +19,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { pb } from '../lib/pocketbase';
 import { MarkdownPreview } from '../components/MarkdownPreview';
+import { IconButton } from '../components/ui';
 import { getRecentChatId, setLastChat, clearLastChat } from '../lib/settings';
 import { highlightText } from '../lib/highlightText';
 import { useToasts } from '../state/hooks';
@@ -61,7 +62,7 @@ interface Conversation {
 
 // ── Persistent stream store (survives component unmounts) ────────────
 // When the user navigates away mid-stream, the async fetch loop keeps
-// running and writing here.  When ChatPage remounts it rehydrates from
+// running and writing here. When ChatPage remounts it rehydrates from
 // this store instead of fetching (possibly incomplete) data from the server.
 
 const streamStore = {
@@ -777,8 +778,9 @@ export function ChatPage() {
     let lastUserMsg: Message | null = null;
     let lastUserIdx = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'user') {
-        lastUserMsg = messages[i];
+      const candidate = messages[i];
+      if (candidate?.role === 'user') {
+        lastUserMsg = candidate;
         lastUserIdx = i;
         break;
       }
@@ -828,12 +830,12 @@ export function ChatPage() {
 
     const pickerContent = (
       <>
-        <div className={`${isMobile ? 'px-4 pb-4 pt-3' : 'px-3 py-3'} border-b border-white/8`}>
-          {isMobile && <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-white/20" />}
+        <div className={`${isMobile ? 'px-4 pb-4 pt-3' : 'px-3 py-3'} border-b border-line`}>
+          {isMobile && <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-surface-raised" />}
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-white">Document context</p>
-              <p className="mt-1 text-xs text-gray-400">
+              <p className="text-sm font-medium text-ink">Document context</p>
+              <p className="mt-1 text-xs text-ink-muted">
                 {attachedDocs.length > 0
                   ? `${attachedDocs.length} selected for this chat`
                   : 'Attach documents to steer the reply'}
@@ -843,7 +845,7 @@ export function ChatPage() {
               <button
                 type="button"
                 onClick={closeDocPicker}
-                className="rounded-xl border border-white/10 bg-white/5 p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                className="rounded-panel border border-line bg-surface-raised p-2 text-ink-muted transition-colors hover:bg-surface-raised hover:text-ink"
                 aria-label="Close document picker"
               >
                 <XMarkIcon className="w-4 h-4" />
@@ -851,13 +853,13 @@ export function ChatPage() {
             )}
           </div>
           <div className="relative mt-3">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted" />
             <input
               type="text"
               value={docSearchQuery}
               onChange={e => setDocSearchQuery(e.target.value)}
               placeholder="Search documents..."
-              className="w-full rounded-xl border border-white/10 bg-white/5 pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 transition-colors focus:outline-none focus:border-blue-500/30 focus:bg-white/8"
+              className="w-full rounded-panel border border-line bg-surface-raised pl-9 pr-3 py-2 text-sm text-ink placeholder:text-ink-muted transition-colors focus:outline-none focus:border-ember/30 focus:bg-surface-raised"
               autoFocus={!isMobile}
             />
           </div>
@@ -865,7 +867,7 @@ export function ChatPage() {
 
         <div className={`overflow-y-auto scrollbar-autohide ${isMobile ? 'max-h-[min(60vh,32rem)] px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]' : 'max-h-[min(22rem,45vh)] p-2'}`}>
           {isSearchingDocuments ? (
-            <div className="flex items-center justify-center gap-2 px-3 py-5 text-xs text-gray-500">
+            <div className="flex items-center justify-center gap-2 px-3 py-5 text-xs text-ink-muted">
               <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4Zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647Z" />
@@ -874,8 +876,8 @@ export function ChatPage() {
             </div>
           ) : pickerDocuments.length === 0 ? (
             <div className="px-3 py-6 text-center">
-              <p className="text-sm text-gray-400">{emptyLabel}</p>
-              <p className="mt-1 text-xs text-gray-600">
+              <p className="text-sm text-ink-muted">{emptyLabel}</p>
+              <p className="mt-1 text-xs text-ink-muted">
                 {trimmedDocSearchQuery ? 'Try a shorter title or tag search.' : 'Create a document to use it as chat context.'}
               </p>
             </div>
@@ -890,16 +892,16 @@ export function ChatPage() {
                     key={doc.id}
                     type="button"
                     onClick={() => toggleAttachedDocument(doc)}
-                    className={`group flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                    className={`group flex w-full items-start gap-3 rounded-panel border px-3 py-2.5 text-left transition-colors ${
                       isAttached
-                        ? 'border-blue-500/30 bg-blue-500/12 text-blue-100'
-                        : 'border-transparent text-gray-200 hover:border-white/10 hover:bg-white/6'
+                        ? 'border-ember/30 bg-ember-soft text-ember'
+                        : 'border-transparent text-ink-muted hover:border-line hover:bg-surface-raised'
                     }`}
                   >
-                    <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                    <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control border ${
                       isAttached
-                        ? 'border-blue-400/20 bg-blue-400/10 text-blue-300'
-                        : 'border-white/8 bg-white/5 text-gray-500 group-hover:text-gray-300'
+                        ? 'border-ember/30 bg-ember-soft text-ember'
+                        : 'border-line bg-surface-raised text-ink-muted group-hover:text-ink-muted'
                     }`}>
                       <DocumentTextIcon className="w-4 h-4" />
                     </span>
@@ -907,33 +909,33 @@ export function ChatPage() {
                     <span className="min-w-0 flex-1">
                       <span className="flex items-start justify-between gap-3">
                         <span className="min-w-0 block flex-1 truncate text-sm font-medium leading-5">
-                          {highlightText(doc.title || 'Untitled', trimmedDocSearchQuery, 'bg-blue-500/25 text-blue-100')}
+                          {highlightText(doc.title || 'Untitled', trimmedDocSearchQuery, 'bg-ember-soft text-ember')}
                         </span>
                         <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] ${
                           isAttached
-                            ? 'border-blue-400/20 bg-blue-400/10 text-blue-200'
-                            : 'border-white/10 text-gray-500 group-hover:text-gray-300'
+                            ? 'border-ember/30 bg-ember-soft text-ember'
+                            : 'border-line text-ink-muted group-hover:text-ink-muted'
                         }`}>
                           {isAttached ? 'Added' : 'Add'}
                         </span>
                       </span>
 
                       <span className={`mt-1 flex items-center gap-1.5 overflow-hidden text-[11px] ${
-                        isAttached ? 'text-blue-200/70' : 'text-gray-500'
+                        isAttached ? 'text-ember' : 'text-ink-muted'
                       }`}>
                         <span className="truncate">
                           {visibleTags.length > 0 ? (
                             visibleTags.map((tag, index) => (
                               <span key={`${doc.id}-${tag}`}>
                                 {index > 0 && ' • '}
-                                {highlightText(tag, trimmedDocSearchQuery, 'bg-blue-500/20 text-blue-100')}
+                                {highlightText(tag, trimmedDocSearchQuery, 'bg-ember-soft text-ember')}
                               </span>
                             ))
                           ) : (
                             'No tags'
                           )}
                         </span>
-                        <span className={isAttached ? 'shrink-0 text-blue-300/30' : 'shrink-0 text-gray-700'}>•</span>
+                        <span className={isAttached ? 'shrink-0 text-ember' : 'shrink-0 text-ink-muted'}>•</span>
                         <span className="shrink-0">Updated {formatDocumentDate(doc.updated)}</span>
                       </span>
                     </span>
@@ -950,12 +952,12 @@ export function ChatPage() {
       return createPortal(
         <div className="fixed inset-0 z-[80]">
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-surface-sunken/70 backdrop-blur-sm"
             onClick={closeDocPicker}
           />
           <div
             ref={docPickerRef}
-            className="absolute inset-x-0 bottom-0 overflow-hidden rounded-t-[1.75rem] border border-white/10 border-b-0 bg-black/95 shadow-2xl backdrop-blur-xl"
+            className="absolute inset-x-0 bottom-0 overflow-hidden rounded-t-[1.75rem] border border-line border-b-0 bg-surface-sunken/70 shadow-float backdrop-blur-xl"
           >
             {pickerContent}
           </div>
@@ -967,7 +969,7 @@ export function ChatPage() {
     return (
       <div
         ref={docPickerRef}
-        className="absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-2xl border border-white/10 bg-black/90 shadow-2xl backdrop-blur-xl"
+        className="absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-panel border border-line bg-surface-sunken/70 shadow-float backdrop-blur-xl"
       >
         {pickerContent}
       </div>
@@ -979,18 +981,18 @@ export function ChatPage() {
   const renderAttachedDocs = () => {
     if (attachedDocs.length === 0) return null;
     return (
-      <div className="flex flex-wrap gap-1.5 px-3 py-2 border-t border-white/5">
+      <div className="flex flex-wrap gap-1.5 px-3 py-2 border-t border-line">
         {attachedDocs.map(doc => (
           <span
             key={doc.id}
-            className="inline-flex max-w-[10rem] items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/12 px-2.5 py-1 text-[11px] text-blue-200 sm:max-w-[12rem]"
+            className="inline-flex max-w-[10rem] items-center gap-1.5 rounded-full border border-ember/30 bg-ember-soft px-2.5 py-1 text-[11px] text-ember sm:max-w-[12rem]"
           >
             <DocumentTextIcon className="w-3 h-3 shrink-0" />
             <span className="truncate">{doc.title}</span>
             <button
               type="button"
               onClick={() => handleRemoveAttachedDocument(doc.id)}
-              className="rounded-full p-0.5 transition-colors hover:bg-blue-500/20"
+              className="rounded-full p-0.5 transition-colors hover:bg-ember-soft"
             >
               <XMarkIcon className="w-3 h-3" />
             </button>
@@ -1004,11 +1006,11 @@ export function ChatPage() {
   const inputBar = (
     <div className="w-full max-w-5xl mx-auto">
       {error && (
-        <div className="mb-2 px-3 py-2 bg-red-500/20 border border-red-500/30 rounded-lg text-sm text-red-200">
+        <div className="mb-2 px-3 py-2 bg-danger-soft border border-danger/30 rounded-control text-sm text-danger">
           {error}
         </div>
       )}
-      <div className="relative bg-white/5 border border-white/10 rounded-2xl overflow-visible">
+      <div className="relative rounded-panel border border-line bg-surface shadow-panel overflow-visible">
         {renderDocPicker()}
         <textarea
           ref={inputRef}
@@ -1017,19 +1019,19 @@ export function ChatPage() {
           onKeyDown={handleKeyDown}
           placeholder="Send a message..."
           rows={1}
-          className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm text-white placeholder-gray-500 focus:outline-none max-h-48 overflow-y-auto scrollbar-autohide"
+          className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm text-ink placeholder:text-ink-muted focus:outline-none max-h-48 overflow-y-auto scrollbar-autohide"
           style={{ minHeight: '2.5rem' }}
         />
         {renderAttachedDocs()}
-        <div className="flex items-center justify-between px-3 py-2 border-t border-white/5">
+        <div className="flex items-center justify-between px-3 py-2 border-t border-line">
           <button
             ref={docPickerToggleRef}
             type="button"
             onClick={toggleDocPicker}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+            className={`inline-flex items-center gap-1.5 rounded-control px-2.5 py-1 text-xs font-medium transition-all ${
               showDocPicker || attachedDocs.length > 0
-                ? 'bg-blue-500/15 text-blue-300 hover:bg-blue-500/25'
-                : 'text-gray-500 hover:bg-white/5 hover:text-gray-400'
+                ? 'bg-ember-soft text-ember hover:bg-ember/15'
+                : 'text-ink-secondary hover:bg-surface-sunken hover:text-ink'
             }`}
             title="Attach documents for context"
             aria-expanded={showDocPicker}
@@ -1041,7 +1043,7 @@ export function ChatPage() {
             type="button"
             onClick={sendMessage}
             disabled={isStreaming || !input.trim()}
-            className="shrink-0 rounded-lg p-2 text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="shrink-0 rounded-control bg-ember p-2 text-on-ember transition-colors hover:bg-ember-strong disabled:cursor-not-allowed disabled:opacity-40"
           >
             <PaperAirplaneIcon className="w-4 h-4" />
           </button>
@@ -1054,11 +1056,11 @@ export function ChatPage() {
   const inputBarThick = (
     <div className="w-full max-w-5xl mx-auto">
       {error && (
-        <div className="mb-2 px-3 py-2 bg-red-500/20 border border-red-500/30 rounded-lg text-sm text-red-200">
+        <div className="mb-2 px-3 py-2 bg-danger-soft border border-danger/30 rounded-control text-sm text-danger">
           {error}
         </div>
       )}
-      <div className="relative bg-white/5 border-2 border-white/15 rounded-2xl overflow-visible">
+      <div className="relative rounded-panel border border-line bg-surface shadow-panel overflow-visible">
         {renderDocPicker()}
         <textarea
           ref={inputThickRef}
@@ -1067,19 +1069,19 @@ export function ChatPage() {
           onKeyDown={handleKeyDown}
           placeholder="Send a message..."
           rows={1}
-          className="w-full resize-none bg-transparent px-5 pt-4 pb-2 text-sm text-white placeholder-gray-500 focus:outline-none max-h-48 overflow-y-auto scrollbar-autohide"
+          className="w-full resize-none bg-transparent px-5 pt-4 pb-2 text-sm text-ink placeholder:text-ink-muted focus:outline-none max-h-48 overflow-y-auto scrollbar-autohide"
           style={{ minHeight: '2.75rem' }}
         />
         {renderAttachedDocs()}
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-white/5">
+        <div className="flex items-center justify-between px-4 py-2.5 border-t border-line">
           <button
             ref={docPickerToggleRef}
             type="button"
             onClick={toggleDocPicker}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+            className={`inline-flex items-center gap-1.5 rounded-control px-2.5 py-1 text-xs font-medium transition-all ${
               showDocPicker || attachedDocs.length > 0
-                ? 'bg-blue-500/15 text-blue-300 hover:bg-blue-500/25'
-                : 'text-gray-500 hover:bg-white/5 hover:text-gray-400'
+                ? 'bg-ember-soft text-ember hover:bg-ember/15'
+                : 'text-ink-secondary hover:bg-surface-sunken hover:text-ink'
             }`}
             title="Attach documents for context"
             aria-expanded={showDocPicker}
@@ -1091,7 +1093,7 @@ export function ChatPage() {
             type="button"
             onClick={sendMessage}
             disabled={isStreaming || !input.trim()}
-            className="shrink-0 rounded-lg p-2 text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="shrink-0 rounded-control bg-ember p-2 text-on-ember transition-colors hover:bg-ember-strong disabled:cursor-not-allowed disabled:opacity-40"
           >
             <PaperAirplaneIcon className="w-4 h-4" />
           </button>
@@ -1102,39 +1104,31 @@ export function ChatPage() {
 
   return (
     <div
-      className={`h-full bg-black/40 backdrop-blur-md overflow-hidden flex ${isMobile ? 'px-1 pt-4 pb-0' : 'p-4 sm:p-6'}`}
+      className={`flex h-full overflow-hidden bg-canvas ${isMobile ? 'px-1 pt-4 pb-0' : 'px-4 py-5 sm:px-6 sm:py-6'}`}
       style={isMobile && chatHeight ? { height: chatHeight } : undefined}
     >
       {/* ── Main chat area ──────────────────────────────────────── */}
       <div className="desktop-page-content-enter flex-1 min-w-0 flex flex-col h-full">
         {/* Header */}
-        <header className="shrink-0 mb-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2 text-white">
-                <SparklesIcon className="w-5 h-5 text-blue-400" />
-                <h1 className="text-xl font-bold text-white">Chat</h1>
-              </div>
-              <p className="text-xs text-gray-400 mt-1">
-                {isNewChat ? 'Start a new conversation with AI' : (conversations.find(c => c.id === conversationId)?.title || 'Conversation with AI')}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={startNewChat}
-                className="inline-flex items-center justify-center rounded-lg border border-blue-500/30 bg-blue-500/20 p-2 text-blue-100 hover:bg-blue-500/30 transition-colors"
-                title="New chat"
-              >
-                <PlusIcon className="w-5 h-5" />
-              </button>
-              <button
-                onClick={() => setShowSidebar(prev => !prev)}
-                className={`inline-flex items-center justify-center rounded-lg border p-2 transition-colors ${showSidebar ? 'border-blue-500/30 bg-blue-500/20 text-blue-100 hover:bg-blue-500/30' : 'border-white/10 bg-white/5 text-gray-200 hover:bg-white/10'}`}
-                title="Chat history"
-              >
-                <ChatBubbleLeftRightIcon className="w-5 h-5" />
-              </button>
-            </div>
+        <header className="mb-4 flex shrink-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="eyebrow flex items-center gap-1.5"><SparklesIcon className="h-3.5 w-3.5 text-ember" /> Assistant</p>
+            <h1 className="mt-1.5 truncate font-display text-2xl leading-tight text-ink">Chat</h1>
+            <p className="mt-1 truncate text-sm text-ink-secondary">
+              {isNewChat ? 'Ask about your notes, or bring a document into the conversation.' : (conversations.find(c => c.id === conversationId)?.title || 'Conversation with AI')}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <IconButton label="New chat" onClick={startNewChat}>
+              <PlusIcon />
+            </IconButton>
+            <IconButton
+              label="Chat history"
+              onClick={() => setShowSidebar(prev => !prev)}
+              className={showSidebar ? 'bg-ember-soft text-ember' : undefined}
+            >
+              <ChatBubbleLeftRightIcon />
+            </IconButton>
           </div>
         </header>
 
@@ -1145,10 +1139,26 @@ export function ChatPage() {
             // ── Mobile: hero at top, input pinned at bottom ──────────────
             <div className="flex-1 flex flex-col p-4">
               <div className="flex-1 flex items-center justify-center">
-                <div className="text-center space-y-2">
-                  <SparklesIcon className="w-10 h-10 text-blue-400 mx-auto" />
-                  <h2 className="text-xl font-semibold text-white">How can I help you?</h2>
-                  <p className="text-sm text-gray-400">Start a conversation with AI</p>
+                <div className="max-w-sm space-y-2 text-center">
+                  <span className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full border border-ember/25 bg-ember-soft text-ember">
+                    <SparklesIcon className="h-5 w-5" />
+                  </span>
+                  <h2 className="font-display text-2xl text-ink">How can I help?</h2>
+                  <p className="text-sm leading-relaxed text-ink-secondary">
+                    Ask about your notes, or attach a document to keep the conversation grounded.
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-2 pt-2">
+                    {['Summarise my recent notes', 'Help me plan the week', 'Draft a short update'].map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => { setInput(prompt); inputRef.current?.focus(); }}
+                        className="rounded-full border border-line bg-surface px-3 py-1.5 text-[11px] text-ink-secondary transition-colors hover:border-ember/35 hover:text-ember"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               {inputBar}
@@ -1156,10 +1166,26 @@ export function ChatPage() {
           ) : (
             // ── Desktop: hero + thick input centered together ─────────────
             <div className="flex-1 flex flex-col items-center justify-center p-4 gap-8">
-              <div className="text-center space-y-2">
-                <SparklesIcon className="w-12 h-12 text-blue-400 mx-auto" />
-                <h2 className="text-2xl font-semibold text-white">How can I help you?</h2>
-                <p className="text-sm text-gray-400">Start a conversation with AI</p>
+              <div className="max-w-md space-y-2 text-center">
+                <span className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-ember/25 bg-ember-soft text-ember">
+                  <SparklesIcon className="h-5 w-5" />
+                </span>
+                <h2 className="font-display text-3xl text-ink">How can I help?</h2>
+                <p className="text-sm leading-relaxed text-ink-secondary">
+                  Ask about your notes, or attach a document to keep the conversation grounded.
+                </p>
+                <div className="flex flex-wrap justify-center gap-2 pt-3">
+                  {['Summarise my recent notes', 'Help me plan the week', 'Draft a short update'].map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => { setInput(prompt); inputRef.current?.focus(); }}
+                      className="rounded-full border border-line bg-surface px-3 py-1.5 text-[11px] text-ink-secondary transition-colors hover:border-ember/35 hover:text-ember"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="w-full max-w-4xl">
                 {inputBarThick}
@@ -1185,16 +1211,16 @@ export function ChatPage() {
                         {/* Model name label for assistant messages */}
                         {msg.role === 'assistant' && msg.model && (
                           <div className="flex items-center gap-1.5 px-1 mb-1">
-                            <SparklesIcon className="w-3 h-3 text-blue-400" />
-                            <span className="text-[11px] font-medium text-gray-400">{msg.model}</span>
+                            <SparklesIcon className="w-3 h-3 text-ember" />
+                            <span className="text-[11px] font-medium text-ink-muted">{msg.model}</span>
                           </div>
                         )}
                         <div
                           className={`
-                            rounded-2xl px-4 py-2.5 text-sm break-words
+                            rounded-panel px-4 py-2.5 text-sm break-words
                             ${msg.role === 'user'
-                              ? 'bg-blue-500/20 border border-blue-500/30 text-blue-50'
-                              : 'bg-white/5 border border-white/10 text-gray-200'
+                              ? 'border border-ember/25 bg-ember-soft text-ink'
+                              : 'border border-line bg-surface-raised text-ink-secondary'
                             }
                             ${msg.streaming && !msg.content ? 'animate-pulse' : ''}
                           `}
@@ -1202,27 +1228,27 @@ export function ChatPage() {
                           {/* Reasoning/thinking section */}
                           {msg.reasoning && (
                             <details
-                              className="mb-2 rounded-lg border border-white/5 bg-white/3"
+                              className="mb-2 rounded-control border border-line bg-surface-raised"
                               open={msg.streaming && !msg.content}
                             >
-                              <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-400 select-none hover:text-gray-300 transition-colors [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+                              <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs text-ink-muted select-none hover:text-ink transition-colors [&::-webkit-details-marker]:hidden [&::marker]:hidden">
                                 <SparklesIcon className="w-3 h-3 shrink-0" />
                                 <span>Thinking</span>
                                 {msg.streaming && !msg.content && (
-                                  <span className="inline-block w-1 h-3 ml-0.5 bg-gray-400 animate-pulse rounded-sm" />
+                                  <span className="inline-block w-1 h-3 ml-0.5 bg-surface-raised animate-pulse rounded-sm" />
                                 )}
                               </summary>
-                              <div className="px-2.5 pb-2 text-xs text-gray-500 break-words max-h-80 overflow-y-auto scrollbar-autohide">
+                              <div className="px-2.5 pb-2 text-xs text-ink-muted break-words max-h-80 overflow-y-auto scrollbar-autohide">
                                 <MarkdownPreview
                                   content={msg.reasoning}
-                                  className="chat-markdown text-xs text-gray-500 [&_p]:my-0.5 [&_pre]:my-1 [&_ul]:my-0.5 [&_ol]:my-0.5 [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-xs [&_code]:text-[10px]"
+                                  className="chat-markdown text-xs text-ink-muted [&_p]:my-0.5 [&_pre]:my-1 [&_ul]:my-0.5 [&_ol]:my-0.5 [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-xs [&_code]:text-[10px]"
                                 />
                               </div>
                             </details>
                           )}
                           {/* Main content */}
                           {!msg.content && !msg.reasoning ? (
-                            <span className="text-gray-500 italic">Thinking...</span>
+                            <span className="text-ink-muted italic">Thinking...</span>
                           ) : msg.content ? (
                             <MarkdownPreview
                               content={msg.content}
@@ -1230,11 +1256,11 @@ export function ChatPage() {
                             />
                           ) : null}
                           {msg.streaming && msg.content && (
-                            <span className="inline-block w-1.5 h-4 ml-0.5 bg-blue-400 animate-pulse rounded-sm align-text-bottom" />
+                            <span className="inline-block w-1.5 h-4 ml-0.5 bg-ember-soft animate-pulse rounded-sm align-text-bottom" />
                           )}
                           {msg.sources && msg.sources.length > 0 && !msg.streaming && (
-                            <div className="mt-2 pt-2 border-t border-white/5 flex flex-wrap gap-1.5">
-                              <span className="text-[10px] text-gray-500 mr-0.5 self-center">Sources:</span>
+                            <div className="mt-2 pt-2 border-t border-line flex flex-wrap gap-1.5">
+                              <span className="text-[10px] text-ink-muted mr-0.5 self-center">Sources:</span>
                               {msg.sources.map((src) => (
                                 <a
                                   key={src.id}
@@ -1243,7 +1269,7 @@ export function ChatPage() {
                                     e.preventDefault();
                                     navigate(`/document/${src.id}`);
                                   }}
-                                  className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 text-[10px] text-blue-300 hover:bg-blue-500/20 hover:text-blue-200 transition-colors cursor-pointer"
+                                  className="inline-flex items-center gap-1 rounded-[6px] bg-ember-soft border border-ember/30 px-1.5 py-0.5 text-[10px] text-ember hover:bg-ember-soft hover:text-ember transition-colors cursor-pointer"
                                   title={src.title}
                                 >
                                   <svg className="w-2.5 h-2.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -1261,11 +1287,11 @@ export function ChatPage() {
                             <button
                               type="button"
                               onClick={() => copyMessage(i, msg.content)}
-                              className="rounded-lg p-1.5 text-gray-500 hover:text-gray-300 hover:bg-white/5 transition-colors"
+                              className="rounded-control p-1.5 text-ink-muted hover:bg-surface-raised hover:text-ink transition-colors"
                               title="Copy message"
                             >
                               {copiedId === i ? (
-                                <CheckIcon className="w-3.5 h-3.5 text-green-400" />
+                                <CheckIcon className="w-3.5 h-3.5 text-sage" />
                               ) : (
                                 <ClipboardIcon className="w-3.5 h-3.5" />
                               )}
@@ -1275,7 +1301,7 @@ export function ChatPage() {
                               <button
                                 type="button"
                                 onClick={regenerateLastResponse}
-                                className="rounded-lg p-1.5 text-gray-500 hover:text-gray-300 hover:bg-white/5 transition-colors"
+                                className="rounded-control p-1.5 text-ink-muted hover:bg-surface-raised hover:text-ink transition-colors"
                                 title="Regenerate response"
                               >
                                 <ArrowPathIcon className="w-3.5 h-3.5" />
@@ -1294,7 +1320,7 @@ export function ChatPage() {
               {showScrollButton && (
                 <button
                   onClick={scrollToBottom}
-                  className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm px-3 py-1.5 text-xs text-gray-300 hover:bg-white/20 hover:text-white transition-all shadow-lg"
+                  className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 rounded-full bg-surface-raised border border-line backdrop-blur-sm px-3 py-1.5 text-xs text-ink-muted hover:bg-surface-raised hover:text-ink transition-all shadow-float"
                   title="Scroll to bottom"
                 >
                   <ChevronDownIcon className="w-3.5 h-3.5" />
@@ -1313,7 +1339,7 @@ export function ChatPage() {
       {/* ── Right sidebar backdrop (mobile only) ────────────────── */}
       {isMobile && showSidebar && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[2px]"
+          className="fixed inset-0 z-40 bg-canvas-deep/60 backdrop-blur-sm"
           onClick={() => setShowSidebar(false)}
         />
       )}
@@ -1322,26 +1348,26 @@ export function ChatPage() {
       <div
         className={`
           ${isMobile
-            ? `fixed top-0 right-0 bottom-0 z-50 w-72 transition-transform duration-200 ease-out bg-black/60 backdrop-blur-xl ring-1 ring-white/10 shadow-2xl ${showSidebar ? 'translate-x-0' : 'translate-x-full'}`
+            ? `fixed bottom-0 right-0 top-0 z-50 w-72 bg-canvas-deep shadow-float ring-1 ring-line transition-transform duration-200 ease-out ${showSidebar ? 'translate-x-0' : 'translate-x-full'}`
             : `relative shrink-0 transition-[width,opacity] duration-200 ease-out overflow-hidden ${showSidebar ? 'w-64 opacity-100' : 'w-0 opacity-0'}`
           }
           flex flex-col ml-3
         `}
       >
         {/* Inner container — carries the visual chrome on desktop */}
-        <div className={`flex flex-col h-full ${!isMobile ? 'bg-white/5 rounded-2xl ring-1 ring-white/8 overflow-hidden' : ''}`}>
+        <div className={`flex flex-col h-full ${!isMobile ? 'overflow-hidden rounded-panel border border-line bg-surface' : ''}`}>
           {/* Panel header */}
           <div className="px-3 pt-3 pb-2 flex items-center gap-2">
             <button
               onClick={startNewChat}
-              className="flex-1 flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-white bg-blue-500/20 hover:bg-blue-500/30 ring-1 ring-blue-500/30 transition-colors"
+              className="flex flex-1 items-center justify-center gap-2 rounded-control bg-ember px-3 py-2 text-sm font-medium text-on-ember transition-colors hover:bg-ember-strong"
             >
               <PlusIcon className="w-4 h-4" />
-              New Chat
+              New chat
             </button>
             <button
               onClick={() => setShowSidebar(false)}
-              className="rounded-xl p-2 text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
+              className="rounded-control p-2 text-ink-muted transition-colors hover:bg-surface-raised hover:text-ink"
               title="Close panel"
             >
               <XMarkIcon className="w-4 h-4" />
@@ -1351,16 +1377,16 @@ export function ChatPage() {
           {/* Conversation list */}
           <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5 scrollbar-autohide">
             {conversations.length === 0 && (
-              <p className="text-xs text-gray-500 text-center py-6">No conversations yet</p>
+              <p className="text-xs text-ink-muted text-center py-6">No conversations yet</p>
             )}
             {conversations.map(conv => (
               <div
                 key={conv.id}
                 className={`
-                  group flex items-center gap-2 rounded-xl px-3 py-2 text-sm cursor-pointer transition-colors
+                  group flex cursor-pointer items-center gap-2 rounded-control px-3 py-2 text-sm transition-colors
                   ${conv.id === conversationId
-                    ? 'bg-white/10 text-white'
-                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    ? 'bg-ember-soft font-medium text-ember'
+                    : 'text-ink-secondary hover:bg-surface-raised hover:text-ink'
                   }
                 `}
                 onClick={() => {
@@ -1375,7 +1401,7 @@ export function ChatPage() {
                     e.stopPropagation();
                     handleDelete(conv.id);
                   }}
-                  className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded-lg text-gray-500 hover:text-red-400 transition-all"
+                  className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded-control text-ink-muted hover:text-danger transition-all"
                 >
                   <TrashIcon className="w-3.5 h-3.5" />
                 </button>

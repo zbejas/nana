@@ -1,6 +1,8 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createLogger } from '../../../lib/logger';
+import { getDocument } from '../../../lib/documents';
+import { createTaskFromDocument } from '../../../lib/tasks';
 
 const logger = createLogger('ContextMenu');
 import { useToasts } from '../../../state/hooks';
@@ -160,6 +162,21 @@ export function useContextMenuHandlers({
         closeContextMenu();
     }, [contextMenu?.documentId, handlers, closeContextMenu]);
 
+    const handleAddToBoard = useCallback(async () => {
+        if (!contextMenu?.documentId) return;
+        const documentId = contextMenu.documentId;
+        closeContextMenu();
+
+        try {
+            const document = await getDocument(documentId);
+            await createTaskFromDocument(document);
+            showToast(`“${document.title || 'Untitled'}” added to the board`, 'success');
+        } catch (error) {
+            logger.error('Failed to add document to board', { error });
+            showToast('Failed to add that note to the board', 'error');
+        }
+    }, [contextMenu?.documentId, closeContextMenu, showToast]);
+
     const handleExportFolder = useCallback(async () => {
         if (!contextMenu?.folderId || !contextMenu?.folderName) return;
         await handlers.handleExportFolder(contextMenu.folderId, contextMenu.folderName);
@@ -179,5 +196,6 @@ export function useContextMenuHandlers({
         handlePermanentlyDeleteFolder,
         handleExportDocument,
         handleExportFolder,
+        handleAddToBoard,
     };
 }

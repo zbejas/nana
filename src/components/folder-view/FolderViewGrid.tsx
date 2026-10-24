@@ -4,6 +4,7 @@ import type { FolderTreeNode } from '../../lib/folders';
 import type { Document } from '../../lib/documents';
 import type { DropPosition } from '../file-folder-handling/types';
 import type { PendingCreate, PendingRename } from './types';
+import { Badge, Button, IconButton } from '../ui';
 
 type FolderViewGridProps = {
   displayedFolders: FolderTreeNode[];
@@ -45,6 +46,57 @@ type FolderViewGridProps = {
   onDrop: (event: React.DragEvent, targetFolderId?: string, targetParentId?: string) => void;
 };
 
+function InlineNameCard({
+  value,
+  placeholder,
+  isBusy,
+  onChange,
+  onSubmit,
+  onCancel,
+  submitLabel,
+  icon,
+}: {
+  value: string;
+  placeholder: string;
+  isBusy: boolean;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+  submitLabel: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-h-[7.5rem] flex-col justify-center gap-2 rounded-panel border border-ember/35 bg-ember-soft/40 p-3">
+      <div className="text-ember">{icon}</div>
+      <input
+        autoFocus
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            onSubmit();
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            onCancel();
+          }
+        }}
+        placeholder={placeholder}
+        className="h-8 w-full rounded-control border border-line bg-surface-sunken px-2.5 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-ember/50"
+      />
+      <div className="flex gap-2">
+        <Button size="sm" variant="primary" onClick={onSubmit} loading={isBusy}>
+          {submitLabel}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onCancel} disabled={isBusy}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function FolderViewGrid({
   displayedFolders,
   displayedDocuments,
@@ -77,93 +129,37 @@ export function FolderViewGrid({
   onDrop,
 }: FolderViewGridProps) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 gap-2.5 p-3 sm:grid-cols-3 sm:p-4 lg:grid-cols-4 xl:grid-cols-5">
       {pendingCreate && (
-        <div className="rounded-lg border border-white/10 bg-white/5 p-3 flex flex-col gap-2">
-          {pendingCreate.type === 'folder' ? (
-            <FolderIcon className="w-10 h-10 text-blue-300" />
-          ) : (
-            <DocumentTextIcon className="w-10 h-10 text-gray-400" />
-          )}
-          <input
-            autoFocus
-            value={pendingCreate.name}
-            onChange={(event) => onPendingNameChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                void onCreateSubmit();
-              }
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                onCreateCancel();
-              }
-            }}
-            placeholder={pendingCreate.type === 'folder' ? 'New folder name' : 'New file name'}
-            className="w-full px-2.5 py-2 rounded-md border border-white/15 bg-black/20 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-400"
-          />
-          <div className="flex flex-col sm:flex-row gap-2">
-            <button
-              onClick={() => void onCreateSubmit()}
-              disabled={isCreating}
-              className="text-xs px-2.5 py-1.5 rounded-md border border-blue-500/30 bg-blue-500/20 text-blue-100 hover:bg-blue-500/30 disabled:opacity-60 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-            >
-              {pendingCreate.type === 'folder' ? 'Create folder' : 'Create file'}
-            </button>
-            <button
-              onClick={onCreateCancel}
-              disabled={isCreating}
-              className="text-xs px-2.5 py-1.5 rounded-md border border-white/15 bg-white/5 text-gray-300 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+        <InlineNameCard
+          value={pendingCreate.name}
+          placeholder={pendingCreate.type === 'folder' ? 'New folder' : 'New note'}
+          isBusy={isCreating}
+          onChange={onPendingNameChange}
+          onSubmit={() => void onCreateSubmit()}
+          onCancel={onCreateCancel}
+          submitLabel={pendingCreate.type === 'folder' ? 'Create' : 'Create'}
+          icon={pendingCreate.type === 'folder' ? <FolderIcon className="h-6 w-6" /> : <DocumentTextIcon className="h-6 w-6" />}
+        />
       )}
 
       {displayedFolders.map((folder) => {
         const isRenamingFolder = pendingRename?.type === 'folder' && pendingRename.id === folder.id;
+        const isSelected = selectedFolderIds.includes(folder.id);
 
         return (
-          <div key={folder.id} className="relative group" data-selection-item="true">
+          <div key={folder.id} className="group relative" data-selection-item="true">
             {isRenamingFolder ? (
-              <div className="w-full rounded-lg border border-blue-300 bg-blue-500/10 p-3 text-left min-h-[120px] flex flex-col gap-2 justify-center">
-                <FolderIcon className="w-10 h-10 text-blue-300" />
-                <input
-                  autoFocus
-                  value={pendingRename.name}
-                  onChange={(event) => onPendingRenameChange(event.target.value)}
-                  onClick={(event) => event.stopPropagation()}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      void onRenameSubmit();
-                    }
-
-                    if (event.key === 'Escape') {
-                      event.preventDefault();
-                      onRenameCancel();
-                    }
-                  }}
-                  className="w-full px-2.5 py-2 rounded-md border border-white/15 bg-black/20 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <button
-                    onClick={() => void onRenameSubmit()}
-                    disabled={isRenaming}
-                    className="text-xs px-2.5 py-1.5 rounded-md border border-blue-500/30 bg-blue-500/20 text-blue-100 hover:bg-blue-500/30 disabled:opacity-60 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={onRenameCancel}
-                    disabled={isRenaming}
-                    className="text-xs px-2.5 py-1.5 rounded-md border border-white/15 bg-white/5 text-gray-300 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+              <InlineNameCard
+                value={pendingRename.name}
+                placeholder="Folder name"
+                isBusy={isRenaming}
+                onChange={onPendingRenameChange}
+                onSubmit={() => void onRenameSubmit()}
+                onCancel={onRenameCancel}
+                submitLabel="Save"
+                icon={<FolderIcon className="h-6 w-6" />}
+              />
             ) : (
               <button
                 draggable
@@ -175,84 +171,62 @@ export function FolderViewGrid({
                 onDragOver={(event) => onDragOver(event, folder.id, 'into')}
                 onDragLeave={onDragLeave}
                 onDrop={(event) => void onDrop(event, folder.id, folder.parent || undefined)}
-                className={`w-full rounded-lg border transition-colors p-3 text-left min-h-[120px] flex flex-col justify-center ${
+                className={`flex min-h-[7.5rem] w-full flex-col justify-between rounded-panel border p-3 text-left transition-colors ${
                   dropZone === folder.id
-                    ? 'border-blue-400 bg-blue-500/20'
-                    : selectedFolderIds.includes(folder.id)
-                      ? 'border-blue-300 bg-blue-500/15'
-                    : 'border-white/10 bg-white/5 hover:bg-white/10'
+                    ? 'border-ember/50 bg-ember-soft'
+                    : isSelected
+                      ? 'border-ember/35 bg-ember-soft/60'
+                      : 'border-line bg-surface hover:border-line-strong hover:bg-surface-raised'
                 }`}
               >
-                <FolderIcon className="w-10 h-10 text-blue-300 mb-2" />
-                <div className="text-sm text-gray-100 font-medium truncate flex items-center gap-1.5">
-                  {folder.name}
-                  {folder.is_private && (
-                    <LockClosedIcon className="w-4 h-4 flex-shrink-0 text-amber-400/70" title="Private" />
-                  )}
-                  {folder.is_public && (
-                    <ShareIcon className="w-4 h-4 flex-shrink-0 text-emerald-400/70" title="Public" />
-                  )}
-                </div>
+                <span className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-line bg-surface-sunken text-brass">
+                  <FolderIcon className="h-4 w-4" />
+                </span>
+                <span className="mt-3 block">
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-[13px] font-medium text-ink">{folder.name}</span>
+                    {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-brass" aria-label="Private" />}
+                    {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-sage" aria-label="Shared publicly" />}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] text-ink-muted">
+                    {folder.subfolders.length === 0 ? 'Folder' : `${folder.subfolders.length} subfolders`}
+                  </span>
+                </span>
               </button>
             )}
 
-            <button
-              onClick={(event) => onOpenItemMenu(event, 'folder', { folderId: folder.id, folderName: folder.name })}
-              className={`absolute right-2 top-2 p-1 rounded hover:bg-white/10 opacity-100 transition-opacity ${
-                isRenamingFolder ? 'hidden' : ''
-              }`}
-              aria-label="Folder menu"
-            >
-              <EllipsisVerticalIcon className="w-4 h-4 text-gray-400" />
-            </button>
+            {!isRenamingFolder && (
+              <IconButton
+                label={`Actions for ${folder.name}`}
+                size="sm"
+                className="absolute right-1.5 top-1.5 h-7 w-7 bg-surface/80 opacity-100 backdrop-blur-sm md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                onClick={(event) => onOpenItemMenu(event, 'folder', { folderId: folder.id, folderName: folder.name })}
+              >
+                <EllipsisVerticalIcon />
+              </IconButton>
+            )}
           </div>
         );
       })}
 
       {displayedDocuments.map((document) => {
         const isRenamingDocument = pendingRename?.type === 'document' && pendingRename.id === document.id;
+        const isSelected = selectedDocumentIds.includes(document.id);
         const tags = document.tags ?? [];
 
         return (
-          <div key={document.id} className="relative group w-full" data-selection-item="true">
+          <div key={document.id} className="group relative" data-selection-item="true">
             {isRenamingDocument ? (
-              <div className="relative w-full rounded-lg border border-blue-300 bg-blue-500/10 p-3 text-left min-h-[120px] flex flex-col gap-2 justify-center">
-                <DocumentTextIcon className="w-10 h-10 text-gray-400" />
-                <input
-                  autoFocus
-                  value={pendingRename.name}
-                  onChange={(event) => onPendingRenameChange(event.target.value)}
-                  onClick={(event) => event.stopPropagation()}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      void onRenameSubmit();
-                    }
-
-                    if (event.key === 'Escape') {
-                      event.preventDefault();
-                      onRenameCancel();
-                    }
-                  }}
-                  className="w-full px-2.5 py-2 rounded-md border border-white/15 bg-black/20 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <button
-                    onClick={() => void onRenameSubmit()}
-                    disabled={isRenaming}
-                    className="text-xs px-2.5 py-1.5 rounded-md border border-blue-500/30 bg-blue-500/20 text-blue-100 hover:bg-blue-500/30 disabled:opacity-60 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={onRenameCancel}
-                    disabled={isRenaming}
-                    className="text-xs px-2.5 py-1.5 rounded-md border border-white/15 bg-white/5 text-gray-300 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+              <InlineNameCard
+                value={pendingRename.name}
+                placeholder="Note name"
+                isBusy={isRenaming}
+                onChange={onPendingRenameChange}
+                onSubmit={() => void onRenameSubmit()}
+                onCancel={onRenameCancel}
+                submitLabel="Save"
+                icon={<DocumentTextIcon className="h-6 w-6" />}
+              />
             ) : (
               <button
                 draggable
@@ -266,54 +240,53 @@ export function FolderViewGrid({
                 }
                 onDragStart={(event) => onDragStart(event, document.id, currentFolderId || undefined)}
                 onDragEnd={onDragEnd}
-                className={`relative w-full rounded-lg border transition-colors p-3 text-left min-h-[120px] flex flex-col justify-center pb-7 ${
-                  selectedDocumentIds.includes(document.id)
-                    ? 'border-blue-300 bg-blue-500/15'
-                    : 'border-white/10 bg-white/5 hover:bg-white/10'
+                className={`flex min-h-[7.5rem] w-full flex-col justify-between rounded-panel border p-3 text-left transition-colors ${
+                  isSelected
+                    ? 'border-ember/35 bg-ember-soft/60'
+                    : 'border-line bg-surface hover:border-line-strong hover:bg-surface-raised'
                 }`}
               >
-                {(tags.length > 0) && (
-                  <div className="absolute bottom-2 right-2 flex items-center justify-end gap-1">
-                    {tags.slice(0, 2).map((tag) => (
-                      <span
-                        key={`${document.id}-${tag}`}
-                        className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 border border-white/10"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                    {tags.length > 2 && (
-                      <span className="text-[10px] text-gray-500">+{tags.length - 2}</span>
-                    )}
-                  </div>
-                )}
-                <DocumentTextIcon className="w-10 h-10 text-gray-400 mb-2" />
-                <div className="flex min-w-0 items-center gap-1.5 text-sm text-gray-200">
-                  <span className="truncate">{document.title || 'Untitled'}</span>
-                  {document.is_private && (
-                    <LockClosedIcon className="h-4 w-4 flex-shrink-0 text-amber-400/70" title="Private" />
+                <span className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-line bg-surface-sunken text-ink-muted">
+                  <DocumentTextIcon className="h-4 w-4" />
+                </span>
+                <span className="mt-3 block">
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-[13px] font-medium text-ink">{document.title || 'Untitled'}</span>
+                    {document.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-brass" aria-label="Private" />}
+                    {document.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-sage" aria-label="Shared publicly" />}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[11px] text-ink-muted">
+                    {document.word_count > 0 ? `${document.word_count} words` : 'Empty note'}
+                  </span>
+                  {tags.length > 0 && (
+                    <span className="mt-1.5 flex flex-wrap gap-1">
+                      {tags.slice(0, 1).map((tag) => (
+                        <Badge key={`${document.id}-${tag}`} tone="outline" className="max-w-24 truncate">
+                          {tag}
+                        </Badge>
+                      ))}
+                      {tags.length > 1 && <span className="text-[10px] leading-5 text-ink-muted">+{tags.length - 1}</span>}
+                    </span>
                   )}
-                  {document.is_public && (
-                    <ShareIcon className="h-4 w-4 flex-shrink-0 text-emerald-400/70" title="Public" />
-                  )}
-                </div>
+                </span>
               </button>
             )}
 
-            <button
-              onClick={(event) =>
-                onOpenItemMenu(event, 'document', {
-                  documentId: document.id,
-                  folderId: currentFolderId || undefined,
-                })
-              }
-              className={`absolute right-2 top-2 p-1 rounded hover:bg-white/10 opacity-100 transition-opacity ${
-                isRenamingDocument ? 'hidden' : ''
-              }`}
-              aria-label="Document menu"
-            >
-              <EllipsisVerticalIcon className="w-4 h-4 text-gray-400" />
-            </button>
+            {!isRenamingDocument && (
+              <IconButton
+                label={`Actions for ${document.title || 'Untitled'}`}
+                size="sm"
+                className="absolute right-1.5 top-1.5 h-7 w-7 bg-surface/80 opacity-100 backdrop-blur-sm md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                onClick={(event) =>
+                  onOpenItemMenu(event, 'document', {
+                    documentId: document.id,
+                    folderId: currentFolderId || undefined,
+                  })
+                }
+              >
+                <EllipsisVerticalIcon />
+              </IconButton>
+            )}
           </div>
         );
       })}

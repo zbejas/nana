@@ -1,60 +1,45 @@
-import { LockClosedIcon, PaperClipIcon } from '@heroicons/react/24/outline';
+import { ArrowDownIcon, PaperClipIcon } from '@heroicons/react/24/outline';
+import { IconButton } from '../ui';
 
-type EditorDragOverlayProps = {
-  visible: boolean;
-};
-
-export function EditorDragOverlay({ visible }: EditorDragOverlayProps) {
-  if (!visible) {
-    return null;
-  }
+export function EditorDragOverlay({ visible }: { visible: boolean }) {
+  if (!visible) return null;
 
   return (
-    <div className="absolute inset-0 bg-black/30 backdrop-blur-sm border-2 border-dashed border-white/20 z-[9999] flex items-center justify-center pointer-events-none">
+    <div className="pointer-events-none absolute inset-0 z-[9999] flex items-center justify-center border-2 border-dashed border-ember/50 bg-canvas/70 backdrop-blur-sm">
       <div className="text-center">
-        <PaperClipIcon className="w-16 h-16 text-white/60 mx-auto mb-4" />
-        <p className="text-white/80 text-lg font-medium">Drop files to attach</p>
+        <span className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-ember/30 bg-ember-soft text-ember">
+          <PaperClipIcon className="h-5 w-5" />
+        </span>
+        <p className="text-base font-medium text-ink">Drop files to attach</p>
+        <p className="mt-1 text-xs text-ink-muted">They are added to this note when you drop them.</p>
       </div>
     </div>
   );
 }
 
-type EditorReadOnlyOverlayProps = {
-  visible: boolean;
-};
-
-export function EditorReadOnlyOverlay({ visible }: EditorReadOnlyOverlayProps) {
-  if (!visible) {
-    return null;
-  }
+export function EditorReadOnlyOverlay({ visible }: { visible: boolean }) {
+  if (!visible) return null;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 mx-2 mt-1 mb-1 rounded-lg border border-yellow-500/30 bg-yellow-900/20 text-yellow-300">
-      <LockClosedIcon className="w-4 h-4 shrink-0" />
-      <p className="text-xs font-medium">Read-only trash document — Restore to edit</p>
+    <div className="mx-3 mb-2 mt-2 flex items-center gap-2 rounded-control border border-brass/30 bg-brass-soft px-3 py-2 sm:mx-4">
+      <span className="text-brass" aria-hidden="true">🔒</span>
+      <p className="text-xs font-medium text-brass">Read-only trash note. Restore it to edit.</p>
     </div>
   );
 }
 
-type ShowHeaderButtonProps = {
-  visible: boolean;
-  onClick: () => void;
-};
-
-export function ShowHeaderButton({ visible, onClick }: ShowHeaderButtonProps) {
-  if (!visible) {
-    return null;
-  }
+export function ShowHeaderButton({ visible, onClick }: { visible: boolean; onClick: () => void }) {
+  if (!visible) return null;
 
   return (
-    <button
-      onClick={onClick}
-      className="fixed top-2 right-2 p-2 rounded-lg border border-white/10 bg-white/10 dark:bg-white/10 light:bg-white/80 text-gray-200 dark:text-gray-200 light:text-gray-700 hover:bg-white/20 light:hover:bg-white transition-all z-20 backdrop-blur-sm animate-in fade-in duration-300"
-      title="Show header"
-    >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      </svg>
-    </button>
+    <div className="fixed right-3 top-3 z-20">
+      <IconButton
+        label="Show header"
+        onClick={onClick}
+        className="border border-line bg-surface-raised shadow-float"
+      >
+        <ArrowDownIcon />
+      </IconButton>
+    </div>
   );
 }

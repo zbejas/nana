@@ -1,6 +1,7 @@
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { Button, IconButton } from '../ui';
 
-const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WEEKDAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 function toDateString(date: Date) {
   const year = date.getFullYear();
@@ -50,52 +51,45 @@ export function CalendarFilterPanel({
   onResetTimeline,
   error,
 }: CalendarFilterPanelProps) {
+  const rangeLabel = selectedRange.startDate
+    ? selectedRange.endDate
+      ? `${selectedRange.startDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${selectedRange.endDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+      : selectedRange.startDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    : 'All time';
+
   return (
-    <>
-      <div className="mb-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-        <div className="text-[11px] uppercase tracking-wide text-gray-400">Calendar filter</div>
-        <div className="text-xs text-gray-300 mt-0.5">
-          {selectedRange.startDate
-            ? selectedRange.endDate
-              ? `${selectedRange.startDate.toLocaleDateString()} – ${selectedRange.endDate.toLocaleDateString()}`
-              : selectedRange.startDate.toLocaleDateString()
-            : 'Select one day or a date range'}
+    <div>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <p className="eyebrow">Filter</p>
+          <p className="mt-1 text-sm text-ink">{rangeLabel}</p>
+        </div>
+        <div className="flex items-center gap-0.5">
+          <IconButton label="Previous month" size="sm" onClick={onPreviousMonth}>
+            <ChevronLeftIcon />
+          </IconButton>
+          <IconButton label="Next month" size="sm" onClick={onNextMonth}>
+            <ChevronRightIcon />
+          </IconButton>
         </div>
       </div>
 
-      <div className="flex items-center justify-between mb-3">
-        <button
-          onClick={onPreviousMonth}
-          className="inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/5 p-2 text-gray-200 hover:bg-white/10 transition-colors"
-          aria-label="Previous month"
-          title="Previous month"
-        >
-          <ChevronLeftIcon className="w-4 h-4" />
-        </button>
-
-        <div className="text-sm font-medium text-white">
+      <div className="mb-1 flex items-center justify-between">
+        <p className="text-[13px] font-medium text-ink">
           {visibleMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-        </div>
-
-        <button
-          onClick={onNextMonth}
-          className="inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/5 p-2 text-gray-200 hover:bg-white/10 transition-colors"
-          aria-label="Next month"
-          title="Next month"
-        >
-          <ChevronRightIcon className="w-4 h-4" />
-        </button>
+        </p>
+        {isSameDay(selectedRange.startDate, new Date()) && !selectedRange.endDate && (
+          <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-ember">Today</span>
+        )}
       </div>
 
-      <div className="grid grid-cols-7 gap-1 mb-1">
-        {WEEKDAY_LABELS.map((weekday) => (
-          <div key={weekday} className="text-[11px] text-gray-400 text-center py-1">
+      <div className="grid grid-cols-7 gap-0.5">
+        {WEEKDAY_LABELS.map((weekday, index) => (
+          <div key={`${weekday}-${index}`} className="py-1 text-center text-[10px] font-medium text-ink-muted">
             {weekday}
           </div>
         ))}
-      </div>
 
-      <div className="grid grid-cols-7 gap-1">
         {calendarDays.map((day) => {
           const inCurrentMonth = day.getMonth() === visibleMonth.getMonth();
           const isStart = isSameDay(day, selectedRange.startDate);
@@ -107,23 +101,29 @@ export function CalendarFilterPanel({
               day.getTime() <= selectedRange.endDate.getTime()
           );
           const isSelected = isStart || isEnd;
+          const isToday = isSameDay(day, new Date());
 
           return (
             <button
               key={toDateString(day)}
               onClick={() => onDayClick(day)}
-              className={`h-9 rounded-md text-sm transition-colors ${isSelected
-                  ? 'bg-blue-500/35 text-blue-100 border border-blue-400/40'
+              className={`relative h-8 rounded-[6px] text-[12px] tabular-nums transition-colors ${
+                isSelected
+                  ? 'bg-ember font-semibold text-on-ember'
                   : inRange
-                    ? 'bg-blue-500/15 text-blue-100 border border-blue-500/20'
+                    ? 'bg-ember-soft text-ink'
                     : inCurrentMonth
-                      ? 'bg-white/5 text-gray-200 border border-white/10 hover:bg-white/10'
-                      : 'bg-black/20 text-gray-500 border border-white/5 hover:bg-black/30'
-                }`}
+                      ? 'text-ink-secondary hover:bg-surface-raised hover:text-ink'
+                      : 'text-ink-muted/40 hover:bg-surface-raised/60 hover:text-ink-muted'
+              }`}
               title={day.toLocaleDateString()}
               aria-label={`Select ${day.toLocaleDateString()}`}
+              aria-pressed={isSelected}
             >
               {day.getDate()}
+              {isToday && !isSelected && (
+                <span className="absolute bottom-1 left-1/2 h-0.5 w-0.5 -translate-x-1/2 rounded-full bg-ember" />
+              )}
             </button>
           );
         })}
@@ -132,35 +132,24 @@ export function CalendarFilterPanel({
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {hasPendingChanges && (
           <>
-            <button
-              onClick={onApply}
-              className="inline-flex items-center rounded-lg border border-blue-500/30 bg-blue-500/20 px-3 py-1.5 text-xs font-medium text-blue-100 hover:bg-blue-500/30 transition-colors"
-            >
-              Apply
-            </button>
-
+            <Button variant="primary" size="sm" onClick={onApply}>
+              Apply dates
+            </Button>
             {(selectedRange.startDate || selectedRange.endDate) && (
-              <button
-                onClick={onClear}
-                className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10 transition-colors"
-              >
-                Clear dates
-              </button>
+              <Button variant="secondary" size="sm" onClick={onClear}>
+                Clear
+              </Button>
             )}
           </>
         )}
-
         {onResetTimeline && (
-          <button
-            onClick={onResetTimeline}
-            className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10 transition-colors"
-          >
+          <Button variant="ghost" size="sm" onClick={onResetTimeline}>
             Reset timeline
-          </button>
+          </Button>
         )}
       </div>
 
-      {error && <p className="mt-3 text-xs text-red-300">{error}</p>}
-    </>
+      {error && <p className="mt-3 text-xs text-danger">{error}</p>}
+    </div>
   );
 }

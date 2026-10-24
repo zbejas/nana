@@ -30,22 +30,19 @@ export function ContentSizeWarning({ content }: ContentSizeWarningProps) {
     <div
       role={overHardLimit ? 'alert' : 'status'}
       aria-live={overHardLimit ? 'assertive' : 'polite'}
-      className={`mx-3 mt-2 flex shrink-0 items-start gap-2 rounded-lg border px-3 py-2 text-xs sm:mx-4 ${
+      className={`mx-3 mt-2 flex shrink-0 items-start gap-2.5 rounded-control border px-3 py-2.5 text-xs sm:mx-4 ${
         overHardLimit
-          ? 'border-red-400/40 bg-red-500/10 text-red-100'
-          : 'border-amber-400/30 bg-amber-500/10 text-amber-100'
+          ? 'border-danger/35 bg-danger-soft text-danger'
+          : 'border-brass/30 bg-brass-soft text-brass'
       }`}
     >
-      <ExclamationTriangleIcon
-        className={`mt-0.5 h-4 w-4 shrink-0 ${overHardLimit ? 'text-red-300' : 'text-amber-300'}`}
-        aria-hidden="true"
-      />
+      <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
       <div className="min-w-0 space-y-0.5">
         <p className="font-medium">
           This note is {formatMegabytes(bytes)}
           {overHardLimit ? ` — over the ${formatMegabytes(CONTENT_SIZE_HARD_LIMIT_BYTES)} limit.` : '.'}
         </p>
-        <p className={overHardLimit ? 'text-red-100/80' : 'text-amber-100/80'}>
+        <p className="opacity-80">
           {overHardLimit
             ? 'It will not save. Upload the original file as an attachment instead.'
             : 'Notes over 5 MB can be slow to edit. For large files, upload the original file as an attachment instead.'}

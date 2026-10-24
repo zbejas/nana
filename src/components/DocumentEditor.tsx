@@ -10,7 +10,7 @@ import { DocumentLoadingState, DocumentNotFoundState } from './editor/DocumentEd
 import { EditorDragOverlay, EditorReadOnlyOverlay, ShowHeaderButton } from './editor/DocumentEditorOverlays';
 import { PublicShareModal } from './modals/PublicShareModal';
 import { usePublicShareModalState } from './modals/usePublicShareModalState';
-import { ConfirmDialog } from './modals/ConfirmDialog';
+import { ConfirmDialog } from './ui';
 import { deleteDocument } from '../lib/documents/trash';
 import { exportDocument } from '../lib/export';
 import { useToasts } from '../state/hooks';
@@ -29,8 +29,6 @@ export function DocumentEditor() {
     tags,
     tagInput,
     setTagInput,
-    published,
-    setPublished,
     publishing,
     documentNotFound,
     hasUnsavedChanges,
@@ -95,11 +93,11 @@ export function DocumentEditor() {
     if (!document?.id) return;
     try {
       await deleteDocument(document.id);
-      showToast('Document moved to trash', 'success');
+      showToast('Note moved to trash', 'info');
       setDeleteConfirm(false);
-      navigate('/');
+      navigate('/folders');
     } catch {
-      showToast('Failed to delete document', 'error');
+      showToast('Failed to delete the note', 'error');
     }
   };
 
@@ -111,9 +109,11 @@ export function DocumentEditor() {
     return <DocumentNotFoundState />;
   }
 
+  const effectiveViewMode = !isDesktop && viewMode === 'split' ? 'text' : viewMode;
+
   return (
     <div
-      className="flex flex-col h-full bg-black/40 backdrop-blur-md relative"
+      className="relative flex h-full flex-col bg-canvas"
       style={{
         height: isDesktop ? undefined : MOBILE_EDITOR_HEIGHT,
         minHeight: isDesktop ? undefined : MOBILE_EDITOR_HEIGHT,
@@ -140,15 +140,12 @@ export function DocumentEditor() {
             readOnly={isTrashDocument}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
-            published={published}
-            onPublishedChange={setPublished}
             onCancel={handleCancel}
             onPublish={handlePublish}
             publishing={publishing}
             hasUnsavedChanges={hasUnsavedChanges}
             isNewDocument={urlDocumentId === 'new'}
             autoSaving={isAutoSaving}
-            headerVisible={!isDesktop ? headerVisible : true}
             onToggleHeader={!isDesktop ? () => setHeaderVisible(!headerVisible) : undefined}
             titleInputRef={titleInputRef}
             onShare={handleShare}
@@ -185,8 +182,8 @@ export function DocumentEditor() {
             content={content}
             onContentChange={setContent}
             readOnly={isTrashDocument}
-            viewMode={viewMode}
-            editablePreview={viewMode === 'preview'}
+            viewMode={effectiveViewMode}
+            editablePreview={effectiveViewMode === 'preview'}
           />
         </div>
       </div>
@@ -262,12 +259,12 @@ export function DocumentEditor() {
       />
 
       <ConfirmDialog
-        isOpen={deleteConfirm}
-        title="Delete Document"
-        message="Are you sure you want to delete this document? It will be moved to trash."
-        saveLabel="Delete"
-        onSave={confirmDelete}
-        onDiscard={() => setDeleteConfirm(false)}
+        open={deleteConfirm}
+        title="Move this note to trash?"
+        description="The note will be moved to trash, where you can restore it later."
+        confirmLabel="Move to trash"
+        tone="danger"
+        onConfirm={() => void confirmDelete()}
         onCancel={() => setDeleteConfirm(false)}
       />
     </div>

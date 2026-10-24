@@ -1,6 +1,8 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState } from 'react';
 import type { RecordModel } from 'pocketbase';
+import { Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { pb } from '../../lib/pocketbase';
+import { Avatar, IconButton } from '../ui';
 import { ProfileContextMenu } from './ProfileContextMenu';
 
 interface ProfileBarProps {
@@ -11,68 +13,54 @@ interface ProfileBarProps {
 
 export function ProfileBar({ user, onSignOut, onNavigateSettings }: ProfileBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const profileRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLButtonElement>(null);
 
   const avatarUrl = user.avatar ? pb.files.getURL(user, user.avatar) : null;
-  const initials = user.name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?';
-
-  const handleProfileClick = useCallback(() => {
-    setMenuOpen((prev) => !prev);
-  }, []);
-
   const anchorRect = profileRef.current?.getBoundingClientRect() ?? null;
 
   return (
-    <div className="px-3 pt-3 pb-2">
-      <div
-        ref={profileRef}
-        className="flex items-center gap-3 cursor-pointer rounded-xl px-3 py-2.5 hover:bg-white/5 transition-colors"
-        role="button"
-        tabIndex={0}
-        onClick={handleProfileClick}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            handleProfileClick();
-          }
-        }}
-        aria-label="Profile menu"
-        aria-expanded={menuOpen}
-        aria-haspopup="true"
-      >
-        {/* Avatar */}
-        <div className="w-8 h-8 rounded-full bg-gray-700/60 border border-white/10 flex items-center justify-center text-gray-300 font-medium text-xs overflow-hidden flex-shrink-0">
-          {avatarUrl ? (
-            <img
-              src={avatarUrl}
-              alt={user.name || user.email}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            initials
-          )}
-        </div>
-
-        {/* Name & email */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-200 truncate leading-tight">{user.name || 'User'}</p>
-          <p className="text-[11px] text-gray-500 truncate leading-tight">{user.email}</p>
-        </div>
-
-        {/* Chevron indicator */}
-        <svg className={`w-4 h-4 text-gray-500 flex-shrink-0 transition-transform ${menuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+    <div className="border-t border-line p-2.5">
+      <div className="flex items-center gap-1">
+        <button
+          ref={profileRef}
+          type="button"
+          onClick={() => setMenuOpen((prev) => !prev)}
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-control px-2 py-1.5 text-left transition-colors hover:bg-surface-raised"
+          aria-label="Profile menu"
+          aria-expanded={menuOpen}
+          aria-haspopup="menu"
+        >
+          <Avatar src={avatarUrl} name={user.name || user.email} size="sm" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-medium leading-tight text-ink">
+              {user.name || 'User'}
+            </span>
+            <span className="block truncate text-[11px] leading-tight text-ink-muted">{user.email}</span>
+          </span>
+          <svg
+            className={`h-3.5 w-3.5 shrink-0 text-ink-muted transition-transform ${menuOpen ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {onNavigateSettings && (
+          <IconButton label="Settings" size="sm" onClick={onNavigateSettings}>
+            <Cog6ToothIcon />
+          </IconButton>
+        )}
       </div>
 
-      {/* Profile context menu */}
       <ProfileContextMenu
         isOpen={menuOpen}
         anchorRect={anchorRect}
         onClose={() => setMenuOpen(false)}
         onSignOut={onSignOut}
         onSettings={onNavigateSettings}
-        position="below"
+        position="above"
       />
     </div>
   );

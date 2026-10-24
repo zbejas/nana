@@ -1,10 +1,16 @@
 import { useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   ClockIcon,
   FolderIcon,
   ChatBubbleLeftRightIcon,
+  ViewColumnsIcon,
+  XMarkIcon,
+  ChevronDoubleLeftIcon,
+  PlusIcon,
+  FolderPlusIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from "../lib/auth";
 import { useSidebar } from "../state/hooks";
@@ -29,7 +35,6 @@ import { FolderContextMenu } from "./file-folder-handling/context-menu/FolderCon
 import { DocumentContextMenu } from "./file-folder-handling/context-menu/DocumentContextMenu";
 import { RecentDocumentsSection } from "./sidebar/RecentDocumentsSection";
 import { ProfileBar } from "./sidebar/ProfileBar";
-import { SidebarFooter } from "./sidebar/SidebarLogo";
 import { SidebarDialogs } from "./sidebar/SidebarDialogs";
 import { SearchBar } from "./sidebar/SearchBar";
 import { RootDocumentsSection } from "./sidebar/RootDocumentsSection";
@@ -44,8 +49,21 @@ import { useContextMenuState, useContextMenuHandlers } from "./file-folder-handl
 import { PublicShareModal } from "./modals/PublicShareModal";
 import { usePublicShareModalState } from "./modals/usePublicShareModalState";
 import { useSidebarWidth } from "../lib/settings";
+import { IconButton } from "./ui";
+import logo from '../assets/nana.svg';
 
 const noopLoadFolderDocuments = async (_folderId: string, _isTrash?: boolean) => {};
+
+const NAV_ITEMS = [
+  { key: 'timeline', label: 'Timeline', path: '/timeline', icon: ClockIcon },
+  { key: 'board', label: 'Board', path: '/board', icon: ViewColumnsIcon },
+  { key: 'folders', label: 'Folders', path: '/folders', icon: FolderIcon },
+  { key: 'chat', label: 'Chat', path: '/chat', icon: ChatBubbleLeftRightIcon },
+] as const;
+
+function isNavActive(pathname: string, path: string): boolean {
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
 
 export function Sidebar() {
   const { user, signOut } = useAuth();
@@ -53,8 +71,7 @@ export function Sidebar() {
   const location = useLocation();
   const sidebarHook = useSidebar();
   const { isResizing, setIsResizing } = sidebarHook;
-  
-  // Access data from atoms (initialized by App.tsx's useDocumentData call)
+
   const folders = useAtomValue(foldersAtom);
   const rootDocuments = useAtomValue(rootDocumentsAtom);
   const folderDocuments = useAtomValue(folderDocumentsAtom);
@@ -68,52 +85,32 @@ export function Sidebar() {
   const startNew = useSetAtom(startNewDocumentAtom);
   const reset = useSetAtom(resetEditorAtom);
 
-  // Get lazy loading data from atoms (managed by App.tsx's useDocumentData)
   const loadedFolders = useAtomValue(loadedFoldersAtom);
   const loadingFolders = useAtomValue(loadingFoldersAtom);
   const loadFolderDocuments = useAtomValue(loadFolderDocumentsAtom) ?? noopLoadFolderDocuments;
 
   const sidebarWidth = useSidebarWidth();
-
   const { isOpen, toggle } = sidebarHook;
 
-  // State hooks (must be before useSidebarHandlers since it needs prepareForNavigation)
   const { isMobile, swipeStartX, setSwipeStartX, swipeCurrentX, setSwipeCurrentX, prepareForNavigation } = useMobileState(isOpen, toggle);
 
-  // Get handlers from custom hook
   const handlers = useSidebarHandlers({
-    editorActions: {
-      select,
-      startNew,
-      saveCallback,
-      reset,
-    },
-    sidebarActions: {
-      toggle,
-      prepareForNavigation,
-    },
-    dataHook: {
-      expandedFolders,
-      toggleFolder,
-    },
+    editorActions: { select, startNew, saveCallback, reset },
+    sidebarActions: { toggle, prepareForNavigation },
+    dataHook: { expandedFolders, toggleFolder },
   });
 
-  // Get top 2 recent documents for sidebar
-  const recentDocuments = useMemo(() => {
-    return allRecentDocuments.slice(0, 2);
-  }, [allRecentDocuments]);
+  const recentDocuments = useMemo(() => allRecentDocuments.slice(0, 3), [allRecentDocuments]);
 
-  // State hooks
   const { contextMenu, isClosingContextMenu, contextMenuRef, handleContextMenu, closeContextMenu } = useContextMenuState();
   const { inlineInput, setInlineInput, renamingFolderId, setRenamingFolderId } = useInlineInputState();
-  const { 
+  const {
     showUnsavedDialog, setShowUnsavedDialog, pendingDocument, setPendingDocument,
     showDeleteDialog, deleteDialogConfig, openDeleteDialog, closeDeleteDialog,
-    showLogoutDialog, setShowLogoutDialog 
+    showLogoutDialog, setShowLogoutDialog
   } = useDialogState();
   const publicShareModal = usePublicShareModalState();
 
-  // Context menu handlers
   const contextMenuHandlers = useContextMenuHandlers({
     contextMenu,
     closeContextMenu,
@@ -125,9 +122,7 @@ export function Sidebar() {
     toggle,
   });
 
-  const handleLogoutClick = () => {
-    setShowLogoutDialog(true);
-  };
+  const handleLogoutClick = () => setShowLogoutDialog(true);
 
   const handleLogoutConfirm = () => {
     signOut();
@@ -135,20 +130,12 @@ export function Sidebar() {
     navigate('/');
   };
 
-  const viewLinks = [
-    { key: 'timeline', label: 'Timeline', path: '/timeline', icon: ClockIcon },
-    { key: 'folders', label: 'Folder View', path: '/folders', icon: FolderIcon },
-    { key: 'chat', label: 'Chat', path: '/chat', icon: ChatBubbleLeftRightIcon },
-  ];
-
   const handleViewNavigation = (path: string) => {
     if (isMobile) {
       prepareForNavigation();
-    }
-    navigate(path);
-    if (isMobile) {
       toggle();
     }
+    navigate(path);
   };
 
   if (!user) return null;
@@ -163,30 +150,31 @@ export function Sidebar() {
         user={user}
       />
 
-
-      <aside 
-        className={`fixed left-0 top-0 h-full md:backdrop-blur-sm border-r flex flex-col z-50 overflow-hidden bg-white/90 dark:bg-black/55 light:bg-white/90 md:bg-black/50 dark:md:bg-black/50 light:md:bg-white/80 border-white/10 dark:border-white/10 light:border-gray-300`}
+      <aside
+        className="fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden border-r border-line bg-canvas-deep/95 md:backdrop-blur-xl"
         style={{
           width: isMobile ? '100%' : `${sidebarWidth}px`,
           transform: isOpen ? 'translateX(0)' : (isMobile ? 'translateX(-100%)' : `translateX(-${sidebarWidth}px)`),
           transition: swipeCurrentX !== null || isResizing ? 'none' : 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
-        onContextMenu={(e) => handleContextMenu(e, 'empty')}
-        onTouchStart={(e) => {
+        aria-label="Workspace"
+        aria-hidden={!isOpen}
+        inert={!isOpen}
+        onContextMenu={(event) => handleContextMenu(event, 'empty')}
+        onTouchStart={(event) => {
           if (!isMobile || !isOpen) return;
-          const touch = e.touches[0];
+          const touch = event.touches[0];
           if (touch) {
             setSwipeStartX(touch.clientX);
             setSwipeCurrentX(touch.clientX);
           }
         }}
-        onTouchMove={(e) => {
+        onTouchMove={(event) => {
           if (!isMobile || !isOpen || swipeStartX === null) return;
-          const touch = e.touches[0];
+          const touch = event.touches[0];
           if (touch) {
             setSwipeCurrentX(touch.clientX);
-            const deltaX = touch.clientX - swipeStartX;
-            if (deltaX < -50) e.preventDefault();
+            if (touch.clientX - swipeStartX < -50) event.preventDefault();
           }
         }}
         onTouchEnd={() => {
@@ -195,64 +183,120 @@ export function Sidebar() {
             setSwipeCurrentX(null);
             return;
           }
-          const deltaX = swipeCurrentX - swipeStartX;
-          if (deltaX < -100) toggle();
+          if (swipeCurrentX - swipeStartX < -100) toggle();
           setSwipeStartX(null);
           setSwipeCurrentX(null);
         }}
       >
-        <div className="h-full flex flex-col bg-transparent" style={{ width: isMobile ? '100%' : `${sidebarWidth}px` }}>
-          <ProfileBar
-            user={user}
-            onSignOut={handleLogoutClick}
-            onNavigateSettings={() => handleViewNavigation('/settings')}
+        <div className="flex min-h-0 flex-1 flex-col" style={{ width: isMobile ? '100%' : `${sidebarWidth}px` }}>
+          <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
+            <button
+              onClick={() => {
+                reset();
+                handleViewNavigation('/timeline');
+              }}
+              className="flex min-w-0 items-center gap-2.5"
+              aria-label="Nana home"
+            >
+              <img src={logo} alt="" className="h-7 w-7 shrink-0" draggable={false} />
+              <span className="font-display text-lg leading-none tracking-tight text-ink">Nana</span>
+            </button>
+            <div className="ml-auto flex items-center gap-0.5">
+              <IconButton
+                label={isMobile ? 'Close menu' : 'Collapse sidebar'}
+                size="sm"
+                onClick={toggle}
+              >
+                {isMobile ? <XMarkIcon /> : <ChevronDoubleLeftIcon />}
+              </IconButton>
+            </div>
+          </div>
+
+          <nav className="px-2 pb-2" aria-label="Primary">
+            {NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const active = isNavActive(location.pathname, item.path);
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => handleViewNavigation(item.path)}
+                  aria-current={active ? 'page' : undefined}
+                  className={`group relative flex h-8 w-full items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] transition-colors ${
+                    active
+                      ? 'bg-ember-soft font-medium text-ember'
+                      : 'text-ink-secondary hover:bg-surface-raised hover:text-ink'
+                  }`}
+                >
+                  {active && (
+                    <span className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-ember" aria-hidden="true" />
+                  )}
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <SearchBar
+            onDocumentClick={handlers.handleDocumentClick}
+            onContextMenu={(event, documentId) => handleContextMenu(event, 'document', { documentId })}
           />
 
-          {/* Scrollable Content Area */}
-          <div className="flex-1 overflow-y-auto px-3 pb-0 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-600/0 hover:[&::-webkit-scrollbar-thumb]:bg-gray-600/40 [&::-webkit-scrollbar-thumb]:rounded-full" style={{ scrollbarGutter: 'stable' }}>
+          <div className="flex-1 overflow-y-auto scrollbar-autohide pb-3" style={{ scrollbarGutter: 'stable' }}>
             {isDataLoading ? (
-              <div className="text-center py-8 text-gray-500 text-sm">Loading...</div>
+              <div className="flex items-center justify-center py-8">
+                <span className="h-5 w-5 animate-spin rounded-full border-2 border-ink-muted/30 border-t-ember" />
+              </div>
             ) : (
-              <div className="space-y-3 pb-3">
-                {/* Search Bar */}
-                <SearchBar
-                  onDocumentClick={handlers.handleDocumentClick}
-                  onContextMenu={(e, documentId) => handleContextMenu(e, 'document', { documentId })}
-                />
-
-                {/* Recent Documents */}
+              <>
                 <RecentDocumentsSection
                   documents={recentDocuments}
                   onDocumentClick={handlers.handleDocumentClick}
-                  onContextMenu={(e, documentId) => handleContextMenu(e, 'document', { documentId })}
+                  onContextMenu={(event, documentId) => handleContextMenu(event, 'document', { documentId })}
                   isLoading={isDataLoading}
                 />
-                
-                {/* Documents & Folders */}
-                <div>
-                  <div className="flex items-center px-2 py-1.5">
-                    <span className="text-[11px] text-gray-500 uppercase font-semibold tracking-wider">Files</span>
+
+                <section className="px-3 pt-5" aria-label="Files">
+                  <div className="flex items-center gap-1 px-2 pb-1.5">
+                    <p className="eyebrow flex-1">Files</p>
+                    <IconButton
+                      label="New folder"
+                      size="sm"
+                      className="h-6 w-6 [&>svg]:h-3.5 [&>svg]:w-3.5"
+                      onClick={() => void handlers.handleAddFolder()}
+                    >
+                      <FolderPlusIcon />
+                    </IconButton>
+                    <IconButton
+                      label="New note"
+                      size="sm"
+                      className="h-6 w-6 [&>svg]:h-3.5 [&>svg]:w-3.5"
+                      onClick={() => void handlers.handleAddDocument()}
+                    >
+                      <PlusIcon />
+                    </IconButton>
                   </div>
-                  <div className="pt-1 space-y-0.5">
-                    {/* Root documents (above folders) */}
+
+                  <div className="space-y-px">
                     <RootDocumentsSection
                       documents={rootDocuments}
                       isDataLoading={isDataLoading}
                       dropZone={handlers.dropZone}
+                      activeDocumentId={selectedDocument?.id}
                       onDocumentClick={handlers.handleDocumentClick}
-                      onContextMenu={(e, documentId) => handleContextMenu(e, 'document', { documentId })}
+                      onContextMenu={(event, documentId) => handleContextMenu(event, 'document', { documentId })}
                       onDragStart={handlers.handleDragStart}
                       onDragEnd={handlers.handleDragEnd}
                       onDragOver={handlers.handleDragOver}
-                      onDragLeave={(e) => handlers.handleDragLeave(e)}
+                      onDragLeave={(event) => handlers.handleDragLeave(event)}
                       onDrop={handlers.handleDrop}
                       onAddDocument={handlers.handleAddDocument}
                     />
 
-                    {/* Folders */}
                     <FoldersSection
                       folders={folders}
                       isDataLoading={isDataLoading}
+                      activeDocumentId={selectedDocument?.id}
                       expandedFolders={expandedFolders}
                       folderDocuments={folderDocuments}
                       loadedFolders={loadedFolders}
@@ -265,7 +309,7 @@ export function Sidebar() {
                       onLoadFolder={(folderId) => loadFolderDocuments(folderId, false)}
                       onContextMenu={handleContextMenu}
                       onDragOver={handlers.handleDragOver}
-                      onDragLeave={(e) => handlers.handleDragLeave(e)}
+                      onDragLeave={(event) => handlers.handleDragLeave(event)}
                       onDrop={handlers.handleDrop}
                       onDragStart={handlers.handleDragStart}
                       onDragEnd={handlers.handleDragEnd}
@@ -284,25 +328,21 @@ export function Sidebar() {
                       onRenameCancel={() => setRenamingFolderId(null)}
                     />
                   </div>
-                </div>
-                
-              </div>
+                </section>
+              </>
             )}
           </div>
 
-          <SidebarFooter
-            onToggle={toggle}
-            isMobile={isMobile}
-            viewLinks={viewLinks}
-            currentPath={location.pathname}
-            onNavigate={handleViewNavigation}
+          <ProfileBar
+            user={user}
+            onSignOut={handleLogoutClick}
+            onNavigateSettings={() => handleViewNavigation('/settings')}
           />
         </div>
-        
-        {/* Resize handle for desktop */}
+
         {isOpen && (
-          <SidebarResizeHandle 
-            isMobile={isMobile} 
+          <SidebarResizeHandle
+            isMobile={isMobile}
             sidebarWidth={sidebarWidth}
             onResizeStart={() => setIsResizing(true)}
             onResizeEnd={() => setIsResizing(false)}
@@ -310,7 +350,7 @@ export function Sidebar() {
         )}
       </aside>
 
-      {contextMenu && (contextMenu.type === 'document' || contextMenu.type === 'trash-document') && (
+      {contextMenu && (contextMenu.type === 'document' || contextMenu.type === 'trash-document') && createPortal(
         <DocumentContextMenu
           contextMenu={{
             x: contextMenu.x,
@@ -328,16 +368,18 @@ export function Sidebar() {
               closeContextMenu();
             }
           }}
+          onAddToBoard={contextMenuHandlers.handleAddToBoard}
           onDeleteDocument={contextMenuHandlers.handleDeleteDocument}
           onRestoreDocument={contextMenuHandlers.handleRestoreDocument}
           onPermanentlyDeleteDocument={contextMenuHandlers.handlePermanentlyDeleteDocument}
           onExportDocument={contextMenuHandlers.handleExportDocument}
           onClose={closeContextMenu}
           isClosing={isClosingContextMenu}
-        />
+        />,
+        document.body
       )}
 
-      {contextMenu && (contextMenu.type === 'empty' || contextMenu.type === 'folder' || contextMenu.type === 'trash-folder') && (
+      {contextMenu && (contextMenu.type === 'empty' || contextMenu.type === 'folder' || contextMenu.type === 'trash-folder') && createPortal(
         <FolderContextMenu
           contextMenu={{
             x: contextMenu.x,
@@ -362,7 +404,8 @@ export function Sidebar() {
           onExportFolder={contextMenuHandlers.handleExportFolder}
           onClose={closeContextMenu}
           isClosing={isClosingContextMenu}
-        />
+        />,
+        document.body
       )}
 
       <SidebarDialogs

@@ -3,7 +3,7 @@ import { pb } from '../../../../lib/pocketbase';
 import type { RecordModel } from 'pocketbase';
 import type { AIProviderKey } from '../../../../lib/ai/types';
 import { createLogger } from '../../../../lib/logger';
-import { SettingsSelect } from '../../SettingsSelect';
+import { Button, Card, Field, Input, SectionHeading, Select, Spinner, Switch } from '../../../ui';
 
 const log = createLogger('EmbedSettings');
 
@@ -60,11 +60,7 @@ const DIMENSION_HINTS: Record<AIProviderKey, string> = {
 
 // ── Component ────────────────────────────────────────────────────────
 
-interface EmbeddingSettingsProps {
-    onSave: (config: EmbeddingConfig) => Promise<void>;
-}
-
-export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
+export function EmbeddingSettings() {
     const [record, setRecord] = useState<SettingRecord | null>(null);
     const [config, setConfig] = useState<EmbeddingConfig>(structuredClone(DEFAULT_CONFIG));
     const [loading, setLoading] = useState(true);
@@ -139,9 +135,6 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
                 setRecord(newRecord);
             }
 
-            // Also call the parent save handler
-            await onSave(config);
-
             setSuccessMessage('Embedding configuration saved successfully');
             setTimeout(() => setSuccessMessage(null), 3000);
         } catch (err: any) {
@@ -193,89 +186,79 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
         }
     };
 
-    const inputClass =
-        'w-full rounded-lg border border-white/20 bg-black/30 px-4 py-2.5 text-sm text-white placeholder-gray-500 transition-colors focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20';
-
     if (loading) {
         return (
-            <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white" />
+            <div className="flex items-center justify-center py-10">
+                <Spinner label="Loading embedding configuration" />
             </div>
         );
     }
 
+    const strategyHint = STRATEGY_OPTIONS.find((s) => s.value === config.chunkingStrategy)?.description;
+
     return (
-        <div className="space-y-6">
-            <div className="space-y-1">
-                <h3 className="text-lg font-semibold text-white">Embedding</h3>
-                <p className="text-sm text-gray-400">
-                    Configure how documents are chunked and embedded for semantic search and RAG.
-                </p>
-            </div>
+        <Card className="p-5 sm:p-6">
+            <SectionHeading
+                eyebrow="Semantic search"
+                title="Embedding"
+                description="Configure how documents are chunked and embedded for semantic search and RAG."
+                actions={
+                    <Button variant="primary" loading={saving} onClick={handleSave}>
+                        Save Embedding Settings
+                    </Button>
+                }
+            />
 
             {error && (
-                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
-                    <p className="text-sm text-red-400">{error}</p>
-                </div>
+                <p className="mt-4 text-sm text-danger" role="alert">
+                    {error}
+                </p>
             )}
             {successMessage && (
-                <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3">
-                    <p className="text-sm text-green-400">{successMessage}</p>
-                </div>
+                <p className="mt-4 text-sm text-sage" role="status">
+                    {successMessage}
+                </p>
             )}
 
-            {/* Status card */}
+            {/* Status panel */}
             {status && (
-                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                            <span className="text-gray-400">Provider:</span>{' '}
-                            <span className="text-white font-medium">{status.provider ?? 'None'}</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400">Model:</span>{' '}
-                            <span className="text-white font-medium">{status.embeddingModel ?? 'None'}</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400">Total vectors:</span>{' '}
-                            <span className="text-white font-medium">{status.totalVectors.toLocaleString()}</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400">Dimensions:</span>{' '}
-                            <span className="text-white font-medium">{status.dimensions}</span>
-                        </div>
+                <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 rounded-control border border-line bg-surface-sunken/40 px-4 py-3.5 sm:grid-cols-4">
+                    <div className="min-w-0">
+                        <dt className="eyebrow">Provider</dt>
+                        <dd className="mt-1.5 truncate text-sm font-medium text-ink">{status.provider ?? 'None'}</dd>
                     </div>
-                </div>
+                    <div className="min-w-0">
+                        <dt className="eyebrow">Model</dt>
+                        <dd className="mt-1.5 truncate text-sm font-medium text-ink">{status.embeddingModel ?? 'None'}</dd>
+                    </div>
+                    <div className="min-w-0">
+                        <dt className="eyebrow">Total vectors</dt>
+                        <dd className="mt-1.5 truncate text-sm font-medium text-ink">{status.totalVectors.toLocaleString()}</dd>
+                    </div>
+                    <div className="min-w-0">
+                        <dt className="eyebrow">Dimensions</dt>
+                        <dd className="mt-1.5 truncate text-sm font-medium text-ink">{status.dimensions}</dd>
+                    </div>
+                </dl>
             )}
 
             {/* Auto-embed toggle */}
-            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-4">
-                <div>
-                    <p className="text-sm font-medium text-white">Auto-embed on save</p>
-                    <p className="text-xs text-gray-400">
-                        Automatically embed documents when they are created or updated
-                    </p>
-                </div>
-                <button
-                    type="button"
-                    onClick={() => setConfig((prev) => ({ ...prev, autoEmbed: !prev.autoEmbed }))}
-                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-white/20 ${config.autoEmbed ? 'bg-green-500' : 'bg-white/20'}`}
-                    role="switch"
-                    aria-checked={config.autoEmbed}
-                >
-                    <span
-                        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ease-in-out ${config.autoEmbed ? 'translate-x-4' : 'translate-x-0'}`}
-                    />
-                </button>
-            </div>
+            <Switch
+                id="embedding-auto-embed"
+                className="mt-4 rounded-control border border-line bg-surface-sunken/40 px-4 py-3"
+                checked={config.autoEmbed}
+                onChange={(checked) => setConfig((prev) => ({ ...prev, autoEmbed: checked }))}
+                label="Auto-embed on save"
+                description="Automatically embed documents when they are created or updated"
+            />
 
             {/* Chunking settings */}
-            <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-4">
-                <h4 className="text-sm font-semibold text-white">Chunking</h4>
+            <div className="mt-6 space-y-4 border-t border-line pt-5">
+                <h3 className="text-sm font-medium text-ink">Chunking</h3>
 
-                <div className="space-y-1.5">
-                    <label className="block text-sm font-medium text-gray-300">Strategy</label>
-                    <SettingsSelect
+                <Field label="Strategy" htmlFor="embedding-strategy" hint={strategyHint}>
+                    <Select
+                        id="embedding-strategy"
                         value={config.chunkingStrategy}
                         onChange={(e) =>
                             setConfig((prev) => ({
@@ -289,16 +272,13 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
                                 {opt.label}
                             </option>
                         ))}
-                    </SettingsSelect>
-                    <p className="text-xs text-gray-500">
-                        {STRATEGY_OPTIONS.find((s) => s.value === config.chunkingStrategy)?.description}
-                    </p>
-                </div>
+                    </Select>
+                </Field>
 
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                        <label className="block text-sm font-medium text-gray-300">Chunk Size</label>
-                        <input
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field label="Chunk Size" htmlFor="embedding-chunk-size" hint="Max characters per chunk">
+                        <Input
+                            id="embedding-chunk-size"
                             type="number"
                             min={100}
                             max={5000}
@@ -310,14 +290,12 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
                                     chunkSize: Math.max(100, parseInt(e.target.value) || 500),
                                 }))
                             }
-                            className={inputClass}
                         />
-                        <p className="text-xs text-gray-500">Max characters per chunk</p>
-                    </div>
+                    </Field>
 
-                    <div className="space-y-1.5">
-                        <label className="block text-sm font-medium text-gray-300">Chunk Overlap</label>
-                        <input
+                    <Field label="Chunk Overlap" htmlFor="embedding-chunk-overlap" hint="Overlapping characters between chunks">
+                        <Input
+                            id="embedding-chunk-overlap"
                             type="number"
                             min={0}
                             max={500}
@@ -329,20 +307,22 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
                                     chunkOverlap: Math.max(0, parseInt(e.target.value) || 50),
                                 }))
                             }
-                            className={inputClass}
                         />
-                        <p className="text-xs text-gray-500">Overlapping characters between chunks</p>
-                    </div>
+                    </Field>
                 </div>
             </div>
 
             {/* Search settings */}
-            <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-4">
-                <h4 className="text-sm font-semibold text-white">Search</h4>
+            <div className="mt-6 space-y-4 border-t border-line pt-5">
+                <h3 className="text-sm font-medium text-ink">Search</h3>
 
-                <div className="space-y-1.5">
-                    <label className="block text-sm font-medium text-gray-300">Top-K Results</label>
-                    <input
+                <Field
+                    label="Top-K Results"
+                    htmlFor="embedding-topk"
+                    hint="Number of most relevant chunks to retrieve per query (also used for RAG context in chat)"
+                >
+                    <Input
+                        id="embedding-topk"
                         type="number"
                         min={1}
                         max={50}
@@ -353,19 +333,18 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
                                 topk: Math.max(1, Math.min(50, parseInt(e.target.value) || 5)),
                             }))
                         }
-                        className={inputClass}
                     />
-                    <p className="text-xs text-gray-500">
-                        Number of most relevant chunks to retrieve per query (also used for RAG context in chat)
-                    </p>
-                </div>
+                </Field>
 
                 <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                        <label className="block text-sm font-medium text-gray-300">Similarity Threshold</label>
-                        <span className="text-sm font-mono text-white/70">{config.similarityThreshold.toFixed(2)}</span>
+                    <div className="flex items-center justify-between gap-3">
+                        <label htmlFor="embedding-similarity" className="text-[13px] font-medium text-ink">
+                            Similarity Threshold
+                        </label>
+                        <span className="font-mono text-sm text-ink-secondary">{config.similarityThreshold.toFixed(2)}</span>
                     </div>
                     <input
+                        id="embedding-similarity"
                         type="range"
                         min={0}
                         max={1}
@@ -377,26 +356,31 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
                                 similarityThreshold: parseFloat(e.target.value),
                             }))
                         }
-                        className="w-full accent-blue-500"
+                        className="w-full accent-[var(--ember)]"
                     />
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs leading-relaxed text-ink-muted">
                         Minimum cosine similarity score (0–1) for a chunk to be included. Higher = stricter matching, fewer but more relevant results. Default: 0.65
                     </p>
                 </div>
             </div>
 
             {/* Per-provider dimensions */}
-            <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-4">
-                <h4 className="text-sm font-semibold text-white">Embedding Dimensions</h4>
-                <p className="text-xs text-gray-400">
+            <div className="mt-6 space-y-4 border-t border-line pt-5">
+                <h3 className="text-sm font-medium text-ink">Embedding Dimensions</h3>
+                <p className="text-xs leading-relaxed text-ink-muted">
                     Set the vector dimension for each provider's embedding model. Must match the model's output size.
                 </p>
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                     {PROVIDER_KEYS.map((key) => (
-                        <div key={key} className="space-y-1.5">
-                            <label className="block text-sm font-medium text-gray-300 capitalize">{key}</label>
-                            <input
+                        <Field
+                            key={key}
+                            label={<span className="capitalize">{key}</span>}
+                            htmlFor={`embedding-dimensions-${key}`}
+                            hint={DIMENSION_HINTS[key]}
+                        >
+                            <Input
+                                id={`embedding-dimensions-${key}`}
                                 type="number"
                                 min={64}
                                 max={8192}
@@ -410,40 +394,29 @@ export function EmbeddingSettings({ onSave }: EmbeddingSettingsProps) {
                                         },
                                     }))
                                 }
-                                className={inputClass}
                             />
-                            <p className="text-xs text-gray-500">{DIMENSION_HINTS[key]}</p>
-                        </div>
+                        </Field>
                     ))}
                 </div>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-3">
-                <button
-                    onClick={handleReembed}
-                    disabled={reembedding}
-                    className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-5 py-2.5 text-sm font-medium text-amber-300 hover:bg-amber-500/20 disabled:opacity-50 transition-colors"
-                >
-                    {reembedding ? 'Re-embedding...' : 'Re-embed All Documents'}
-                </button>
-
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="rounded-lg bg-white/10 px-5 py-2.5 text-sm font-medium text-white hover:bg-white/20 disabled:opacity-50 transition-colors"
-                >
-                    {saving ? 'Saving...' : 'Save Embedding Settings'}
-                </button>
-            </div>
-
-            {reembedding && (
-                <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
-                    <p className="text-sm text-blue-400">
-                        Re-embedding all documents... This may take a while depending on the number of documents and embedding provider.
+            {/* Re-embed action */}
+            <div className="mt-6 space-y-3 border-t border-line pt-5">
+                <div>
+                    <h3 className="text-sm font-medium text-ink">Re-embed documents</h3>
+                    <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+                        Rebuild the vector index for every document. This may take a while depending on the number of documents and embedding provider.
                     </p>
                 </div>
-            )}
-        </div>
+                <Button variant="secondary" loading={reembedding} onClick={handleReembed}>
+                    Re-embed All Documents
+                </Button>
+                {reembedding && (
+                    <p className="text-xs text-ink-muted" role="status">
+                        Re-embedding all documents... This may take a while depending on the number of documents and embedding provider.
+                    </p>
+                )}
+            </div>
+        </Card>
     );
 }

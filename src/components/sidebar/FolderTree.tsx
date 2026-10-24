@@ -14,13 +14,12 @@ import type {
 import { InlineNameInput } from "./InlineNameInput";
 import { DocumentItem } from "./DocumentItem";
 
-const INDENT_PX = 20;
+const INDENT_PX = 16;
 
-// Rename input component for folders
-function RenameInput({ initialName, depth, onSubmit, onCancel }: { 
-  initialName: string; 
-  depth: number; 
-  onSubmit: (name: string) => void; 
+function RenameInput({ initialName, depth, onSubmit, onCancel }: {
+  initialName: string;
+  depth: number;
+  onSubmit: (name: string) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initialName);
@@ -31,12 +30,12 @@ function RenameInput({ initialName, depth, onSubmit, onCancel }: {
     inputRef.current?.select();
   }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && name.trim()) {
-      e.preventDefault();
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter' && name.trim()) {
+      event.preventDefault();
       onSubmit(name.trim());
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
       onCancel();
     }
   };
@@ -49,23 +48,21 @@ function RenameInput({ initialName, depth, onSubmit, onCancel }: {
     }
   };
 
-  const indent = depth * INDENT_PX;
-
   return (
-    <div 
-      className="flex items-center gap-1.5 py-[5px] bg-white/8 rounded-md"
-      style={{ paddingLeft: `${indent + 4}px`, paddingRight: '0.5rem' }}
+    <div
+      className="flex items-center gap-1.5 rounded-[6px] bg-surface-raised py-1 pr-2"
+      style={{ paddingLeft: `${depth * INDENT_PX + INDENT_PX + 22}px` }}
     >
-      <div className="w-4 flex-shrink-0" /> {/* chevron placeholder */}
-      <FolderIcon className="w-4 h-4 text-yellow-500/80 flex-shrink-0" />
+      <FolderIcon className="h-3.5 w-3.5 shrink-0 text-brass" />
       <input
         ref={inputRef}
         type="text"
         value={name}
-        onChange={(e) => setName(e.target.value)}
+        onChange={(event) => setName(event.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}
-        className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13px] text-gray-200 placeholder-gray-500"
+        aria-label="Folder name"
+        className="min-w-0 flex-1 border-none bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-muted"
       />
     </div>
   );
@@ -74,7 +71,8 @@ function RenameInput({ initialName, depth, onSubmit, onCancel }: {
 interface FolderTreeProps {
   nodes: FolderTreeNode[];
   depth?: number;
-  parentFolderId?: string; // Track the parent of these nodes for sibling drops
+  parentFolderId?: string;
+  activeDocumentId?: string;
   expandedFolders: Set<string>;
   folderDocuments: Map<string, Document[]>;
   loadedFolders: Set<string>;
@@ -108,6 +106,7 @@ export function FolderTree({
   nodes,
   depth = 0,
   parentFolderId,
+  activeDocumentId,
   expandedFolders,
   folderDocuments,
   loadedFolders,
@@ -135,56 +134,36 @@ export function FolderTree({
   const handleFolderClick = async (folderId: string, hasContent: boolean) => {
     if (!hasContent) return;
 
-    // Toggle expansion
     onToggleFolder(folderId);
 
-    // If expanding and not yet loaded, trigger lazy load
     const isExpanding = !expandedFolders.has(folderId);
     if (isExpanding && !loadedFolders.has(folderId) && !loadingFolders.has(folderId)) {
       await onLoadFolder(folderId);
     }
   };
 
-  // Helper to determine drop position based on mouse position within element
-  const getDropPosition = (e: React.DragEvent, element: HTMLElement): 'above' | 'below' | 'into' => {
+  const getDropPosition = (event: React.DragEvent, element: HTMLElement): 'above' | 'below' | 'into' => {
     const rect = element.getBoundingClientRect();
-    const mouseY = e.clientY;
-    const elementTop = rect.top;
-    const elementHeight = rect.height;
+    const relativeY = event.clientY - rect.top;
+    const threshold = rect.height * 0.25;
 
-    const relativeY = mouseY - elementTop;
-    const threshold = elementHeight * 0.25; // 25% from top/bottom edges
-
-    if (relativeY < threshold) {
-      return 'above';
-    } else if (relativeY > elementHeight - threshold) {
-      return 'below';
-    } else {
-      return 'into';
-    }
-  };
-
-  const handleFolderDragOver = (e: React.DragEvent, folderId: string) => {
-    const position = getDropPosition(e, e.currentTarget as HTMLElement);
-    onDragOver(e, folderId, position);
-  };
-
-  const handleFolderDrop = (e: React.DragEvent, folderId: string, folderParentId?: string) => {
-    onDrop(e, folderId, folderParentId);
+    if (relativeY < threshold) return 'above';
+    if (relativeY > rect.height - threshold) return 'below';
+    return 'into';
   };
 
   return (
     <>
-      {nodes.map(folder => {
+      {nodes.map((folder) => {
         const isExpanded = expandedFolders.has(folder.id);
         const docs = folderDocuments.get(folder.id) || [];
         const isLoading = loadingFolders.has(folder.id);
         const hasContent = docs.length > 0 || folder.subfolders.length > 0 || (!loadedFolders.has(folder.id) && !isLoading);
         const indent = depth * INDENT_PX;
-        
+        const isDropTarget = dropZone === folder.id;
+
         return (
           <div key={folder.id}>
-            {/* Folder Header */}
             {renamingFolderId === folder.id ? (
               <RenameInput
                 initialName={folder.name}
@@ -193,97 +172,87 @@ export function FolderTree({
                 onCancel={onRenameCancel}
               />
             ) : (
-              <div className="relative group">
-                {/* Drop indicator line - above */}
-                {dropZone === folder.id && dropPosition === 'above' && (
-                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 z-10" />
+              <div className="group relative">
+                {isDropTarget && dropPosition === 'above' && (
+                  <div className="absolute left-2 right-2 top-0 z-10 h-0.5 rounded-full bg-ember" />
                 )}
 
                 <button
                   draggable={onFolderDragStart !== undefined}
-                  onDragStart={onFolderDragStart ? (e) => onFolderDragStart(e, folder.id, folder.parent) : undefined}
+                  onDragStart={onFolderDragStart ? (event) => onFolderDragStart(event, folder.id, folder.parent) : undefined}
                   onDragEnd={onFolderDragEnd}
                   onClick={() => handleFolderClick(folder.id, hasContent)}
-                  onContextMenu={(e) => onContextMenu(e, 'folder', { folderId: folder.id, folderName: folder.name })}
-                  onDragOver={(e) => handleFolderDragOver(e, folder.id)}
+                  onContextMenu={(event) => onContextMenu(event, 'folder', { folderId: folder.id, folderName: folder.name })}
+                  onDragOver={(event) => onDragOver(event, folder.id, getDropPosition(event, event.currentTarget))}
                   onDragLeave={onDragLeave}
-                  onDrop={(e) => handleFolderDrop(e, folder.id, parentFolderId)}
-                  className={`w-full flex items-center gap-1.5 pr-8 py-[5px] rounded-md hover:bg-white/5 transition-colors text-left overflow-hidden active:cursor-grabbing ${
-                    dropZone === folder.id && dropPosition === 'into' ? 'bg-blue-500/15 ring-1 ring-blue-500/50' : ''
+                  onDrop={(event) => onDrop(event, folder.id, parentFolderId)}
+                  className={`flex w-full items-center gap-1 overflow-hidden rounded-[6px] py-1 pr-7 text-left transition-colors active:cursor-grabbing ${
+                    isDropTarget && dropPosition === 'into'
+                      ? 'bg-ember-soft ring-1 ring-inset ring-ember/40'
+                      : 'hover:bg-surface-raised'
                   }`}
-                  style={{ paddingLeft: `${indent + 4}px` }}
+                  style={{ paddingLeft: `${indent}px` }}
                 >
-                  {/* Chevron / spinner */}
-                  <span className="w-4 h-4 flex items-center justify-center flex-shrink-0">
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center text-ink-muted">
                     {isLoading ? (
-                      <svg className="w-3.5 h-3.5 text-gray-500 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
+                      <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
                     ) : hasContent ? (
-                      <ChevronRightIcon 
-                        className={`w-3.5 h-3.5 text-gray-500 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`} 
-                      />
+                      <ChevronRightIcon className={`h-3 w-3 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`} />
                     ) : null}
                   </span>
-                  <FolderIcon className={`w-4 h-4 flex-shrink-0 ${isExpanded ? 'text-yellow-400' : 'text-yellow-500/70'}`} />
-                  <span className="text-[13px] text-gray-300 truncate flex-1 leading-tight">{folder.name}</span>
-                  {folder.is_private && (
-                    <LockClosedIcon className="w-3.5 h-3.5 flex-shrink-0 text-amber-400/70" title="Private" />
-                  )}
-                  {folder.is_public && (
-                    <ShareIcon className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400/70" title="Public" />
-                  )}
+                  <FolderIcon className={`h-3.5 w-3.5 shrink-0 ${isExpanded ? 'text-ember' : 'text-brass/80'}`} />
+                  <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-ink-secondary group-hover:text-ink">
+                    {folder.name}
+                  </span>
+                  {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-brass" aria-label="Private" />}
+                  {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-sage" aria-label="Shared publicly" />}
                 </button>
 
-                {/* Drop indicator line - below */}
-                {dropZone === folder.id && dropPosition === 'below' && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 z-10" />
+                {isDropTarget && dropPosition === 'below' && (
+                  <div className="absolute bottom-0 left-2 right-2 z-10 h-0.5 rounded-full bg-ember" />
                 )}
 
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onContextMenu(e, 'folder', { folderId: folder.id, folderName: folder.name });
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onContextMenu(event, 'folder', { folderId: folder.id, folderName: folder.name });
                   }}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-                  aria-label="Folder menu"
+                  className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded p-1 text-ink-muted opacity-100 transition-all hover:bg-surface-sunken hover:text-ink md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                  aria-label={`Actions for ${folder.name}`}
                 >
-                  <EllipsisVerticalIcon className="w-3.5 h-3.5 text-gray-500" />
+                  <EllipsisVerticalIcon className="h-3.5 w-3.5" />
                 </button>
               </div>
             )}
-            
-            {/* Documents and Subfolders */}
+
             {isExpanded && hasContent && (
               <div className="relative">
-                {/* Indent guide line */}
-                <div 
-                  className="absolute top-0 bottom-0 w-px bg-white/[0.06]" 
-                  style={{ left: `${indent + 13}px` }}
+                <div
+                  className="absolute bottom-0 top-0 w-px bg-line"
+                  style={{ left: `${indent + 9}px` }}
+                  aria-hidden="true"
                 />
-                
-                {/* Documents */}
-                {docs.map(doc => (
+                {docs.map((doc) => (
                   <DocumentItem
                     key={doc.id}
                     document={doc}
                     draggable
                     depth={depth + 1}
                     currentFolderId={folder.id}
+                    active={doc.id === activeDocumentId}
                     onClick={() => onDocumentClick(doc)}
-                    onContextMenu={(e) => onContextMenu(e, 'document', { folderId: folder.id, documentId: doc.id })}
+                    onContextMenu={(event) => onContextMenu(event, 'document', { folderId: folder.id, documentId: doc.id })}
                     onDragStart={onDragStart}
                     onDragEnd={onDragEnd}
                   />
                 ))}
-                
-                {/* Subfolders */}
+
                 {folder.subfolders.length > 0 && (
                   <FolderTree
                     nodes={folder.subfolders}
                     depth={depth + 1}
                     parentFolderId={folder.id}
+                    activeDocumentId={activeDocumentId}
                     expandedFolders={expandedFolders}
                     folderDocuments={folderDocuments}
                     loadedFolders={loadedFolders}
@@ -309,13 +278,12 @@ export function FolderTree({
                     onRenameCancel={onRenameCancel}
                   />
                 )}
-                
-                {/* Inline input for subfolder */}
+
                 {inlineInput?.type === 'folder' && inlineInput.parentFolderId === folder.id && (
                   <InlineNameInput
                     onSubmit={onInlineFolderSubmit}
                     onCancel={onInlineCancel}
-                    placeholder="Enter folder name..."
+                    placeholder="Folder name"
                     icon="folder"
                     depth={depth + 1}
                   />

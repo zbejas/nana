@@ -19,14 +19,14 @@ function AttachmentPreview({ filename, url }: { filename: string; url: string })
     }
 
     if (isPdfFile(filename)) {
-        return <DocumentTextIcon className="h-4 w-4 text-red-400" />;
+        return <DocumentTextIcon className="h-4 w-4 text-danger" />;
     }
 
     if (isTextFile(filename)) {
-        return <DocumentTextIcon className="h-4 w-4 text-blue-400" />;
+        return <DocumentTextIcon className="h-4 w-4 text-ember" />;
     }
 
-    return <DocumentIcon className="h-4 w-4 text-gray-400" />;
+    return <DocumentIcon className="h-4 w-4 text-ink-muted" />;
 }
 
 export function PublicAttachmentList({ attachments, getAttachmentUrl }: PublicAttachmentListProps) {
@@ -43,13 +43,13 @@ export function PublicAttachmentList({ attachments, getAttachmentUrl }: PublicAt
                         target="_blank"
                         rel="noreferrer"
                         style={{ animationDelay: `${index * 40}ms` }}
-                        className="group public-attachment-item flex items-center gap-3 rounded-2xl border border-stone-700/80 bg-stone-900/60 px-3 py-3 text-sm text-stone-200 transition-colors hover:bg-stone-800/80 hover:border-amber-500/20"
+                        className="group public-attachment-item flex items-center gap-3 rounded-panel border border-line bg-surface px-3 py-3 text-sm text-ink-muted transition-colors hover:bg-surface hover:border-brass/30"
                     >
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-stone-800">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-surface">
                             <AttachmentPreview filename={filename} url={url} />
                         </div>
                         <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm text-stone-100 group-hover:text-white">{displayName}</p>
+                            <p className="truncate text-sm text-ink-muted group-hover:text-ink">{displayName}</p>
                         </div>
                     </a>
                 );

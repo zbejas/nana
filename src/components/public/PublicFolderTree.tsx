@@ -31,19 +31,19 @@ function PublicFolderBranch({
             <button
                 type="button"
                 onClick={() => setExpanded((current) => !current)}
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-stone-200 transition-colors hover:bg-amber-500/5"
+                className="flex w-full items-center gap-2 rounded-control px-2 py-2 text-left text-sm text-ink-secondary transition-colors hover:bg-surface-raised"
             >
                 {hasChildren ? (
-                    expanded ? <ChevronDownIcon className="h-4 w-4 text-amber-500/50" /> : <ChevronRightIcon className="h-4 w-4 text-amber-500/50" />
+                    expanded ? <ChevronDownIcon className="h-4 w-4 text-ink-muted" /> : <ChevronRightIcon className="h-4 w-4 text-ink-muted" />
                 ) : (
                     <span className="h-4 w-4" />
                 )}
-                <FolderIcon className="h-4 w-4 text-amber-400" />
+                <FolderIcon className="h-4 w-4 text-ink-muted" />
                 <span className="truncate">{node.name}</span>
             </button>
 
             {expanded && (
-                <div className="ml-5 space-y-1 border-l border-amber-500/10 pl-3">
+                <div className="ml-5 space-y-1 border-l border-line pl-3">
                     {documents.map((document) => {
                         const isSelected = selectedDocumentId === document.id;
 
@@ -52,10 +52,10 @@ function PublicFolderBranch({
                                 key={document.id}
                                 type="button"
                                 onClick={() => onSelectDocument(document.id)}
-                                className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors ${
+                                className={`flex w-full items-center gap-2 rounded-control px-2 py-2 text-left text-sm transition-colors ${
                                     isSelected
-                                        ? 'bg-amber-500/20 text-amber-100 ring-1 ring-amber-400/40 shadow-sm shadow-amber-500/10'
-                                        : 'text-stone-300 hover:bg-amber-500/5 hover:text-white'
+                                        ? 'bg-brass-soft text-ink-muted ring-1 ring-amber-400/40 shadow-sm shadow-amber-500/10'
+                                        : 'text-ink-muted hover:bg-surface-raised hover:text-ink'
                                 }`}
                             >
                                 <DocumentTextIcon className="h-4 w-4 shrink-0" />

@@ -6,6 +6,7 @@ import { DEFAULT_AI_CONFIG, PROVIDER_META } from '../../../lib/ai/types';
 import { ProviderCard } from './ai/ProviderCard';
 import { EmbeddingSettings } from './ai/EmbeddingSettings';
 import { createLogger } from '../../../lib/logger';
+import { Button, Card, Field, SectionHeading, Spinner, Textarea } from '../../ui';
 
 const log = createLogger('AISettings');
 
@@ -111,112 +112,102 @@ export function AISettings() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+      <div className="flex items-center justify-center py-10">
+        <Spinner label="Loading AI configuration" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header section */}
-      <div className="space-y-1">
-        <h3 className="text-lg font-semibold text-white">AI</h3>
-        <p className="text-sm text-gray-400">
-          Configure AI providers for chat and embeddings. Only one provider can be active at a time.
-        </p>
-      </div>
+      <Card className="p-5 sm:p-6">
+        <SectionHeading
+          eyebrow="Model access"
+          title="AI configuration"
+          description="Configure AI providers for chat and embeddings. Only one provider can be active at a time."
+          actions={
+            <Button variant="primary" loading={saving} onClick={handleSave}>
+              Save configuration
+            </Button>
+          }
+        />
 
-      {/* Banners */}
-      {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
-          <p className="text-sm text-red-400">{error}</p>
-        </div>
-      )}
-      {successMessage && (
-        <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3">
-          <p className="text-sm text-green-400">{successMessage}</p>
-        </div>
-      )}
-
-      {/* Re-embed warning */}
-      {config.activeProvider && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-          <p className="text-sm text-amber-400">
-            <span className="font-medium">Active provider:</span>{' '}
-            {PROVIDER_META[config.activeProvider].label}.
-            Switching providers will require re-embedding all documents.
+        {error && (
+          <p className="mt-4 text-sm text-danger" role="alert">
+            {error}
           </p>
+        )}
+        {successMessage && (
+          <p className="mt-4 text-sm text-sage" role="status">
+            {successMessage}
+          </p>
+        )}
+
+        <div className="mt-5 space-y-3">
+          {PROVIDER_KEYS.map((key) => (
+            <ProviderCard
+              key={key}
+              providerKey={key}
+              config={config.providers[key]}
+              isActive={config.activeProvider === key}
+              onToggleActive={() => {
+                if (config.activeProvider === key) {
+                  handleDeactivate();
+                } else {
+                  handleActivate(key);
+                }
+              }}
+              onChange={(field, value) => handleProviderChange(key, field, value)}
+            />
+          ))}
         </div>
-      )}
 
-      {/* Provider cards */}
-      <div className="space-y-3">
-        {PROVIDER_KEYS.map((key) => (
-          <ProviderCard
-            key={key}
-            providerKey={key}
-            config={config.providers[key]}
-            isActive={config.activeProvider === key}
-            onToggleActive={() => {
-              if (config.activeProvider === key) {
-                handleDeactivate();
-              } else {
-                handleActivate(key);
-              }
-            }}
-            onChange={(field, value) => handleProviderChange(key, field, value)}
-          />
-        ))}
-      </div>
+        {config.activeProvider && (
+          <p className="mt-4 text-xs leading-relaxed text-ink-muted">
+            <span className="font-medium text-brass">Active provider:</span>{' '}
+            {PROVIDER_META[config.activeProvider].label}. Switching providers will require re-embedding all documents.
+          </p>
+        )}
 
-      {/* System Prompt */}
-      <div className="space-y-1.5">
-        <label className="block text-sm font-medium text-gray-300">System Prompt</label>
-        <textarea
-          value={config.systemPrompt}
-          onChange={(e) => setConfig((prev) => ({ ...prev, systemPrompt: e.target.value }))}
-          placeholder="Optional — provide a default system instruction for the AI assistant"
-          rows={4}
-          className="w-full rounded-lg border border-white/20 bg-black/30 px-4 py-2.5 text-sm text-white placeholder-gray-500 transition-colors focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 resize-y"
-        />
-        <p className="text-xs text-gray-500">
-          A global instruction sent to the AI model at the start of every chat and title generation.
-          Leave empty for default behavior.
-        </p>
-      </div>
+        <div className="mt-6 space-y-5 border-t border-line pt-5">
+          <div>
+            <h3 className="text-sm font-medium text-ink">Prompts</h3>
+            <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+              Instructions sent with every conversation and when Nana generates a title.
+            </p>
+          </div>
 
-      {/* Title Prompt */}
-      <div className="space-y-1.5">
-        <label className="block text-sm font-medium text-gray-300">Title Generation Prompt</label>
-        <textarea
-          value={config.titlePrompt}
-          onChange={(e) => setConfig((prev) => ({ ...prev, titlePrompt: e.target.value }))}
-          placeholder="Instruction for auto-generating conversation titles"
-          rows={4}
-          className="w-full rounded-lg border border-white/20 bg-black/30 px-4 py-2.5 text-sm text-white placeholder-gray-500 transition-colors focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 resize-y"
-        />
-        <p className="text-xs text-gray-500">
-          Controls how the AI generates conversation titles. The default produces an emoji + short name.
-        </p>
-      </div>
+          <Field
+            label="System Prompt"
+            htmlFor="ai-system-prompt"
+            hint="A global instruction sent to the AI model at the start of every chat and title generation. Leave empty for default behavior."
+          >
+            <Textarea
+              id="ai-system-prompt"
+              value={config.systemPrompt}
+              onChange={(e) => setConfig((prev) => ({ ...prev, systemPrompt: e.target.value }))}
+              placeholder="Optional — provide a default system instruction for the AI assistant"
+              rows={4}
+            />
+          </Field>
 
-      {/* Save AI config */}
-      <div className="flex justify-end">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="rounded-lg bg-white/10 px-5 py-2.5 text-sm font-medium text-white hover:bg-white/20 disabled:opacity-50 transition-colors"
-        >
-          {saving ? 'Saving...' : 'Save Configuration'}
-        </button>
-      </div>
+          <Field
+            label="Title Generation Prompt"
+            htmlFor="ai-title-prompt"
+            hint="Controls how the AI generates conversation titles. The default produces an emoji + short name."
+          >
+            <Textarea
+              id="ai-title-prompt"
+              value={config.titlePrompt}
+              onChange={(e) => setConfig((prev) => ({ ...prev, titlePrompt: e.target.value }))}
+              placeholder="Instruction for auto-generating conversation titles"
+              rows={4}
+            />
+          </Field>
+        </div>
+      </Card>
 
-      {/* Divider */}
-      <div className="border-t border-white/10" />
-
-      {/* Embedding settings section */}
-      <EmbeddingSettings onSave={async () => { /* saved independently */ }} />
+      <EmbeddingSettings />
     </div>
   );
 }

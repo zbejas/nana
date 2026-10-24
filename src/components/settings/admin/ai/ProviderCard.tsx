@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import type { AIProviderKey, AIProviderConfig } from '../../../../lib/ai/types';
 import { PROVIDER_META } from '../../../../lib/ai/types';
+import { Badge, cn, Field, IconButton, Input, Switch } from '../../../ui';
 
 interface ProviderCardProps {
   providerKey: AIProviderKey;
@@ -21,62 +22,83 @@ export function ProviderCard({
   const [expanded, setExpanded] = useState(isActive);
   const meta = PROVIDER_META[providerKey];
 
-  const inputClass =
-    'w-full rounded-lg border border-white/20 bg-black/30 px-4 py-2.5 text-sm text-white placeholder-gray-500 transition-colors focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20';
-
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+    <div
+      className={cn(
+        'overflow-hidden rounded-panel border bg-surface-sunken/40 transition-colors',
+        isActive ? 'border-ember/35' : 'border-line'
+      )}
+    >
       {/* Header */}
-      <div className="flex w-full items-center justify-between px-5 py-4">
+      <div className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-5">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex flex-1 items-center gap-3 text-left hover:opacity-80 transition-opacity"
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 items-center text-left"
         >
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-white">{meta.label}</span>
-            <span className="text-xs text-gray-400">{meta.description}</span>
-          </div>
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-ink">{meta.label}</span>
+              {isActive && (
+                <Badge tone="ember" dot>
+                  Active
+                </Badge>
+              )}
+            </span>
+            <span className="text-xs leading-relaxed text-ink-muted">{meta.description}</span>
+          </span>
         </button>
-        <div className="flex items-center gap-3">
+
+        <div className="flex shrink-0 items-center gap-2">
           {/* Active toggle */}
           <button
             type="button"
-            onClick={onToggleActive}
-            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-white/20 ${
-              isActive ? 'bg-green-500' : 'bg-white/20'
-            }`}
             role="switch"
             aria-checked={isActive}
             aria-label={`${isActive ? 'Deactivate' : 'Activate'} ${meta.label}`}
+            onClick={onToggleActive}
+            className={cn(
+              'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember',
+              isActive ? 'border-ember/50 bg-ember' : 'border-line-strong bg-surface-sunken'
+            )}
           >
             <span
-              className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ease-in-out ${
-                isActive ? 'translate-x-4' : 'translate-x-0'
-              }`}
+              className={cn(
+                'h-4 w-4 rounded-full transition-transform duration-150',
+                isActive ? 'translate-x-[1.45rem] bg-on-ember' : 'translate-x-[0.2rem] bg-ink-muted'
+              )}
+              aria-hidden="true"
             />
           </button>
-          <button
-            type="button"
+
+          <IconButton
+            label={expanded ? `Collapse ${meta.label}` : `Expand ${meta.label}`}
+            variant="ghost"
+            size="sm"
             onClick={() => setExpanded((v) => !v)}
-            className="p-0.5 hover:opacity-80 transition-opacity"
+            aria-expanded={expanded}
           >
-            {expanded ? (
-              <ChevronUpIcon className="h-4 w-4 text-gray-400" />
-            ) : (
-              <ChevronDownIcon className="h-4 w-4 text-gray-400" />
-            )}
-          </button>
+            {expanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
+          </IconButton>
         </div>
       </div>
 
       {/* Body */}
       {expanded && (
-        <div className="border-t border-white/10 px-5 py-4 space-y-4">
-          {/* API Key */}
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-gray-300">API Key</label>
-            <input
+        <div className="space-y-4 border-t border-line px-4 py-4 sm:px-5 sm:py-5">
+          <Field
+            label="API Key"
+            htmlFor={`${providerKey}-api-key`}
+            optional={providerKey === 'ollama'}
+            hint={
+              providerKey === 'ollama'
+                ? 'Only needed for remote/authenticated Ollama instances. Local usage works without a key.'
+                : undefined
+            }
+          >
+            <Input
+              id={`${providerKey}-api-key`}
               type="password"
               value={config.apiKey}
               onChange={(e) => onChange('apiKey', e.target.value)}
@@ -85,36 +107,34 @@ export function ProviderCard({
                   ? 'Optional — leave empty for local access'
                   : `Enter ${meta.label} API key`
               }
-              className={inputClass}
             />
-            {providerKey === 'ollama' && (
-              <p className="text-xs text-gray-500">
-                Only needed for remote/authenticated Ollama instances. Local usage works without a key.
-              </p>
-            )}
-          </div>
+          </Field>
 
-          {/* Base URL */}
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-gray-300">Base URL</label>
-            <input
+          <Field
+            label="Base URL"
+            htmlFor={`${providerKey}-base-url`}
+            hint={
+              providerKey === 'ollama'
+                ? 'Ollama server address. Default: http://localhost:11434'
+                : 'Override the default API endpoint. Leave empty to use the official endpoint.'
+            }
+          >
+            <Input
+              id={`${providerKey}-base-url`}
               type="text"
               value={config.baseUrl}
               onChange={(e) => onChange('baseUrl', e.target.value)}
               placeholder={meta.defaultBaseUrl || 'Default (leave empty for official endpoint)'}
-              className={inputClass}
             />
-            <p className="text-xs text-gray-500">
-              {providerKey === 'ollama'
-                ? 'Ollama server address. Default: http://localhost:11434'
-                : 'Override the default API endpoint. Leave empty to use the official endpoint.'}
-            </p>
-          </div>
+          </Field>
 
-          {/* Active Model */}
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-gray-300">Chat Model</label>
-            <input
+          <Field
+            label="Chat Model"
+            htmlFor={`${providerKey}-chat-model`}
+            hint="The model identifier used for chat completions."
+          >
+            <Input
+              id={`${providerKey}-chat-model`}
               type="text"
               value={config.activeModel}
               onChange={(e) => onChange('activeModel', e.target.value)}
@@ -125,17 +145,16 @@ export function ProviderCard({
                     ? 'e.g. gemini-2.0-flash'
                     : 'e.g. llama3'
               }
-              className={inputClass}
             />
-            <p className="text-xs text-gray-500">
-              The model identifier used for chat completions.
-            </p>
-          </div>
+          </Field>
 
-          {/* Embedding Model */}
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-gray-300">Embedding Model</label>
-            <input
+          <Field
+            label="Embedding Model"
+            htmlFor={`${providerKey}-embedding-model`}
+            hint="The model identifier used for generating embeddings."
+          >
+            <Input
+              id={`${providerKey}-embedding-model`}
               type="text"
               value={config.embeddingModel}
               onChange={(e) => onChange('embeddingModel', e.target.value)}
@@ -146,22 +165,21 @@ export function ProviderCard({
                     ? 'e.g. text-embedding-004'
                     : 'e.g. nomic-embed-text'
               }
-              className={inputClass}
             />
-            <p className="text-xs text-gray-500">
-              The model identifier used for generating embeddings.
-            </p>
-          </div>
+          </Field>
 
           {/* Generation Parameters */}
-          <div className="border-t border-white/10 pt-4 space-y-4">
-            <h4 className="text-sm font-medium text-gray-300">Generation Parameters</h4>
+          <div className="space-y-4 border-t border-line pt-4">
+            <h3 className="text-sm font-medium text-ink">Generation Parameters</h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {/* Temperature */}
-              <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-gray-300">Temperature</label>
-                <input
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field
+                label="Temperature"
+                htmlFor={`${providerKey}-temperature`}
+                hint="Controls randomness (0–2). Lower = more focused."
+              >
+                <Input
+                  id={`${providerKey}-temperature`}
                   type="number"
                   step="0.1"
                   min="0"
@@ -171,17 +189,16 @@ export function ProviderCard({
                     onChange('temperature', e.target.value === '' ? null : parseFloat(e.target.value))
                   }
                   placeholder="Default"
-                  className={inputClass}
                 />
-                <p className="text-xs text-gray-500">
-                  Controls randomness (0–2). Lower = more focused.
-                </p>
-              </div>
+              </Field>
 
-              {/* Max Tokens */}
-              <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-gray-300">Max Tokens</label>
-                <input
+              <Field
+                label="Max Tokens"
+                htmlFor={`${providerKey}-max-tokens`}
+                hint="Maximum number of tokens to generate."
+              >
+                <Input
+                  id={`${providerKey}-max-tokens`}
                   type="number"
                   step="1"
                   min="1"
@@ -190,17 +207,16 @@ export function ProviderCard({
                     onChange('maxTokens', e.target.value === '' ? null : parseInt(e.target.value, 10))
                   }
                   placeholder="Default"
-                  className={inputClass}
                 />
-                <p className="text-xs text-gray-500">
-                  Maximum number of tokens to generate.
-                </p>
-              </div>
+              </Field>
 
-              {/* Top P */}
-              <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-gray-300">Top P</label>
-                <input
+              <Field
+                label="Top P"
+                htmlFor={`${providerKey}-top-p`}
+                hint="Nucleus sampling threshold (0–1)."
+              >
+                <Input
+                  id={`${providerKey}-top-p`}
                   type="number"
                   step="0.05"
                   min="0"
@@ -210,39 +226,18 @@ export function ProviderCard({
                     onChange('topP', e.target.value === '' ? null : parseFloat(e.target.value))
                   }
                   placeholder="Default"
-                  className={inputClass}
                 />
-                <p className="text-xs text-gray-500">
-                  Nucleus sampling threshold (0–1).
-                </p>
-              </div>
+              </Field>
             </div>
 
             {providerKey === 'ollama' && (
-              <div className="flex items-center justify-between pt-2">
-                <div>
-                  <span className="text-sm font-medium text-gray-300">Thinking</span>
-                  <p className="text-xs text-gray-500">
-                    Enable chain-of-thought reasoning for supported models (e.g. Gemma 4, DeepSeek R1).
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onChange('thinking', !config.thinking)}
-                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-white/20 ${
-                    config.thinking ? 'bg-green-500' : 'bg-white/20'
-                  }`}
-                  role="switch"
-                  aria-checked={config.thinking}
-                  aria-label="Toggle thinking mode"
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ease-in-out ${
-                      config.thinking ? 'translate-x-4' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
+              <Switch
+                id={`${providerKey}-thinking`}
+                checked={config.thinking}
+                onChange={(checked) => onChange('thinking', checked)}
+                label="Thinking"
+                description="Enable chain-of-thought reasoning for supported models (e.g. Gemma 4, DeepSeek R1)."
+              />
             )}
           </div>
         </div>

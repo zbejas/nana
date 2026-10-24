@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ConfirmDialog } from '../modals/ConfirmDialog';
 import { useInstallPrompt } from './useInstallPrompt';
+import { Button, Dialog } from '../ui';
+import logo from '../../assets/nana.svg';
 
 const INSTALL_DISMISSED_KEY = 'pwa-install-dismissed';
 
@@ -39,15 +40,10 @@ export function InstallBanner() {
     setIos(isIosMobile());
     setDismissed(localStorage.getItem(INSTALL_DISMISSED_KEY) === 'true');
 
-    const handleAppInstalled = () => {
-      setInstalled(true);
-    };
-
+    const handleAppInstalled = () => setInstalled(true);
     window.addEventListener('appinstalled', handleAppInstalled);
 
-    const showModal = () => {
-      window.setTimeout(() => setReadyToShow(true), 120);
-    };
+    const showModal = () => window.setTimeout(() => setReadyToShow(true), 120);
 
     if (document.readyState === 'complete') {
       showModal();
@@ -66,10 +62,6 @@ export function InstallBanner() {
     setDismissed(true);
   };
 
-  const handleInstallClick = async () => {
-    await promptInstall();
-  };
-
   if (!readyToShow || !mobile || installed || dismissed) {
     return null;
   }
@@ -79,25 +71,44 @@ export function InstallBanner() {
   }
 
   const shouldShowManualHint = ios;
-  const title = shouldShowManualHint ? 'Install Nana Manually' : 'Install Nana';
-  const baseMessage = shouldShowManualHint
-    ? ios
-      ? 'To install this app on iOS Safari, tap Share and choose "Add to Home Screen".'
-      : 'To install this app, open your browser menu and choose "Add to Home Screen".'
-    : 'Install the app for a faster, full-screen mobile experience.';
-  const message = baseMessage;
 
   return (
-    <ConfirmDialog
-      isOpen={true}
-      title={title}
-      message={message}
-      onSave={handleInstallClick}
-      onDiscard={dismissBanner}
-      onCancel={() => setDismissed(true)}
-      saveLabel={shouldShowManualHint ? '' : 'Install'}
-      discardLabel="Don't remind me"
-      cancelLabel="Close"
-    />
+    <Dialog
+      open
+      onClose={() => setDismissed(true)}
+      eyebrow="Mobile app"
+      title={shouldShowManualHint ? 'Add Nana to your home screen' : 'Install Nana'}
+      description={
+        shouldShowManualHint
+          ? 'Nana runs like an app once it is on your home screen: full-screen, faster, and one tap away.'
+          : 'A full-screen, faster version of Nana with its own icon.'
+      }
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" onClick={dismissBanner}>
+            {shouldShowManualHint ? 'Not now' : "Don't remind me"}
+          </Button>
+          {shouldShowManualHint ? (
+            <Button variant="primary" onClick={() => setDismissed(true)}>
+              Got it
+            </Button>
+          ) : (
+            <Button variant="primary" onClick={() => void promptInstall()}>
+              Install Nana
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div className="flex items-center gap-4 rounded-control border border-line bg-surface-sunken/50 p-4">
+        <img src={logo} alt="" className="h-12 w-12 shrink-0" />
+        <p className="text-sm leading-relaxed text-ink-secondary">
+          {shouldShowManualHint
+            ? 'Tap the Share button in Safari, then choose “Add to Home Screen”.'
+            : 'Use the install button below, or your browser menu, to place Nana on your home screen.'}
+        </p>
+      </div>
+    </Dialog>
   );
 }

@@ -1,5 +1,6 @@
 import MDEditor from '@uiw/react-markdown-preview';
 import { rehypeSanitizePlugin } from '../lib/sanitize';
+import { useTheme } from '../lib/theme';
 
 interface MarkdownPreviewProps {
   content: string;
@@ -7,9 +8,11 @@ interface MarkdownPreviewProps {
 }
 
 export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProps) {
+  const { resolved } = useTheme();
+
   if (!content.trim()) {
     return (
-      <div className={`text-gray-500 text-sm italic ${className}`}>
+      <div className={`text-sm italic text-ink-muted ${className}`}>
         No content to preview
       </div>
     );
@@ -29,10 +32,10 @@ export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProp
       className={className}
       style={{
         backgroundColor: 'transparent',
-        color: '#d1d5db',
+        color: 'var(--ink-secondary)',
       }}
       wrapperElement={{
-        'data-color-mode': 'dark'
+        'data-color-mode': resolved,
       }}
     />
   );

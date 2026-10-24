@@ -15,6 +15,7 @@ import { InlineNameInput } from './InlineNameInput';
 interface FoldersSectionProps {
   folders: FolderTreeNode[];
   isDataLoading: boolean;
+  activeDocumentId?: string;
   expandedFolders: Set<string>;
   folderDocuments: Map<string, any[]>;
   loadedFolders: Set<string>;
@@ -43,6 +44,7 @@ interface FoldersSectionProps {
 export function FoldersSection({
   folders,
   isDataLoading,
+  activeDocumentId,
   expandedFolders,
   folderDocuments,
   loadedFolders,
@@ -67,10 +69,14 @@ export function FoldersSection({
   onRenameSubmit,
   onRenameCancel,
 }: FoldersSectionProps) {
+  const hasFolders = folders.length > 0;
+  const showEmpty = !hasFolders && !inlineInput && !isDataLoading;
+
   return (
     <div>
       <FolderTree
         nodes={folders}
+        activeDocumentId={activeDocumentId}
         expandedFolders={expandedFolders}
         folderDocuments={folderDocuments}
         loadedFolders={loadedFolders}
@@ -99,21 +105,13 @@ export function FoldersSection({
         <InlineNameInput
           onSubmit={(name) => onInlineFolderSubmit(name, undefined)}
           onCancel={onInlineCancel}
-          placeholder="Enter folder name..."
+          placeholder="Folder name"
           icon="folder"
           depth={0}
         />
       )}
-      {folders.length === 0 && !inlineInput && isDataLoading && (
-        <div className="px-3 py-4 flex items-center justify-center">
-          <svg className="w-5 h-5 text-gray-500 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        </div>
-      )}
-      {folders.length === 0 && !inlineInput && !isDataLoading && (
-        <div className="px-3 py-2 text-xs text-gray-600 italic">No folders yet</div>
+      {showEmpty && (
+        <p className="px-2 py-1 text-[12px] text-ink-muted">No folders yet</p>
       )}
     </div>
   );

@@ -11,14 +11,11 @@ interface EditorContentProps {
   editablePreview?: boolean;
 }
 
-export function EditorContent({ content, onContentChange, readOnly = false, viewMode, editablePreview = false }: EditorContentProps) {
+export function EditorContent({ content, onContentChange, readOnly = false, viewMode }: EditorContentProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isPreviewMode = viewMode === 'preview';
   const isSplitMode = viewMode === 'split';
-  const isCenteredMode = viewMode === 'preview';
-  // Map our ViewMode to MDEditor's preview prop
   const previewMode = readOnly ? 'preview' : viewMode === 'text' ? 'edit' : viewMode === 'preview' ? 'preview' : 'live';
-  // Only show dragbar in split (live) mode
   const showDragbar = viewMode === 'split';
   const previewTagFallbacks = {
     iso: ({ children }: any) => <span>{children}</span>,
@@ -90,7 +87,7 @@ export function EditorContent({ content, onContentChange, readOnly = false, view
   return (
     <div
       ref={containerRef}
-      className={`flex-1 min-h-0 flex overflow-hidden relative h-full scrollbar-autohide ${isCenteredMode ? 'md:px-6 lg:px-8 md:justify-center' : ''}`}
+      className="scrollbar-autohide relative flex h-full min-h-0 flex-1 overflow-hidden"
       onKeyDownCapture={handleKeyDownCapture}
     >
       <MDEditor
@@ -106,9 +103,9 @@ export function EditorContent({ content, onContentChange, readOnly = false, view
         visibleDragbar={showDragbar}
         hideToolbar={true}
         enableScroll={true}
-        readOnly={readOnly}
         textareaProps={{
-          placeholder: readOnly ? 'Read-only trash document' : 'Start writing...',
+          readOnly,
+          placeholder: readOnly ? 'Read-only trash document' : 'Start writing…',
         }}
         style={{
           width: '100%',
@@ -116,7 +113,7 @@ export function EditorContent({ content, onContentChange, readOnly = false, view
           minHeight: '100%',
           ...(!isSplitMode ? { border: 'none', boxShadow: 'none' } : {}),
         }}
-        className={`!bg-transparent ${isCenteredMode ? 'md:!max-w-4xl md:!w-full md:!mx-auto' : ''} ${!isSplitMode ? '!border-none !shadow-none [&_.w-md-editor]:!border-none [&_.w-md-editor]:!shadow-none [&_.w-md-editor-text]:!border-none [&_.w-md-editor-preview]:!border-none [&_.w-md-editor-preview]:!shadow-none [&_.wmde-markdown]:!border-none [&_.wmde-markdown]:!shadow-none' : ''} [&_.wmde-markdown]:!bg-transparent [&_.w-md-editor-preview]:!bg-transparent [&_.w-md-editor]:!h-full [&_.w-md-editor]:!min-h-0 [&_.wmde-markdown-var]:!bg-blue-500/30 [&_.wmde-markdown-var]:!w-2 [&_.wmde-markdown-var]:!cursor-col-resize [&_.wmde-markdown-var]:hover:!bg-blue-500 [&_.w-md-editor-text]:scrollbar-autohide [&_.w-md-editor-preview]:scrollbar-autohide [&_.wmde-markdown]:scrollbar-autohide [&_textarea]:!outline-none [&_textarea]:!ring-0 [&_textarea::placeholder]:!opacity-30`}
+        className={`!bg-transparent ${!isSplitMode ? 'md:!mx-auto md:!w-full md:!max-w-4xl' : ''} ${isPreviewMode ? 'md:px-6 lg:px-10' : ''} ${!isSplitMode ? '!border-none !shadow-none [&_.w-md-editor]:!border-none [&_.w-md-editor]:!shadow-none [&_.w-md-editor-text]:!border-none [&_.w-md-editor-preview]:!border-none [&_.w-md-editor-preview]:!shadow-none [&_.wmde-markdown]:!border-none [&_.wmde-markdown]:!shadow-none' : ''} [&_.wmde-markdown]:!bg-transparent [&_.w-md-editor-preview]:!bg-transparent [&_.w-md-editor]:!h-full [&_.w-md-editor]:!min-h-0 [&_.w-md-editor-text]:!px-5 [&_.w-md-editor-preview]:!px-5 [&_.wmde-markdown-var]:!w-2 [&_.wmde-markdown-var]:!cursor-col-resize [&_.wmde-markdown-var]:!bg-line-strong [&_.wmde-markdown-var]:hover:!bg-ember [&_.w-md-editor-text]:scrollbar-autohide [&_.w-md-editor-preview]:scrollbar-autohide [&_.wmde-markdown]:scrollbar-autohide [&_textarea]:!outline-none [&_textarea]:!ring-0 [&_textarea]:!text-ink [&_textarea]:!leading-7 [&_textarea]:!caret-ember [&_textarea::placeholder]:!text-ink-muted [&_textarea::placeholder]:!opacity-100 [&_.w-md-editor-text-pre]:!text-ink [&_.w-md-editor-text-input]:!text-ink [&_.w-md-editor-preview]:!border-l [&_.w-md-editor-preview]:!border-line`}
       />
     </div>
   );

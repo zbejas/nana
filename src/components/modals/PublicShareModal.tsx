@@ -1,7 +1,6 @@
-import { LinkIcon, GlobeAltIcon, EyeSlashIcon, PaperClipIcon } from '@heroicons/react/24/outline';
+import { LinkIcon } from '@heroicons/react/24/outline';
 import { DateTimePicker } from './DateTimePicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import type { Document } from '../../lib/documents';
 import type { Folder } from '../../lib/folders';
 import {
@@ -12,6 +11,7 @@ import {
     toDatetimeLocalValue,
     type PublicShareUpdateOptions,
 } from '../../lib/public-sharing';
+import { Button, Dialog, Switch } from '../ui';
 
 type PublicShareTarget =
     | { type: 'document'; record: Document }
@@ -43,12 +43,10 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
     const [expirationValue, setExpirationValue] = useState('');
     const [validationError, setValidationError] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
-    const copiedTimer = useRef<ReturnType<typeof setTimeout>>();
+    const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
-        if (!target) {
-            return;
-        }
+        if (!target) return;
 
         const hasExistingExpiry = Boolean(target.record.public_expires_at);
         const initialExpiry = hasExistingExpiry
@@ -61,6 +59,7 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
         setExpirationEnabled(hasExistingExpiry || !target.record.is_public);
         setExpirationValue(toDatetimeLocalValue(initialExpiry));
         setValidationError(null);
+        setCopied(false);
     }, [target]);
 
     const shareUrl = useMemo(() => getShareUrl(target), [target]);
@@ -70,13 +69,13 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
     }
 
     const handleCopyLink = async () => {
-        if (!shareUrl) {
-            return;
-        }
+        if (!shareUrl) return;
 
         await navigator.clipboard.writeText(shareUrl);
         setCopied(true);
-        clearTimeout(copiedTimer.current);
+        if (copiedTimer.current) {
+            clearTimeout(copiedTimer.current);
+        }
         copiedTimer.current = setTimeout(() => setCopied(false), 2000);
     };
 
@@ -106,182 +105,109 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
     };
 
     const title = target.type === 'document' ? target.record.title || 'Untitled' : target.record.name;
+    const kind = target.type === 'document' ? 'note' : 'folder';
 
-    return createPortal(
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 px-4 py-4 backdrop-blur-sm">
-            <div className="flex w-full max-w-xl max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/70 backdrop-blur-xl text-white shadow-2xl">
-                <div className="flex-1 overflow-y-auto p-5 sm:p-6">
-                    <div>
-                        <h2 className="text-2xl font-semibold">
-                        {target.type === 'document' ? 'Share Document' : 'Share Folder'}
-                    </h2>
-                    <p className="mt-2 text-sm text-stone-300">{title}</p>
-                </div>
-
-                    <div className="mt-5 space-y-4 sm:mt-6 sm:space-y-5">
-                    <div>
-                    <label className={`flex items-start justify-between gap-4 rounded-lg border p-4 ${isPrivate ? 'border-white/5 bg-black/25 opacity-60' : 'border-white/10 bg-white/5'}`}>
-                        <div>
-                            <div className="flex items-center gap-2 text-sm font-medium text-white">
-                                <GlobeAltIcon className="h-5 w-5 text-amber-300" />
-                                Enable public access
-                            </div>
-                            <p className="mt-1 text-xs text-stone-300">
-                                {target.type === 'document'
-                                    ? 'Readers can open this note through a public read-only URL.'
-                                    : 'Readers can browse this folder as a public read-only documentation site.'}
-                            </p>
-                        </div>
-
-                        <input
-                            type="checkbox"
-                            checked={publicEnabled}
-                            disabled={isPrivate}
-                            onChange={(event) => setPublicEnabled(event.target.checked)}
-                            className="mt-1 h-5 w-5 rounded border-white/20 bg-transparent text-amber-400 focus:ring-amber-400"
-                        />
-                    </label>
-
-                    <div
-                        className="overflow-hidden transition-all duration-300 ease-in-out"
-                        style={{
-                            display: 'grid',
-                            gridTemplateRows: publicEnabled && !isPrivate ? '1fr' : '0fr',
-                            opacity: publicEnabled && !isPrivate ? 1 : 0,
-                        }}
-                    >
-                        <div className="min-h-0">
-                            <div className="mt-4 sm:mt-5 space-y-4 rounded-lg border border-white/10 bg-white/5 p-4">
-                                <label className="flex items-start justify-between gap-4">
-                                    <div>
-                                        <div className="text-sm font-medium text-white">Expiration</div>
-                                        <p className="mt-1 text-xs text-stone-300">Enabled by default for new public links.</p>
-                                    </div>
-
-                                    <input
-                                        type="checkbox"
-                                        checked={expirationEnabled}
-                                        onChange={(event) => setExpirationEnabled(event.target.checked)}
-                                        className="mt-1 h-5 w-5 rounded border-white/20 bg-transparent text-amber-400 focus:ring-amber-400"
-                                    />
-                                </label>
-
-                                <div
-                                    className="overflow-hidden transition-all duration-300 ease-in-out"
-                                    style={{
-                                        display: 'grid',
-                                        gridTemplateRows: expirationEnabled ? '1fr' : '0fr',
-                                        opacity: expirationEnabled ? 1 : 0,
-                                    }}
-                                >
-                                    <div className="min-h-0">
-                                        <label className="mb-2 block text-xs uppercase tracking-[0.22em] text-stone-400">Expires At</label>
-                                        <DateTimePicker
-                                            value={expirationValue}
-                                            onChange={setExpirationValue}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    </div>
-
-                    <label className="flex items-start justify-between gap-4 rounded-lg border border-white/10 bg-white/5 p-4">
-                        <div>
-                            <div className="flex items-center gap-2 text-sm font-medium text-white">
-                                <EyeSlashIcon className="h-5 w-5 text-amber-300" />
-                                Private
-                            </div>
-                            <p className="mt-1 text-xs text-stone-300">
-                                {target.type === 'document'
-                                    ? 'Hide this document from any shared parent folder and block its own public URL.'
-                                    : 'Hide this folder from any shared parent folder and block its own public URL.'}
-                            </p>
-                        </div>
-
-                        <input
-                            type="checkbox"
-                            checked={isPrivate}
-                            onChange={(event) => setIsPrivate(event.target.checked)}
-                            className="mt-1 h-5 w-5 rounded border-white/20 bg-transparent text-amber-400 focus:ring-amber-400"
-                        />
-                    </label>
-
-                    <label className={`flex items-start justify-between gap-4 rounded-lg border p-4 ${!isPrivate ? 'border-white/10 bg-white/5' : 'border-white/5 bg-black/25 opacity-60'}`}>
-                        <div>
-                            <div className="flex items-center gap-2 text-sm font-medium text-white">
-                                <PaperClipIcon className="h-5 w-5 text-amber-300" />
-                                Share attachments
-                            </div>
-                            <p className="mt-1 text-xs text-stone-300">
-                                {target.type === 'document'
-                                    ? 'Allow public readers to download this document\u2019s attachments.'
-                                    : 'Allow public readers to download attachments from documents in this folder.'}
-                            </p>
-                        </div>
-
-                        <input
-                            type="checkbox"
-                            checked={shareAttachments}
-                            disabled={isPrivate}
-                            onChange={(event) => setShareAttachments(event.target.checked)}
-                            className="mt-1 h-5 w-5 rounded border-white/20 bg-transparent text-amber-400 focus:ring-amber-400"
-                        />
-                    </label>
-
-                    {target.record.is_public && shareUrl && (
-                        <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 p-4">
-                            <div className="flex items-center gap-2 text-sm font-medium text-amber-100">
-                                <LinkIcon className="h-4 w-4" />
-                                Public URL
-                            </div>
-                            <div className="mt-3 rounded-lg border border-white/10 bg-black/25 px-3 py-3 text-sm text-stone-100 break-all">
-                                {shareUrl}
-                            </div>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => { void handleCopyLink(); }}
-                                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10"
-                                >
-                                    {copied ? 'Copied!' : 'Copy Link'}
-                                </button>
-                                <a
-                                    href={shareUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10"
-                                >
-                                    Open Public Page
-                                </a>
-                            </div>
-                        </div>
-                    )}
-
-                        {validationError && <p className="text-sm text-red-300">{validationError}</p>}
-                    </div>
-                </div>
-
-                <div className="flex flex-wrap justify-end gap-3 border-t border-white/10 px-5 py-4 sm:px-6">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-stone-300 transition-colors hover:bg-white/10"
-                    >
+    return (
+        <Dialog
+            open
+            onClose={onClose}
+            eyebrow="Public sharing"
+            title={`Share this ${kind}`}
+            description={title}
+            size="lg"
+            footer={
+                <>
+                    <Button variant="secondary" onClick={onClose} disabled={isSaving}>
                         Cancel
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => { void handleSubmit(); }}
-                        disabled={isSaving}
-                        className="rounded-lg border border-amber-400/30 bg-amber-500/15 px-4 py-2.5 text-sm font-medium text-amber-100 transition-colors hover:bg-amber-500/25 disabled:cursor-wait disabled:opacity-60"
-                    >
-                        {isSaving ? 'Saving...' : 'Save Changes'}
-                    </button>
-                </div>
+                    </Button>
+                    <Button variant="primary" onClick={() => void handleSubmit()} loading={isSaving}>
+                        Save sharing
+                    </Button>
+                </>
+            }
+        >
+            <div className="space-y-3">
+                <Switch
+                    label="Public access"
+                    description={
+                        target.type === 'document'
+                            ? 'Anyone with the link can read this note. No sign-in required.'
+                            : 'Anyone with the link can browse this folder as a read-only site.'
+                    }
+                    checked={publicEnabled}
+                    onChange={setPublicEnabled}
+                    disabled={isPrivate}
+                />
+
+                {publicEnabled && !isPrivate && (
+                    <div className="animate-slideDown space-y-4 rounded-control border border-line bg-surface-sunken/50 p-4">
+                        <Switch
+                            label="Set an expiry"
+                            description="Links close automatically after this date."
+                            checked={expirationEnabled}
+                            onChange={setExpirationEnabled}
+                        />
+                        {expirationEnabled && (
+                            <div>
+                                <p className="eyebrow mb-2">Expires at</p>
+                                <DateTimePicker value={expirationValue} onChange={setExpirationValue} />
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                <Switch
+                    label="Private"
+                    description={
+                        target.type === 'document'
+                            ? 'Hide this note even when its parent folder is public.'
+                            : 'Hide this folder and everything inside it from shared parents.'
+                    }
+                    checked={isPrivate}
+                    onChange={(next) => {
+                        setIsPrivate(next);
+                        if (next) {
+                            setPublicEnabled(false);
+                        }
+                    }}
+                />
+
+                <Switch
+                    label="Share attachments"
+                    description={
+                        target.type === 'document'
+                            ? 'Let public readers download the files attached to this note.'
+                            : 'Let public readers download attachments from notes in this folder.'
+                    }
+                    checked={shareAttachments}
+                    onChange={setShareAttachments}
+                    disabled={isPrivate}
+                />
+
+                {target.record.is_public && shareUrl && (
+                    <div className="rounded-control border border-ember/20 bg-ember-soft/60 p-4">
+                        <div className="flex items-center gap-2 text-sm font-medium text-ember">
+                            <LinkIcon className="h-4 w-4" />
+                            Public URL
+                        </div>
+                        <div className="mt-2.5 break-all rounded-[6px] border border-line bg-surface-sunken px-3 py-2.5 font-mono text-[12px] text-ink-secondary">
+                            {shareUrl}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            <Button variant="secondary" size="sm" onClick={() => void handleCopyLink()}>
+                                {copied ? 'Copied' : 'Copy link'}
+                            </Button>
+                            <a href={shareUrl} target="_blank" rel="noreferrer">
+                                <Button variant="ghost" size="sm">
+                                    Open public page
+                                </Button>
+                            </a>
+                        </div>
+                    </div>
+                )}
+
+                {validationError && <p className="text-sm text-danger">{validationError}</p>}
             </div>
-        </div>,
-        document.body,
+        </Dialog>
     );
 }
