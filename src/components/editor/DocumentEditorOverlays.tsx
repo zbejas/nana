@@ -1,4 +1,4 @@
-import { ArrowDownIcon, PaperClipIcon } from '@heroicons/react/24/outline';
+import { ArrowDownIcon, LockClosedIcon, PaperClipIcon } from '@heroicons/react/24/outline';
 import { IconButton } from '../ui';
 
 export function EditorDragOverlay({ visible }: { visible: boolean }) {
@@ -22,7 +22,7 @@ export function EditorReadOnlyOverlay({ visible }: { visible: boolean }) {
 
   return (
     <div className="mx-3 mb-2 mt-2 flex items-center gap-2 rounded-control border border-brass/30 bg-brass-soft px-3 py-2 sm:mx-4">
-      <span className="text-brass" aria-hidden="true">🔒</span>
+      <LockClosedIcon className="h-4 w-4 shrink-0 text-brass" aria-hidden="true" />
       <p className="text-xs font-medium text-brass">Read-only trash note. Restore it to edit.</p>
     </div>
   );

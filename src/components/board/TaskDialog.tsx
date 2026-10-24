@@ -83,8 +83,9 @@ export function TaskDialog({
     }
   };
 
-  const documentId = task?.document;
-  const documentTitle = task?.expand?.document?.title;
+  const linkedDocument = task?.expand?.document;
+  const documentId = linkedDocument?.id;
+  const documentTitle = linkedDocument?.title;
 
   return (
     <>
