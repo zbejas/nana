@@ -46,3 +46,7 @@ pocketbase/pb_logs/
 
 # Dev start script
 dev-start.sh
+# Local design review artifacts
+.impeccable/review/
+.impeccable/mocks/
+.playwright-mcp/

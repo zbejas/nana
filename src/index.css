@@ -2,36 +2,199 @@
 @import "@uiw/react-md-editor/markdown-editor.css";
 @import "@uiw/react-markdown-preview/markdown.css";
 
-@layer base {
-  :root {
-    @apply text-[rgba(255,255,255,0.87)] bg-[#242424] font-sans;
-  }
+/*
+ * Ember & Ink — Nana's visual world.
+ * A writer's desk after dark: warm ink grounds, cream paper type, fox-ember
+ * accents. Light theme is the same desk at noon, not a different app.
+ */
 
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-canvas-deep: var(--canvas-deep);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-muted: var(--ink-muted);
+  --color-ember: var(--ember);
+  --color-ember-strong: var(--ember-strong);
+  --color-ember-soft: var(--ember-soft);
+  --color-on-ember: var(--on-ember);
+  --color-brass: var(--brass);
+  --color-brass-soft: var(--brass-soft);
+  --color-sage: var(--sage);
+  --color-sage-soft: var(--sage-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-on-danger: var(--on-danger);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, ui-serif, serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --radius-control: 0.625rem;
+  --radius-panel: 1rem;
+  --radius-sheet: 1.25rem;
+
+  --shadow-panel: 0 1px 0 0 rgb(255 236 210 / 0.04) inset, 0 18px 40px -24px rgb(0 0 0 / 0.55);
+  --shadow-float: 0 1px 0 0 rgb(255 236 210 / 0.05) inset, 0 24px 60px -20px rgb(0 0 0 / 0.65);
+}
+
+:root {
+  --canvas: #15100d;
+  --canvas-deep: #100c0a;
+  --surface: #1e1712;
+  --surface-raised: #271e18;
+  --surface-sunken: #130f0c;
+  --line: rgb(245 226 200 / 0.1);
+  --line-strong: rgb(245 226 200 / 0.2);
+  --ink: #f3e8d7;
+  --ink-secondary: #c3b09a;
+  --ink-muted: #907d69;
+  --ember: #e8823f;
+  --ember-strong: #f59a5c;
+  --ember-soft: rgb(232 130 63 / 0.14);
+  --on-ember: #1c120b;
+  --brass: #d6ad6b;
+  --brass-soft: rgb(214 173 107 / 0.13);
+  --sage: #9ab98c;
+  --sage-soft: rgb(147 179 134 / 0.14);
+  --danger: #e07362;
+  --danger-soft: rgb(224 115 98 / 0.14);
+  --on-danger: #1c0d0a;
+  --grain-opacity: 0.035;
+  --glow-opacity: 1;
+  --scrim: rgb(9 6 4 / 0.56);
+  --mobile-navbar-height: calc(4.5rem + env(safe-area-inset-bottom));
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"],
+:root.light {
+  --canvas: #f3ece0;
+  --canvas-deep: #e9dfcd;
+  --surface: #fbf6ea;
+  --surface-raised: #fffaf1;
+  --surface-sunken: #ece2d2;
+  --line: rgb(62 45 33 / 0.13);
+  --line-strong: rgb(62 45 33 / 0.24);
+  --ink: #241a13;
+  --ink-secondary: #5b4a3b;
+  --ink-muted: #8a7764;
+  --ember: #bd5320;
+  --ember-strong: #a24315;
+  --ember-soft: rgb(189 83 32 / 0.1);
+  --on-ember: #fff8ee;
+  --brass: #8a6423;
+  --brass-soft: rgb(138 100 35 / 0.1);
+  --sage: #4f7345;
+  --sage-soft: rgb(79 115 69 / 0.12);
+  --danger: #ad3b2b;
+  --danger-soft: rgb(173 59 43 / 0.1);
+  --on-danger: #fff8ee;
+  --grain-opacity: 0.022;
+  --glow-opacity: 0.55;
+  --scrim: rgb(46 31 20 / 0.3);
+
+  color-scheme: light;
+}
+
+@layer base {
   html,
   body,
   #root {
-    @apply w-full h-full;
+    @apply h-full w-full;
   }
 
-  html,
+  html {
+    @apply text-base antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
+    @apply relative m-0 min-w-[320px] font-sans;
+    color: var(--ink);
+    background-color: var(--canvas);
     overflow: hidden;
     overscroll-behavior: none;
   }
 
-  :root.light {
-    @apply text-gray-900 bg-gray-50;
+  ::selection {
+    background: color-mix(in srgb, var(--ember) 32%, transparent);
+    color: var(--ink);
   }
 
-  body {
-    @apply min-w-[320px] relative m-0;
+  :focus-visible {
+    outline: 2px solid var(--ember);
+    outline-offset: 2px;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink-muted);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
   }
 }
 
-/* GitHub-style alerts styling */
+/* Warm room light behind everything. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  opacity: var(--glow-opacity);
+  background:
+    radial-gradient(1100px 560px at 12% -8%, rgb(232 130 63 / 0.11), transparent 62%),
+    radial-gradient(860px 520px at 96% 2%, rgb(214 173 107 / 0.06), transparent 58%),
+    radial-gradient(760px 620px at 70% 110%, rgb(114 56 42 / 0.10), transparent 60%);
+}
+
+/* Paper grain. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+body.public-route-active {
+  background-color: var(--canvas-deep);
+}
+
+/* ------------------------------------------------------------------ */
+/* Markdown                                                            */
+/* ------------------------------------------------------------------ */
+
 @layer components {
   .markdown-alert {
-    @apply p-4 rounded-r-lg my-4 border-l-4;
+    @apply my-4 rounded-control border p-4;
   }
 
   .markdown-alert-note {
@@ -39,15 +202,15 @@
   }
 
   .markdown-alert-note .markdown-alert-title {
-    @apply text-blue-400 font-bold mb-2 flex items-center gap-2;
+    @apply mb-2 flex items-center gap-2 font-bold text-blue-400;
   }
 
   .markdown-alert-tip {
-    @apply border-green-500 bg-green-500/10;
+    @apply border-sage bg-sage-soft;
   }
 
   .markdown-alert-tip .markdown-alert-title {
-    @apply text-green-400 font-bold mb-2 flex items-center gap-2;
+    @apply mb-2 flex items-center gap-2 font-bold text-sage;
   }
 
   .markdown-alert-important {
@@ -55,131 +218,115 @@
   }
 
   .markdown-alert-important .markdown-alert-title {
-    @apply text-purple-400 font-bold mb-2 flex items-center gap-2;
+    @apply mb-2 flex items-center gap-2 font-bold text-purple-400;
   }
 
   .markdown-alert-warning {
-    @apply border-yellow-500 bg-yellow-500/10;
+    @apply border-brass bg-brass-soft;
   }
 
   .markdown-alert-warning .markdown-alert-title {
-    @apply text-yellow-400 font-bold mb-2 flex items-center gap-2;
+    @apply mb-2 flex items-center gap-2 font-bold text-brass;
   }
 
   .markdown-alert-caution {
-    @apply border-red-500 bg-red-500/10;
+    @apply border-danger bg-danger-soft;
   }
 
   .markdown-alert-caution .markdown-alert-title {
-    @apply text-red-400 font-bold mb-2 flex items-center gap-2;
+    @apply mb-2 flex items-center gap-2 font-bold text-danger;
   }
 
   .markdown-alert p:last-child {
     @apply mb-0;
   }
 
-  /* Markdown list styles */
   .wmde-markdown ul,
   .w-md-editor-preview ul {
-    @apply list-disc list-outside ml-6 my-4 space-y-2;
+    @apply my-4 ml-6 list-disc list-outside space-y-2;
   }
 
   .wmde-markdown ol,
   .w-md-editor-preview ol {
-    @apply list-decimal list-outside ml-6 my-4 space-y-2;
+    @apply my-4 ml-6 list-decimal list-outside space-y-2;
   }
 
   .wmde-markdown li,
   .w-md-editor-preview li {
-    @apply text-gray-300;
+    color: var(--ink-secondary);
   }
 
   .wmde-markdown ul ul,
   .wmde-markdown ol ul,
   .w-md-editor-preview ul ul,
   .w-md-editor-preview ol ul {
-    @apply list-disc my-2;
+    @apply my-2 list-disc;
   }
 
   .wmde-markdown ul ol,
   .wmde-markdown ol ol,
   .w-md-editor-preview ul ol,
   .w-md-editor-preview ol ol {
-    @apply list-decimal my-2;
+    @apply my-2 list-decimal;
   }
 
-  /* Style default marked HTML elements */
+  .wmde-markdown,
+  .w-md-editor-preview {
+    color: var(--ink-secondary);
+  }
+
   strong {
-    @apply text-gray-200 font-semibold;
+    @apply font-semibold;
+    color: var(--ink);
   }
 
   em {
-    @apply text-gray-200 italic;
+    @apply italic;
+    color: var(--ink);
   }
 
   code {
-    @apply text-pink-400 bg-gray-800 px-1 py-0.5 rounded text-sm font-mono;
+    @apply rounded px-1 py-0.5 font-mono text-sm;
+    color: var(--brass);
+    background: var(--surface-sunken);
   }
 
   pre code {
-    @apply text-gray-300 bg-transparent p-0;
+    @apply bg-transparent p-0;
+    color: var(--ink-secondary);
+  }
+
+  blockquote {
+    border-left: 2px solid var(--line-strong);
+    color: var(--ink-secondary);
+  }
+
+  mark {
+    background: var(--ember-soft);
+    color: var(--ink);
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  hr {
+    border-color: var(--line);
   }
 }
 
-
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  opacity: 0.05;
-  background: url("./assets/nana.svg");
-  background-size: 256px;
-  background-repeat: repeat;
-  transform: rotate(-12deg) scale(1.35);
-  pointer-events: none;
-}
-
-:root.light body::before {
-  opacity: 0.03;
-}
-
-body.public-route-active {
-  background: #090909;
-}
-
-body.public-route-active::before {
-  opacity: 0;
-}
-
-@keyframes slide {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 269090816px 235204464px;
-  }
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* ------------------------------------------------------------------ */
+/* Motion                                                              */
+/* ------------------------------------------------------------------ */
 
 @keyframes slideDown {
   from {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-8px);
     max-height: 0;
   }
   to {
     opacity: 1;
     transform: translateY(0);
-    max-height: 1000px;
+    max-height: 1200px;
   }
 }
 
@@ -187,71 +334,16 @@ body.public-route-active::before {
   from {
     opacity: 1;
     transform: translateY(0);
-    max-height: 1000px;
+    max-height: 1200px;
   }
   to {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-8px);
     max-height: 0;
   }
 }
 
 @keyframes mobile-route-enter {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes mobile-route-enter-from-right {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes mobile-route-enter-from-left {
-  from {
-    opacity: 0;
-    transform: translateX(-16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes desktop-route-enter {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes desktop-content-enter {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes public-content-enter {
   from {
     opacity: 0;
     transform: translateY(6px);
@@ -262,10 +354,54 @@ body.public-route-active::before {
   }
 }
 
+@keyframes mobile-route-enter-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes mobile-route-enter-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes desktop-route-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes public-content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes public-attachment-item-enter {
   from {
     opacity: 0;
-    transform: translateY(4px) scale(0.98);
+    transform: translateY(8px) scale(0.99);
   }
   to {
     opacity: 1;
@@ -277,122 +413,221 @@ body.public-route-active::before {
   from {
     opacity: 0;
     transform: translateY(-4px);
-    max-height: 0;
   }
   to {
     opacity: 1;
     transform: translateY(0);
-    max-height: 1200px;
   }
 }
 
-.public-content-enter {
-  animation: public-content-enter 220ms ease-out;
-  will-change: opacity, transform;
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
-.public-attachment-item {
-  animation: public-attachment-item-enter 220ms ease-out backwards;
+@keyframes dialog-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
 }
 
-.public-attachment-panel-enter {
-  overflow: hidden;
-  animation: public-attachment-panel-enter 260ms ease-out forwards;
-  will-change: opacity, transform, max-height;
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-.public-chevron-rotate {
-  transition: transform 220ms ease-out;
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 
-.public-chevron-rotate.is-open {
-  transform: rotate(90deg);
+@keyframes sheet-out {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
 }
 
-.settings-tab-content-enter {
-  animation: mobile-route-enter 180ms ease-out;
-  will-change: opacity, transform;
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
-@media (min-width: 768px) {
-  .desktop-page-content-enter {
-    animation: desktop-content-enter 220ms ease-out;
+@keyframes ember-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  .animate-slideDown {
+    animation: slideDown 200ms ease-out;
+  }
+
+  .animate-slideUp {
+    animation: slideUp 160ms ease-in forwards;
+  }
+
+  .public-content-enter {
+    animation: public-content-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .public-attachment-item {
+    animation: public-attachment-item-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .public-attachment-panel-enter {
+    animation: public-attachment-panel-enter 200ms ease-out both;
+  }
+
+  .public-chevron-rotate {
+    transition: transform 180ms ease;
   }
 
   .settings-tab-content-enter {
-    animation: desktop-content-enter 200ms ease-out;
+    animation: desktop-route-enter 220ms ease-out both;
+  }
+
+  .desktop-page-content-enter {
+    animation: desktop-route-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @media (min-width: 768px) {
+    .desktop-content-enter {
+      animation: desktop-route-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-autohide {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .scrollbar-autohide::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-autohide::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  .scrollbar-autohide:hover,
+  .scrollbar-autohide.scrolling {
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
+  .scrollbar-autohide:hover::-webkit-scrollbar-thumb,
+  .scrollbar-autohide.scrolling::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+  }
+
+  .scrollbar-autohide::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .eyebrow {
+    font-size: 0.6875rem;
+    line-height: 1;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+  .panel-hairline {
+    box-shadow: inset 0 1px 0 0 rgb(255 236 210 / 0.04);
   }
 }
 
-.animate-slideDown {
-  animation: slideDown 0.3s ease-out forwards;
-}
-
-.animate-slideUp {
-  animation: slideUp 0.2s ease-in forwards;
-}
-
-@media (prefers-reduced-motion) {
+@media (prefers-reduced-motion: reduce) {
   *,
-  ::before,
-  ::after {
-    animation: none !important;
-    transition: none !important;
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* Hide scrollbars */
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+/* ------------------------------------------------------------------ */
+/* Third-party overrides                                               */
+/* ------------------------------------------------------------------ */
+
+.w-md-editor {
+  background: transparent !important;
+  color: var(--ink) !important;
 }
 
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
+.w-md-editor-toolbar {
+  background: transparent !important;
+  border-color: var(--line) !important;
 }
 
-/* Auto-hiding scrollbar for preview */
-.scrollbar-autohide {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-  transition: scrollbar-color 0.3s;
+.w-md-editor-toolbar li > button {
+  color: var(--ink-secondary) !important;
 }
 
-.scrollbar-autohide:hover,
-.scrollbar-autohide.scrolling {
-  scrollbar-color: rgb(75 85 99) transparent;
+.w-md-editor-toolbar li > button:hover {
+  background: var(--surface-raised) !important;
+  color: var(--ink) !important;
 }
 
-.scrollbar-autohide::-webkit-scrollbar {
-  width: 8px;
-}
-
-.scrollbar-autohide::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.scrollbar-autohide::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 4px;
-  transition: background-color 0.3s;
-}
-
-.scrollbar-autohide:hover::-webkit-scrollbar-thumb,
-.scrollbar-autohide.scrolling::-webkit-scrollbar-thumb {
-  background-color: rgb(75 85 99);
-}
-
-.scrollbar-autohide::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(107 114 128);
-}
-
-/* Apply custom scrollbar to MDEditor components */
 .w-md-editor-text,
-.w-md-editor-preview,
+.w-md-editor-text-pre,
+.w-md-editor-text-input {
+  color: var(--ink) !important;
+  caret-color: var(--ember) !important;
+}
+
+.w-md-editor-preview {
+  background: transparent !important;
+}
+
 .wmde-markdown {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-  transition: scrollbar-color 0.3s;
+  background: transparent !important;
 }
 
 .wmde-markdown table {
@@ -401,47 +636,16 @@ body.public-route-active::before {
   max-width: 100%;
 }
 
-.w-md-editor-text:hover,
-.w-md-editor-text.scrolling,
-.w-md-editor-preview:hover,
-.w-md-editor-preview.scrolling,
-.wmde-markdown:hover,
-.wmde-markdown.scrolling {
-  scrollbar-color: rgb(75 85 99) transparent;
+.wmde-markdown pre {
+  background: var(--surface-sunken) !important;
+  border: 1px solid var(--line);
 }
 
-.w-md-editor-text::-webkit-scrollbar,
-.w-md-editor-preview::-webkit-scrollbar,
-.wmde-markdown::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.wmde-markdown a {
+  color: var(--ember) !important;
 }
 
-.w-md-editor-text::-webkit-scrollbar-track,
-.w-md-editor-preview::-webkit-scrollbar-track,
-.wmde-markdown::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.w-md-editor-text::-webkit-scrollbar-thumb,
-.w-md-editor-preview::-webkit-scrollbar-thumb,
-.wmde-markdown::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 4px;
-  transition: background-color 0.3s;
-}
-
-.w-md-editor-text:hover::-webkit-scrollbar-thumb,
-.w-md-editor-text.scrolling::-webkit-scrollbar-thumb,
-.w-md-editor-preview:hover::-webkit-scrollbar-thumb,
-.w-md-editor-preview.scrolling::-webkit-scrollbar-thumb,
-.wmde-markdown:hover::-webkit-scrollbar-thumb,
-.wmde-markdown.scrolling::-webkit-scrollbar-thumb {
-  background-color: rgb(75 85 99);
-}
-
-.w-md-editor-text::-webkit-scrollbar-thumb:hover,
-.w-md-editor-preview::-webkit-scrollbar-thumb:hover,
-.wmde-markdown::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(107 114 128);
+.wmde-markdown blockquote {
+  border-left-color: var(--line-strong) !important;
+  color: var(--ink-secondary) !important;
 }
