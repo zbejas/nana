@@ -111,16 +111,17 @@ Back up the whole directory before upgrades. Never mount it into the test contai
 
 ## Releases
 
-The version in `package.json` drives `/api/app/version` and the About tab.
+The version in `package.json` drives `/api/app/version`, the About tab, and releases.
 
 Release flow:
 
-1. Bump `package.json`.
-2. Merge the version change.
-3. Create a matching Git tag and GitHub release.
-4. Publishing the release triggers `.github/workflows/docker-publish.yml`.
+1. Bump `package.json` in a PR (patch for fixes, minor for features, major for breaking).
+2. Merge the version change to `master`.
+3. `.github/workflows/release.yml` detects the change, builds and pushes the Docker image, then creates tag `<version>` and GitHub release `v<version>` with generated notes.
 
-The workflow builds `linux/amd64` and `linux/arm64` images for the `production` target and pushes semver tags plus `latest` for the default branch to GHCR.
+The workflow is idempotent: if the release already exists it is a no-op, so editing `package.json` without bumping the version never double-releases. Re-run it with `force` checked to rebuild the image for an already-released version.
+
+`.github/workflows/docker-publish.yml` still runs when a GitHub release is published manually. It builds `linux/amd64` and `linux/arm64` images for the `production` target and pushes semver tags (`X.Y.Z`, `X.Y`, `X`) plus `latest` for the default branch to GHCR.
 
 ## Upgrades
 
