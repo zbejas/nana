@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowTopRightOnSquareIcon, TrashIcon } from '@heroicons/react/20/solid';
-import type { CreateTaskData, Task, TaskPriority, TaskStatus, UpdateTaskData } from '../../lib/tasks';
+import type { Task, TaskDraft, TaskPriority, TaskStatus } from '../../lib/tasks';
 import { Button, ConfirmDialog, Dialog, Field, Input, Select, Textarea } from '../ui';
 import { BOARD_COLUMNS, PRIORITIES } from './board-config';
 
@@ -8,8 +8,9 @@ interface TaskDialogProps {
   open: boolean;
   task: Task | null;
   defaultStatus: TaskStatus;
+  boardName?: string;
   onClose: () => void;
-  onSubmit: (data: CreateTaskData | UpdateTaskData) => Promise<void>;
+  onSubmit: (data: TaskDraft) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onOpenDocument: (documentId: string) => void;
 }
@@ -23,6 +24,7 @@ export function TaskDialog({
   open,
   task,
   defaultStatus,
+  boardName,
   onClose,
   onSubmit,
   onDelete,
@@ -74,7 +76,7 @@ export function TaskDialog({
           .split(',')
           .map((label) => label.trim())
           .filter(Boolean),
-      } as CreateTaskData);
+      });
       onClose();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Could not save the task.');
@@ -92,9 +94,16 @@ export function TaskDialog({
       <Dialog
         open={open}
         onClose={onClose}
-        eyebrow={task ? 'Task' : 'New task'}
-        title={task ? 'Edit task' : 'Add to the board'}
-        description={task ? undefined : 'Tasks are separate from notes. Link one to a note when the work came from your writing.'}
+        title={task ? 'Edit task' : 'New task'}
+        description={
+          task
+            ? boardName
+              ? `On ${boardName}. The note this task came from stays in your library.`
+              : undefined
+            : boardName
+              ? `Adding to ${boardName}. Tasks are separate from notes; link one when the work came from your writing.`
+              : 'Tasks are separate from notes. Link one to a note when the work came from your writing.'
+        }
         size="md"
         initialFocusRef={titleRef}
         footer={

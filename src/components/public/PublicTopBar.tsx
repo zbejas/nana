@@ -10,7 +10,7 @@ interface PublicTopBarProps {
 
 export function PublicTopBar({ subtitle, author, title, rightContent, logo }: PublicTopBarProps) {
     return (
-        <header className="sticky top-0 z-20 border-b border-line bg-canvas-deep/90 backdrop-blur-xl">
+        <header className="sticky top-0 z-20 border-b border-line bg-canvas-deep">
             <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:px-6">
                 <div className="flex items-center gap-4">
                     <div className="flex min-w-0 items-center gap-2.5">

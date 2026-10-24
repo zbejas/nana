@@ -20,8 +20,8 @@ interface AppVersionResponse {
 const FEATURES = [
   "Markdown writing with live preview",
   "Folders, tags, and a calm timeline",
-  "A kanban board for the work around your notes",
-  "AI chat over the notes you choose",
+  "Multiple boards, with an archive for work you set aside",
+  "AI chat that reads your notes and boards on request",
   "Public sharing for notes and folders",
   "Version history and a real trash",
   "Attachments, export, and a mobile app shell",
@@ -70,19 +70,18 @@ export function AboutTab() {
   return (
     <div className="space-y-5">
       <Card className="overflow-hidden">
-        <div className="relative p-6 sm:p-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(520px_220px_at_10%_0%,var(--ember-soft),transparent_70%)]" aria-hidden="true" />
-          <div className="relative flex flex-wrap items-center gap-5">
-            <img src={logo} alt="Nana" className="h-20 w-20 shrink-0 drop-shadow-[0_12px_24px_rgba(0,0,0,0.35)]" />
+        <div className="p-6 sm:p-8">
+          <div className="flex flex-wrap items-center gap-5">
+            <img src={logo} alt="Nana" className="h-20 w-20 shrink-0" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="font-display text-3xl leading-none tracking-tight text-ink">Nana</h2>
                 <Badge tone="neutral">v{versionInfo.currentVersion}</Badge>
                 {versionInfo.updateAvailable && versionInfo.latestVersion && (
-                  <Badge tone="ember">v{versionInfo.latestVersion} available</Badge>
+                  <Badge tone="signal">v{versionInfo.latestVersion} available</Badge>
                 )}
               </div>
-              <p className="mt-2 font-display text-base italic text-ink-secondary">Not Another Notes App</p>
+              <p className="mt-2 font-display text-base text-ink-secondary">Not Another Notes App</p>
               <p className="mt-3 max-w-xl text-sm leading-relaxed text-ink-secondary">
                 A self-hosted document workspace with a warm desk, a clear board, and your own AI. Built to keep the
                 writing — and the work around it — in one place you control.
@@ -90,7 +89,7 @@ export function AboutTab() {
             </div>
           </div>
 
-          <div className="relative mt-6 flex flex-wrap gap-2">
+          <div className="mt-6 flex flex-wrap gap-2">
             <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer">
               <Button variant="secondary" size="sm" iconRight={<ArrowTopRightOnSquareIcon />}>
                 Website
@@ -116,7 +115,7 @@ export function AboutTab() {
           <ul className="mt-4 space-y-2.5">
             {FEATURES.map((feature) => (
               <li key={feature} className="flex items-start gap-2.5 text-sm text-ink-secondary">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ember/80" aria-hidden="true" />
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-signal/80" aria-hidden="true" />
                 {feature}
               </li>
             ))}
@@ -144,7 +143,7 @@ export function AboutTab() {
 
           <Card className="p-5 sm:p-6">
             <div className="flex items-center gap-2">
-              <HeartIcon className="h-4 w-4 text-ember" />
+              <HeartIcon className="h-4 w-4 text-signal" />
               <h3 className="font-display text-lg text-ink">Support Nana</h3>
             </div>
             <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
@@ -168,7 +167,7 @@ export function AboutTab() {
       <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-xs text-ink-muted">
         <span>
           AGPL-3.0 · © 2026{" "}
-          <a href="https://github.com/zbejas" target="_blank" rel="noopener noreferrer" className="text-ink-secondary hover:text-ember">
+          <a href="https://github.com/zbejas" target="_blank" rel="noopener noreferrer" className="text-ink-secondary hover:text-signal">
             Zbejas
           </a>
         </span>

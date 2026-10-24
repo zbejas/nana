@@ -221,14 +221,14 @@ export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onC
               disabled={isUpdating}
               label={
                 <span className="flex items-center gap-2">
-                  <ShieldCheckIcon className="h-4 w-4 text-ember" aria-hidden="true" />
+                  <ShieldCheckIcon className="h-4 w-4 text-signal" aria-hidden="true" />
                   Administrator privileges
                 </span>
               }
               description={
                 <>
                   <ExclamationTriangleIcon
-                    className="mr-1 inline h-3.5 w-3.5 text-brass"
+                    className="mr-1 inline h-3.5 w-3.5 text-warning"
                     aria-hidden="true"
                   />
                   Admins have full access to manage users, documents, and system settings.

@@ -33,7 +33,7 @@ export function ContentSizeWarning({ content }: ContentSizeWarningProps) {
       className={`mx-3 mt-2 flex shrink-0 items-start gap-2.5 rounded-control border px-3 py-2.5 text-xs sm:mx-4 ${
         overHardLimit
           ? 'border-danger/35 bg-danger-soft text-danger'
-          : 'border-brass/30 bg-brass-soft text-brass'
+          : 'border-warning/30 bg-warning-soft text-warning'
       }`}
     >
       <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />

@@ -11,10 +11,13 @@ import { ConfirmEmailChangePage } from "./pages/ConfirmEmailChangePage";
 import { Sidebar } from "./components/Sidebar";
 import { InstallBanner } from "./components/pwa/InstallBanner";
 import { ToastHost } from "./components/ToastHost";
+import { AddToBoardHost } from "./components/board/AddToBoardHost";
 import { useAuth } from "./lib/auth";
 
 // Lazy load heavy routes for code splitting
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const BoardsPage = lazy(() => import("./pages/BoardsPage"));
+const BoardArchivePage = lazy(() => import("./pages/BoardArchivePage"));
 const BoardPage = lazy(() => import("./pages/BoardPage"));
 const DocumentEditor = lazy(() => import("./components/DocumentEditor"));
 const PublicDocumentPage = lazy(() => import("./pages/PublicDocumentPage"));
@@ -62,7 +65,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex h-screen items-center justify-center bg-canvas">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-9 w-9 animate-spin rounded-full border-2 border-line-strong border-t-ember" />
+          <div className="h-9 w-9 animate-spin rounded-full border-2 border-line-strong border-t-signal" />
           <p className="text-sm text-ink-muted">Opening your workspace…</p>
         </div>
       </div>
@@ -177,8 +180,11 @@ function AppContent() {
 
   // Reset editor state when navigating away from document routes
   useEffect(() => {
-    const persistentRoutes = ['/timeline', '/board', '/folders', '/chat'];
-    if (!location.pathname.startsWith('/document') && !persistentRoutes.includes(location.pathname)) {
+    const persistentRoutes = ['/timeline', '/folders', '/chat'];
+    const isPersistentRoute =
+      persistentRoutes.includes(location.pathname) || location.pathname.startsWith('/board');
+
+    if (!location.pathname.startsWith('/document') && !isPersistentRoute) {
       reset();
     }
   }, [location.pathname, reset]);
@@ -258,7 +264,7 @@ function AppContent() {
           <Suspense fallback={
             <div className="flex h-screen items-center justify-center bg-canvas">
               <div className="flex flex-col items-center gap-4">
-                <div className="h-9 w-9 animate-spin rounded-full border-2 border-line-strong border-t-ember" />
+                <div className="h-9 w-9 animate-spin rounded-full border-2 border-line-strong border-t-signal" />
                 <p className="text-sm text-ink-muted">Loading…</p>
               </div>
             </div>
@@ -276,7 +282,9 @@ function AppContent() {
               <Route path="/folders/shared" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/folders/:folderId" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/timeline" element={<ProtectedRoute><TimelinePage /></ProtectedRoute>} />
-              <Route path="/board" element={<ProtectedRoute><BoardPage /></ProtectedRoute>} />
+              <Route path="/board" element={<ProtectedRoute><BoardsPage /></ProtectedRoute>} />
+              <Route path="/board/archive" element={<ProtectedRoute><BoardArchivePage /></ProtectedRoute>} />
+              <Route path="/board/:boardId" element={<ProtectedRoute><BoardPage /></ProtectedRoute>} />
               <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
               <Route path="/chat/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
@@ -290,11 +298,12 @@ function AppContent() {
       </div>
       {shouldShowSidebar && isMobile && (
         <div
-          className={`md:hidden fixed inset-0 z-[45] bg-surface-sunken/70 backdrop-blur-sm pointer-events-none transition-opacity duration-200 ease-in-out ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}
+          className={`md:hidden fixed inset-0 z-[45] bg-scrim pointer-events-none transition-opacity duration-200 ease-in-out ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}
         />
       )}
       {shouldShowInstallPrompt && <InstallBanner />}
       <ToastHost />
+      <AddToBoardHost />
     </div>
   );
 }

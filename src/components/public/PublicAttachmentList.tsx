@@ -23,7 +23,7 @@ function AttachmentPreview({ filename, url }: { filename: string; url: string })
     }
 
     if (isTextFile(filename)) {
-        return <DocumentTextIcon className="h-4 w-4 text-ember" />;
+        return <DocumentTextIcon className="h-4 w-4 text-signal" />;
     }
 
     return <DocumentIcon className="h-4 w-4 text-ink-muted" />;
@@ -43,7 +43,7 @@ export function PublicAttachmentList({ attachments, getAttachmentUrl }: PublicAt
                         target="_blank"
                         rel="noreferrer"
                         style={{ animationDelay: `${index * 40}ms` }}
-                        className="group public-attachment-item flex items-center gap-3 rounded-panel border border-line bg-surface px-3 py-3 text-sm text-ink-muted transition-colors hover:bg-surface hover:border-brass/30"
+                        className="group public-attachment-item flex items-center gap-3 rounded-panel border border-line bg-surface px-3 py-3 text-sm text-ink-muted transition-colors hover:bg-surface hover:border-warning/30"
                     >
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-surface">
                             <AttachmentPreview filename={filename} url={url} />

@@ -53,7 +53,7 @@ function RenameInput({ initialName, depth, onSubmit, onCancel }: {
       className="flex items-center gap-1.5 rounded-[6px] bg-surface-raised py-1 pr-2"
       style={{ paddingLeft: `${depth * INDENT_PX + INDENT_PX + 22}px` }}
     >
-      <FolderIcon className="h-3.5 w-3.5 shrink-0 text-brass" />
+      <FolderIcon className="h-3.5 w-3.5 shrink-0 text-warning" />
       <input
         ref={inputRef}
         type="text"
@@ -174,7 +174,7 @@ export function FolderTree({
             ) : (
               <div className="group relative">
                 {isDropTarget && dropPosition === 'above' && (
-                  <div className="absolute left-2 right-2 top-0 z-10 h-0.5 rounded-full bg-ember" />
+                  <div className="absolute left-2 right-2 top-0 z-10 h-0.5 rounded-full bg-signal" />
                 )}
 
                 <button
@@ -188,7 +188,7 @@ export function FolderTree({
                   onDrop={(event) => onDrop(event, folder.id, parentFolderId)}
                   className={`flex w-full items-center gap-1 overflow-hidden rounded-[6px] py-1 pr-7 text-left transition-colors active:cursor-grabbing ${
                     isDropTarget && dropPosition === 'into'
-                      ? 'bg-ember-soft ring-1 ring-inset ring-ember/40'
+                      ? 'bg-signal-soft ring-1 ring-inset ring-signal/40'
                       : 'hover:bg-surface-raised'
                   }`}
                   style={{ paddingLeft: `${indent}px` }}
@@ -200,16 +200,16 @@ export function FolderTree({
                       <ChevronRightIcon className={`h-3 w-3 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`} />
                     ) : null}
                   </span>
-                  <FolderIcon className={`h-3.5 w-3.5 shrink-0 ${isExpanded ? 'text-ember' : 'text-brass/80'}`} />
+                  <FolderIcon className={`h-3.5 w-3.5 shrink-0 ${isExpanded ? 'text-signal' : 'text-warning/80'}`} />
                   <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-ink-secondary group-hover:text-ink">
                     {folder.name}
                   </span>
-                  {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-brass" aria-label="Private" />}
-                  {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-sage" aria-label="Shared publicly" />}
+                  {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
+                  {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
                 </button>
 
                 {isDropTarget && dropPosition === 'below' && (
-                  <div className="absolute bottom-0 left-2 right-2 z-10 h-0.5 rounded-full bg-ember" />
+                  <div className="absolute bottom-0 left-2 right-2 z-10 h-0.5 rounded-full bg-signal" />
                 )}
 
                 <button

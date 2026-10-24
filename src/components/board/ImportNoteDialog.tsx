@@ -5,12 +5,21 @@ import { Button, Dialog, EmptyState, Input, Spinner } from '../ui';
 
 interface ImportNoteDialogProps {
   open: boolean;
+  boardId: string;
+  boardName: string;
   onClose: () => void;
   existingDocumentIds: Set<string>;
   onImport: (document: Document) => Promise<void>;
 }
 
-export function ImportNoteDialog({ open, onClose, existingDocumentIds, onImport }: ImportNoteDialogProps) {
+export function ImportNoteDialog({
+  open,
+  boardId,
+  boardName,
+  onClose,
+  existingDocumentIds,
+  onImport,
+}: ImportNoteDialogProps) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +54,7 @@ export function ImportNoteDialog({ open, onClose, existingDocumentIds, onImport 
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, boardId]);
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -70,9 +79,8 @@ export function ImportNoteDialog({ open, onClose, existingDocumentIds, onImport 
     <Dialog
       open={open}
       onClose={onClose}
-      eyebrow="Import"
-      title="Turn a note into a task"
-      description="The note stays where it is. A task is created on the board and linked back to it."
+      title={`Add a note to ${boardName}`}
+      description="A task is created on this board and linked back to the note. The note stays in your library."
       size="md"
       footer={
         <Button variant="secondary" onClick={onClose}>
@@ -103,7 +111,11 @@ export function ImportNoteDialog({ open, onClose, existingDocumentIds, onImport 
           <EmptyState
             compact
             title={documents.length === 0 ? 'No notes yet' : 'No matching notes'}
-            description={documents.length === 0 ? 'Write a note first, then bring it onto the board.' : 'Try a different search.'}
+            description={
+              documents.length === 0
+                ? 'Write a note first, then bring it onto the board.'
+                : 'Try a different search.'
+            }
           />
         ) : (
           <div className="max-h-[46dvh] space-y-1 overflow-y-auto scrollbar-autohide pr-1">
@@ -128,11 +140,11 @@ export function ImportNoteDialog({ open, onClose, existingDocumentIds, onImport 
                   {importingId === document.id ? (
                     <Spinner className="h-4 w-4" />
                   ) : alreadyOnBoard ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-sage">
+                    <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-success">
                       <CheckCircleIcon className="h-3.5 w-3.5" /> On board
                     </span>
                   ) : (
-                    <span className="shrink-0 text-[11px] font-medium text-ember">Import</span>
+                    <span className="shrink-0 text-[11px] font-medium text-signal">Import</span>
                   )}
                 </button>
               );

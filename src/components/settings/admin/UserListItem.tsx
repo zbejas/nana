@@ -25,8 +25,8 @@ export function UserListItem({ user, isCurrentUser, onEdit, onDelete }: UserList
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate font-medium text-ink">{user.name || 'Unnamed User'}</h3>
             {isCurrentUser && <Badge tone="outline">You</Badge>}
-            <Badge tone={user.admin ? 'ember' : 'neutral'}>{user.admin ? 'Admin' : 'Member'}</Badge>
-            {user.verified && <Badge tone="sage">Verified</Badge>}
+            <Badge tone={user.admin ? 'signal' : 'neutral'}>{user.admin ? 'Admin' : 'Member'}</Badge>
+            {user.verified && <Badge tone="success">Verified</Badge>}
           </div>
           <p className="break-all text-sm text-ink-secondary sm:truncate">{user.email}</p>
           <p className="mt-1 text-xs text-ink-muted">

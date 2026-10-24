@@ -190,18 +190,18 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
 
   const footerClasses = [
     'md:fixed md:bottom-0 relative z-20 md:z-40 border-t md:transition-[left] md:duration-300 md:ease-in-out motion-reduce:transition-none',
-    'bg-canvas-deep/95 backdrop-blur-xl border-line'
+    'bg-canvas-deep border-line'
   ].join(' ');
 
   const surfaceTextClass = 'text-ink-muted';
 
-  const badgeClass = 'bg-ember text-on-ember';
-  const addButtonClass = 'text-[11px] font-medium px-2 py-1 bg-ember-soft text-ember rounded-[6px] hover:bg-ember/20 transition-colors';
+  const badgeClass = 'bg-signal text-on-signal';
+  const addButtonClass = 'text-[11px] font-medium px-2 py-1 bg-signal-soft text-signal rounded-[6px] hover:bg-signal/20 transition-colors';
 
   const attachmentPanelClass = [
     'fixed md:absolute left-4 right-4 md:left-auto top-full mt-2 md:top-auto md:bottom-full md:mt-0 md:mb-2 md:right-0',
     'border rounded-panel overflow-hidden shadow-float md:min-w-[360px] max-w-[calc(100vw-2rem)] md:max-w-none max-h-[70vh] md:max-h-[520px] overflow-y-auto scrollbar-autohide z-[9999]',
-    'bg-surface-raised/95 backdrop-blur-xl border-line'
+    'bg-surface-raised border-line'
   ].join(' ');
 
   const footer = (
@@ -252,7 +252,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                 }
                 setShowAttachments(!showAttachments);
               }}
-              className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-control border px-3 text-[11px] transition-colors ${showAttachments ? 'border-ember/35 bg-ember-soft text-ember' : 'border-line bg-surface text-ink-secondary hover:border-line-strong hover:text-ink'}`}
+              className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-control border px-3 text-[11px] transition-colors ${showAttachments ? 'border-signal/35 bg-signal-soft text-signal' : 'border-line bg-surface text-ink-secondary hover:border-line-strong hover:text-ink'}`}
             >
               <PaperClipIcon className="w-3.5 h-3.5" />
               <span>Attachments</span>
@@ -267,7 +267,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
             {showAttachments && createPortal(
               <div
                 ref={attachmentsMenuRef}
-                className="fixed overflow-hidden rounded-panel border border-line bg-surface-raised/95 shadow-float backdrop-blur-xl w-[calc(100vw-2rem)] md:w-auto md:min-w-[380px] md:max-w-none max-h-[70vh] md:max-h-[520px] overflow-y-auto scrollbar-autohide z-[10001]"
+                className="fixed overflow-hidden rounded-panel border border-line bg-surface-raised shadow-float w-[calc(100vw-2rem)] md:w-auto md:min-w-[380px] md:max-w-none max-h-[70vh] md:max-h-[520px] overflow-y-auto scrollbar-autohide z-[10001]"
                 style={attachmentsPosition}
               >
                 <div className="flex items-center justify-between border-b border-line px-4 py-3">
@@ -383,7 +383,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                                   </div>
                                 ) : isTextFile(att.filename) ? (
                                   <div className="w-full h-full flex items-center justify-center">
-                                    <DocumentTextIcon className="w-4 h-4 text-ember" />
+                                    <DocumentTextIcon className="w-4 h-4 text-signal" />
                                   </div>
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center">
@@ -455,7 +455,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                               {!isMarkedForRemoval && !viewable && (
                                 <button
                                   onClick={handleDownload}
-                                  className="p-1 text-ember hover:text-ember hover:bg-ember-soft rounded transition-colors"
+                                  className="p-1 text-signal hover:text-signal hover:bg-signal-soft rounded transition-colors"
                                   title="Download"
                                 >
                                   <ArrowDownTrayIcon className="w-4 h-4" />
@@ -472,7 +472,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                                       }
                                       setPendingDeleteFilename(null);
                                     }}
-                                    className="p-1 text-sage hover:text-sage hover:bg-sage-soft rounded transition-colors"
+                                    className="p-1 text-success hover:text-success hover:bg-success-soft rounded transition-colors"
                                     title="Confirm delete"
                                   >
                                     <CheckIcon className="w-4 h-4" />
@@ -502,7 +502,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                                   }}
                                   className={`p-1 rounded transition-colors ${
                                     isMarkedForRemoval
-                                      ? 'text-sage hover:text-sage hover:bg-sage-soft'
+                                      ? 'text-success hover:text-success hover:bg-success-soft'
                                       : 'text-danger hover:text-danger hover:bg-danger-soft'
                                   }`}
                                   title={isMarkedForRemoval ? "Undo removal" : "Remove"}
@@ -524,16 +524,16 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                       {newAttachments.map((file) => (
                         <div
                           key={file.name}
-                          className="px-3 py-2 bg-ember-soft/50 hover:bg-ember-soft transition-colors border-b border-line last:border-b-0"
+                          className="px-3 py-2 bg-signal-soft/50 hover:bg-signal-soft transition-colors border-b border-line last:border-b-0"
                         >
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 flex-shrink-0 rounded bg-surface-raised flex items-center justify-center">
-                              <PlusIcon className="w-4 h-4 text-ember" />
+                              <PlusIcon className="w-4 h-4 text-signal" />
                             </div>
 
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs text-ember truncate">{file.name}</p>
-                              <p className="text-xs text-ember/60">{formatFileSize(file.size)}</p>
+                              <p className="text-xs text-signal truncate">{file.name}</p>
+                              <p className="text-xs text-signal/60">{formatFileSize(file.size)}</p>
                             </div>
 
                             {!readOnly && (
@@ -591,7 +591,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                 }
                 handleShowVersionHistory();
               }}
-              className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-control border px-3 text-[11px] transition-colors ${showVersionHistory ? 'border-ember/35 bg-ember-soft text-ember' : 'border-line bg-surface text-ink-secondary hover:border-line-strong hover:text-ink'}`}
+              className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-control border px-3 text-[11px] transition-colors ${showVersionHistory ? 'border-signal/35 bg-signal-soft text-signal' : 'border-line bg-surface text-ink-secondary hover:border-line-strong hover:text-ink'}`}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -603,7 +603,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
             {showVersionHistory && createPortal(
               <div
                 ref={versionMenuRef}
-                className="fixed overflow-hidden rounded-panel border border-line bg-surface-raised/95 shadow-float backdrop-blur-xl w-[calc(100vw-2rem)] md:w-[280px] max-h-[420px] overflow-y-auto scrollbar-autohide z-[10001]"
+                className="fixed overflow-hidden rounded-panel border border-line bg-surface-raised shadow-float w-[calc(100vw-2rem)] md:w-[280px] max-h-[420px] overflow-y-auto scrollbar-autohide z-[10001]"
                 style={versionPosition}
               >
                 <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">

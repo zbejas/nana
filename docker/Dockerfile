@@ -52,8 +52,8 @@ RUN bun install --frozen-lockfile --trust-dependencies
 
 COPY . .
 
-# Ensure pb_data directory exists for PocketBase and Zvec vector store
-RUN mkdir -p /app/pocketbase/pb_data/zvec
+# Ensure pb_data directory exists for PocketBase
+RUN mkdir -p /app/pocketbase/pb_data
 
 RUN chmod +x /app/docker/docker-entrypoint.sh
 
@@ -72,7 +72,7 @@ RUN bun install --frozen-lockfile --trust-dependencies
 
 COPY . .
 
-RUN rm -rf /app/pocketbase/pb_data && mkdir -p /app/pocketbase/pb_data/zvec
+RUN rm -rf /app/pocketbase/pb_data && mkdir -p /app/pocketbase/pb_data
 RUN chmod +x /app/docker/docker-test-entrypoint.sh
 
 ENTRYPOINT ["/app/docker/docker-test-entrypoint.sh"]
@@ -93,7 +93,7 @@ COPY src ./src
 COPY pocketbase/pb_migrations ./pocketbase/pb_migrations
 COPY pocketbase/pb_hooks ./pocketbase/pb_hooks
 COPY docker/docker-entrypoint.sh ./docker/docker-entrypoint.sh
-RUN mkdir -p /app/pocketbase/pb_data/zvec
+RUN mkdir -p /app/pocketbase/pb_data
 RUN chmod +x /app/docker/docker-entrypoint.sh
 
 EXPOSE 3000 8090

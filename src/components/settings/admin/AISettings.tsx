@@ -4,7 +4,6 @@ import type { RecordModel } from 'pocketbase';
 import type { AIConfig, AIProviderKey, AIProviderConfig } from '../../../lib/ai/types';
 import { DEFAULT_AI_CONFIG, PROVIDER_META } from '../../../lib/ai/types';
 import { ProviderCard } from './ai/ProviderCard';
-import { EmbeddingSettings } from './ai/EmbeddingSettings';
 import { createLogger } from '../../../lib/logger';
 import { Button, Card, Field, SectionHeading, Spinner, Textarea } from '../../ui';
 
@@ -95,7 +94,7 @@ export function AISettings() {
         const newRecord = await pb.collection('settings').create<SettingRecord>({
           key: 'ai_config',
           value: config,
-          description: 'AI provider configuration (models, API keys, embedding settings)',
+          description: 'AI provider configuration (models, API keys, prompts)',
         });
         setRecord(newRecord);
       }
@@ -124,7 +123,7 @@ export function AISettings() {
         <SectionHeading
           eyebrow="Model access"
           title="AI configuration"
-          description="Configure AI providers for chat and embeddings. Only one provider can be active at a time."
+          description="Configure AI providers for chat. Only one provider can be active at a time."
           actions={
             <Button variant="primary" loading={saving} onClick={handleSave}>
               Save configuration
@@ -138,7 +137,7 @@ export function AISettings() {
           </p>
         )}
         {successMessage && (
-          <p className="mt-4 text-sm text-sage" role="status">
+          <p className="mt-4 text-sm text-success" role="status">
             {successMessage}
           </p>
         )}
@@ -164,8 +163,8 @@ export function AISettings() {
 
         {config.activeProvider && (
           <p className="mt-4 text-xs leading-relaxed text-ink-muted">
-            <span className="font-medium text-brass">Active provider:</span>{' '}
-            {PROVIDER_META[config.activeProvider].label}. Switching providers will require re-embedding all documents.
+            <span className="font-medium text-warning">Active provider:</span>{' '}
+            {PROVIDER_META[config.activeProvider].label}.
           </p>
         )}
 
@@ -206,8 +205,6 @@ export function AISettings() {
           </Field>
         </div>
       </Card>
-
-      <EmbeddingSettings />
     </div>
   );
 }

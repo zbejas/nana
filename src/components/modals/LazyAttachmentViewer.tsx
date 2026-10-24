@@ -12,7 +12,7 @@ export function LazyAttachmentViewer(props: AttachmentViewerModalProps) {
       fallback={
         <div className="fixed inset-0 z-[10002] flex items-stretch md:items-center md:justify-center md:p-4">
           <div
-            className="absolute inset-0 bg-[var(--scrim)] backdrop-blur-md"
+            className="absolute inset-0 bg-scrim"
             onClick={props.onClose}
           />
           <div className="relative flex h-full w-full flex-col overflow-hidden bg-surface md:max-h-[90vh] md:max-w-6xl md:rounded-panel md:border md:border-line md:shadow-float">

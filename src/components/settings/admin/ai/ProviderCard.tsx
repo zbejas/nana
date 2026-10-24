@@ -26,7 +26,7 @@ export function ProviderCard({
     <div
       className={cn(
         'overflow-hidden rounded-panel border bg-surface-sunken/40 transition-colors',
-        isActive ? 'border-ember/35' : 'border-line'
+        isActive ? 'border-signal/35' : 'border-line'
       )}
     >
       {/* Header */}
@@ -41,7 +41,7 @@ export function ProviderCard({
             <span className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-ink">{meta.label}</span>
               {isActive && (
-                <Badge tone="ember" dot>
+                <Badge tone="signal" dot>
                   Active
                 </Badge>
               )}
@@ -59,14 +59,14 @@ export function ProviderCard({
             aria-label={`${isActive ? 'Deactivate' : 'Activate'} ${meta.label}`}
             onClick={onToggleActive}
             className={cn(
-              'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember',
-              isActive ? 'border-ember/50 bg-ember' : 'border-line-strong bg-surface-sunken'
+              'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal',
+              isActive ? 'border-signal/50 bg-signal' : 'border-line-strong bg-surface-sunken'
             )}
           >
             <span
               className={cn(
                 'h-4 w-4 rounded-full transition-transform duration-150',
-                isActive ? 'translate-x-[1.45rem] bg-on-ember' : 'translate-x-[0.2rem] bg-ink-muted'
+                isActive ? 'translate-x-[1.45rem] bg-on-signal' : 'translate-x-[0.2rem] bg-ink-muted'
               )}
               aria-hidden="true"
             />
@@ -144,26 +144,6 @@ export function ProviderCard({
                   : providerKey === 'google'
                     ? 'e.g. gemini-2.0-flash'
                     : 'e.g. llama3'
-              }
-            />
-          </Field>
-
-          <Field
-            label="Embedding Model"
-            htmlFor={`${providerKey}-embedding-model`}
-            hint="The model identifier used for generating embeddings."
-          >
-            <Input
-              id={`${providerKey}-embedding-model`}
-              type="text"
-              value={config.embeddingModel}
-              onChange={(e) => onChange('embeddingModel', e.target.value)}
-              placeholder={
-                providerKey === 'openai'
-                  ? 'e.g. text-embedding-3-small'
-                  : providerKey === 'google'
-                    ? 'e.g. text-embedding-004'
-                    : 'e.g. nomic-embed-text'
               }
             />
           </Field>

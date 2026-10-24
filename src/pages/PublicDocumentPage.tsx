@@ -67,7 +67,7 @@ export function PublicDocumentPage() {
             <div className="flex min-h-screen items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                     <img src={logo} alt="Nana" className="h-14 w-14 opacity-90" />
-                    <span className="h-6 w-6 animate-spin rounded-full border-2 border-line-strong border-t-ember" />
+                    <span className="h-6 w-6 animate-spin rounded-full border-2 border-line-strong border-t-signal" />
                     <span className="text-sm text-ink-muted">Opening the note…</span>
                 </div>
             </div>
@@ -77,7 +77,7 @@ export function PublicDocumentPage() {
     if (error || !data) {
         return (
             <div className="flex min-h-screen items-center justify-center px-4 py-10">
-                <div className="w-full max-w-md rounded-panel border border-line bg-surface p-6 text-center panel-hairline shadow-panel sm:p-8">
+                <div className="w-full max-w-md rounded-panel border border-line bg-surface p-6 text-center sm:p-8">
                     <img src={logo} alt="Nana" className="mx-auto h-16 w-16" />
                     <p className="eyebrow mt-5">Public note</p>
                     <h1 className="mt-2 font-display text-2xl text-ink">This link is not available</h1>
@@ -104,7 +104,7 @@ export function PublicDocumentPage() {
                 </span>
             )}
             {data.expiresAt && (
-                <Badge tone="brass">Expires {new Date(data.expiresAt).toLocaleDateString()}</Badge>
+                <Badge tone="warning">Expires {new Date(data.expiresAt).toLocaleDateString()}</Badge>
             )}
         </div>
     );
@@ -128,7 +128,7 @@ export function PublicDocumentPage() {
 
             <footer className="px-4 pb-6 pt-4 text-center text-[11px] text-ink-muted">
                 Published with{' '}
-                <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-ember hover:text-ember-strong">
+                <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-signal hover:text-signal-strong">
                     Nana
                 </a>
             </footer>

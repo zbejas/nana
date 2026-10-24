@@ -29,14 +29,14 @@ export function Switch({ checked, onChange, label, description, disabled, id, cl
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
-          'relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember disabled:opacity-45',
-          checked ? 'border-ember/50 bg-ember' : 'border-line-strong bg-surface-sunken'
+          'relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal disabled:opacity-45',
+          checked ? 'border-signal/50 bg-signal' : 'border-line-strong bg-surface-sunken'
         )}
       >
         <span
           className={cn(
             'h-4 w-4 rounded-full transition-transform duration-150',
-            checked ? 'translate-x-[1.45rem] bg-on-ember' : 'translate-x-[0.2rem] bg-ink-muted'
+            checked ? 'translate-x-[1.45rem] bg-on-signal' : 'translate-x-[0.2rem] bg-ink-muted'
           )}
           aria-hidden="true"
         />
@@ -60,7 +60,7 @@ export function Checkbox({ checked, onChange, label, description, disabled, id, 
     <label
       htmlFor={id}
       className={cn(
-        'flex cursor-pointer items-start gap-3 rounded-control border border-line bg-surface-sunken/60 px-3.5 py-3 transition-colors hover:border-line-strong',
+        'flex cursor-pointer items-start gap-3 rounded-control border border-line bg-surface-sunken px-3.5 py-3 transition-colors hover:border-line-strong',
         disabled && 'cursor-not-allowed opacity-50',
         className
       )}
@@ -71,7 +71,7 @@ export function Checkbox({ checked, onChange, label, description, disabled, id, 
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-line-strong bg-surface accent-[var(--ember)]"
+        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-line-strong bg-surface accent-[var(--signal)]"
       />
       <span className="min-w-0">
         <span className="block text-sm font-medium text-ink">{label}</span>
@@ -124,10 +124,10 @@ export function SegmentedControl<T extends string>({
             title={option.title ?? option.label}
             onClick={() => onChange(option.value)}
             className={cn(
-              'inline-flex items-center justify-center gap-1.5 rounded-[7px] font-medium transition-colors duration-150',
+              'inline-flex items-center justify-center gap-1.5 rounded-[4px] font-medium transition-colors duration-150',
               size === 'sm' ? 'h-7 px-2.5 text-[12px]' : 'h-8 px-3 text-[13px]',
               active
-                ? 'bg-surface-raised text-ink shadow-sm'
+                ? 'bg-surface-raised text-ink'
                 : 'text-ink-muted hover:text-ink-secondary'
             )}
           >

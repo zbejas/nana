@@ -26,8 +26,8 @@ export function Avatar({ src, name, size = 'md', className, ring }: AvatarProps)
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-surface-raised font-medium text-brass',
-        ring && 'ring-2 ring-ember/25 ring-offset-2 ring-offset-canvas',
+        'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-surface-raised font-medium text-ink-secondary',
+        ring && 'ring-2 ring-signal/25 ring-offset-2 ring-offset-canvas',
         sizes[size],
         className
       )}

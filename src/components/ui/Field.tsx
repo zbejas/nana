@@ -9,7 +9,7 @@ import { ChevronDownIcon } from '@heroicons/react/20/solid';
 import { cn } from './cn';
 
 const controlBase =
-  'w-full rounded-control border border-line bg-surface-sunken text-ink transition-colors duration-150 placeholder:text-ink-muted/80 focus:border-ember/60 focus:outline-none focus:ring-2 focus:ring-ember/15 disabled:cursor-not-allowed disabled:opacity-50';
+  'w-full rounded-control border border-line-strong bg-surface-sunken text-ink transition-colors duration-150 placeholder:text-ink-muted/80 focus:border-signal focus:outline-none focus:ring-2 focus:ring-signal/20 disabled:cursor-not-allowed disabled:opacity-50';
 
 interface FieldProps {
   label?: ReactNode;

@@ -8,23 +8,24 @@ The docs describe **how the code works today**. When code and docs disagree, the
 
 | Doc | Covers | Read when… |
 | --- | --- | --- |
-| [`architecture.md`](architecture.md) | System topology, request lifecycle, data flows, source map | Starting any work |
+| [`architecture.md`](architecture.md) | System topology, request lifecycle, data flows, key files | Starting any work |
 | [`api.md`](api.md) | Bun API routes, PocketBase routes, payloads, auth | Changing an endpoint or integration |
-| [`frontend.md`](frontend.md) | React, routing, auth, Jotai, editor, settings, UI quality | Changing UI or client state |
+| [`frontend.md`](frontend.md) | React, routing, auth, Jotai, editor, boards, chat, settings, UI quality | Changing UI or client state |
 | [`pocketbase.md`](pocketbase.md) | JSVM hooks, migrations, collections, settings, trash, sharing | Changing schema or backend behavior |
-| [`ai-and-embeddings.md`](ai-and-embeddings.md) | Chat, providers, RAG, chunking, vector store, auto-embed | Touching AI features |
+| [`ai.md`](ai.md) | Chat, providers, read tools, persistence, failures | Touching AI features |
 | [`security.md`](security.md) | Trust boundaries, auth, proxy, CSP, rate limits, secrets | Changing access or exposure |
 | [`testing.md`](testing.md) | Docker test stack, layout, helpers, conventions | Adding or fixing tests |
 | [`deployment.md`](deployment.md) | Build, Docker, compose, releases, operations | Building, shipping, debugging deploys |
 | [`development.md`](development.md) | Local setup, workflow, common tasks, sharp edges | Beginning implementation |
 | [`../PRODUCT.md`](../PRODUCT.md) | Audience, product truth, principles, surfaces | Deciding what belongs in the product |
-| [`../DESIGN.md`](../DESIGN.md) | Ember & Ink tokens, type, components, motion, voice | Building or reviewing UI |
+| [`../DESIGN.md`](../DESIGN.md) | Signal & Paper tokens, type, components, motion, voice | Building or reviewing UI |
 
 ## Documentation rules
 
 1. **One subsystem per doc.** Link to another doc instead of duplicating its detail.
-2. **Update docs with behavior.** A route, schema, config, command, or architecture change updates the affected doc in the same change.
-3. **Keep the map current.** New docs must be linked from this file and `AGENTS.md`.
-4. **Docs may name files, functions, env vars, and internals.** This is engineering documentation, not the user manual.
-5. **The user-facing front door is [`../README.md`](../README.md).** Keep install and feature content there, not here.
-6. **No secrets or real credentials** in examples.
+2. **Use the five-section shape.** Subsystem docs open with `Overview`, then `Key files`, `How it works`, `Gotchas & invariants`, and `Related docs`.
+3. **Update docs with behavior.** A route, schema, config, command, or architecture change updates the affected doc in the same change.
+4. **Keep the map current.** New docs must be linked from this file and `AGENTS.md`.
+5. **Docs may name files, functions, env vars, and internals.** This is engineering documentation, not the user manual.
+6. **The user-facing front door is [`../README.md`](../README.md).** Keep install and feature content there, not here.
+7. **No secrets or real credentials** in examples.

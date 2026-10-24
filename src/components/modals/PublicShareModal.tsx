@@ -185,8 +185,8 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
                 />
 
                 {target.record.is_public && shareUrl && (
-                    <div className="rounded-control border border-ember/20 bg-ember-soft/60 p-4">
-                        <div className="flex items-center gap-2 text-sm font-medium text-ember">
+                    <div className="rounded-control border border-signal/20 bg-signal-soft/60 p-4">
+                        <div className="flex items-center gap-2 text-sm font-medium text-signal">
                             <LinkIcon className="h-4 w-4" />
                             Public URL
                         </div>

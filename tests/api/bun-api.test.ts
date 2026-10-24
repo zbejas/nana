@@ -398,6 +398,30 @@ describe("Bun API Routes", () => {
             // Auth should pass — the error should be something else (e.g., 400, 500)
             expect(res.status).not.toBe(401);
         });
+
+        test("returns 400 when message is missing", async () => {
+            const res = await fetch(`${BASE_URL}/api/chat/send`, {
+                method: "POST",
+                headers: {
+                    Authorization: userToken,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({}),
+            });
+            expect(res.status).toBe(400);
+        });
+
+        test("returns 400 for invalid JSON", async () => {
+            const res = await fetch(`${BASE_URL}/api/chat/send`, {
+                method: "POST",
+                headers: {
+                    Authorization: userToken,
+                    "Content-Type": "application/json",
+                },
+                body: "{not-json",
+            });
+            expect(res.status).toBe(400);
+        });
     });
 
     // ── GET /api/chat/conversations ──────────────────────────────────
@@ -416,25 +440,4 @@ describe("Bun API Routes", () => {
         });
     });
 
-    // ── POST /api/embeddings/embed ───────────────────────────────────
-
-    describe("POST /api/embeddings/embed", () => {
-        test("returns 401 without auth header", async () => {
-            const res = await fetch(`${BASE_URL}/api/embeddings/embed`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ documentId: "test" }),
-            });
-            expect(res.status).toBe(401);
-        });
-    });
-
-    // ── GET /api/embeddings/status ───────────────────────────────────
-
-    describe("GET /api/embeddings/status", () => {
-        test("returns 401 without auth header", async () => {
-            const res = await fetch(`${BASE_URL}/api/embeddings/status`);
-            expect(res.status).toBe(401);
-        });
-    });
 });

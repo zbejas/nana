@@ -29,7 +29,7 @@ PB_ARGS="--dir /app/pocketbase/pb_data --hooksDir /app/pocketbase/pb_hooks --mig
 
 log "Resetting PocketBase test data..."
 rm -rf "$PB_DATA_DIR"
-mkdir -p "$PB_DATA_DIR/zvec"
+mkdir -p "$PB_DATA_DIR"
 
 log "Running PocketBase migrations..."
 PB_MIGRATING=1 pocketbase migrate up $PB_ARGS >/dev/null

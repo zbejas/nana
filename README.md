@@ -32,9 +32,9 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 
 - Self-hosted by default. Your data stays on your server.
 - Markdown-first editing with live preview and attachments.
-- A kanban board for the work around your notes.
-- Built-in AI chat with RAG across your documents.
-- A warm, readable interface with night and daylight themes.
+- Multiple kanban boards for the work around your notes, with an archive.
+- Built-in AI chat that reads your notes and boards.
+- A calm, paper-like interface with night and daylight themes.
 - Modern stack: Bun, React, TailwindCSS, and PocketBase.
 - Responsive UI that works on desktop and mobile.
 
@@ -43,13 +43,13 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | | |
 |---|---|
 | **Markdown editor** | Live preview, rich formatting, and attachment support. |
-| **Board** | A four-column kanban for tasks, with drag-and-drop and one-click note import. |
-| **AI chat** | Retrieval-augmented chat with support for OpenAI, Google, and Ollama. |
+| **Boards** | Multiple four-column kanbans with drag-and-drop, note import, an archive, and permanent delete for archived boards. |
+| **AI chat** | Ask about your notes and boards. The assistant reads them on demand with OpenAI, Google, or Ollama. |
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline view. |
 | **Public sharing** | Share individual documents or entire folders via link, with optional expiration. |
 | **Version history** | Save snapshots and restore earlier states when needed. |
 | **Trash system** | Recover deleted content instead of losing it permanently. |
-| **Mobile-friendly** | Clean, responsive interface across screen sizes, with a warm night theme and a daylight theme. |
+| **Mobile-friendly** | Clean, responsive interface across screen sizes, with dark and light themes. |
 
 ## Quick Start
 
@@ -73,15 +73,21 @@ docker run -d \
 
 Open `http://localhost:3000`, create your first account, and start writing.
 
+## Upgrading
+
+Existing tasks that predate multiple boards are moved onto a per-author “My board” the first time the current release starts. Boards are archived before they can be deleted permanently; deleting an archived board removes its tasks, but leaves the notes those tasks came from in your library.
+
+If you are upgrading from a release with built-in semantic search, the old vector index is no longer used. Stop the stack, back up your data directory, and remove its `zvec` folder to reclaim disk. The [deployment guide](docs/deployment.md#manual-zvec-cleanup-optional) has the exact commands.
+
 ## Default Access
 
 | Port | Service |
 |---|---|
 | `3000` | Nana web app |
-| `8090` | PocketBase admin UI |
+| `8090` | PocketBase admin UI (development stack) |
 
 > [!NOTE]
-> Port `8090` is for PocketBase administration. The app itself is accessed through port `3000`.
+> The production compose file publishes only `3000`. Port `8090` is exposed by the development stack for PocketBase administration; use the app's settings for normal admin work.
 
 ## Environment Variables
 
@@ -93,10 +99,10 @@ Open `http://localhost:3000`, create your first account, and start writing.
 | `RAM_CACHE` | `false` | Use RAM for export cache |
 | `PB_SUPERUSER_EMAIL` | — | Auto-provisioned superuser email |
 | `PB_SUPERUSER_PASSWORD` | — | Auto-provisioned superuser password |
-| `DEBUG` | `false` | Enable verbose debug logs in production |
+| `DEBUG` | `false` | Enable verbose server logs in production |
 
 > [!TIP]
-> Set `DEBUG=true` to enable verbose debug logging in production. Useful for troubleshooting AI chat, RAG, and embedding issues.
+> Set `DEBUG=true` to enable verbose server logs in production. Useful for troubleshooting AI provider and chat tool failures.
 
 ## Development
 

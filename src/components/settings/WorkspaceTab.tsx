@@ -26,7 +26,7 @@ const SECTIONS: Array<{
   { key: 'people', label: 'People', icon: UserGroupIcon, description: 'Members and their access' },
   { key: 'email', label: 'Email', icon: EnvelopeIcon, description: 'Outgoing mail and sender identity' },
   { key: 'signin', label: 'Sign-in', icon: KeyIcon, description: 'OAuth providers' },
-  { key: 'ai', label: 'AI & search', icon: CpuChipIcon, description: 'Models, prompts, and embeddings' },
+  { key: 'ai', label: 'AI', icon: CpuChipIcon, description: 'Models and prompts' },
 ];
 
 interface WorkspaceTabProps {
@@ -58,7 +58,7 @@ export function WorkspaceTab({ section }: WorkspaceTabProps) {
                 onClick={() => navigate(`/settings/admin/${item.key}`)}
                 className={`inline-flex h-8 shrink-0 items-center gap-2 rounded-full border px-3 text-[12px] transition-colors ${
                   isActive
-                    ? 'border-ember/35 bg-ember-soft text-ember'
+                    ? 'border-signal/35 bg-signal-soft text-signal'
                     : 'border-line bg-surface text-ink-secondary hover:border-line-strong hover:text-ink'
                 }`}
               >

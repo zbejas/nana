@@ -36,7 +36,7 @@ export function SettingsPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <span className="h-8 w-8 animate-spin rounded-full border-2 border-line-strong border-t-ember" />
+        <span className="h-8 w-8 animate-spin rounded-full border-2 border-line-strong border-t-signal" />
       </div>
     );
   }
@@ -85,7 +85,7 @@ export function SettingsPage() {
                     aria-current={active ? 'page' : undefined}
                     className={`inline-flex h-9 w-full items-center gap-2.5 rounded-control px-3 text-[13px] transition-colors ${
                       active
-                        ? 'bg-ember-soft font-medium text-ember'
+                        ? 'bg-signal-soft font-medium text-signal'
                         : 'text-ink-secondary hover:bg-surface-raised hover:text-ink'
                     }`}
                   >

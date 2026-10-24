@@ -5,17 +5,18 @@ const logger = createLogger('DocTrash');
 import type { Document } from './types';
 
 async function postTrashAction(path: string, payload: Record<string, unknown>) {
+    const token = pb.authStore.token;
     const response = await fetch(`/pb${path}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': pb.authStore.token,
+            'Authorization': token,
         },
         body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
-        invalidateAuthOnUnauthorized(response.status);
+        invalidateAuthOnUnauthorized(response.status, token);
         let message = 'Trash request failed';
         try {
             const body = await response.json();

@@ -2,9 +2,13 @@ import { serverConfig } from "../../lib/config";
 import { getSuperuserToken, invalidateSuperuserToken } from "./superuser";
 import { sanitizeHtml } from "../../lib/sanitize";
 import type { AIConfig } from "../../lib/ai/types";
-import type { PBConversation, ChatMessage, PBListResponse } from "./types";
+import type { PBConversation, ChatMessage, ChatToolActivity, PBListResponse } from "./types";
+import { CHAT_TOOL_NAMES } from "./tools";
 
 const POCKETBASE_URL = serverConfig.pocketbaseUrl;
+
+const ALLOWED_TOOLS = new Set<string>(CHAT_TOOL_NAMES);
+const ALLOWED_TOOL_STATUSES = new Set(["success", "error"]);
 
 /**
  * Generic PocketBase REST fetch helper.
@@ -74,15 +78,61 @@ export async function fetchAIConfig(): Promise<AIConfig> {
 // ── Conversations ────────────────────────────────────────────────────
 
 /**
+ * Allowlist persisted tool activity. Only the tool name and a terminal status
+ * survive; call ids, arguments, outputs and arbitrary model fields are dropped.
+ */
+function sanitizeTools(value: unknown): ChatToolActivity[] {
+    if (!Array.isArray(value)) return [];
+
+    const byName = new Map<string, ChatToolActivity>();
+
+    for (const entry of value) {
+        if (!entry || typeof entry !== "object") continue;
+        const { name, status } = entry as { name?: unknown; status?: unknown };
+        if (typeof name !== "string" || !ALLOWED_TOOLS.has(name)) continue;
+        if (typeof status !== "string" || !ALLOWED_TOOL_STATUSES.has(status)) continue;
+
+        const nextStatus = status as ChatToolActivity["status"];
+        const existing = byName.get(name);
+        if (!existing || nextStatus === "error") {
+            byName.set(name, { name, status: nextStatus });
+        }
+    }
+
+    return [...byName.values()];
+}
+
+/**
+ * Build a safe stored message: keep only known fields and sanitize content.
+ * Older stored messages may contain extra fields (for example `sources`); they
+ * are tolerated on read and simply not written back.
+ */
+async function sanitizeMessage(msg: ChatMessage): Promise<ChatMessage> {
+    const sanitized: ChatMessage = {
+        role: msg.role,
+        content: await sanitizeHtml(msg.content),
+    };
+
+    if (typeof msg.reasoning === "string" && msg.reasoning) {
+        sanitized.reasoning = msg.reasoning;
+    }
+    if (typeof msg.model === "string" && msg.model) {
+        sanitized.model = msg.model;
+    }
+
+    const tools = sanitizeTools(msg.tools);
+    if (tools.length > 0) {
+        sanitized.tools = tools;
+    }
+
+    return sanitized;
+}
+
+/**
  * Sanitize the content of each ChatMessage before persisting.
  */
 async function sanitizeMessages(messages: ChatMessage[]): Promise<ChatMessage[]> {
-    return Promise.all(
-        messages.map(async (msg) => ({
-            ...msg,
-            content: await sanitizeHtml(msg.content),
-        }))
-    );
+    return Promise.all(messages.map(sanitizeMessage));
 }
 
 /**
@@ -150,10 +200,7 @@ export async function appendMessage(
     message: ChatMessage
 ): Promise<PBConversation> {
     // Sanitize the message content before persisting
-    const sanitizedMessage: ChatMessage = {
-        ...message,
-        content: await sanitizeHtml(message.content),
-    };
+    const sanitizedMessage = await sanitizeMessage(message);
 
     // Fetch current messages, append, and save
     const conv = await getConversation(authHeader, conversationId);

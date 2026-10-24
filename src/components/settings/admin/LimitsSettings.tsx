@@ -240,7 +240,7 @@ export function LimitsSettings() {
           </Field>
 
           <div className="mt-auto flex flex-wrap items-center justify-end gap-3 border-t border-line pt-4">
-            {message && <p className="mr-auto text-sm text-sage">{message}</p>}
+            {message && <p className="mr-auto text-sm text-success">{message}</p>}
             <Button type="submit" variant="primary" loading={saving} disabled={disabled}>
               Save limits
             </Button>
@@ -308,7 +308,7 @@ export function LimitsSettings() {
           </Field>
 
           <div className="mt-auto flex flex-wrap items-center justify-end gap-3 border-t border-line pt-4">
-            {rlMessage && <p className="mr-auto text-sm text-sage">{rlMessage}</p>}
+            {rlMessage && <p className="mr-auto text-sm text-success">{rlMessage}</p>}
             {!rlForm.enabled && <p className="mr-auto text-sm text-ink-muted">Rate limiting is off.</p>}
             <Button type="submit" variant="primary" loading={rlSaving} disabled={rlDisabled}>
               Save rate limits

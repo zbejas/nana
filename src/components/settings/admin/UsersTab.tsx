@@ -296,7 +296,7 @@ export function UsersTab() {
               </p>
             )}
             {userSuccess && (
-              <p className="text-sm text-sage" role="status">
+              <p className="text-sm text-success" role="status">
                 {userSuccess}
               </p>
             )}

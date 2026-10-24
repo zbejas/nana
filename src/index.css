@@ -3,10 +3,46 @@
 @import "@uiw/react-markdown-preview/markdown.css";
 
 /*
- * Ember & Ink — Nana's visual world.
- * A writer's desk after dark: warm ink grounds, cream paper type, fox-ember
- * accents. Light theme is the same desk at noon, not a different app.
+ * Signal & Paper — Nana's visual world.
+ * Bone and charcoal neutrals, one ultramarine signal, mono metadata, and
+ * editorial rules. Light theme is the same ledger on paper, not a different app.
  */
+
+/* ------------------------------------------------------------------ */
+/* Typefaces                                                           */
+/* ------------------------------------------------------------------ */
+
+@font-face {
+  font-family: "Schibsted Grotesk";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("./assets/fonts/schibsted-grotesk-variable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Schibsted Grotesk";
+  font-style: italic;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("./assets/fonts/schibsted-grotesk-variable-italic.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/jetbrains-mono-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/fonts/jetbrains-mono-500.woff2") format("woff2");
+}
 
 @theme inline {
   --color-canvas: var(--canvas);
@@ -19,55 +55,54 @@
   --color-ink: var(--ink);
   --color-ink-secondary: var(--ink-secondary);
   --color-ink-muted: var(--ink-muted);
-  --color-ember: var(--ember);
-  --color-ember-strong: var(--ember-strong);
-  --color-ember-soft: var(--ember-soft);
-  --color-on-ember: var(--on-ember);
-  --color-brass: var(--brass);
-  --color-brass-soft: var(--brass-soft);
-  --color-sage: var(--sage);
-  --color-sage-soft: var(--sage-soft);
+  --color-signal: var(--signal);
+  --color-signal-strong: var(--signal-strong);
+  --color-signal-soft: var(--signal-soft);
+  --color-on-signal: var(--on-signal);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-on-danger: var(--on-danger);
+  --color-scrim: var(--scrim);
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, ui-serif, serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-sans: "Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
-  --radius-control: 0.625rem;
-  --radius-panel: 1rem;
-  --radius-sheet: 1.25rem;
+  --radius-control: 6px;
+  --radius-panel: 10px;
+  --radius-sheet: 16px;
 
-  --shadow-panel: 0 1px 0 0 rgb(255 236 210 / 0.04) inset, 0 18px 40px -24px rgb(0 0 0 / 0.55);
-  --shadow-float: 0 1px 0 0 rgb(255 236 210 / 0.05) inset, 0 24px 60px -20px rgb(0 0 0 / 0.65);
+  --shadow-float: var(--float-shadow);
 }
 
 :root {
-  --canvas: #15100d;
-  --canvas-deep: #100c0a;
-  --surface: #1e1712;
-  --surface-raised: #271e18;
-  --surface-sunken: #130f0c;
-  --line: rgb(245 226 200 / 0.1);
-  --line-strong: rgb(245 226 200 / 0.2);
-  --ink: #f3e8d7;
-  --ink-secondary: #c3b09a;
-  --ink-muted: #907d69;
-  --ember: #e8823f;
-  --ember-strong: #f59a5c;
-  --ember-soft: rgb(232 130 63 / 0.14);
-  --on-ember: #1c120b;
-  --brass: #d6ad6b;
-  --brass-soft: rgb(214 173 107 / 0.13);
-  --sage: #9ab98c;
-  --sage-soft: rgb(147 179 134 / 0.14);
-  --danger: #e07362;
-  --danger-soft: rgb(224 115 98 / 0.14);
-  --on-danger: #1c0d0a;
-  --grain-opacity: 0.035;
-  --glow-opacity: 1;
-  --scrim: rgb(9 6 4 / 0.56);
+  --canvas: #141518;
+  --canvas-deep: #0f1012;
+  --surface: #1b1d21;
+  --surface-raised: #232529;
+  --surface-sunken: #101114;
+  --line: rgb(236 237 239 / 0.12);
+  --line-strong: rgb(236 237 239 / 0.36);
+  --ink: #ecedef;
+  --ink-secondary: #a8abb2;
+  --ink-muted: #8a8d94;
+  --signal: #7483ff;
+  --signal-strong: #95a2ff;
+  --signal-soft: rgb(116 131 255 / 0.14);
+  --on-signal: #0b0d12;
+  --warning: #d9a84e;
+  --warning-soft: rgb(217 168 78 / 0.14);
+  --success: #57c08a;
+  --success-soft: rgb(87 192 138 / 0.14);
+  --danger: #f08a80;
+  --danger-soft: rgb(240 138 128 / 0.14);
+  --on-danger: #1a0b09;
+  --scrim: rgb(0 0 0 / 0.62);
+  --float-shadow: 0 24px 60px -24px rgb(0 0 0 / 0.55);
   --mobile-navbar-height: calc(4.5rem + env(safe-area-inset-bottom));
 
   color-scheme: dark;
@@ -75,30 +110,29 @@
 
 :root[data-theme="light"],
 :root.light {
-  --canvas: #f3ece0;
-  --canvas-deep: #e9dfcd;
-  --surface: #fbf6ea;
-  --surface-raised: #fffaf1;
-  --surface-sunken: #ece2d2;
-  --line: rgb(62 45 33 / 0.13);
-  --line-strong: rgb(62 45 33 / 0.24);
-  --ink: #241a13;
-  --ink-secondary: #5b4a3b;
-  --ink-muted: #8a7764;
-  --ember: #bd5320;
-  --ember-strong: #a24315;
-  --ember-soft: rgb(189 83 32 / 0.1);
-  --on-ember: #fff8ee;
-  --brass: #8a6423;
-  --brass-soft: rgb(138 100 35 / 0.1);
-  --sage: #4f7345;
-  --sage-soft: rgb(79 115 69 / 0.12);
-  --danger: #ad3b2b;
-  --danger-soft: rgb(173 59 43 / 0.1);
-  --on-danger: #fff8ee;
-  --grain-opacity: 0.022;
-  --glow-opacity: 0.55;
-  --scrim: rgb(46 31 20 / 0.3);
+  --canvas: #f4f1e9;
+  --canvas-deep: #eae6dc;
+  --surface: #fbfaf6;
+  --surface-raised: #ffffff;
+  --surface-sunken: #ede9e0;
+  --line: rgb(26 27 30 / 0.12);
+  --line-strong: rgb(26 27 30 / 0.5);
+  --ink: #1a1b1e;
+  --ink-secondary: #53565c;
+  --ink-muted: #63656c;
+  --signal: #2b3fd1;
+  --signal-strong: #1f2fa6;
+  --signal-soft: rgb(43 63 209 / 0.1);
+  --on-signal: #ffffff;
+  --warning: #7a4b00;
+  --warning-soft: rgb(122 75 0 / 0.1);
+  --success: #17683f;
+  --success-soft: rgb(23 104 63 / 0.1);
+  --danger: #b3261e;
+  --danger-soft: rgb(179 38 30 / 0.1);
+  --on-danger: #ffffff;
+  --scrim: rgb(20 21 24 / 0.38);
+  --float-shadow: 0 24px 60px -28px rgb(20 21 24 / 0.22);
 
   color-scheme: light;
 }
@@ -115,22 +149,61 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  /* Firefox: colour only. Chromium keeps the 10px webkit scrollbar below. */
+  @supports (-moz-appearance: none) {
+    html {
+      scrollbar-width: thin;
+      scrollbar-color: var(--line-strong) transparent;
+    }
+  }
+
   body {
-    @apply relative m-0 min-w-[320px] font-sans;
+    @apply relative m-0 min-w-[320px] font-sans text-sm;
     color: var(--ink);
     background-color: var(--canvas);
+    caret-color: var(--signal);
     overflow: hidden;
     overscroll-behavior: none;
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--ember) 32%, transparent);
+    background: color-mix(in srgb, var(--signal) 30%, transparent);
     color: var(--ink);
   }
 
   :focus-visible {
-    outline: 2px solid var(--ember);
+    outline: 2px solid var(--signal);
     outline-offset: 2px;
+  }
+
+  input,
+  textarea,
+  [contenteditable="true"] {
+    caret-color: var(--signal);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--line-strong);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ink-muted);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
   button,
@@ -158,32 +231,6 @@
   }
 }
 
-/* Warm room light behind everything. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  pointer-events: none;
-  opacity: var(--glow-opacity);
-  background:
-    radial-gradient(1100px 560px at 12% -8%, rgb(232 130 63 / 0.11), transparent 62%),
-    radial-gradient(860px 520px at 96% 2%, rgb(214 173 107 / 0.06), transparent 58%),
-    radial-gradient(760px 620px at 70% 110%, rgb(114 56 42 / 0.10), transparent 60%);
-}
-
-/* Paper grain. */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: var(--grain-opacity);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-size: 180px 180px;
-}
-
 body.public-route-active {
   background-color: var(--canvas-deep);
 }
@@ -198,43 +245,43 @@ body.public-route-active {
   }
 
   .markdown-alert-note {
-    @apply border-blue-500 bg-blue-500/10;
+    @apply border-signal/40 bg-signal-soft;
   }
 
   .markdown-alert-note .markdown-alert-title {
-    @apply mb-2 flex items-center gap-2 font-bold text-blue-400;
+    @apply mb-2 flex items-center gap-2 font-semibold text-signal;
   }
 
   .markdown-alert-tip {
-    @apply border-sage bg-sage-soft;
+    @apply border-success/35 bg-success-soft;
   }
 
   .markdown-alert-tip .markdown-alert-title {
-    @apply mb-2 flex items-center gap-2 font-bold text-sage;
+    @apply mb-2 flex items-center gap-2 font-semibold text-success;
   }
 
   .markdown-alert-important {
-    @apply border-purple-500 bg-purple-500/10;
+    @apply border-line-strong bg-surface-sunken;
   }
 
   .markdown-alert-important .markdown-alert-title {
-    @apply mb-2 flex items-center gap-2 font-bold text-purple-400;
+    @apply mb-2 flex items-center gap-2 font-semibold text-ink-secondary;
   }
 
   .markdown-alert-warning {
-    @apply border-brass bg-brass-soft;
+    @apply border-warning/35 bg-warning-soft;
   }
 
   .markdown-alert-warning .markdown-alert-title {
-    @apply mb-2 flex items-center gap-2 font-bold text-brass;
+    @apply mb-2 flex items-center gap-2 font-semibold text-warning;
   }
 
   .markdown-alert-caution {
-    @apply border-danger bg-danger-soft;
+    @apply border-danger/35 bg-danger-soft;
   }
 
   .markdown-alert-caution .markdown-alert-title {
-    @apply mb-2 flex items-center gap-2 font-bold text-danger;
+    @apply mb-2 flex items-center gap-2 font-semibold text-danger;
   }
 
   .markdown-alert p:last-child {
@@ -286,13 +333,13 @@ body.public-route-active {
   }
 
   code {
-    @apply rounded px-1 py-0.5 font-mono text-sm;
-    color: var(--brass);
+    @apply rounded-[4px] border border-line px-1 py-0.5 font-mono text-[0.8125rem];
+    color: var(--ink);
     background: var(--surface-sunken);
   }
 
   pre code {
-    @apply bg-transparent p-0;
+    @apply border-0 bg-transparent p-0;
     color: var(--ink-secondary);
   }
 
@@ -302,7 +349,7 @@ body.public-route-active {
   }
 
   mark {
-    background: var(--ember-soft);
+    background: var(--signal-soft);
     color: var(--ink);
     border-radius: 2px;
     padding: 0 1px;
@@ -480,16 +527,6 @@ body.public-route-active {
   }
 }
 
-@keyframes ember-pulse {
-  0%,
-  100% {
-    opacity: 0.55;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
 @layer utilities {
   .animate-slideDown {
     animation: slideDown 200ms ease-out;
@@ -544,8 +581,8 @@ body.public-route-active {
   }
 
   .scrollbar-autohide::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
   }
 
   .scrollbar-autohide::-webkit-scrollbar-thumb {
@@ -567,17 +604,15 @@ body.public-route-active {
     background: transparent;
   }
 
-  .eyebrow {
-    font-size: 0.6875rem;
-    line-height: 1;
-    font-weight: 600;
-    letter-spacing: 0.14em;
+  .eyebrow,
+  .meta {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.4;
+    font-weight: 500;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--ink-muted);
-  }
-
-  .panel-hairline {
-    box-shadow: inset 0 1px 0 0 rgb(255 236 210 / 0.04);
   }
 }
 
@@ -619,7 +654,7 @@ body.public-route-active {
 .w-md-editor-text-pre,
 .w-md-editor-text-input {
   color: var(--ink) !important;
-  caret-color: var(--ember) !important;
+  caret-color: var(--signal) !important;
 }
 
 .w-md-editor-preview {
@@ -642,7 +677,7 @@ body.public-route-active {
 }
 
 .wmde-markdown a {
-  color: var(--ember) !important;
+  color: var(--signal) !important;
 }
 
 .wmde-markdown blockquote {

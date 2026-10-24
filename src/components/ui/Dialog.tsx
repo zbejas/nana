@@ -100,7 +100,6 @@ export function Dialog({
   onClose,
   title,
   description,
-  eyebrow,
   children,
   footer,
   size = 'md',
@@ -213,7 +212,7 @@ export function Dialog({
       style={{ zIndex }}
     >
       <div
-        className="absolute inset-0 bg-[var(--scrim)] backdrop-blur-[6px]"
+        className="absolute inset-0 bg-scrim"
         style={{
           animation: exiting
             ? 'scrim-in 160ms ease-in reverse both'
@@ -246,17 +245,16 @@ export function Dialog({
             : 'dialog-in 220ms cubic-bezier(0.22, 1, 0.36, 1)',
         }}
       >
-        {!bare && (title || showClose || eyebrow) && (
+        {!bare && (title || showClose) && (
           <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6 sm:py-5">
             <div className="min-w-0">
-              {eyebrow && <p className="eyebrow mb-1.5">{eyebrow}</p>}
               {title && (
-                <h2 id={titleId} className="font-display text-xl leading-tight text-ink">
+                <h2 id={titleId} className="font-display text-xl font-semibold leading-tight tracking-[-0.02em] text-ink">
                   {title}
                 </h2>
               )}
               {description && (
-                <p id={descriptionId} className="mt-1.5 max-w-lg text-sm leading-relaxed text-ink-secondary">
+                <p id={descriptionId} className="mt-1.5 max-w-[64ch] text-sm leading-relaxed text-ink-secondary">
                   {description}
                 </p>
               )}

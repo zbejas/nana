@@ -31,7 +31,7 @@ export function SignInPage() {
   if (loading || checking) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <span className="h-8 w-8 animate-spin rounded-full border-2 border-line-strong border-t-ember" />
+        <span className="h-8 w-8 animate-spin rounded-full border-2 border-line-strong border-t-signal" />
       </div>
     );
   }

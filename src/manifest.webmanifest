@@ -4,8 +4,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#15100d",
-  "theme_color": "#15100d",
+  "background_color": "#141518",
+  "theme_color": "#141518",
   "icons": [
     {
       "src": "/nana-192.png",

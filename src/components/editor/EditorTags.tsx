@@ -24,13 +24,13 @@ export function EditorTags({
         {tags.map((tag) => (
           <span
             key={tag}
-            className="inline-flex items-center gap-1 rounded-full border border-ember/25 bg-ember-soft py-0.5 pl-2 pr-1 text-[11px] text-ember"
+            className="inline-flex items-center gap-1 rounded-full border border-signal/25 bg-signal-soft py-0.5 pl-2 pr-1 text-[11px] text-signal"
           >
             {tag}
             {!readOnly && (
               <button
                 onClick={() => onRemoveTag(tag)}
-                className="rounded-full p-0.5 text-ember/70 transition-colors hover:bg-ember/15 hover:text-ember"
+                className="rounded-full p-0.5 text-signal/70 transition-colors hover:bg-signal/15 hover:text-signal"
                 aria-label={`Remove tag ${tag}`}
               >
                 <XMarkIcon className="h-3 w-3" />

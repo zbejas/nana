@@ -34,8 +34,8 @@ const THEME_OPTIONS: Array<{
   icon: typeof SunIcon;
 }> = [
   { value: 'system', label: 'System', description: 'Follow your device', icon: ComputerDesktopIcon },
-  { value: 'dark', label: 'Night', description: 'Warm ink and ember', icon: MoonIcon },
-  { value: 'light', label: 'Day', description: 'Paper and daylight', icon: SunIcon },
+  { value: 'dark', label: 'Night', description: 'Charcoal and signal', icon: MoonIcon },
+  { value: 'light', label: 'Day', description: 'Bone and daylight', icon: SunIcon },
 ];
 
 const AUTOSAVE_PRESETS = [
@@ -58,20 +58,20 @@ function ThemePreview({ theme }: { theme: ThemePreference }) {
     return (
       <span
         className="relative block h-16 w-full overflow-hidden rounded-[6px] border border-line"
-        style={{ background: '#15100d' }}
+        style={{ background: '#141518' }}
         aria-hidden="true"
       >
-        <span className="absolute inset-y-0 right-0 w-1/2 bg-[#f3ece0]" />
+        <span className="absolute inset-y-0 right-0 w-1/2 bg-[#f4f1e9]" />
         <span className="absolute left-2 top-2 flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#e8823f' }} />
-          <span className="h-1 w-4 rounded-full" style={{ background: '#f3e8d7' }} />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#7483ff' }} />
+          <span className="h-1 w-4 rounded-full" style={{ background: '#ecedef' }} />
         </span>
         <span className="absolute right-2 top-2 flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#bd5320' }} />
-          <span className="h-1 w-4 rounded-full" style={{ background: '#241a13' }} />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#2b3fd1' }} />
+          <span className="h-1 w-4 rounded-full" style={{ background: '#1a1b1e' }} />
         </span>
-        <span className="absolute bottom-2 left-2 h-1.5 w-6 rounded-full" style={{ background: '#e8823f' }} />
-        <span className="absolute bottom-2 right-2 h-1.5 w-6 rounded-full" style={{ background: '#bd5320' }} />
+        <span className="absolute bottom-2 left-2 h-1.5 w-6 rounded-full" style={{ background: '#7483ff' }} />
+        <span className="absolute bottom-2 right-2 h-1.5 w-6 rounded-full" style={{ background: '#2b3fd1' }} />
       </span>
     );
   }
@@ -79,21 +79,21 @@ function ThemePreview({ theme }: { theme: ThemePreference }) {
   return (
     <span
       className="relative block h-16 w-full overflow-hidden rounded-[6px] border border-line"
-      style={{ background: dark ? '#15100d' : '#f3ece0' }}
+      style={{ background: dark ? '#141518' : '#f4f1e9' }}
       aria-hidden="true"
     >
       <span className="absolute inset-x-2 top-2 flex items-center gap-1">
-        <span className="h-1.5 w-1.5 rounded-full" style={{ background: dark ? '#e8823f' : '#bd5320' }} />
-        <span className="h-1 w-6 rounded-full" style={{ background: dark ? '#f3e8d7' : '#241a13', opacity: 0.8 }} />
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: dark ? '#7483ff' : '#2b3fd1' }} />
+        <span className="h-1 w-6 rounded-full" style={{ background: dark ? '#ecedef' : '#1a1b1e', opacity: 0.8 }} />
       </span>
       <span
         className="absolute left-2 right-2 top-6 h-6 rounded-[3px]"
         style={{
-          background: dark ? '#1e1712' : '#fbf6ea',
-          border: `1px solid ${dark ? 'rgba(245,226,200,0.12)' : 'rgba(62,45,33,0.14)'}`,
+          background: dark ? '#1b1d21' : '#fbfaf6',
+          border: `1px solid ${dark ? 'rgba(236,237,239,0.12)' : 'rgba(26,27,30,0.12)'}`,
         }}
       />
-      <span className="absolute bottom-2 left-2 h-1.5 w-8 rounded-full" style={{ background: dark ? '#e8823f' : '#bd5320' }} />
+      <span className="absolute bottom-2 left-2 h-1.5 w-8 rounded-full" style={{ background: dark ? '#7483ff' : '#2b3fd1' }} />
     </span>
   );
 }
@@ -144,7 +144,7 @@ export function PreferencesTab() {
         <SectionHeading
           eyebrow="Appearance"
           title="Choose your light"
-          description="Nana has a warm night desk and a daylight paper mode. Both use the same ember accent."
+          description="Nana has a charcoal night mode and a bone paper mode. Both use the same signal accent."
         />
         <div role="radiogroup" aria-label="Appearance" className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {THEME_OPTIONS.map((option) => {
@@ -159,18 +159,18 @@ export function PreferencesTab() {
                 onClick={() => handleThemeChange(option.value)}
                 className={`rounded-control border p-2.5 text-left transition-colors ${
                   active
-                    ? 'border-ember/50 bg-ember-soft'
+                    ? 'border-signal/50 bg-signal-soft'
                     : 'border-line bg-surface-sunken/40 hover:border-line-strong hover:bg-surface-sunken'
                 }`}
               >
                 <ThemePreview theme={option.value} />
                 <span className="mt-2.5 flex items-center gap-2">
-                  <Icon className={`h-4 w-4 ${active ? 'text-ember' : 'text-ink-muted'}`} />
+                  <Icon className={`h-4 w-4 ${active ? 'text-signal' : 'text-ink-muted'}`} />
                   <span className="flex-1">
                     <span className="block text-[13px] font-medium text-ink">{option.label}</span>
                     <span className="block text-[11px] text-ink-muted">{option.description}</span>
                   </span>
-                  {active && <CheckIcon className="h-4 w-4 text-ember" />}
+                  {active && <CheckIcon className="h-4 w-4 text-signal" />}
                 </span>
               </button>
             );
@@ -192,7 +192,7 @@ export function PreferencesTab() {
               onChange={(event) => handleHomepageChange(event.target.value as DefaultHomepage)}
             >
               <option value="timeline">Timeline</option>
-              <option value="board">Board</option>
+              <option value="board">Boards</option>
               <option value="folders">Folders</option>
               <option value="chat">Chat</option>
             </Select>

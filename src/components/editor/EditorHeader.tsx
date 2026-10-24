@@ -46,7 +46,7 @@ export function EditorHeader({
   const splitOption = { value: 'split' as const, label: 'Split', icon: <ViewColumnsIcon className="h-3.5 w-3.5" /> };
 
   return (
-    <div className="border-b border-line bg-canvas/95 backdrop-blur-xl">
+    <div className="border-b border-line bg-canvas">
       <div className="flex items-center gap-2 px-3 py-2.5 sm:px-5">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <input
@@ -63,11 +63,11 @@ export function EditorHeader({
           />
           {autoSaving ? (
             <span className="hidden shrink-0 items-center gap-1.5 text-[11px] text-ink-muted sm:flex">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ember" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal" />
               Saving
             </span>
           ) : hasUnsavedChanges ? (
-            <span className="hidden shrink-0 text-[11px] text-brass sm:block">Unsaved</span>
+            <span className="hidden shrink-0 text-[11px] text-warning sm:block">Unsaved</span>
           ) : null}
         </div>
 
@@ -99,7 +99,7 @@ export function EditorHeader({
               size="sm"
               onClick={onPublish}
               disabled={readOnly || publishing || isNewDocument}
-              className={publishing ? 'text-ember' : undefined}
+              className={publishing ? 'text-signal' : undefined}
             >
               <BookmarkIcon />
             </IconButton>

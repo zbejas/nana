@@ -10,9 +10,9 @@ import {
   ViewColumnsIcon,
 } from '@heroicons/react/24/outline';
 import type { Document } from '../lib/documents';
-import { deleteDocument, getDocument } from '../lib/documents';
-import { createTaskFromDocument } from '../lib/tasks';
+import { deleteDocument } from '../lib/documents';
 import {
+  addToBoardRequestAtom,
   foldersAtom,
   selectDocumentAtom,
   startNewDocumentAtom,
@@ -36,6 +36,7 @@ export function TimelinePage() {
   const navigate = useNavigate();
   const selectDocument = useSetAtom(selectDocumentAtom);
   const startNewDocument = useSetAtom(startNewDocumentAtom);
+  const setAddToBoardRequest = useSetAtom(addToBoardRequestAtom);
   const folders = useAtomValue(foldersAtom);
   const { showToast } = useToasts();
   const publicShareModal = usePublicShareModalState();
@@ -162,19 +163,12 @@ export function TimelinePage() {
     }
   };
 
-  const handleAddToBoard = async () => {
+  const handleAddToBoard = () => {
     const documentId = contextMenu?.documentId;
     if (!documentId) return;
-    closeContextMenu();
 
-    try {
-      const document = await getDocument(documentId);
-      await createTaskFromDocument(document);
-      showToast(`“${document.title || 'Untitled'}” added to the board`, 'success');
-    } catch (error) {
-      log.error('Failed to add timeline document to board', error);
-      showToast('Failed to add that note to the board', 'error');
-    }
+    setAddToBoardRequest({ documentId });
+    closeContextMenu();
   };
 
   const folderNameById = useMemo(() => {
@@ -304,7 +298,6 @@ export function TimelinePage() {
                 />
               ) : (
                 <EmptyState
-                  icon={<PlusIcon />}
                   eyebrow="A blank page"
                   title="Start your first note"
                   description="Write in Markdown, keep the work beside it on the board, and share it when it is ready."
@@ -313,6 +306,7 @@ export function TimelinePage() {
                       Create a note
                     </Button>
                   }
+                  className="border-b-0"
                 />
               )
             ) : (
@@ -386,7 +380,7 @@ export function TimelinePage() {
               </Card>
 
               <Card className="p-4">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-ember/25 bg-ember-soft text-ember">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-signal/25 bg-signal-soft text-signal">
                   <ViewColumnsIcon className="h-4 w-4" />
                 </div>
                 <h3 className="mt-3 font-display text-base text-ink">Notes become work</h3>
@@ -394,7 +388,7 @@ export function TimelinePage() {
                   Right-click any note and choose “Add to board” to turn it into a task without losing the writing.
                 </p>
                 <Button variant="ghost" size="sm" className="mt-2 px-0" onClick={() => navigate('/board')}>
-                  Open the board →
+                  Open boards →
                 </Button>
               </Card>
             </div>
@@ -422,7 +416,7 @@ export function TimelinePage() {
                 closeContextMenu();
               }
             }}
-            onAddToBoard={() => void handleAddToBoard()}
+            onAddToBoard={handleAddToBoard}
             onDeleteDocument={handleDeleteDocument}
             onRestoreDocument={() => undefined}
             onPermanentlyDeleteDocument={() => undefined}

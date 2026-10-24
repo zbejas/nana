@@ -10,7 +10,7 @@ export function Card({ as: Tag = 'div', interactive, className, children, ...res
   return (
     <Tag
       className={cn(
-        'rounded-panel border border-line bg-surface panel-hairline',
+        'rounded-panel border border-line bg-surface',
         interactive && 'transition-colors duration-150 hover:border-line-strong hover:bg-surface-raised',
         className
       )}
@@ -29,13 +29,14 @@ interface SectionHeadingProps {
   className?: string;
 }
 
-export function SectionHeading({ eyebrow, title, description, actions, className }: SectionHeadingProps) {
+export function SectionHeading({ title, description, actions, className }: SectionHeadingProps) {
   return (
     <div className={cn('flex flex-wrap items-start justify-between gap-4', className)}>
       <div className="min-w-0">
-        {eyebrow && <p className="eyebrow mb-2">{eyebrow}</p>}
-        <h2 className="font-display text-xl leading-tight text-ink">{title}</h2>
-        {description && <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-ink-secondary">{description}</p>}
+        <h2 className="font-display text-xl font-semibold leading-tight tracking-[-0.02em] text-ink">{title}</h2>
+        {description && (
+          <p className="mt-1.5 max-w-[64ch] text-sm leading-relaxed text-ink-secondary">{description}</p>
+        )}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>

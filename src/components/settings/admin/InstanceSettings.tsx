@@ -142,7 +142,7 @@ export function InstanceSettings() {
           <Button variant="primary" onClick={() => void handleSave()} loading={saving}>
             Save address
           </Button>
-          {successMessage && <p className="text-sm text-sage">{successMessage}</p>}
+          {successMessage && <p className="text-sm text-success">{successMessage}</p>}
         </div>
       </div>
     </Card>

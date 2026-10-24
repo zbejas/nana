@@ -2,24 +2,29 @@
  * Types for the chat API — request/response shapes and PocketBase record interfaces.
  */
 
+/** Status shown for one read-tool invocation. */
+export type ChatToolStatus = "running" | "success" | "error";
+
+/** Fixed copy persisted when the model produces no final text. */
+export const CHAT_EMPTY_RESPONSE_FALLBACK =
+    "I couldn't finish that answer. Try asking again, or narrow it to a specific note or board.";
+
+/** Quiet tool activity attached to an assistant message. */
+export interface ChatToolActivity {
+    /** Streaming-only call id; persistence keeps only name and status. */
+    id?: string;
+    name: string;
+    status: ChatToolStatus;
+}
+
 /** POST /api/chat/send request body */
 export interface ChatSendRequest {
     /** Existing conversation ID, or omit to create a new one */
     conversationId?: string;
     /** The user's message text */
     message: string;
-    /** Whether to use RAG (document context retrieval). Defaults to true. */
-    useRag?: boolean;
-    /** Explicit document IDs to use as RAG context (from # mentions) */
-    documentIds?: string[];
     /** When true, removes the previous assistant+user message pair before re-sending */
     regenerate?: boolean;
-}
-
-/** A document source referenced by RAG */
-export interface ChatSource {
-    id: string;
-    title: string;
 }
 
 /** A single chat message stored inline in a conversation's JSON field */
@@ -28,8 +33,8 @@ export interface ChatMessage {
     content: string;
     /** Reasoning/thinking tokens from models that support extended thinking */
     reasoning?: string;
-    /** Documents used as RAG context for this assistant message */
-    sources?: ChatSource[];
+    /** Names/statuses of read tools used for this response. No inputs or outputs. */
+    tools?: ChatToolActivity[];
     /** The AI model that generated this message, e.g. "gpt-4o" or "gemma-4:e4b" */
     model?: string;
 }

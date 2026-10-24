@@ -68,7 +68,7 @@ export function Sheet({ open, onClose, title, description, children, footer, cla
   return createPortal(
     <div className="fixed inset-0 flex items-end justify-center" style={{ zIndex }}>
       <div
-        className="absolute inset-0 bg-[var(--scrim)] backdrop-blur-[4px]"
+        className="absolute inset-0 bg-scrim"
         style={{ animation: exiting ? 'scrim-in 180ms ease-in reverse both' : 'scrim-in 180ms ease-out both' }}
         aria-hidden="true"
         onPointerDown={onClose}
@@ -89,7 +89,7 @@ export function Sheet({ open, onClose, title, description, children, footer, cla
         {(title || description) && (
           <div className="flex items-start justify-between gap-4 px-5 pb-3 pt-3">
             <div className="min-w-0">
-              {title && <h2 className="font-display text-lg text-ink">{title}</h2>}
+              {title && <h2 className="font-display text-lg font-semibold leading-tight tracking-[-0.02em] text-ink">{title}</h2>}
               {description && <p className="mt-1 text-sm text-ink-secondary">{description}</p>}
             </div>
             <IconButton label="Close" size="sm" onClick={onClose} className="-mr-1">

@@ -35,7 +35,7 @@ export function RootDocumentsSection({
   return (
     <div
       className={`rounded-control transition-colors ${
-        dropZone === 'root' ? 'bg-ember-soft ring-1 ring-inset ring-ember/40' : ''
+        dropZone === 'root' ? 'bg-signal-soft ring-1 ring-inset ring-signal/40' : ''
       }`}
       onDragOver={(event) => onDragOver(event, undefined)}
       onDragLeave={onDragLeave}
@@ -61,7 +61,7 @@ export function RootDocumentsSection({
       ))}
       {documents.length === 0 && isDataLoading && (
         <div className="flex items-center justify-center py-3">
-          <span className="h-4 w-4 animate-spin rounded-full border border-ink-muted/30 border-t-ember" />
+          <span className="h-4 w-4 animate-spin rounded-full border border-ink-muted/30 border-t-signal" />
         </div>
       )}
     </div>

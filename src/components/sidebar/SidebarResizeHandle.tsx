@@ -89,11 +89,11 @@ export function SidebarResizeHandle({ isMobile, sidebarWidth, onResizeStart, onR
 
   return (
     <div
-      className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize group z-50 hover:bg-ember-soft transition-colors"
+      className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize group z-50 hover:bg-signal-soft transition-colors"
       onMouseDown={handleMouseDown}
     >
       {/* Visual indicator on hover */}
-      <div className="absolute right-0 top-0 bottom-0 w-1 bg-ember-soft group-hover:bg-ember-soft transition-colors" />
+      <div className="absolute right-0 top-0 bottom-0 w-1 bg-signal-soft group-hover:bg-signal-soft transition-colors" />
     </div>
   );
 }

@@ -1,6 +1,9 @@
 import type { RecordModel } from 'pocketbase';
 import { pb } from '../pocketbase';
 import type { Document } from '../documents';
+import { stripMarkdown } from './text';
+
+export { stripMarkdown, plainTextExcerpt } from './text';
 
 export type TaskStatus = 'backlog' | 'next' | 'progress' | 'done';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
@@ -14,6 +17,7 @@ export interface Task extends RecordModel {
   board_order: number;
   labels: string[];
   author: string;
+  board: string;
   document?: string;
   created: string;
   updated: string;
@@ -30,10 +34,15 @@ export interface CreateTaskData {
   due_date?: string;
   board_order?: number;
   labels?: string[];
+  board: string;
   document?: string;
 }
 
-export type UpdateTaskData = Partial<CreateTaskData>;
+/** Form-shaped task data; the board and its order are supplied by the page. */
+export type TaskDraft = Omit<CreateTaskData, 'board' | 'board_order'>;
+
+/** Board ownership is fixed at creation; updates cannot move a task to another board. */
+export type UpdateTaskData = Partial<Omit<CreateTaskData, 'board'>>;
 
 const COLLECTION = 'tasks';
 
@@ -57,11 +66,25 @@ function normalizeTask(task: Task): Task {
     due_date: task.due_date ?? '',
     board_order: typeof task.board_order === 'number' ? task.board_order : 0,
     labels: normalizeLabels(task.labels),
+    board: task.board ?? '',
   };
 }
 
-export async function listTasks(): Promise<Task[]> {
+function requireAuthor(): string {
+  const author = pb.authStore.record?.id;
+  if (!author) {
+    throw new Error('You must be signed in to manage tasks.');
+  }
+  return author;
+}
+
+export async function listTasks(boardId: string): Promise<Task[]> {
+  if (!boardId) {
+    return [];
+  }
+
   const records = await pb.collection(COLLECTION).getFullList<Task>({
+    filter: pb.filter('board = {:id}', { id: boardId }),
     sort: 'board_order,created',
     expand: 'document',
   });
@@ -83,6 +106,8 @@ export async function createTask(data: CreateTaskData): Promise<Task> {
     due_date: data.due_date || '',
     board_order: data.board_order ?? 0,
     labels: normalizeLabels(data.labels),
+    board: data.board,
+    author: requireAuthor(),
     ...(data.document ? { document: data.document } : {}),
   });
 
@@ -117,7 +142,8 @@ export interface TaskPosition {
 
 /**
  * Persists a whole column's order in one batch. Only tasks whose status or
- * position actually changed are written.
+ * position actually changed are written, and only `status`/`board_order` are
+ * sent so a board move can never be smuggled through this path.
  */
 export async function persistTaskPositions(
   previous: Task[],
@@ -139,24 +165,29 @@ export async function persistTaskPositions(
   );
 }
 
-function stripMarkdown(value: string): string {
-  return value
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/[#>*_~`]/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
+/**
+ * Board ids that already hold a task imported from a note. The add-to-board
+ * picker uses this to keep one note from being imported twice into one board.
+ */
+export async function listTaskBoardIdsForDocument(documentId: string): Promise<string[]> {
+  if (!documentId) {
+    return [];
+  }
 
-/** Short plain-text preview of a Markdown task description. */
-export function plainTextExcerpt(value: string, length = 160): string {
-  const plain = stripMarkdown(value ?? '').replace(/\s+/g, ' ');
-  return plain.length > length ? `${plain.slice(0, length).trimEnd()}…` : plain;
+  const records = await pb.collection(COLLECTION).getFullList<Pick<Task, 'board'>>({
+    filter: pb.filter('document = {:id}', { id: documentId }),
+    fields: 'board',
+    // The add-to-board picker also loads task counts; auto-cancellation keys
+    // by path, so leave this request out of the SDK's request-key pool.
+    requestKey: null,
+  });
+
+  return Array.from(new Set(records.map((record) => record.board).filter(Boolean)));
 }
 
 export async function createTaskFromDocument(
   document: Document,
+  boardId: string,
   status: TaskStatus = 'backlog'
 ): Promise<Task> {
   const excerpt = stripMarkdown(document.content ?? '').slice(0, 4000);
@@ -165,6 +196,7 @@ export async function createTaskFromDocument(
     title: document.title || 'Untitled note',
     description: excerpt,
     status,
+    board: boardId,
     document: document.id,
     labels: Array.isArray(document.tags) ? document.tags.slice(0, 6) : [],
   });
@@ -172,18 +204,23 @@ export async function createTaskFromDocument(
 
 export function subscribeToTasks(
   userId: string,
-  onChange: () => void
+  onChange: () => void,
+  boardId?: string
 ): () => void {
   let unsubscribe: (() => void) | undefined;
 
   void pb
     .collection(COLLECTION)
-    .subscribe('*', (event) => {
-      const record = event.record as Task | undefined;
-      if (!record || record.author === userId) {
-        onChange();
-      }
-    })
+    .subscribe(
+      '*',
+      (event) => {
+        const record = event.record as Task | undefined;
+        if (!record || record.author === userId) {
+          onChange();
+        }
+      },
+      boardId ? { filter: pb.filter('board = {:id}', { id: boardId }) } : undefined
+    )
     .then((unsub) => {
       unsubscribe = unsub;
     })

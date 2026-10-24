@@ -79,7 +79,7 @@ export function CalendarFilterPanel({
           {visibleMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
         </p>
         {isSameDay(selectedRange.startDate, new Date()) && !selectedRange.endDate && (
-          <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-ember">Today</span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-signal">Today</span>
         )}
       </div>
 
@@ -109,9 +109,9 @@ export function CalendarFilterPanel({
               onClick={() => onDayClick(day)}
               className={`relative h-8 rounded-[6px] text-[12px] tabular-nums transition-colors ${
                 isSelected
-                  ? 'bg-ember font-semibold text-on-ember'
+                  ? 'bg-signal font-semibold text-on-signal'
                   : inRange
-                    ? 'bg-ember-soft text-ink'
+                    ? 'bg-signal-soft text-ink'
                     : inCurrentMonth
                       ? 'text-ink-secondary hover:bg-surface-raised hover:text-ink'
                       : 'text-ink-muted/40 hover:bg-surface-raised/60 hover:text-ink-muted'
@@ -122,7 +122,7 @@ export function CalendarFilterPanel({
             >
               {day.getDate()}
               {isToday && !isSelected && (
-                <span className="absolute bottom-1 left-1/2 h-0.5 w-0.5 -translate-x-1/2 rounded-full bg-ember" />
+                <span className="absolute bottom-1 left-1/2 h-0.5 w-0.5 -translate-x-1/2 rounded-full bg-signal" />
               )}
             </button>
           );

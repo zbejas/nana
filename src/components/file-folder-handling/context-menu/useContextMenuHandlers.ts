@@ -1,11 +1,11 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSetAtom } from 'jotai';
 import { createLogger } from '../../../lib/logger';
-import { getDocument } from '../../../lib/documents';
-import { createTaskFromDocument } from '../../../lib/tasks';
 
 const logger = createLogger('ContextMenu');
 import { useToasts } from '../../../state/hooks';
+import { addToBoardRequestAtom } from '../../../state/atoms';
 import type { ContextMenuState } from './useContextMenuState';
 
 interface DeleteDialogConfig {
@@ -54,6 +54,7 @@ export function useContextMenuHandlers({
 }: UseContextMenuHandlersProps) {
     const navigate = useNavigate();
     const { showToast } = useToasts();
+    const setAddToBoardRequest = useSetAtom(addToBoardRequestAtom);
 
     const handleAddFolder = useCallback(async () => {
         const result = await handlers.handleAddFolder(contextMenu?.folderId);
@@ -162,20 +163,12 @@ export function useContextMenuHandlers({
         closeContextMenu();
     }, [contextMenu?.documentId, handlers, closeContextMenu]);
 
-    const handleAddToBoard = useCallback(async () => {
+    const handleAddToBoard = useCallback(() => {
         if (!contextMenu?.documentId) return;
         const documentId = contextMenu.documentId;
+        setAddToBoardRequest({ documentId });
         closeContextMenu();
-
-        try {
-            const document = await getDocument(documentId);
-            await createTaskFromDocument(document);
-            showToast(`“${document.title || 'Untitled'}” added to the board`, 'success');
-        } catch (error) {
-            logger.error('Failed to add document to board', { error });
-            showToast('Failed to add that note to the board', 'error');
-        }
-    }, [contextMenu?.documentId, closeContextMenu, showToast]);
+    }, [contextMenu?.documentId, closeContextMenu, setAddToBoardRequest]);
 
     const handleExportFolder = useCallback(async () => {
         if (!contextMenu?.folderId || !contextMenu?.folderName) return;

@@ -6,9 +6,7 @@ import { serverConfig } from "./lib/config";
 import { handlePocketBaseProxy } from "./api/pocketbase-proxy";
 import { handleExport } from "./api/export/index";
 import { handleChat } from "./api/chat/index";
-import { handleEmbeddings } from "./api/embeddings/index";
 import { APP_VERSION, handleAppVersion } from "./api/app-version";
-import { closeAll as closeAllZvecCollections } from "./api/embeddings/zvec";
 import { createStaticFileHandler } from "./api/static-files";
 import { checkRateLimit, reloadRateLimiter } from "./api/rate-limiter";
 import { verifyAuth, AuthError } from "./api/auth";
@@ -30,8 +28,8 @@ const manifest = {
   start_url: "/timeline",
   scope: "/",
   display: "standalone",
-  background_color: "#15100d",
-  theme_color: "#15100d",
+  background_color: "#141518",
+  theme_color: "#141518",
   icons: [
     {
       src: "/nana-192.png",
@@ -188,33 +186,6 @@ const server = serve({
       return withSecurityHeaders(await handleChat(req));
     },
 
-    // Embeddings API endpoints
-    "/api/embeddings/embed": async (req): Promise<Response> => {
-      const blocked = await checkRateLimit(req, server);
-      if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handleEmbeddings(req));
-    },
-    "/api/embeddings/embed-all": async (req): Promise<Response> => {
-      const blocked = await checkRateLimit(req, server);
-      if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handleEmbeddings(req));
-    },
-    "/api/embeddings/search": async (req): Promise<Response> => {
-      const blocked = await checkRateLimit(req, server);
-      if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handleEmbeddings(req));
-    },
-    "/api/embeddings/status": async (req): Promise<Response> => {
-      const blocked = await checkRateLimit(req, server);
-      if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handleEmbeddings(req));
-    },
-    "/api/embeddings/delete": async (req): Promise<Response> => {
-      const blocked = await checkRateLimit(req, server);
-      if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handleEmbeddings(req));
-    },
-
     "/api/app/version": async (req): Promise<Response> => {
       const blocked = await checkRateLimit(req, server);
       if (blocked) return withSecurityHeaders(blocked);
@@ -280,14 +251,9 @@ reloadRateLimiter().catch((err) => {
   log.warn("Rate limiter failed to initialise on startup", err);
 });
 
-// ── Graceful shutdown: flush & close Zvec collections ────────────────
+// ── Graceful shutdown ────────────────────────────────────────────────
 function gracefulShutdown(signal: string) {
   log.info(`Received ${signal}, shutting down…`);
-  try {
-    closeAllZvecCollections();
-  } catch (err) {
-    log.error("Error closing Zvec collections during shutdown", err);
-  }
   process.exit(0);
 }
 

@@ -54,7 +54,7 @@ function PublicFolderBranch({
                                 onClick={() => onSelectDocument(document.id)}
                                 className={`flex w-full items-center gap-2 rounded-control px-2 py-2 text-left text-sm transition-colors ${
                                     isSelected
-                                        ? 'bg-brass-soft text-ink-muted ring-1 ring-amber-400/40 shadow-sm shadow-amber-500/10'
+                                        ? 'bg-signal-soft text-ink ring-1 ring-signal/35'
                                         : 'text-ink-muted hover:bg-surface-raised hover:text-ink'
                                 }`}
                             >

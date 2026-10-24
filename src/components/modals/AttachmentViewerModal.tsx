@@ -73,7 +73,7 @@ function PdfContent({ url }: { url: string }) {
       <div
         className="sticky bottom-4 left-0 right-0 flex justify-center pointer-events-none z-10"
       >
-        <div className="flex items-center gap-1 bg-surface-sunken/70 backdrop-blur-sm border border-line rounded-control px-2 py-1.5 shadow-float pointer-events-auto">
+        <div className="flex items-center gap-1 bg-surface-sunken border border-line rounded-control px-2 py-1.5 shadow-float pointer-events-auto">
           <button
             onClick={() => setScale((s) => Math.max(MIN_SCALE, s - SCALE_STEP))}
             className="p-1 text-ink-muted hover:text-ink hover:bg-surface-raised rounded transition-colors"
@@ -268,7 +268,7 @@ export default function AttachmentViewerModal({
 
           {/* Zoom controls */}
           <div
-            className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 bg-surface-sunken/70 backdrop-blur-sm border border-line rounded-control px-2 py-1.5 shadow-float"
+            className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 bg-surface-sunken border border-line rounded-control px-2 py-1.5 shadow-float"
             style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
           >
             <button
@@ -318,7 +318,7 @@ export default function AttachmentViewerModal({
     <div className="fixed inset-0 z-[10002] flex items-stretch md:items-center md:justify-center md:p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-[var(--scrim)] backdrop-blur-md"
+        className="absolute inset-0 bg-scrim"
         onClick={onClose}
       />
 

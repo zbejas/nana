@@ -44,13 +44,13 @@ export function DocumentItem({
         onContextMenu={onContextMenu}
         className={`flex w-full items-center gap-1.5 overflow-hidden rounded-[6px] py-1 pr-7 text-left transition-colors active:cursor-grabbing ${
           active
-            ? 'bg-ember-soft text-ink'
+            ? 'bg-signal-soft text-ink'
             : 'text-ink-secondary hover:bg-surface-raised hover:text-ink'
         }`}
         style={{ paddingLeft: `${indent}px` }}
       >
         <DocumentTextIcon
-          className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-ember' : 'text-ink-muted'}`}
+          className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-signal' : 'text-ink-muted'}`}
           aria-hidden="true"
         />
         <span className="min-w-0 flex-1 truncate text-[13px] leading-5">{document.title || 'Untitled'}</span>
@@ -63,10 +63,10 @@ export function DocumentItem({
           </span>
         ))}
         {document.is_private && (
-          <LockClosedIcon className="h-3 w-3 shrink-0 text-brass" aria-label="Private" />
+          <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />
         )}
         {document.is_public && (
-          <ShareIcon className="h-3 w-3 shrink-0 text-sage" aria-label="Shared publicly" />
+          <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />
         )}
       </button>
       <button

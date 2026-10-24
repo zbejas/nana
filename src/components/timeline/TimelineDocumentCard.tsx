@@ -1,4 +1,4 @@
-import { ClockIcon, DocumentTextIcon, EllipsisVerticalIcon, FolderIcon, LockClosedIcon, ShareIcon } from '@heroicons/react/24/outline';
+import { ClockIcon, EllipsisVerticalIcon, FolderIcon, LockClosedIcon, ShareIcon } from '@heroicons/react/24/outline';
 import { useRef, type KeyboardEvent, type MouseEvent, type TouchEvent } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { rehypeSanitizePlugin } from '../../lib/sanitize';
@@ -131,38 +131,33 @@ export function TimelineDocumentCard({
       }}
       role="button"
       tabIndex={0}
-      className="group relative w-full cursor-pointer overflow-hidden rounded-panel border border-line bg-surface text-left transition-colors hover:border-line-strong hover:bg-surface-raised"
+      className="group relative w-full cursor-pointer overflow-hidden rounded-control border border-line text-left transition-colors duration-150 hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-signal"
     >
-      <div className="p-4 sm:p-4">
+      <div className="p-3.5 sm:p-4">
         <div className="flex items-start gap-3">
-          <span
-            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line bg-surface-sunken text-ink-muted"
-            aria-hidden="true"
-          >
-            <DocumentTextIcon className="h-4 w-4" />
-          </span>
-
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h3 className="min-w-0 truncate text-[14px] font-medium leading-snug text-ink">
                 {highlightText(document.title || 'Untitled', highlightQuery)}
               </h3>
-              {document.is_private && <LockClosedIcon className="h-3.5 w-3.5 shrink-0 text-brass" aria-label="Private" />}
-              {document.is_public && <ShareIcon className="h-3.5 w-3.5 shrink-0 text-sage" aria-label="Shared publicly" />}
+              {document.is_private && <LockClosedIcon className="h-3.5 w-3.5 shrink-0 text-warning" aria-label="Private" />}
+              {document.is_public && <ShareIcon className="h-3.5 w-3.5 shrink-0 text-success" aria-label="Shared publicly" />}
             </div>
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink-muted">
-              <span className="inline-flex items-center gap-1">
-                <ClockIcon className="h-3 w-3" />
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[10px] uppercase leading-4 tracking-[0.06em] text-ink-muted">
+              <span className="inline-flex items-center gap-1 tabular-nums">
+                <ClockIcon className="h-3 w-3" aria-hidden="true" />
                 Updated {updatedLabel(document.updated)}
               </span>
               {folderName && (
-                <span className="inline-flex items-center gap-1">
-                  <FolderIcon className="h-3 w-3" />
-                  {folderName}
+                <span className="inline-flex min-w-0 items-center gap-1">
+                  <FolderIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <span className="truncate normal-case tracking-normal">{folderName}</span>
                 </span>
               )}
               {attachmentCount > 0 && (
-                <span>{attachmentCount} {attachmentCount === 1 ? 'attachment' : 'attachments'}</span>
+                <span className="tabular-nums">
+                  {attachmentCount} {attachmentCount === 1 ? 'attachment' : 'attachments'}
+                </span>
               )}
             </p>
           </div>
@@ -181,7 +176,7 @@ export function TimelineDocumentCard({
         </div>
 
         {previewMarkdown && (
-          <div className="pointer-events-none mt-3 max-h-[5.5rem] overflow-hidden [&_.wmde-markdown]:!bg-transparent [&_.wmde-markdown]:!text-[12.5px] [&_.wmde-markdown]:!leading-6 [&_.wmde-markdown]:!text-ink-secondary [&_.wmde-markdown_a]:!text-ember [&_.wmde-markdown_blockquote]:!my-0 [&_.wmde-markdown_code]:!text-[11px] [&_.wmde-markdown_h1]:!my-0 [&_.wmde-markdown_h1]:!text-sm [&_.wmde-markdown_h2]:!my-0 [&_.wmde-markdown_h2]:!text-sm [&_.wmde-markdown_h3]:!my-0 [&_.wmde-markdown_h3]:!text-sm [&_.wmde-markdown_li]:!my-0 [&_.wmde-markdown_ol]:!my-0 [&_.wmde-markdown_p]:!my-0.5 [&_.wmde-markdown_pre]:!my-0 [&_.wmde-markdown_ul]:!my-0">
+          <div className="pointer-events-none mt-3 max-h-[5.5rem] overflow-hidden [&_.wmde-markdown]:!bg-transparent [&_.wmde-markdown]:!text-[12.5px] [&_.wmde-markdown]:!leading-6 [&_.wmde-markdown]:!text-ink-secondary [&_.wmde-markdown_a]:!text-signal [&_.wmde-markdown_blockquote]:!my-0 [&_.wmde-markdown_code]:!text-[11px] [&_.wmde-markdown_h1]:!my-0 [&_.wmde-markdown_h1]:!text-sm [&_.wmde-markdown_h2]:!my-0 [&_.wmde-markdown_h2]:!text-sm [&_.wmde-markdown_h3]:!my-0 [&_.wmde-markdown_h3]:!text-sm [&_.wmde-markdown_li]:!my-0 [&_.wmde-markdown_ol]:!my-0 [&_.wmde-markdown_p]:!my-0.5 [&_.wmde-markdown_pre]:!my-0 [&_.wmde-markdown_ul]:!my-0">
             <MDEditor.Markdown
               source={previewMarkdown}
               skipHtml
@@ -201,7 +196,7 @@ export function TimelineDocumentCard({
           {tags.length > visibleTagLimit && (
             <span className="text-[10px] text-ink-muted">+{tags.length - visibleTagLimit}</span>
           )}
-          <span className="ml-auto shrink-0 text-[11px] tabular-nums text-ink-muted">
+          <span className="ml-auto shrink-0 font-mono text-[10px] uppercase tabular-nums tracking-[0.06em] text-ink-muted">
             {wordCount} words · {readingTime} min read
           </span>
         </div>

@@ -143,13 +143,13 @@ export function DateTimePicker({ value, disabled, onChange }: DateTimePickerProp
     function dayClassName(day: CalendarDay) {
         const base = 'flex h-7 w-7 items-center justify-center rounded-[6px] text-xs transition-colors sm:h-8 sm:w-8 sm:text-[13px]';
         if (isSelected(day)) {
-            return `${base} bg-ember font-semibold text-on-ember`;
+            return `${base} bg-signal font-semibold text-on-signal`;
         }
         if (!day.isCurrentMonth) {
             return `${base} text-ink-muted/40`;
         }
         if (isToday(day)) {
-            return `${base} border border-ember/40 text-ink hover:bg-surface-raised`;
+            return `${base} border border-signal/40 text-ink hover:bg-surface-raised`;
         }
         return `${base} text-ink-secondary hover:bg-surface-raised hover:text-ink`;
     }

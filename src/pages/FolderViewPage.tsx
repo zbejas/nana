@@ -1,7 +1,6 @@
 import { createPortal } from 'react-dom';
-import { getDocument } from '../lib/documents';
-import { createTaskFromDocument } from '../lib/tasks';
-import { useToasts } from '../state/hooks';
+import { useSetAtom } from 'jotai';
+import { addToBoardRequestAtom } from '../state/atoms';
 import { DocumentContextMenu } from '../components/file-folder-handling/context-menu/DocumentContextMenu';
 import { FolderContextMenu } from '../components/file-folder-handling/context-menu/FolderContextMenu';
 import { FolderViewHeader } from '../components/folder-view/FolderViewHeader';
@@ -28,7 +27,7 @@ import {
 
 export function FolderViewPage() {
   const publicShareModal = usePublicShareModalState();
-  const { showToast } = useToasts();
+  const setAddToBoardRequest = useSetAtom(addToBoardRequestAtom);
   const {
     viewMode,
     setViewMode,
@@ -95,18 +94,12 @@ export function FolderViewPage() {
     openItemMenu,
   } = useFolderViewState();
 
-  const handleAddToBoard = async () => {
+  const handleAddToBoard = () => {
     const documentId = contextMenu?.documentId;
     if (!documentId) return;
-    closeContextMenu();
 
-    try {
-      const document = await getDocument(documentId);
-      await createTaskFromDocument(document);
-      showToast(`“${document.title || 'Untitled'}” added to the board`, 'success');
-    } catch {
-      showToast('Failed to add that note to the board', 'error');
-    }
+    setAddToBoardRequest({ documentId });
+    closeContextMenu();
   };
 
   const mode = isTrashMode ? 'trash' : isSharedMode ? 'public' : 'all';
@@ -370,7 +363,7 @@ export function FolderViewPage() {
                 closeContextMenu();
               }
             }}
-            onAddToBoard={() => void handleAddToBoard()}
+            onAddToBoard={handleAddToBoard}
             onDeleteDocument={handleDeleteDocument}
             onRestoreDocument={handleRestoreDocument}
             onPermanentlyDeleteDocument={handlePermanentlyDeleteDocument}

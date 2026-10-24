@@ -62,12 +62,12 @@ export function SearchBar({ onDocumentClick, onContextMenu }: SearchBarProps) {
           onFocus={() => searchQuery.trim().length > 0 && setShowResults(true)}
           placeholder="Search notes"
           aria-label="Search documents"
-          className="h-9 w-full rounded-control border border-line bg-surface-sunken/70 pl-8 pr-3 text-[13px] text-ink outline-none transition-colors placeholder:text-ink-muted/80 focus:border-ember/50 focus:bg-surface-sunken focus:ring-2 focus:ring-ember/10"
+          className="h-9 w-full rounded-control border border-line-strong bg-surface-sunken pl-8 pr-3 text-[13px] text-ink outline-none transition-colors placeholder:text-ink-muted/80 focus:border-signal focus:ring-2 focus:ring-signal/20"
         />
       </div>
 
       {showResults && (
-        <div className="absolute left-3 right-3 top-full z-50 mt-1.5 overflow-hidden rounded-control border border-line bg-surface-raised shadow-float">
+        <div className="absolute left-3 right-3 top-full z-50 mt-1.5 overflow-hidden rounded-panel border border-line bg-surface-raised shadow-float">
           <div className="max-h-72 overflow-y-auto scrollbar-autohide py-1">
             {isLoading ? (
               <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs text-ink-muted">

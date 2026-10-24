@@ -95,7 +95,7 @@ export function AuthForm() {
   if (user) {
     return (
       <div className="rounded-panel border border-line bg-surface p-6">
-        <h2 className="font-display text-2xl text-ink">You are signed in</h2>
+        <h2 className="font-display text-2xl font-semibold tracking-[-0.02em] text-ink">You are signed in</h2>
         <p className="mt-1 text-sm text-ink-secondary">{user.email}</p>
         <Button variant="secondary" className="mt-5 w-full" onClick={signOut}>
           Sign out
@@ -108,15 +108,14 @@ export function AuthForm() {
   const showPasswordForm = passwordEnabled || mode === 'reset';
 
   return (
-    <div className="rounded-panel border border-line bg-surface p-5 panel-hairline shadow-panel sm:p-6">
+    <div className="rounded-panel border border-line bg-surface p-5 sm:p-6">
       <div className="mb-5">
-        <p className="eyebrow">{mode === 'signin' ? 'Workspace access' : 'Account recovery'}</p>
-        <h2 className="mt-2 font-display text-2xl leading-tight text-ink">
+        <h2 className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] text-ink">
           {mode === 'signin' ? 'Welcome back' : 'Reset your password'}
         </h2>
         <p className="mt-1.5 text-sm text-ink-secondary">
           {mode === 'signin'
-            ? 'Sign in to your notes, board, and chat.'
+            ? 'Sign in to your notes, boards, and chat.'
             : 'Enter your email and we will send a reset link if the account exists.'}
         </p>
       </div>
@@ -127,7 +126,7 @@ export function AuthForm() {
         </p>
       )}
       {success && (
-        <p role="status" className="mb-4 rounded-control border border-sage/25 bg-sage-soft px-3 py-2 text-sm text-sage">
+        <p role="status" className="mb-4 rounded-control border border-success/25 bg-success-soft px-3 py-2 text-sm text-success">
           {success}
         </p>
       )}
@@ -155,7 +154,7 @@ export function AuthForm() {
           {showPasswordForm && (
             <div className="flex items-center gap-3 py-1">
               <span className="h-px flex-1 bg-line" />
-              <span className="text-[10px] uppercase tracking-[0.12em] text-ink-muted">or use email</span>
+              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-muted">or use email</span>
               <span className="h-px flex-1 bg-line" />
             </div>
           )}
@@ -217,7 +216,7 @@ export function AuthForm() {
               setError('');
               setSuccess('');
             }}
-            className="text-[13px] text-ink-muted transition-colors hover:text-ember"
+            className="text-[13px] text-ink-muted transition-colors hover:text-signal"
           >
             Forgot your password?
           </button>
@@ -230,7 +229,7 @@ export function AuthForm() {
               setError('');
               setSuccess('');
             }}
-            className="text-[13px] text-ember transition-colors hover:text-ember-strong"
+            className="text-[13px] text-signal transition-colors hover:text-signal-strong"
           >
             Back to sign in
           </button>

@@ -80,7 +80,7 @@ export function FolderViewHeader({
   const crumbClass = (active: boolean) =>
     `inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[6px] border px-2.5 text-[12px] transition-colors ${
       active
-        ? 'border-ember/35 bg-ember-soft text-ember'
+        ? 'border-signal/35 bg-signal-soft text-signal'
         : 'border-transparent text-ink-secondary hover:bg-surface-raised hover:text-ink'
     }`;
 

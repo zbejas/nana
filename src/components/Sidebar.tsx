@@ -56,7 +56,7 @@ const noopLoadFolderDocuments = async (_folderId: string, _isTrash?: boolean) =>
 
 const NAV_ITEMS = [
   { key: 'timeline', label: 'Timeline', path: '/timeline', icon: ClockIcon },
-  { key: 'board', label: 'Board', path: '/board', icon: ViewColumnsIcon },
+  { key: 'board', label: 'Boards', path: '/board', icon: ViewColumnsIcon },
   { key: 'folders', label: 'Folders', path: '/folders', icon: FolderIcon },
   { key: 'chat', label: 'Chat', path: '/chat', icon: ChatBubbleLeftRightIcon },
 ] as const;
@@ -151,7 +151,7 @@ export function Sidebar() {
       />
 
       <aside
-        className="fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden border-r border-line bg-canvas-deep/95 md:backdrop-blur-xl"
+        className="fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden border-r border-line bg-canvas-deep"
         style={{
           width: isMobile ? '100%' : `${sidebarWidth}px`,
           transform: isOpen ? 'translateX(0)' : (isMobile ? 'translateX(-100%)' : `translateX(-${sidebarWidth}px)`),
@@ -195,16 +195,16 @@ export function Sidebar() {
                 reset();
                 handleViewNavigation('/timeline');
               }}
-              className="flex min-w-0 items-center gap-2.5"
+              className="flex min-h-11 min-w-0 items-center gap-2.5 md:min-h-0"
               aria-label="Nana home"
             >
-              <img src={logo} alt="" className="h-7 w-7 shrink-0" draggable={false} />
-              <span className="font-display text-lg leading-none tracking-tight text-ink">Nana</span>
+              <img src={logo} alt="" className="h-6 w-6 shrink-0" draggable={false} />
+              <span className="font-display text-[15px] font-semibold leading-none tracking-[-0.02em] text-ink">Nana</span>
             </button>
             <div className="ml-auto flex items-center gap-0.5">
               <IconButton
                 label={isMobile ? 'Close menu' : 'Collapse sidebar'}
-                size="sm"
+                size={isMobile ? 'md' : 'sm'}
                 onClick={toggle}
               >
                 {isMobile ? <XMarkIcon /> : <ChevronDoubleLeftIcon />}
@@ -221,14 +221,14 @@ export function Sidebar() {
                   key={item.key}
                   onClick={() => handleViewNavigation(item.path)}
                   aria-current={active ? 'page' : undefined}
-                  className={`group relative flex h-8 w-full items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] transition-colors ${
+                  className={`group relative flex h-8 w-full items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] font-medium transition-colors ${
                     active
-                      ? 'bg-ember-soft font-medium text-ember'
-                      : 'text-ink-secondary hover:bg-surface-raised hover:text-ink'
+                      ? 'bg-signal-soft text-signal'
+                      : 'text-ink-secondary hover:bg-surface hover:text-ink'
                   }`}
                 >
                   {active && (
-                    <span className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-ember" aria-hidden="true" />
+                    <span className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 bg-signal" aria-hidden="true" />
                   )}
                   <Icon className="h-4 w-4 shrink-0" />
                   <span>{item.label}</span>
@@ -245,7 +245,7 @@ export function Sidebar() {
           <div className="flex-1 overflow-y-auto scrollbar-autohide pb-3" style={{ scrollbarGutter: 'stable' }}>
             {isDataLoading ? (
               <div className="flex items-center justify-center py-8">
-                <span className="h-5 w-5 animate-spin rounded-full border-2 border-ink-muted/30 border-t-ember" />
+                <span className="h-5 w-5 animate-spin rounded-full border-2 border-ink-muted/30 border-t-signal" />
               </div>
             ) : (
               <>

@@ -185,7 +185,7 @@ export function SMTPSettings() {
         </p>
       )}
       {message && (
-        <p className="mt-4 text-sm text-sage" role="status">
+        <p className="mt-4 text-sm text-success" role="status">
           {message}
         </p>
       )}
@@ -332,7 +332,7 @@ export function SMTPSettings() {
         </div>
 
         {testResult && (
-          <p className="text-sm text-sage" role="status">
+          <p className="text-sm text-success" role="status">
             {testResult}
           </p>
         )}

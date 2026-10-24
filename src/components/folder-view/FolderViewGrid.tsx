@@ -66,8 +66,8 @@ function InlineNameCard({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-[7.5rem] flex-col justify-center gap-2 rounded-panel border border-ember/35 bg-ember-soft/40 p-3">
-      <div className="text-ember">{icon}</div>
+    <div className="flex min-h-[7.5rem] flex-col justify-center gap-2 rounded-panel border border-signal/35 bg-signal-soft/40 p-3">
+      <div className="text-signal">{icon}</div>
       <input
         autoFocus
         value={value}
@@ -83,7 +83,7 @@ function InlineNameCard({
           }
         }}
         placeholder={placeholder}
-        className="h-8 w-full rounded-control border border-line bg-surface-sunken px-2.5 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-ember/50"
+        className="h-8 w-full rounded-control border border-line bg-surface-sunken px-2.5 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-signal/50"
       />
       <div className="flex gap-2">
         <Button size="sm" variant="primary" onClick={onSubmit} loading={isBusy}>
@@ -173,20 +173,20 @@ export function FolderViewGrid({
                 onDrop={(event) => void onDrop(event, folder.id, folder.parent || undefined)}
                 className={`flex min-h-[7.5rem] w-full flex-col justify-between rounded-panel border p-3 text-left transition-colors ${
                   dropZone === folder.id
-                    ? 'border-ember/50 bg-ember-soft'
+                    ? 'border-signal/50 bg-signal-soft'
                     : isSelected
-                      ? 'border-ember/35 bg-ember-soft/60'
+                      ? 'border-signal/35 bg-signal-soft/60'
                       : 'border-line bg-surface hover:border-line-strong hover:bg-surface-raised'
                 }`}
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-line bg-surface-sunken text-brass">
+                <span className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-line bg-surface-sunken text-warning">
                   <FolderIcon className="h-4 w-4" />
                 </span>
                 <span className="mt-3 block">
                   <span className="flex items-center gap-1.5">
                     <span className="truncate text-[13px] font-medium text-ink">{folder.name}</span>
-                    {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-brass" aria-label="Private" />}
-                    {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-sage" aria-label="Shared publicly" />}
+                    {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
+                    {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
                   </span>
                   <span className="mt-0.5 block text-[11px] text-ink-muted">
                     {folder.subfolders.length === 0 ? 'Folder' : `${folder.subfolders.length} subfolders`}
@@ -199,7 +199,7 @@ export function FolderViewGrid({
               <IconButton
                 label={`Actions for ${folder.name}`}
                 size="sm"
-                className="absolute right-1.5 top-1.5 h-7 w-7 bg-surface/80 opacity-100 backdrop-blur-sm md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                className="absolute right-1.5 top-1.5 h-7 w-7 bg-surface opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                 onClick={(event) => onOpenItemMenu(event, 'folder', { folderId: folder.id, folderName: folder.name })}
               >
                 <EllipsisVerticalIcon />
@@ -242,7 +242,7 @@ export function FolderViewGrid({
                 onDragEnd={onDragEnd}
                 className={`flex min-h-[7.5rem] w-full flex-col justify-between rounded-panel border p-3 text-left transition-colors ${
                   isSelected
-                    ? 'border-ember/35 bg-ember-soft/60'
+                    ? 'border-signal/35 bg-signal-soft/60'
                     : 'border-line bg-surface hover:border-line-strong hover:bg-surface-raised'
                 }`}
               >
@@ -252,8 +252,8 @@ export function FolderViewGrid({
                 <span className="mt-3 block">
                   <span className="flex items-center gap-1.5">
                     <span className="truncate text-[13px] font-medium text-ink">{document.title || 'Untitled'}</span>
-                    {document.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-brass" aria-label="Private" />}
-                    {document.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-sage" aria-label="Shared publicly" />}
+                    {document.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
+                    {document.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
                   </span>
                   <span className="mt-0.5 block truncate text-[11px] text-ink-muted">
                     {document.word_count > 0 ? `${document.word_count} words` : 'Empty note'}
@@ -276,7 +276,7 @@ export function FolderViewGrid({
               <IconButton
                 label={`Actions for ${document.title || 'Untitled'}`}
                 size="sm"
-                className="absolute right-1.5 top-1.5 h-7 w-7 bg-surface/80 opacity-100 backdrop-blur-sm md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                className="absolute right-1.5 top-1.5 h-7 w-7 bg-surface opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                 onClick={(event) =>
                   onOpenItemMenu(event, 'document', {
                     documentId: document.id,

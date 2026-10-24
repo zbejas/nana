@@ -96,7 +96,7 @@ export function ConfirmEmailChangePage() {
           </p>
         )}
 
-        <div className="mb-4 rounded-control border border-brass/25 bg-brass-soft px-3.5 py-3 text-sm leading-relaxed text-brass">
+        <div className="mb-4 rounded-control border border-warning/25 bg-warning-soft px-3.5 py-3 text-sm leading-relaxed text-warning">
           Only continue if you asked to change the email on this account.
         </div>
 

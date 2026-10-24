@@ -210,7 +210,7 @@ export function OAuthSettings() {
           </p>
         )}
         {message && (
-          <p className="mt-4 text-sm text-sage" role="status">
+          <p className="mt-4 text-sm text-success" role="status">
             {message}
           </p>
         )}
@@ -220,7 +220,7 @@ export function OAuthSettings() {
             <p className="text-sm text-ink-secondary">
               <span className="font-medium text-ink">Redirect URL</span> — register this in your OAuth2 provider:
             </p>
-            <code className="mt-2 block select-all break-all rounded bg-surface-raised px-2.5 py-1.5 font-mono text-xs text-brass">
+            <code className="mt-2 block select-all break-all rounded bg-surface-raised px-2.5 py-1.5 font-mono text-xs text-warning">
               {redirectUrl}
             </code>
           </div>
@@ -248,7 +248,7 @@ export function OAuthSettings() {
                       <span className="text-sm font-medium text-ink">
                         {provider.displayName || meta?.label || provider.name}
                       </span>
-                      {provider.clientId && <Badge tone="sage">Configured</Badge>}
+                      {provider.clientId && <Badge tone="success">Configured</Badge>}
                     </span>
                     {isOpen ? (
                       <ChevronUpIcon className="h-4 w-4 shrink-0 text-ink-muted" />

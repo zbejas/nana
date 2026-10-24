@@ -23,7 +23,7 @@ interface ConfirmDialogProps {
 
 /**
  * The single confirmation affordance in Nana. Destructive actions use the
- * danger tone, everything else the ember primary. No green "Delete" buttons.
+ * danger tone, everything else the signal primary. No green "Delete" buttons.
  */
 export function ConfirmDialog({
   open,

@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 import { cn } from './cn';
 
-export type BadgeTone = 'neutral' | 'ember' | 'brass' | 'sage' | 'danger' | 'outline';
+export type BadgeTone = 'neutral' | 'signal' | 'warning' | 'success' | 'danger' | 'outline';
 
 const tones: Record<BadgeTone, string> = {
   neutral: 'border-line bg-surface-raised text-ink-secondary',
-  ember: 'border-ember/25 bg-ember-soft text-ember',
-  brass: 'border-brass/25 bg-brass-soft text-brass',
-  sage: 'border-sage/25 bg-sage-soft text-sage',
+  signal: 'border-signal/25 bg-signal-soft text-signal',
+  warning: 'border-warning/25 bg-warning-soft text-warning',
+  success: 'border-success/25 bg-success-soft text-success',
   danger: 'border-danger/25 bg-danger-soft text-danger',
   outline: 'border-line-strong bg-transparent text-ink-secondary',
 };
@@ -40,7 +40,7 @@ export function Spinner({ className, label }: { className?: string; label?: stri
       role="status"
       aria-label={label ?? 'Loading'}
       className={cn(
-        'inline-block h-5 w-5 animate-spin rounded-full border-2 border-ink-muted/30 border-t-ember',
+        'inline-block h-5 w-5 animate-spin rounded-full border-2 border-ink-muted/30 border-t-signal',
         className
       )}
     />
@@ -57,24 +57,37 @@ interface EmptyStateProps {
   compact?: boolean;
 }
 
-export function EmptyState({ icon, eyebrow, title, description, action, className, compact }: EmptyStateProps) {
+/**
+ * A quiet editorial block rather than an empty panel: full width, left aligned,
+ * bounded by hairlines. The icon prop is accepted for compatibility and
+ * intentionally not rendered.
+ */
+export function EmptyState({ eyebrow, title, description, action, className, compact }: EmptyStateProps) {
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center rounded-panel border border-dashed border-line-strong/70 bg-surface/40 text-center',
-        compact ? 'px-6 py-10' : 'px-6 py-16',
+        'w-full border-y border-line text-left',
+        compact ? 'px-1 py-[18px]' : 'px-2 py-7',
         className
       )}
     >
-      {icon && (
-        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full border border-ember/20 bg-ember-soft text-ember [&>svg]:h-5 [&>svg]:w-5">
-          {icon}
-        </div>
+      {eyebrow && (
+        <p className="font-mono text-[10px] font-medium uppercase leading-4 tracking-[0.08em] text-ink-muted">
+          {eyebrow}
+        </p>
       )}
-      {eyebrow && <p className="eyebrow mb-2">{eyebrow}</p>}
-      <h3 className="font-display text-lg text-ink">{title}</h3>
-      {description && <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-secondary">{description}</p>}
-      {action && <div className="mt-5 flex flex-wrap items-center justify-center gap-2">{action}</div>}
+      <h3
+        className={cn(
+          'font-display text-[18px] font-semibold leading-tight tracking-[-0.02em] text-ink',
+          eyebrow && 'mt-2'
+        )}
+      >
+        {title}
+      </h3>
+      {description && (
+        <p className="mt-1.5 max-w-[60ch] text-[13px] leading-relaxed text-ink-secondary">{description}</p>
+      )}
+      {action && <div className="mt-4 flex flex-wrap items-center gap-2">{action}</div>}
     </div>
   );
 }

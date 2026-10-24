@@ -2,23 +2,23 @@ import type { TaskPriority, TaskStatus } from '../../lib/tasks';
 
 export interface BoardColumn {
   status: TaskStatus;
+  index: string;
   label: string;
   hint: string;
-  tone: 'muted' | 'brass' | 'ember' | 'sage';
 }
 
 export const BOARD_COLUMNS: BoardColumn[] = [
-  { status: 'backlog', label: 'Backlog', hint: 'Someday, unsorted', tone: 'muted' },
-  { status: 'next', label: 'Next up', hint: 'Committed, not started', tone: 'brass' },
-  { status: 'progress', label: 'In progress', hint: 'Actively moving', tone: 'ember' },
-  { status: 'done', label: 'Done', hint: 'Finished work', tone: 'sage' },
+  { status: 'backlog', index: '01', label: 'Backlog', hint: 'Someday, unsorted' },
+  { status: 'next', index: '02', label: 'Next up', hint: 'Committed, not started' },
+  { status: 'progress', index: '03', label: 'In progress', hint: 'Actively moving' },
+  { status: 'done', index: '04', label: 'Done', hint: 'Finished work' },
 ];
 
-export const PRIORITIES: Array<{ value: TaskPriority; label: string; tone: 'neutral' | 'brass' | 'ember' | 'danger' }> = [
-  { value: 'low', label: 'Low', tone: 'neutral' },
-  { value: 'medium', label: 'Medium', tone: 'brass' },
-  { value: 'high', label: 'High', tone: 'ember' },
-  { value: 'urgent', label: 'Urgent', tone: 'danger' },
+export const PRIORITIES: Array<{ value: TaskPriority; label: string }> = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'urgent', label: 'Urgent' },
 ];
 
 export const PRIORITY_LABELS: Record<TaskPriority, string> = {
@@ -28,30 +28,10 @@ export const PRIORITY_LABELS: Record<TaskPriority, string> = {
   urgent: 'Urgent',
 };
 
-export function columnToneClass(tone: BoardColumn['tone']): string {
-  switch (tone) {
-    case 'brass':
-      return 'bg-brass';
-    case 'ember':
-      return 'bg-ember';
-    case 'sage':
-      return 'bg-sage';
-    default:
-      return 'bg-ink-muted';
-  }
-}
-
-export function priorityTextClass(priority: TaskPriority | ''): string {
-  switch (priority) {
-    case 'urgent':
-      return 'text-danger';
-    case 'high':
-      return 'text-ember';
-    case 'medium':
-      return 'text-brass';
-    case 'low':
-      return 'text-ink-muted';
-    default:
-      return 'text-ink-muted';
-  }
-}
+/** Ledger shorthand: urgent is P0, low is P3. */
+export const PRIORITY_CODES: Record<TaskPriority, string> = {
+  urgent: 'P0',
+  high: 'P1',
+  medium: 'P2',
+  low: 'P3',
+};

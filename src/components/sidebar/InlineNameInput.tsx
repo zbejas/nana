@@ -47,11 +47,11 @@ export function InlineNameInput({
 
   return (
     <div
-      className="my-0.5 flex items-center gap-1.5 rounded-[6px] border border-ember/40 bg-surface-raised py-0.5 pr-2"
+      className="my-0.5 flex items-center gap-1.5 rounded-[6px] border border-signal/40 bg-surface-raised py-0.5 pr-2"
       style={{ paddingLeft: `${indent + 20}px` }}
     >
       {icon === 'folder' ? (
-        <FolderIcon className="h-3.5 w-3.5 shrink-0 text-brass" />
+        <FolderIcon className="h-3.5 w-3.5 shrink-0 text-warning" />
       ) : (
         <DocumentTextIcon className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
       )}

@@ -25,7 +25,7 @@ interface CompactSidebarProps {
 
 const viewItems = [
   { key: 'timeline', label: 'Timeline', path: '/timeline', icon: ClockIcon },
-  { key: 'board', label: 'Board', path: '/board', icon: ViewColumnsIcon },
+  { key: 'board', label: 'Boards', path: '/board', icon: ViewColumnsIcon },
   { key: 'folders', label: 'Folders', path: '/folders', icon: FolderIcon },
   { key: 'chat', label: 'Chat', path: '/chat', icon: ChatBubbleLeftRightIcon },
 ];
@@ -68,21 +68,21 @@ export function CompactSidebar({
   const itemClass = (active: boolean) =>
     `relative flex h-12 w-full flex-col items-center justify-center gap-1 rounded-control border text-[9px] font-medium transition-colors ${
       active
-        ? 'border-ember/25 bg-ember-soft text-ember'
-        : 'border-transparent text-ink-muted hover:bg-surface-raised hover:text-ink'
+        ? 'border-signal/25 bg-signal-soft text-signal'
+        : 'border-transparent text-ink-muted hover:bg-surface hover:text-ink'
     }`;
 
   return (
     <>
       <aside
-        className={`fixed left-0 top-0 z-40 hidden h-full w-20 flex-col border-r border-line bg-canvas-deep/95 px-2 py-3 transition-opacity duration-300 md:flex ${
+        className={`fixed left-0 top-0 z-40 hidden h-full w-20 flex-col border-r border-line bg-canvas-deep px-2 py-3 transition-opacity duration-300 md:flex ${
           isExpanded ? 'pointer-events-none opacity-0' : 'opacity-100'
         }`}
         aria-label="Workspace rail"
       >
         <button
           onClick={onToggleExpanded}
-          className="mb-4 flex h-11 w-full items-center justify-center rounded-control transition-colors hover:bg-surface-raised"
+          className="mb-4 flex h-11 w-full items-center justify-center rounded-control transition-colors hover:bg-surface"
           aria-label="Expand sidebar"
           title="Expand sidebar"
         >
@@ -117,13 +117,13 @@ export function CompactSidebar({
             aria-label="Profile menu"
             aria-expanded={profileMenuOpen}
             aria-haspopup="menu"
-            className="rounded-full transition-transform hover:scale-105"
+            className="flex h-11 w-11 items-center justify-center rounded-full transition-opacity hover:opacity-90"
           >
             <Avatar src={avatarUrl} name={user.name || user.email} size="md" />
           </button>
           <button
             onClick={onToggleExpanded}
-            className="flex h-9 w-full items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface-raised hover:text-ink"
+            className="flex h-11 w-full items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface hover:text-ink"
             aria-label="Expand sidebar"
             title="Expand sidebar"
           >
@@ -143,7 +143,7 @@ export function CompactSidebar({
 
       <nav
         ref={mobileNavRef}
-        className={`fixed bottom-0 left-0 right-0 z-[45] border-t border-line bg-canvas-deep/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 backdrop-blur-xl transition-opacity duration-200 md:hidden ${
+        className={`fixed bottom-0 left-0 right-0 z-[45] border-t border-line bg-canvas-deep px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 transition-opacity duration-200 md:hidden ${
           isExpanded ? 'opacity-30' : 'opacity-100'
         }`}
         aria-label="Primary"

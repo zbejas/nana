@@ -32,14 +32,14 @@ export function PublicDocumentView({
 
     if (emptyMessage && !content) {
         return (
-            <div className={`rounded-panel border border-line bg-surface p-4 panel-hairline shadow-panel ${className}`}>
+            <div className={`rounded-panel border border-line bg-surface p-4 ${className}`}>
                 <EmptyState compact title="Nothing here yet" description={emptyMessage} />
             </div>
         );
     }
 
     return (
-        <main className={`overflow-hidden rounded-panel border border-line bg-surface panel-hairline shadow-panel ${className}`}>
+        <main className={`overflow-hidden rounded-panel border border-line bg-surface ${className}`}>
             <div key={animationKey || 'default'} className="public-content-enter px-5 py-8 sm:px-10 sm:py-12">
                 <MarkdownPreview content={content} className="text-ink-secondary" />
 
@@ -54,7 +54,7 @@ export function PublicDocumentView({
                                     aria-expanded={attachmentsExpanded}
                                 >
                                     <span className="flex items-center gap-2">
-                                        <PaperClipIcon className="h-4 w-4 text-brass" />
+                                        <PaperClipIcon className="h-4 w-4 text-warning" />
                                         Attachments
                                         <span className="text-[11px] font-normal text-ink-muted">({attachments.length})</span>
                                     </span>
@@ -70,7 +70,7 @@ export function PublicDocumentView({
                         ) : (
                             <>
                                 <div className="mb-3 flex items-center gap-2 text-sm font-medium text-ink">
-                                    <PaperClipIcon className="h-4 w-4 text-brass" />
+                                    <PaperClipIcon className="h-4 w-4 text-warning" />
                                     Attachments
                                     <span className="text-[11px] font-normal text-ink-muted">({attachments.length})</span>
                                 </div>

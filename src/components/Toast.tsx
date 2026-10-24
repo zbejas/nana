@@ -22,14 +22,14 @@ const tones = {
   },
   success: {
     icon: CheckCircleIcon,
-    accent: 'bg-sage',
-    iconClass: 'border-sage/25 bg-sage-soft text-sage',
+    accent: 'bg-success',
+    iconClass: 'border-success/25 bg-success-soft text-success',
     label: 'Success',
   },
   info: {
     icon: InformationCircleIcon,
-    accent: 'bg-ember',
-    iconClass: 'border-ember/25 bg-ember-soft text-ember',
+    accent: 'bg-signal',
+    iconClass: 'border-signal/25 bg-signal-soft text-signal',
     label: 'Notice',
   },
 };
@@ -77,7 +77,7 @@ export function Toast({ message, type = 'error', onClose, durationMs = 3000 }: T
             <Icon className="h-4 w-4" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-muted">{tone.label}</p>
+            <p className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-muted">{tone.label}</p>
             <p className="mt-0.5 text-[13px] leading-snug text-ink">{message}</p>
           </div>
           <button

@@ -67,7 +67,7 @@ export function AccountTab({ user }: AccountTabProps) {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploading}
-              className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border border-line-strong bg-surface-raised text-ink-secondary transition-colors hover:border-ember/40 hover:text-ember disabled:opacity-50"
+              className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border border-line-strong bg-surface-raised text-ink-secondary transition-colors hover:border-signal/40 hover:text-signal disabled:opacity-50"
               aria-label="Change avatar"
               title="Change avatar"
             >
@@ -89,7 +89,7 @@ export function AccountTab({ user }: AccountTabProps) {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="font-display text-2xl leading-tight text-ink">{displayName}</h2>
-              <Badge tone={isAdmin ? 'ember' : 'neutral'}>{isAdmin ? 'Administrator' : 'Member'}</Badge>
+              <Badge tone={isAdmin ? 'signal' : 'neutral'}>{isAdmin ? 'Administrator' : 'Member'}</Badge>
             </div>
             <p className="mt-1 text-sm text-ink-secondary">{user.email}</p>
             <p className="mt-2 text-xs text-ink-muted">

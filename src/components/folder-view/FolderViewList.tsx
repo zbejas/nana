@@ -64,7 +64,7 @@ function InlineNameRow({
   submitLabel: string;
 }) {
   return (
-    <div className="flex flex-col gap-2 border-b border-line bg-ember-soft/30 px-3 py-2.5 sm:flex-row sm:items-center">
+    <div className="flex flex-col gap-2 border-b border-line bg-signal-soft/30 px-3 py-2.5 sm:flex-row sm:items-center">
       <input
         autoFocus
         value={value}
@@ -80,7 +80,7 @@ function InlineNameRow({
           }
         }}
         placeholder={placeholder}
-        className="h-8 min-w-0 flex-1 rounded-control border border-line bg-surface-sunken px-2.5 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-ember/50"
+        className="h-8 min-w-0 flex-1 rounded-control border border-line bg-surface-sunken px-2.5 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-signal/50"
       />
       <div className="flex items-center gap-2">
         <Button size="sm" variant="primary" onClick={onSubmit} loading={isBusy}>
@@ -146,7 +146,7 @@ export function FolderViewList({
         return (
           <div key={folder.id} className="group relative border-b border-line last:border-b-0" data-selection-item="true">
             {isRenamingFolder ? (
-              <div className="bg-ember-soft/30">
+              <div className="bg-signal-soft/30">
                 <InlineNameRow
                   value={pendingRename.name}
                   placeholder="Folder name"
@@ -170,17 +170,17 @@ export function FolderViewList({
                 onDrop={(event) => void onDrop(event, folder.id, folder.parent || undefined)}
                 className={`flex w-full items-center gap-3 px-3 py-2.5 pr-12 text-left transition-colors sm:px-4 ${
                   dropZone === folder.id
-                    ? 'bg-ember-soft ring-1 ring-inset ring-ember/40'
+                    ? 'bg-signal-soft ring-1 ring-inset ring-signal/40'
                     : isSelected
-                      ? 'bg-ember-soft'
+                      ? 'bg-signal-soft'
                       : 'hover:bg-surface-raised'
                 }`}
               >
                 <span
                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border ${
                     isSelected || dropZone === folder.id
-                      ? 'border-ember/30 bg-ember-soft text-ember'
-                      : 'border-line bg-surface-sunken text-brass'
+                      ? 'border-signal/30 bg-signal-soft text-signal'
+                      : 'border-line bg-surface-sunken text-warning'
                   }`}
                 >
                   <FolderIcon className="h-4 w-4" />
@@ -188,8 +188,8 @@ export function FolderViewList({
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <span className="truncate text-[13px] font-medium text-ink">{folder.name}</span>
-                    {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-brass" aria-label="Private" />}
-                    {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-sage" aria-label="Shared publicly" />}
+                    {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
+                    {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
                   </span>
                   <span className="mt-0.5 block text-[11px] text-ink-muted">
                     {folder.subfolders.length === 0
@@ -222,7 +222,7 @@ export function FolderViewList({
         return (
           <div key={document.id} className="group relative border-b border-line last:border-b-0" data-selection-item="true">
             {isRenamingDocument ? (
-              <div className="bg-ember-soft/30">
+              <div className="bg-signal-soft/30">
                 <InlineNameRow
                   value={pendingRename.name}
                   placeholder="Note name"
@@ -247,7 +247,7 @@ export function FolderViewList({
                 onDragStart={(event) => onDragStart(event, document.id, currentFolderId || undefined)}
                 onDragEnd={onDragEnd}
                 className={`flex w-full items-center gap-3 px-3 py-2.5 pr-12 text-left transition-colors sm:px-4 ${
-                  isSelected ? 'bg-ember-soft' : 'hover:bg-surface-raised'
+                  isSelected ? 'bg-signal-soft' : 'hover:bg-surface-raised'
                 }`}
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-line bg-surface-sunken text-ink-muted">
@@ -256,8 +256,8 @@ export function FolderViewList({
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <span className="truncate text-[13px] font-medium text-ink">{document.title || 'Untitled'}</span>
-                    {document.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-brass" aria-label="Private" />}
-                    {document.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-sage" aria-label="Shared publicly" />}
+                    {document.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
+                    {document.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
                   </span>
                   <span className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-muted">
                     <span>Updated {new Date(document.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>

@@ -4,7 +4,6 @@ export interface AIProviderConfig {
     apiKey: string;
     baseUrl: string;
     activeModel: string;
-    embeddingModel: string;
     temperature: number | null;
     maxTokens: number | null;
     topP: number | null;
@@ -36,7 +35,6 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
             apiKey: '',
             baseUrl: '',
             activeModel: '',
-            embeddingModel: '',
             temperature: null,
             maxTokens: null,
             topP: null,
@@ -46,7 +44,6 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
             apiKey: '',
             baseUrl: '',
             activeModel: '',
-            embeddingModel: '',
             temperature: null,
             maxTokens: null,
             topP: null,
@@ -56,7 +53,6 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
             apiKey: '',
             baseUrl: 'http://localhost:11434',
             activeModel: '',
-            embeddingModel: '',
             temperature: null,
             maxTokens: null,
             topP: null,

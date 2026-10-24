@@ -5,9 +5,9 @@ export function EditorDragOverlay({ visible }: { visible: boolean }) {
   if (!visible) return null;
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-[9999] flex items-center justify-center border-2 border-dashed border-ember/50 bg-canvas/70 backdrop-blur-sm">
+    <div className="pointer-events-none absolute inset-0 z-[9999] flex items-center justify-center border-2 border-dashed border-signal/50 bg-canvas/85">
       <div className="text-center">
-        <span className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-ember/30 bg-ember-soft text-ember">
+        <span className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-signal/30 bg-signal-soft text-signal">
           <PaperClipIcon className="h-5 w-5" />
         </span>
         <p className="text-base font-medium text-ink">Drop files to attach</p>
@@ -21,9 +21,9 @@ export function EditorReadOnlyOverlay({ visible }: { visible: boolean }) {
   if (!visible) return null;
 
   return (
-    <div className="mx-3 mb-2 mt-2 flex items-center gap-2 rounded-control border border-brass/30 bg-brass-soft px-3 py-2 sm:mx-4">
-      <LockClosedIcon className="h-4 w-4 shrink-0 text-brass" aria-hidden="true" />
-      <p className="text-xs font-medium text-brass">Read-only trash note. Restore it to edit.</p>
+    <div className="mx-3 mb-2 mt-2 flex items-center gap-2 rounded-control border border-warning/30 bg-warning-soft px-3 py-2 sm:mx-4">
+      <LockClosedIcon className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+      <p className="text-xs font-medium text-warning">Read-only trash note. Restore it to edit.</p>
     </div>
   );
 }

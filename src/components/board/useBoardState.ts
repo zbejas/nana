@@ -6,8 +6,8 @@ import {
   persistTaskPositions,
   subscribeToTasks,
   updateTask,
-  type CreateTaskData,
   type Task,
+  type TaskDraft,
   type TaskPosition,
   type TaskStatus,
   type UpdateTaskData,
@@ -20,50 +20,78 @@ export interface DropTarget {
   index: number;
 }
 
-export function useBoardState() {
+export function useBoardState(boardId?: string) {
   const { user } = useAuth();
   const { showToast } = useToasts();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(Boolean(boardId));
   const [error, setError] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
-  const dragOrigin = useRef<DropTarget | null>(null);
   const skipRealtimeRefresh = useRef(false);
+  const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
     if (skipRealtimeRefresh.current) return;
 
+    if (!boardId) {
+      loadSequence.current += 1;
+      setTasks([]);
+      setIsLoading(false);
+      return;
+    }
+
+    const sequence = ++loadSequence.current;
+
     try {
       setError(null);
-      const next = await listTasks();
+      const next = await listTasks(boardId);
+      if (sequence !== loadSequence.current) return;
       setTasks(next);
     } catch (loadError) {
+      if (sequence !== loadSequence.current) return;
       setError(loadError instanceof Error ? loadError.message : 'Could not load the board.');
     } finally {
-      setIsLoading(false);
+      if (sequence === loadSequence.current) {
+        setIsLoading(false);
+      }
     }
-  }, []);
+  }, [boardId]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    skipRealtimeRefresh.current = false;
+    setDraggingId(null);
+    setDropTarget(null);
+    setError(null);
+    setTasks([]);
+    setIsLoading(Boolean(boardId));
+
+    if (boardId) {
+      void load();
+    } else {
+      loadSequence.current += 1;
+    }
+  }, [boardId, load]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !boardId) return;
 
     let refreshTimer: number | undefined;
-    const unsubscribe = subscribeToTasks(user.id, () => {
-      if (skipRealtimeRefresh.current) return;
-      window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => void load(), 450);
-    });
+    const unsubscribe = subscribeToTasks(
+      user.id,
+      () => {
+        if (skipRealtimeRefresh.current) return;
+        window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(() => void load(), 450);
+      },
+      boardId
+    );
 
     return () => {
       window.clearTimeout(refreshTimer);
       unsubscribe();
     };
-  }, [user?.id, load]);
+  }, [user?.id, boardId, load]);
 
   const byStatus = useMemo(() => {
     const groups: Record<TaskStatus, Task[]> = {
@@ -89,13 +117,27 @@ export function useBoardState() {
     [byStatus]
   );
 
+  const retry = useCallback(() => {
+    setIsLoading(true);
+    setError(null);
+    void load();
+  }, [load]);
+
   const addTask = useCallback(
-    async (data: CreateTaskData) => {
-      const created = await createTask({ ...data, board_order: data.board_order ?? nextOrder(data.status) });
+    async (data: TaskDraft) => {
+      if (!boardId) {
+        throw new Error('Choose a board first.');
+      }
+
+      const created = await createTask({
+        ...data,
+        board: boardId,
+        board_order: nextOrder(data.status),
+      });
       setTasks((current) => [...current, created]);
       return created;
     },
-    [nextOrder]
+    [boardId, nextOrder]
   );
 
   const addExistingTask = useCallback((task: Task) => {
@@ -122,13 +164,11 @@ export function useBoardState() {
 
   const startDrag = useCallback((task: Task) => {
     setDraggingId(task.id);
-    dragOrigin.current = { status: task.status, index: task.board_order };
   }, []);
 
   const endDrag = useCallback(() => {
     setDraggingId(null);
     setDropTarget(null);
-    dragOrigin.current = null;
   }, []);
 
   const dragOver = useCallback((status: TaskStatus, index: number) => {
@@ -168,11 +208,6 @@ export function useBoardState() {
         })
       );
 
-      if (status === dragged.status && insertAt === dragged.board_order) {
-        // persistTaskPositions filters no-op writes, so still call it to keep
-        // any reindexed board_order values in sync with the server.
-      }
-
       skipRealtimeRefresh.current = true;
       try {
         await persistTaskPositions(previous, positions);
@@ -204,6 +239,7 @@ export function useBoardState() {
     draggingId,
     dropTarget,
     load,
+    retry,
     addTask,
     addExistingTask,
     editTask,

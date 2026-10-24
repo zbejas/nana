@@ -6,46 +6,6 @@ import type { Document, CreateDocumentData, UpdateDocumentData } from './types';
 import { generateSlug } from './utils';
 import { sanitizeHtml } from '../sanitize';
 
-// ── Auto-embed helpers ───────────────────────────────────────────────
-
-/** Tracks recently triggered embeds to avoid duplicate requests during rapid auto-save. */
-const recentEmbedTriggers = new Map<string, number>();
-const EMBED_DEBOUNCE_MS = 5_000;
-
-/**
- * Fire-and-forget request to embed a document.
- * Debounced per documentId to avoid flooding during auto-save.
- */
-function triggerAutoEmbed(documentId: string): void {
-    const now = Date.now();
-    const last = recentEmbedTriggers.get(documentId) ?? 0;
-    if (now - last < EMBED_DEBOUNCE_MS) return;
-    recentEmbedTriggers.set(documentId, now);
-
-    // Clean up old entries periodically
-    if (recentEmbedTriggers.size > 100) {
-        for (const [id, ts] of recentEmbedTriggers) {
-            if (now - ts > EMBED_DEBOUNCE_MS * 2) recentEmbedTriggers.delete(id);
-        }
-    }
-
-    const token = pb.authStore.token;
-    if (!token) return;
-
-    const url = `${pb.baseURL.replace(/\/pb$/, '')}/api/embeddings/embed`;
-
-    fetch(url, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: token,
-        },
-        body: JSON.stringify({ documentId, auto: true }),
-    }).catch(() => {
-        // Best-effort — never block the save flow
-    });
-}
-
 // Request deduplication cache
 let listDocumentsPromise: Promise<{ items: Document[]; totalItems: number; totalPages: number }> | null = null;
 
@@ -71,11 +31,6 @@ export async function createDocument(data: CreateDocumentData): Promise<Document
         logger.debug('Creating document', { data: documentData });
         const document = await pb.collection('documents').create<Document>(documentData);
         logger.info('Document created', { id: document.id });
-
-        // Auto-embed the new document (fire-and-forget)
-        if (document.content && document.content.trim().length > 0) {
-            triggerAutoEmbed(document.id);
-        }
 
         return document;
     } catch (error: any) {
@@ -178,11 +133,6 @@ export async function updateDocument(
 
         const document = await pb.collection('documents').update<Document>(id, formData);
         logger.info('Document updated', { id });
-
-        // Auto-embed when content was updated (fire-and-forget)
-        if (data.content !== undefined) {
-            triggerAutoEmbed(id);
-        }
 
         return document;
     } catch (error: any) {

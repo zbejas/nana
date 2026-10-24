@@ -25,7 +25,7 @@ export function ProfileBar({ user, onSignOut, onNavigateSettings }: ProfileBarPr
           ref={profileRef}
           type="button"
           onClick={() => setMenuOpen((prev) => !prev)}
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-control px-2 py-1.5 text-left transition-colors hover:bg-surface-raised"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-control px-2 py-1.5 text-left transition-colors hover:bg-surface"
           aria-label="Profile menu"
           aria-expanded={menuOpen}
           aria-haspopup="menu"

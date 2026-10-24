@@ -5,23 +5,21 @@ export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'link
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 const base =
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control font-medium transition-colors duration-150 disabled:pointer-events-none disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember select-none';
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control text-[13px] font-medium transition-colors duration-150 disabled:pointer-events-none disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal select-none';
 
 const variants: Record<ButtonVariant, string> = {
-  primary:
-    'bg-ember text-on-ember hover:bg-ember-strong active:bg-ember shadow-[0_1px_0_0_rgb(255_255_255/0.12)_inset]',
+  primary: 'bg-signal text-on-signal hover:bg-signal-strong active:bg-signal-strong',
   secondary:
     'border border-line bg-surface-raised text-ink hover:border-line-strong hover:bg-surface-sunken',
   ghost: 'text-ink-secondary hover:bg-surface-raised hover:text-ink',
-  danger:
-    'border border-danger bg-danger text-on-danger hover:border-danger/90 hover:bg-danger/90',
-  link: 'px-0 text-ember underline-offset-4 hover:text-ember-strong hover:underline',
+  danger: 'border border-danger bg-danger text-on-danger hover:bg-danger/90',
+  link: 'px-0 text-signal underline-offset-4 hover:text-signal-strong hover:underline',
 };
 
 const sizes: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3 text-[13px]',
-  md: 'h-10 px-4 text-sm',
-  lg: 'h-11 px-5 text-sm',
+  sm: 'h-8 px-3',
+  md: 'h-10 px-4',
+  lg: 'h-11 px-5',
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -54,7 +52,6 @@ export function Button({
       className={cn(
         base,
         variant !== 'link' && sizes[size],
-        variant === 'link' && 'text-sm',
         variants[variant],
         className
       )}
@@ -108,7 +105,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-control transition-colors duration-150 disabled:pointer-events-none disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember [&>svg]:h-[1.15rem] [&>svg]:w-[1.15rem]',
+        'inline-flex shrink-0 items-center justify-center rounded-control transition-colors duration-150 disabled:pointer-events-none disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal [&>svg]:h-[1.15rem] [&>svg]:w-[1.15rem]',
         iconSizes[size],
         iconVariants[variant],
         className

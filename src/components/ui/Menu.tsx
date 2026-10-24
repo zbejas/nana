@@ -56,7 +56,7 @@ export function MenuSurface({ open, onClose, position, children, className, aria
       role="menu"
       aria-label={ariaLabel}
       className={cn(
-        'fixed z-[1100] min-w-[13rem] max-w-[18rem] overflow-hidden rounded-control border border-line bg-surface-raised py-1.5 shadow-float outline-none',
+        'fixed z-[1100] min-w-[13rem] max-w-[18rem] overflow-hidden rounded-panel border border-line bg-surface-raised py-1.5 shadow-float outline-none',
         className
       )}
       style={{ ...position, animation: 'pop-in 140ms ease-out both' }}
@@ -103,5 +103,5 @@ export function MenuSeparator() {
 }
 
 export function MenuLabel({ children }: { children: ReactNode }) {
-  return <p className="px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-muted">{children}</p>;
+  return <p className="px-3 pb-1 pt-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-muted">{children}</p>;
 }
