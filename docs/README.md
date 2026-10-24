@@ -17,6 +17,8 @@ The docs describe **how the code works today**. When code and docs disagree, the
 | [`testing.md`](testing.md) | Docker test stack, layout, helpers, conventions | Adding or fixing tests |
 | [`deployment.md`](deployment.md) | Build, Docker, compose, releases, operations | Building, shipping, debugging deploys |
 | [`development.md`](development.md) | Local setup, workflow, common tasks, sharp edges | Beginning implementation |
+| [`../PRODUCT.md`](../PRODUCT.md) | Audience, product truth, principles, surfaces | Deciding what belongs in the product |
+| [`../DESIGN.md`](../DESIGN.md) | Ember & Ink tokens, type, components, motion, voice | Building or reviewing UI |
 
 ## Documentation rules
 

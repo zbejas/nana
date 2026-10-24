@@ -32,8 +32,8 @@ Public. Returns:
 
 ```json
 {
-  "currentVersion": "0.2.0",
-  "latestVersion": "0.2.0",
+  "currentVersion": "0.3.0",
+  "latestVersion": "0.3.0",
   "updateAvailable": false,
   "releasesUrl": "https://github.com/zbejas/nana/releases"
 }
@@ -167,8 +167,29 @@ Standard PocketBase endpoints under `/api/collections/...` are used by the brows
 
 - `users` — auth, registration, password reset, email change, OAuth.
 - `folders`, `documents`, `document_versions`, `conversations` — CRUD governed by collection rules.
+- `tasks` — CRUD for the Board. Author-scoped on all operations; no Bun API route and no trash flow. See the task field reference below.
 - `settings` — admin-only key/value store.
 - `trash_*` — readable but not writable through the API; mutations go through trash routes.
+
+### Task records
+
+`tasks` is a plain PocketBase collection used through the browser SDK:
+
+```json
+{
+  "title": "Draft release notes",
+  "description": "Markdown body",
+  "status": "backlog | next | progress | done",
+  "priority": "low | medium | high | urgent | null",
+  "due_date": "2026-10-30 00:00:00.000Z",
+  "board_order": 0,
+  "labels": ["release"],
+  "author": "user_record_id",
+  "document": "optional_document_id"
+}
+```
+
+The board sorts by `board_order` within a status and writes only the rows whose status or order changed. The note import sets `document` and copies the note title, a plain-text excerpt, and up to six tags.
 
 See [`pocketbase.md`](pocketbase.md) for schema, rules, and hooks.
 

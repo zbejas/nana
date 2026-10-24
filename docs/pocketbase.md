@@ -40,7 +40,7 @@ Groups:
 
 ## Migrations
 
-Files are sequential and zero-padded: `0000001_...` through `0000015_...`. **The next migration is `0000016_<description>.js`.**
+Files are sequential and zero-padded: `0000001_...` through `0000017_...`. **The next migration is `0000018_<description>.js`.**
 
 Use the migration API, not `module.exports`:
 
@@ -77,6 +77,7 @@ Rules:
 | `folders` | Nested folder tree | Self-referencing `parent`; `published` flag retained alongside public-share fields. |
 | `documents` | Markdown documents | Content, attachments, tags, stats, folder relation, sharing fields. |
 | `document_versions` | Version snapshots | Created when a document is saved with `published = true`. |
+| `tasks` | Board work items | Author-scoped; fixed status set, optional priority/due date/labels, and an optional link to the source document. |
 | `conversations` | Chat history | Messages stored inline as JSON; author-scoped. |
 | `settings` | Admin key/value store | `site_url`, `ai_config`, `embedding_config`, `rate_limits`. |
 | `trash_documents` | Trashed documents | Copy of document plus `original_*`, `deleted`, `deleted_at`, `deleted_by`. |
@@ -93,6 +94,16 @@ Rules:
 - Public sharing does **not** loosen collection rules. Public pages use the dedicated `/api/public/*` routes, which validate tokens and expiry in server code.
 - `document_versions` is author-scoped via `document.author = @request.auth.id`; writes are blocked by guards.
 - Trash collections are readable by their owner but blocked for create/update/delete through the API.
+
+### Task rules
+
+- `tasks` is independent from `documents`. A task may reference one document through `document`; deleting the note leaves the task in place (no cascade).
+- Rules are author-scoped on every operation. `createRule` also requires `author = @request.auth.id`, so a client cannot create work under another user.
+- `status` is a required single select with `backlog`, `next`, `progress`, and `done`. `priority` is an optional single select with `low`, `medium`, `high`, and `urgent`.
+- `board_order` is a non-negative number scoped to the author and status by the client. The board reindexes a column after a drag and persists only changed rows.
+- `labels` is a JSON string array; the task dialog accepts comma-separated input.
+- Tasks have no trash flow. Deleting a task is permanent; the confirm dialog is the only guard.
+- There are no task hooks. Word counts, version snapshots, and attachment limits apply to documents only.
 
 ### Settings keys
 
@@ -177,7 +188,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 
 ## Adding backend behavior
 
-1. Add or update the schema in a new migration (`0000015+`).
+1. Add or update the schema in a new migration (`0000018+`).
 2. Add hooks/routes under the relevant `pb_hooks/` directory.
 3. Require the new module from `index.pb.js` (or from a parent module that is already required).
 4. Use `requireAdmin(c)`, `parseRequestBody(c)`, `escapeHtml()`, and `sanitizeUrl()` from `utils.js`.

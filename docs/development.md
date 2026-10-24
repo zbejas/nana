@@ -69,9 +69,9 @@ docker compose -f docker/compose.test.yml up --build --abort-on-container-exit -
 - **Server errors:** return JSON `{ error }` with an appropriate status; log details with the module logger.
 - **Auth:** `verifyAuth()` on protected Bun routes; `requireAdmin()` on admin PocketBase routes.
 - **Frontend state:** Jotai atoms; use `useAtomValue` / `useSetAtom`; keep `useDocumentData()` at `AppContent` only.
-- **Styling:** Tailwind v4 utilities; match existing patterns before adding new primitives.
+- **Styling:** Theme-aware Tailwind utilities over the Ember & Ink tokens; reuse `src/components/ui/` before adding a primitive. See [`../DESIGN.md`](../DESIGN.md).
 - **PocketBase hooks:** CommonJS `require()`, synchronous, `$os.getenv()`, `$app`.
-- **Migrations:** append-only `0000015+`, `migrate((app) => {}, (app) => {})`, safe `down()`, idempotent guards.
+- **Migrations:** append-only; the next free number is `0000018`. Use `migrate((app) => {}, (app) => {})`, a safe `down()`, and idempotent guards.
 
 ## Common tasks
 
@@ -92,9 +92,17 @@ docker compose -f docker/compose.test.yml up --build --abort-on-container-exit -
 4. Add tests under `tests/pocketbase/`.
 5. Update [`pocketbase.md`](pocketbase.md) and [`api.md`](api.md) for new routes.
 
+### Change UI
+
+1. Read [`../DESIGN.md`](../DESIGN.md) and reuse the primitives in `src/components/ui/`.
+2. Use semantic tokens (`bg-surface`, `border-line`, `text-ink`, `bg-ember-soft`); no raw colour families or `dark:`/`light:` variants.
+3. Check the change in both themes and at a mobile width.
+4. If the change introduces a modal, use `Dialog` (or `Sheet` on touch) so focus, Escape, scroll lock, and stacking stay consistent.
+5. Update [`frontend.md`](frontend.md) when routes, state, or component structure change.
+
 ### Add a migration
 
-1. Create `pocketbase/pb_migrations/0000015_<description>.js`.
+1. Create `pocketbase/pb_migrations/0000018_<description>.js`.
 2. Use the `migrate(up, down)` format.
 3. Guard field/collection additions and removals.
 4. Include a real `down()`.

@@ -18,6 +18,8 @@ Nana ("Not Another Notes App") is a self-hosted document workspace: a Bun server
 | [`docs/testing.md`](docs/testing.md) | Docker test stack, test layout, helpers, conventions | Adding or fixing tests |
 | [`docs/deployment.md`](docs/deployment.md) | Build, Docker, compose, releases, operations | Building, shipping, or debugging deploys |
 | [`docs/development.md`](docs/development.md) | Local setup, workflow, sharp edges, definition of done | Beginning implementation |
+| [`PRODUCT.md`](PRODUCT.md) | Audience, product truth, principles, surfaces | Deciding what belongs in the product |
+| [`DESIGN.md`](DESIGN.md) | Ember & Ink tokens, type, components, motion, voice | Building or reviewing UI |
 
 The user-facing install and feature guide is [`README.md`](README.md).
 
@@ -88,10 +90,13 @@ Bun :3000 ── src/index.ts
 9. **Use `createLogger()`** instead of `console.log` in application code.
 10. **Call `useDocumentData()` exactly once**, in `AppContent` (`src/App.tsx`). Never call it in a child component.
 11. **Register every new PocketBase hook or route** in its parent module and in `pocketbase/pb_hooks/index.pb.js`.
-12. **Migrations are append-only**, numbered `0000015+`, with a safe `down()` and idempotent guards. Never rename existing migration files.
+12. **Migrations are append-only**, numbered from `0000018`, with a safe `down()` and idempotent guards. Never rename existing migration files.
 13. **Preserve the streaming and fire-and-forget paths**: SSE chat, realtime PB proxy, auto-embed, and export caching.
 14. **No secrets in the repo.** Use environment variables and the generated credentials file under `pb_data/`.
 15. **Verify the change.** Run the Docker integration suite for behavior changes; check desktop and mobile for UI changes; build before shipping.
+16. **Use the shared UI primitives.** Buttons, fields, cards, dialogs, sheets, menus, toasts, and feedback live in `src/components/ui/`. Do not add a bespoke modal overlay, button style, or input. Every modal is a `Dialog` (or `Sheet` on touch) so focus, Escape, scroll lock, and stacking stay consistent.
+17. **Use semantic tokens, not raw colours.** The Ember & Ink tokens are defined in `src/index.css` and documented in [`DESIGN.md`](DESIGN.md). Use `bg-surface`, `border-line`, `text-ink`, `text-ink-secondary`, `bg-ember-soft`, etc. No `gray`/`stone`/`blue` families and no `dark:`/`light:` variants.
+18. **Tasks are separate from documents.** The board reads the `tasks` collection; a task may reference one document but deleting either side does not cascade. Do not turn notes into tasks by overloading `documents`.
 
 ## Workflow
 

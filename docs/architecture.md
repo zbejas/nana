@@ -1,6 +1,6 @@
 # Architecture
 
-Nana is a self-hosted document workspace with Markdown editing, folders, tags, version history, trash, public sharing, and AI chat with retrieval over your own documents.
+Nana is a self-hosted document workspace with Markdown editing, folders, tags, a task board, version history, trash, public sharing, and AI chat with retrieval over your own documents.
 
 The system is one deployable with two processes:
 
@@ -83,6 +83,10 @@ Bun :3000 ── src/index.ts
 | `src/pages/` | Timeline, folders, chat, settings, auth, onboarding, public pages |
 | `src/state/atoms.ts` | All Jotai UI and data atoms |
 | `src/state/hooks/` | Data loading, realtime subscriptions, lazy folders, sidebar/editor hooks |
+| `src/lib/tasks/` | Task types, CRUD, position persistence, realtime subscription, note import |
+| `src/components/board/` | Board state, columns, cards, task dialog, note import |
+| `src/components/ui/` | Shared design-system primitives (buttons, fields, dialog, sheet, menu, cards) |
+| `src/lib/theme.ts` | Theme preference, system resolution, `data-theme` application |
 | `src/lib/` | Config, auth, logger, PocketBase client, settings, document/folder CRUD |
 | `pocketbase/pb_hooks/` | JSVM hooks, custom routes, guards, mailers, templates, cron |
 | `pocketbase/pb_migrations/` | Schema and data migrations |

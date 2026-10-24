@@ -43,6 +43,7 @@ tests/
       00-user-guards.test.ts
       01-trash-guards.test.ts
       02-version-guards.test.ts
+      03-task-rules.test.ts
     hooks/03-document-hooks.test.ts
     routes/04-trash-routes.test.ts
     routes/05-admin-routes.test.ts
@@ -107,6 +108,7 @@ describe("My route", () => {
 | Trash move/restore/delete | `tests/pocketbase/guards/01-trash-guards.test.ts` + routes |
 | Public sharing | `tests/pocketbase/routes/06-public-shares.test.ts` |
 | Migration/schema change | Assert the collection/field exists and behaves correctly |
+| Board or task rules | `tests/pocketbase/guards/03-task-rules.test.ts` — author isolation, required status, reordering |
 | Auth/bootstrap change | `tests/pocketbase/bootstrap.test.ts` + user guards |
 
 ## Debugging

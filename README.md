@@ -32,7 +32,9 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 
 - Self-hosted by default. Your data stays on your server.
 - Markdown-first editing with live preview and attachments.
+- A kanban board for the work around your notes.
 - Built-in AI chat with RAG across your documents.
+- A warm, readable interface with night and daylight themes.
 - Modern stack: Bun, React, TailwindCSS, and PocketBase.
 - Responsive UI that works on desktop and mobile.
 
@@ -41,12 +43,13 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | | |
 |---|---|
 | **Markdown editor** | Live preview, rich formatting, and attachment support. |
+| **Board** | A four-column kanban for tasks, with drag-and-drop and one-click note import. |
 | **AI chat** | Retrieval-augmented chat with support for OpenAI, Google, and Ollama. |
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline view. |
 | **Public sharing** | Share individual documents or entire folders via link, with optional expiration. |
 | **Version history** | Save snapshots and restore earlier states when needed. |
 | **Trash system** | Recover deleted content instead of losing it permanently. |
-| **Mobile-friendly** | Clean, responsive interface across screen sizes. |
+| **Mobile-friendly** | Clean, responsive interface across screen sizes, with a warm night theme and a daylight theme. |
 
 ## Quick Start
 
