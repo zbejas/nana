@@ -6,7 +6,6 @@ import {
   FolderIcon,
   ClockIcon,
   ChatBubbleLeftRightIcon,
-  ViewColumnsIcon,
   Bars3Icon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -25,12 +24,15 @@ interface CompactSidebarProps {
 
 const viewItems = [
   { key: 'timeline', label: 'Timeline', path: '/timeline', icon: ClockIcon },
-  { key: 'board', label: 'Boards', path: '/board', icon: ViewColumnsIcon },
   { key: 'folders', label: 'Folders', path: '/folders', icon: FolderIcon },
   { key: 'chat', label: 'Chat', path: '/chat', icon: ChatBubbleLeftRightIcon },
 ];
 
 function isPathActive(currentPath: string, path: string): boolean {
+  if (path === '/timeline') {
+    return currentPath === '/timeline' || currentPath.startsWith('/board');
+  }
+
   return currentPath === path || currentPath.startsWith(`${path}/`);
 }
 
@@ -154,7 +156,7 @@ export function CompactSidebar({
         }`}
         aria-label="Primary"
       >
-        <div className="grid grid-cols-5 gap-1">
+        <div className="grid grid-cols-4 gap-1">
           <button
             onClick={onToggleExpanded}
             className={`${itemClass(false)} h-14`}

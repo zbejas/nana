@@ -9,6 +9,9 @@ export interface Board extends RecordModel {
   author: string;
   folder: string;
   is_private: boolean;
+  is_public: boolean;
+  public_share_token?: string;
+  public_expires_at?: string;
   created: string;
   updated: string;
 }
@@ -27,6 +30,9 @@ export interface UpdateBoardData {
   archived?: boolean;
   folder?: string;
   is_private?: boolean;
+  is_public?: boolean;
+  public_share_token?: string | null;
+  public_expires_at?: string | null;
 }
 
 export interface ListBoardsOptions {
@@ -56,6 +62,9 @@ function normalizeBoard(board: Board): Board {
     archived: board.archived === true,
     folder: board.folder ?? '',
     is_private: board.is_private === true,
+    is_public: board.is_public === true,
+    public_share_token: board.public_share_token ?? '',
+    public_expires_at: board.public_expires_at ?? '',
   };
 }
 
@@ -135,6 +144,13 @@ export async function updateBoard(id: string, data: UpdateBoardData): Promise<Bo
   if (data.archived !== undefined) payload.archived = data.archived === true;
   if (data.folder !== undefined) payload.folder = data.folder;
   if (data.is_private !== undefined) payload.is_private = data.is_private === true;
+  if (data.is_public !== undefined) payload.is_public = data.is_public === true;
+  if (data.public_share_token !== undefined) {
+    payload.public_share_token = data.public_share_token ?? '';
+  }
+  if (data.public_expires_at !== undefined) {
+    payload.public_expires_at = data.public_expires_at ?? '';
+  }
 
   const record = await pb.collection(COLLECTION).update<Board>(id, payload);
   return normalizeBoard(record);

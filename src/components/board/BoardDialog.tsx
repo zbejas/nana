@@ -160,8 +160,8 @@ export function BoardDialog({
 
   const archiveDescription =
     taskCount === undefined
-      ? 'The board and its tasks leave your boards index. Nothing is deleted — restore it any time from Archived boards.'
-      : `The board and its ${taskCount} ${taskCount === 1 ? 'task' : 'tasks'} leave your boards index. Nothing is deleted — restore it any time from Archived boards.`;
+      ? 'The board and its tasks leave your timeline and library, and its public link stops working. Nothing is deleted — restore it any time from Archived boards.'
+      : `The board and its ${taskCount} ${taskCount === 1 ? 'task' : 'tasks'} leave your timeline and library, and its public link stops working. Nothing is deleted — restore it any time from Archived boards.`;
 
   return (
     <>

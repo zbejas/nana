@@ -1,5 +1,9 @@
 import type { RefObject } from 'react';
-import { ArrowTopRightOnSquareIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowTopRightOnSquareIcon,
+  PencilSquareIcon,
+  ShareIcon,
+} from '@heroicons/react/24/outline';
 import { ContextMenuItem, ContextMenuShell } from './ContextMenuShell';
 
 interface BoardContextMenuProps {
@@ -13,6 +17,7 @@ interface BoardContextMenuProps {
   contextMenuRef: RefObject<HTMLDivElement | null>;
   onOpenBoard: () => void;
   onEditBoard: () => void;
+  onShareBoard: () => void;
   onClose: () => void;
   isClosing?: boolean;
 }
@@ -22,6 +27,7 @@ export function BoardContextMenu({
   contextMenuRef,
   onOpenBoard,
   onEditBoard,
+  onShareBoard,
   onClose,
 }: BoardContextMenuProps) {
   return (
@@ -34,6 +40,7 @@ export function BoardContextMenu({
     >
       <ContextMenuItem icon={<ArrowTopRightOnSquareIcon />} label="Open board" onClick={onOpenBoard} />
       <ContextMenuItem icon={<PencilSquareIcon />} label="Edit board…" onClick={onEditBoard} />
+      <ContextMenuItem icon={<ShareIcon />} label="Share…" onClick={onShareBoard} />
     </ContextMenuShell>
   );
 }

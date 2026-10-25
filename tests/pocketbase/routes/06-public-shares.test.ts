@@ -6,9 +6,11 @@ import {
     readJson,
 } from "../../helpers/client";
 import {
+    createBoard,
     createFolder,
     createNote,
     createNoteWithAttachment,
+    createTask,
     createUser,
     superuserUpdate,
     type TestUser,
@@ -46,6 +48,18 @@ describe("Public share routes", () => {
         flags: Record<string, unknown> = {},
     ) {
         return superuserUpdate("folders", folderId, {
+            is_public: true,
+            public_share_token: token,
+            ...flags,
+        });
+    }
+
+    async function shareBoard(
+        boardId: string,
+        token: string,
+        flags: Record<string, unknown> = {},
+    ) {
+        return superuserUpdate("boards", boardId, {
             is_public: true,
             public_share_token: token,
             ...flags,
@@ -345,6 +359,118 @@ describe("Public share routes", () => {
                 await pbRequest(`${PUBLIC_API}/folders/${token}`),
             );
             expect(data.entryDocumentId).toBeNull();
+        });
+    });
+
+    describe("boards", () => {
+        test("returns 404 for unknown, private, archived, or expired boards", async () => {
+            await expectJsonError(await pbRequest(`${PUBLIC_API}/boards/does-not-exist-token`), 404);
+
+            const privateToken = uniqueToken();
+            const privateBoard = await createBoard(user);
+            await shareBoard(privateBoard.id, privateToken, { is_private: true });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/boards/${privateToken}`), 404);
+
+            const archivedToken = uniqueToken();
+            const archivedBoard = await createBoard(user, { archived: true });
+            await shareBoard(archivedBoard.id, archivedToken);
+            await expectStatus(await pbRequest(`${PUBLIC_API}/boards/${archivedToken}`), 404);
+
+            const expiredToken = uniqueToken();
+            const expiredBoard = await createBoard(user);
+            await shareBoard(expiredBoard.id, expiredToken, {
+                public_expires_at: "2020-01-01 00:00:00.000Z",
+            });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/boards/${expiredToken}`), 404);
+
+            const stored = await readJson<{ is_public: boolean; public_share_token: string }>(
+                await pbRequest(`/collections/boards/records/${expiredBoard.id}`, {
+                    headers: { Authorization: user.token },
+                }),
+            );
+            expect(stored.is_public).toBe(false);
+            expect(stored.public_share_token).toBe("");
+        });
+
+        test("returns the board and its tasks in board order", async () => {
+            const token = uniqueToken();
+            const board = await createBoard(user, {
+                name: "Public Board",
+                description: "The shared plan",
+            });
+            const otherBoard = await createBoard(user, { name: "Other Board" });
+            const linkedNote = await createNote(user, { title: "Private linked note" });
+            const second = await createTask(user, board.id, {
+                title: "Second task",
+                status: "next",
+                priority: "high",
+                board_order: 2,
+                labels: ["release"],
+            });
+            const first = await createTask(user, board.id, {
+                title: "First task",
+                status: "done",
+                board_order: 1,
+                document: linkedNote.id,
+            });
+            await createTask(user, otherBoard.id, { title: "Other board task" });
+            await shareBoard(board.id, token);
+
+            const res = await pbRequest(`${PUBLIC_API}/boards/${token}`);
+            await expectStatus(res, 200);
+            const data = await readJson<{
+                type: string;
+                shareToken: string;
+                author: { id: string; name: string };
+                board: Record<string, unknown>;
+                tasks: Array<Record<string, unknown>>;
+                expiresAt: string | null;
+            }>(res);
+
+            expect(data.type).toBe("board");
+            expect(data.shareToken).toBe(token);
+            expect(data.author.id).toBe(user.id);
+            expect(data.expiresAt).toBeNull();
+            expect(data.board.id).toBe(board.id);
+            expect(data.board.name).toBe("Public Board");
+            expect(data.board.description).toBe("The shared plan");
+            expect(Object.keys(data.board).sort()).toEqual(
+                ["id", "name", "description", "author", "folder", "created", "updated"].sort(),
+            );
+            expect(data.tasks.map((task) => task.id)).toEqual([first.id, second.id]);
+            expect(data.tasks.map((task) => task.title)).toEqual(["First task", "Second task"]);
+            expect(data.tasks[0]?.status).toBe("done");
+            expect(data.tasks[1]?.labels).toEqual(["release"]);
+
+            // Linked notes and ownership fields stay out of the public payload.
+            expect(Object.keys(data.tasks[0]!).sort()).toEqual(
+                [
+                    "id",
+                    "title",
+                    "description",
+                    "status",
+                    "priority",
+                    "due_date",
+                    "board_order",
+                    "labels",
+                    "created",
+                    "updated",
+                ].sort(),
+            );
+            expect(data.tasks[0]).not.toHaveProperty("document");
+            expect(data.tasks[0]).not.toHaveProperty("author");
+            expect(data.tasks[0]).not.toHaveProperty("board");
+        });
+
+        test("returns an empty task list for a board with no tasks", async () => {
+            const token = uniqueToken();
+            const board = await createBoard(user);
+            await shareBoard(board.id, token);
+
+            const data = await readJson<{ tasks: unknown[] }>(
+                await pbRequest(`${PUBLIC_API}/boards/${token}`),
+            );
+            expect(data.tasks).toEqual([]);
         });
     });
 

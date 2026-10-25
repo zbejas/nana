@@ -96,6 +96,49 @@ function serializeFolder(record) {
   }
 }
 
+function serializeBoard(record) {
+  return {
+    id: record.id,
+    name: record.getString("name"),
+    description: record.getString("description") || "",
+    author: record.getString("author"),
+    folder: record.getString("folder") || "",
+    created: toIsoOrNull(record.get("created")),
+    updated: toIsoOrNull(record.get("updated")),
+  }
+}
+
+/**
+ * A task's linked note is intentionally omitted from public board shares.
+ * The note has its own privacy and sharing state, so the board never exposes
+ * a relation that could point at a private record.
+ */
+function serializeTask(record) {
+  return {
+    id: record.id,
+    title: record.getString("title"),
+    description: record.getString("description") || "",
+    status: record.getString("status") || "backlog",
+    priority: record.getString("priority") || "",
+    due_date: toIsoOrNull(record.get("due_date")),
+    board_order: record.getInt("board_order") || 0,
+    labels: record.getStringSlice("labels"),
+    created: toIsoOrNull(record.get("created")),
+    updated: toIsoOrNull(record.get("updated")),
+  }
+}
+
+function collectBoardTasks(boardId) {
+  return $app.findRecordsByFilter(
+    "tasks",
+    "board = {:boardId}",
+    "board_order,created",
+    500,
+    0,
+    { boardId: boardId }
+  )
+}
+
 /**
  * Collects descendant folders, skipping private subfolders and their
  * entire subtrees.
@@ -190,6 +233,9 @@ if (typeof module !== "undefined" && module.exports) {
     serializeAuthor: serializeAuthor,
     serializeDocument: serializeDocument,
     serializeFolder: serializeFolder,
+    serializeBoard: serializeBoard,
+    serializeTask: serializeTask,
+    collectBoardTasks: collectBoardTasks,
     collectFolderDescendants: collectFolderDescendants,
     collectFolderDocuments: collectFolderDocuments,
     buildRecordFileKey: buildRecordFileKey,

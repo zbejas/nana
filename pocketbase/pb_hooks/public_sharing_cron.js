@@ -22,10 +22,11 @@ cronAdd("cleanup-expired-public-shares", "*/15 * * * *", () => {
 
     const expiredDocuments = clearExpiredPublicShares("documents")
     const expiredFolders = clearExpiredPublicShares("folders")
+    const expiredBoards = clearExpiredPublicShares("boards")
 
-    if (expiredDocuments > 0 || expiredFolders > 0) {
+    if (expiredDocuments > 0 || expiredFolders > 0 || expiredBoards > 0) {
       console.log(
-        `Expired public shares cleaned up: ${expiredDocuments} documents, ${expiredFolders} folders`
+        `Expired public shares cleaned up: ${expiredDocuments} documents, ${expiredFolders} folders, ${expiredBoards} boards`
       )
     }
   } catch (err) {

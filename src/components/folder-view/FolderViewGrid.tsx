@@ -270,6 +270,9 @@ export function FolderViewGrid({
                   {board.is_private && (
                     <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private board" />
                   )}
+                  {board.is_public && (
+                    <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />
+                  )}
                 </span>
                 <span className="mt-0.5 block truncate text-[11.5px] text-ink-muted">
                   {updated ? `Updated ${updated}` : 'Board'}

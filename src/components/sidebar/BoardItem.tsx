@@ -1,4 +1,9 @@
-import { EllipsisVerticalIcon, LockClosedIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
+import {
+  EllipsisVerticalIcon,
+  LockClosedIcon,
+  ShareIcon,
+  ViewColumnsIcon,
+} from '@heroicons/react/24/outline';
 import type { Board } from '../../lib/boards';
 import type { OnDragStartBoard, OnDragEnd } from '../file-folder-handling';
 
@@ -62,6 +67,9 @@ export function BoardItem({
         </span>
         {board.is_private && (
           <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />
+        )}
+        {board.is_public && (
+          <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />
         )}
       </button>
       <button

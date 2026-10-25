@@ -61,6 +61,48 @@ routerAdd("GET", "/api/public/documents/{shareToken}/files/{filename}", function
   }
 })
 
+// ── Public board share ──────────────────────────────────────────────
+
+routerAdd("GET", "/api/public/boards/{shareToken}", function(c) {
+  var h = require(__hooks + "/routes/public_share_helpers.js")
+
+  try {
+    var shareToken = c.request.pathValue("shareToken")
+    var boardRecord = h.findPublicShareRecord("boards", shareToken)
+
+    // Archived boards keep their token so a restore decision is explicit, but
+    // the public link stops serving immediately.
+    if (boardRecord && boardRecord.getBool("archived")) {
+      throw new NotFoundError("Public board not found")
+    }
+
+    boardRecord = h.ensureActivePublicShare(boardRecord)
+    var taskRecords = h.collectBoardTasks(boardRecord.id)
+    var authorRecord = h.findAuthorRecord(boardRecord.getString("author"))
+
+    var serializedTasks = []
+    for (var i = 0; i < taskRecords.length; i++) {
+      serializedTasks.push(h.serializeTask(taskRecords[i]))
+    }
+
+    return c.json(200, {
+      type: "board",
+      shareToken: shareToken,
+      expiresAt: h.toIsoOrNull(boardRecord.get("public_expires_at")),
+      author: h.serializeAuthor(authorRecord),
+      board: h.serializeBoard(boardRecord),
+      tasks: serializedTasks,
+    })
+  } catch (err) {
+    if (err instanceof NotFoundError) {
+      return c.json(404, { error: "Public board not found" })
+    }
+
+    console.error("Failed to fetch public board share:", err)
+    return c.json(500, { error: "Failed to fetch public board share" })
+  }
+})
+
 // ── Public folder share ─────────────────────────────────────────────
 
 routerAdd("GET", "/api/public/folders/{shareToken}", function(c) {

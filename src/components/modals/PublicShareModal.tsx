@@ -1,11 +1,13 @@
 import { LinkIcon } from '@heroicons/react/24/outline';
 import { DateTimePicker } from './DateTimePicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Board } from '../../lib/boards';
 import type { Document } from '../../lib/documents';
 import type { Folder } from '../../lib/folders';
 import {
     fromDatetimeLocalValue,
     getDefaultPublicExpiryDate,
+    getPublicBoardUrl,
     getPublicDocumentUrl,
     getPublicFolderUrl,
     toDatetimeLocalValue,
@@ -15,7 +17,8 @@ import { Button, Dialog, Switch } from '../ui';
 
 type PublicShareTarget =
     | { type: 'document'; record: Document }
-    | { type: 'folder'; record: Folder };
+    | { type: 'folder'; record: Folder }
+    | { type: 'board'; record: Board };
 
 interface PublicShareModalProps {
     target: PublicShareTarget | null;
@@ -30,9 +33,15 @@ function getShareUrl(target: PublicShareTarget | null) {
         return '';
     }
 
-    return target.type === 'document'
-        ? getPublicDocumentUrl(target.record.public_share_token)
-        : getPublicFolderUrl(target.record.public_share_token);
+    if (target.type === 'document') {
+        return getPublicDocumentUrl(target.record.public_share_token);
+    }
+
+    if (target.type === 'folder') {
+        return getPublicFolderUrl(target.record.public_share_token);
+    }
+
+    return getPublicBoardUrl(target.record.public_share_token);
 }
 
 export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: PublicShareModalProps) {
@@ -55,7 +64,9 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
 
         setPublicEnabled(target.record.is_public ?? false);
         setIsPrivate(target.record.is_private ?? false);
-        setShareAttachments(target.record.share_attachments ?? false);
+        setShareAttachments(
+            target.type === 'board' ? false : target.record.share_attachments ?? false
+        );
         setExpirationEnabled(hasExistingExpiry || !target.record.is_public);
         setExpirationValue(toDatetimeLocalValue(initialExpiry));
         setValidationError(null);
@@ -105,7 +116,19 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
     };
 
     const title = target.type === 'document' ? target.record.title || 'Untitled' : target.record.name;
-    const kind = target.type === 'document' ? 'note' : 'folder';
+    const kind = target.type === 'document' ? 'note' : target.type === 'folder' ? 'folder' : 'board';
+    const publicDescription =
+        target.type === 'document'
+            ? 'Anyone with the link can read this note. No sign-in required.'
+            : target.type === 'folder'
+                ? 'Anyone with the link can browse this folder as a read-only site.'
+                : 'Anyone with the link can read this board and its tasks. No sign-in required.';
+    const privateDescription =
+        target.type === 'document'
+            ? 'Hidden from AI chat and MCP. It also stays out of shared parents and can still be opened here.'
+            : target.type === 'folder'
+                ? 'Hidden from AI chat and MCP. It also hides everything inside it from shared parents and can still be opened here.'
+                : 'Hidden from AI chat and MCP. A private board cannot be shared publicly and can still be opened here.';
 
     return (
         <Dialog
@@ -129,11 +152,7 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
             <div className="space-y-3">
                 <Switch
                     label="Public access"
-                    description={
-                        target.type === 'document'
-                            ? 'Anyone with the link can read this note. No sign-in required.'
-                            : 'Anyone with the link can browse this folder as a read-only site.'
-                    }
+                    description={publicDescription}
                     checked={publicEnabled}
                     onChange={setPublicEnabled}
                     disabled={isPrivate}
@@ -158,11 +177,7 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
 
                 <Switch
                     label="Private"
-                    description={
-                        target.type === 'document'
-                            ? 'Hidden from AI chat and MCP. It also stays out of shared parents and can still be opened here.'
-                            : 'Hidden from AI chat and MCP. It also hides everything inside it from shared parents and can still be opened here.'
-                    }
+                    description={privateDescription}
                     checked={isPrivate}
                     onChange={(next) => {
                         setIsPrivate(next);
@@ -172,17 +187,19 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
                     }}
                 />
 
-                <Switch
-                    label="Share attachments"
-                    description={
-                        target.type === 'document'
-                            ? 'Let public readers download the files attached to this note.'
-                            : 'Let public readers download attachments from notes in this folder.'
-                    }
-                    checked={shareAttachments}
-                    onChange={setShareAttachments}
-                    disabled={isPrivate}
-                />
+                {target.type !== 'board' && (
+                    <Switch
+                        label="Share attachments"
+                        description={
+                            target.type === 'document'
+                                ? 'Let public readers download the files attached to this note.'
+                                : 'Let public readers download attachments from notes in this folder.'
+                        }
+                        checked={shareAttachments}
+                        onChange={setShareAttachments}
+                        disabled={isPrivate}
+                    />
+                )}
 
                 {target.record.is_public && shareUrl && (
                     <div className="rounded-control border border-signal/20 bg-signal-soft/60 p-4">

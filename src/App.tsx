@@ -16,23 +16,23 @@ import { useAuth } from "./lib/auth";
 
 // Lazy load heavy routes for code splitting
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
-const BoardsPage = lazy(() => import("./pages/BoardsPage"));
 const BoardArchivePage = lazy(() => import("./pages/BoardArchivePage"));
 const BoardPage = lazy(() => import("./pages/BoardPage"));
 const DocumentEditor = lazy(() => import("./components/DocumentEditor"));
 const PublicDocumentPage = lazy(() => import("./pages/PublicDocumentPage"));
 const PublicFolderPage = lazy(() => import("./pages/PublicFolderPage"));
+const PublicBoardPage = lazy(() => import("./pages/PublicBoardPage"));
 import { useSidebar, useDocumentEditor, useDocumentData } from "./state/hooks";
 import { initialLoadDoneAtom } from './state/atoms';
 import { useSidebarWidth, setLastNonDocumentRoute } from "./lib/settings";
 import "./index.css";
 
-const MOBILE_ROUTE_ORDER = ['/timeline', '/board', '/folders', '/chat', '/settings'] as const;
+const MOBILE_ROUTE_ORDER = ['/timeline', '/folders', '/chat', '/settings'] as const;
 
 function getMobileRouteKey(pathname: string): string {
   if (pathname.startsWith('/document/')) return '/document';
   if (pathname.startsWith('/timeline')) return '/timeline';
-  if (pathname.startsWith('/board')) return '/board';
+  if (pathname.startsWith('/board')) return '/timeline';
   if (pathname.startsWith('/folders')) return '/folders';
   if (pathname.startsWith('/chat')) return '/chat';
   if (pathname.startsWith('/settings')) return '/settings';
@@ -281,13 +281,14 @@ function AppContent() {
               <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />
               <Route path="/public/document/:shareToken" element={<PublicDocumentPage />} />
               <Route path="/public/folder/:shareToken" element={<PublicFolderPage />} />
+              <Route path="/public/board/:shareToken" element={<PublicBoardPage />} />
               <Route path="/folders" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/folders/trash" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/folders/trash/:trashFolderId" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/folders/shared" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/folders/:folderId" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/timeline" element={<ProtectedRoute><TimelinePage /></ProtectedRoute>} />
-              <Route path="/board" element={<ProtectedRoute><BoardsPage /></ProtectedRoute>} />
+              <Route path="/board" element={<Navigate to="/timeline" replace />} />
               <Route path="/board/archive" element={<ProtectedRoute><BoardArchivePage /></ProtectedRoute>} />
               <Route path="/board/:boardId" element={<ProtectedRoute><BoardPage /></ProtectedRoute>} />
               <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />

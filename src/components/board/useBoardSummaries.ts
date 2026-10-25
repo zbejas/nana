@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { listBoardSummaries, subscribeToBoards, type BoardSummary } from '../../lib/boards';
+import { listBoardSummaries, subscribeToBoards, type Board, type BoardSummary } from '../../lib/boards';
 import { subscribeToTasks } from '../../lib/tasks';
 import { useAuth } from '../../lib/auth';
 
@@ -50,6 +50,16 @@ export function useBoardSummaries(includeArchived = false) {
     setBoards((current) => current.filter((board) => board.id !== id));
   }, []);
 
+  const replaceBoardLocally = useCallback((updated: Board) => {
+    setBoards((current) =>
+      current.map((board) =>
+        board.id === updated.id
+          ? { ...board, ...updated, openCount: board.openCount, doneCount: board.doneCount, total: board.total, lastActivity: board.lastActivity }
+          : board,
+      ),
+    );
+  }, []);
+
   useEffect(() => {
     setIsLoading(true);
     setBoards([]);
@@ -75,5 +85,5 @@ export function useBoardSummaries(includeArchived = false) {
     };
   }, [user?.id, load]);
 
-  return { boards, isLoading, error, retry, removeBoardLocally };
+  return { boards, isLoading, error, retry, removeBoardLocally, replaceBoardLocally };
 }

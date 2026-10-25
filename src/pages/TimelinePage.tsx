@@ -4,12 +4,13 @@ import type { MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAtomValue, useSetAtom } from 'jotai';
 import {
+  ArchiveBoxIcon,
   CalendarDaysIcon,
   ChevronDownIcon,
   MagnifyingGlassIcon,
   PlusIcon,
-  ViewColumnsIcon,
 } from '@heroicons/react/24/outline';
+import type { Board, BoardSummary } from '../lib/boards';
 import type { Document } from '../lib/documents';
 import { deleteDocument } from '../lib/documents';
 import {
@@ -31,6 +32,7 @@ import { createLogger } from '../lib/logger';
 const log = createLogger('Timeline');
 import { useTimelinePageState } from '../components/timeline/useTimelinePageState';
 import { useContextMenuState } from '../components/file-folder-handling';
+import { BoardContextMenu } from '../components/file-folder-handling/context-menu/BoardContextMenu';
 import { DocumentContextMenu } from '../components/file-folder-handling/context-menu/DocumentContextMenu';
 import { PublicShareModal } from '../components/modals/PublicShareModal';
 import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
@@ -46,7 +48,8 @@ export function TimelinePage() {
   const publicShareModal = usePublicShareModalState();
   const [deleteConfirmState, setDeleteConfirmState] = useState<{ id: string; title: string } | null>(null);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
-  const [createBoardOpen, setCreateBoardOpen] = useState(false);
+  const [boardDialogOpen, setBoardDialogOpen] = useState(false);
+  const [editingBoard, setEditingBoard] = useState<BoardSummary | null>(null);
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const { contextMenu, isClosingContextMenu, setContextMenu, contextMenuRef, closeContextMenu } = useContextMenuState();
   const {
@@ -83,6 +86,8 @@ export function TimelinePage() {
     getWordCount,
     getReadingTime,
     removeDocumentFromTimeline,
+    replaceBoardFromTimeline,
+    removeBoardFromTimeline,
   } = useTimelinePageState();
 
   const handleDocumentClick = (document: Document) => {
@@ -92,6 +97,88 @@ export function TimelinePage() {
 
   const handleBoardClick = (boardId: string) => {
     navigate(`/board/${boardId}`);
+  };
+
+  const findBoardInTimeline = (boardId?: string): BoardSummary | undefined => {
+    if (!boardId) return undefined;
+
+    for (const group of groups) {
+      for (const item of group.items) {
+        if (item.kind === 'board' && item.board.id === boardId) {
+          return item.board;
+        }
+      }
+    }
+
+    return undefined;
+  };
+
+  const handleOpenCreateBoard = () => {
+    setEditingBoard(null);
+    setBoardDialogOpen(true);
+  };
+
+  const handleOpenEditBoard = (board: BoardSummary) => {
+    setEditingBoard(board);
+    setBoardDialogOpen(true);
+    closeContextMenu();
+  };
+
+  const handleBoardSaved = (board: Board) => {
+    const wasEditing = Boolean(editingBoard);
+    setBoardDialogOpen(false);
+    setEditingBoard(null);
+    replaceBoardFromTimeline(board);
+    showToast(wasEditing ? 'Board saved' : 'Board created', 'success');
+
+    if (!wasEditing) {
+      navigate(`/board/${board.id}`);
+    }
+  };
+
+  const handleBoardArchived = (board: Board) => {
+    setBoardDialogOpen(false);
+    setEditingBoard(null);
+    removeBoardFromTimeline(board.id);
+    showToast('Board archived', 'info');
+  };
+
+  const handleBoardContextMenu = (event: MouseEvent<HTMLDivElement>, board: BoardSummary) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      type: 'board',
+      boardId: board.id,
+      boardName: board.name,
+    });
+  };
+
+  const handleOpenBoardItemMenu = (
+    event: MouseEvent<HTMLButtonElement>,
+    board: BoardSummary,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setContextMenu({
+      x: rect.right,
+      y: rect.bottom + 4,
+      type: 'board',
+      boardId: board.id,
+      boardName: board.name,
+    });
+  };
+
+  const handleBoardLongPressMenu = (board: BoardSummary, position: { x: number; y: number }) => {
+    setContextMenu({
+      x: position.x,
+      y: position.y,
+      type: 'board',
+      boardId: board.id,
+      boardName: board.name,
+    });
   };
 
   const handleCreateFirstDocument = () => {
@@ -358,8 +445,12 @@ export function TimelinePage() {
                   title="No boards yet"
                   description="Create a board to keep work beside your notes. Boards you touch show up here too."
                   action={
-                    <Button variant="secondary" onClick={() => navigate('/board')}>
-                      Go to boards
+                    <Button
+                      variant="primary"
+                      icon={<PlusIcon />}
+                      onClick={handleOpenCreateBoard}
+                    >
+                      Create board
                     </Button>
                   }
                 />
@@ -442,6 +533,15 @@ export function TimelinePage() {
                             }
                             highlightQuery={searchQuery}
                             onClick={() => handleBoardClick(item.board.id)}
+                            onContextMenu={(event) =>
+                              handleBoardContextMenu(event, item.board)
+                            }
+                            onOpenItemMenu={(event) =>
+                              handleOpenBoardItemMenu(event, item.board)
+                            }
+                            onLongPressMenu={(position) =>
+                              handleBoardLongPressMenu(item.board, position)
+                            }
                           />
                         )
                       )}
@@ -504,16 +604,16 @@ export function TimelinePage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => navigate('/board')}
+                  onClick={() => navigate('/board/archive')}
                   className="group flex w-full items-center gap-3 border-t border-line px-4 py-3 text-left transition-colors hover:bg-surface-raised"
                 >
                   <span className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-surface-sunken text-ink-muted">
-                    <ViewColumnsIcon className="h-4 w-4" aria-hidden="true" />
+                    <ArchiveBoxIcon className="h-4 w-4" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[12.5px] font-medium text-ink">Turn notes into work</span>
+                    <span className="block text-[12.5px] font-medium text-ink">Archived boards</span>
                     <span className="mt-0.5 block truncate text-[11.5px] text-ink-muted">
-                      Right-click a note, then Add to board
+                      Restore or delete boards you set aside
                     </span>
                   </span>
                   <span className="text-ink-muted transition-colors group-hover:text-ink" aria-hidden="true">
@@ -556,6 +656,44 @@ export function TimelinePage() {
           document.body
         )}
 
+      {contextMenu?.type === 'board' &&
+        createPortal(
+          <BoardContextMenu
+            contextMenu={{
+              x: contextMenu.x,
+              y: contextMenu.y,
+              type: 'board',
+              boardId: contextMenu.boardId,
+              boardName: contextMenu.boardName,
+            }}
+            contextMenuRef={contextMenuRef}
+            onOpenBoard={() => {
+              const board = findBoardInTimeline(contextMenu.boardId);
+              closeContextMenu();
+              if (board) {
+                handleBoardClick(board.id);
+              }
+            }}
+            onEditBoard={() => {
+              const board = findBoardInTimeline(contextMenu.boardId);
+              if (board) {
+                handleOpenEditBoard(board);
+              } else {
+                closeContextMenu();
+              }
+            }}
+            onShareBoard={() => {
+              if (contextMenu.boardId) {
+                void publicShareModal.openBoard(contextMenu.boardId);
+                closeContextMenu();
+              }
+            }}
+            onClose={closeContextMenu}
+            isClosing={isClosingContextMenu}
+          />,
+          document.body
+        )}
+
       <ConfirmDialog
         open={Boolean(deleteConfirmState)}
         title="Move this note to trash?"
@@ -583,17 +721,19 @@ export function TimelinePage() {
         anchorRect={newButtonRef.current?.getBoundingClientRect() ?? null}
         onClose={() => setNewMenuOpen(false)}
         onCreateNote={handleCreateDocument}
-        onCreateBoard={() => setCreateBoardOpen(true)}
+        onCreateBoard={handleOpenCreateBoard}
       />
 
       <BoardDialog
-        open={createBoardOpen}
-        onClose={() => setCreateBoardOpen(false)}
-        onSaved={(board) => {
-          setCreateBoardOpen(false);
-          showToast('Board created', 'success');
-          navigate(`/board/${board.id}`);
+        open={boardDialogOpen}
+        board={editingBoard}
+        taskCount={editingBoard ? editingBoard.total : undefined}
+        onClose={() => {
+          setBoardDialogOpen(false);
+          setEditingBoard(null);
         }}
+        onSaved={handleBoardSaved}
+        onArchived={handleBoardArchived}
       />
     </PageShell>
   );

@@ -1,13 +1,24 @@
-import { ClockIcon, FolderIcon, LockClosedIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
-import type { KeyboardEvent } from 'react';
+import {
+  ClockIcon,
+  EllipsisVerticalIcon,
+  FolderIcon,
+  LockClosedIcon,
+  ShareIcon,
+  ViewColumnsIcon,
+} from '@heroicons/react/24/outline';
+import { useRef, type KeyboardEvent, type MouseEvent, type TouchEvent } from 'react';
 import type { BoardSummary } from '../../lib/boards';
 import { highlightText } from '../../lib/highlightText';
+import { IconButton } from '../ui';
 import { formatUpdatedLabel } from './dates';
 
 type TimelineBoardCardProps = {
   board: BoardSummary;
   folderName?: string;
   onClick: () => void;
+  onContextMenu: (event: MouseEvent<HTMLDivElement>) => void;
+  onOpenItemMenu: (event: MouseEvent<HTMLButtonElement>) => void;
+  onLongPressMenu: (position: { x: number; y: number }) => void;
   highlightQuery?: string;
 };
 
@@ -23,11 +34,75 @@ export function TimelineBoardCard({
   board,
   folderName,
   onClick,
+  onContextMenu,
+  onOpenItemMenu,
+  onLongPressMenu,
   highlightQuery = '',
 }: TimelineBoardCardProps) {
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 1) return;
+
+    const touch = event.touches.item(0);
+    if (!touch) return;
+
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    longPressTriggeredRef.current = false;
+    clearLongPressTimer();
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      const start = touchStartRef.current;
+      if (!start) return;
+      longPressTriggeredRef.current = true;
+      onLongPressMenu(start);
+    }, 450);
+  };
+
+  const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    if (!touchStartRef.current || event.touches.length !== 1) return;
+
+    const touch = event.touches.item(0);
+    if (!touch) return;
+
+    if (
+      Math.abs(touch.clientX - touchStartRef.current.x) > 10 ||
+      Math.abs(touch.clientY - touchStartRef.current.y) > 10
+    ) {
+      clearLongPressTimer();
+    }
+  };
+
+  const handleTouchEnd = () => {
+    clearLongPressTimer();
+    touchStartRef.current = null;
+  };
+
+  const handleCardClick = () => {
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
+    onClick();
+  };
+
   return (
     <article
-      onClick={onClick}
+      onClick={handleCardClick}
+      onContextMenu={onContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
       onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
@@ -55,6 +130,12 @@ export function TimelineBoardCard({
                   aria-label="Private board"
                 />
               )}
+              {board.is_public && (
+                <ShareIcon
+                  className="h-3.5 w-3.5 shrink-0 text-success"
+                  aria-label="Shared publicly"
+                />
+              )}
             </div>
             <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] leading-4 text-ink-muted">
               <span className="inline-flex items-center gap-1 tabular-nums">
@@ -69,6 +150,18 @@ export function TimelineBoardCard({
               )}
             </p>
           </div>
+
+          <IconButton
+            label="Board actions"
+            size="sm"
+            className="h-7 w-7 shrink-0 text-ink-muted"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenItemMenu(event as unknown as MouseEvent<HTMLButtonElement>);
+            }}
+          >
+            <EllipsisVerticalIcon />
+          </IconButton>
         </div>
 
         <p className="mt-2.5 line-clamp-3 text-[12.5px] leading-relaxed text-ink-muted">

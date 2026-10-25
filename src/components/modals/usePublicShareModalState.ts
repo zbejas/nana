@@ -1,9 +1,12 @@
 import { useCallback, useState } from 'react';
+import type { Board } from '../../lib/boards';
 import type { Document } from '../../lib/documents';
 import type { Folder } from '../../lib/folders';
 import {
+    getBoardForPublicShare,
     getDocumentForPublicShare,
     getFolderForPublicShare,
+    updateBoardPublicShare,
     updateDocumentPublicShare,
     updateFolderPublicShare,
     type PublicShareUpdateOptions,
@@ -12,7 +15,8 @@ import { useToasts } from '../../state/hooks';
 
 type PublicShareTarget =
     | { type: 'document'; record: Document }
-    | { type: 'folder'; record: Folder };
+    | { type: 'folder'; record: Folder }
+    | { type: 'board'; record: Board };
 
 export function usePublicShareModalState() {
     const { showToast } = useToasts();
@@ -45,6 +49,15 @@ export function usePublicShareModalState() {
         }
     }, [showToast]);
 
+    const openBoard = useCallback(async (boardId: string) => {
+        try {
+            const record = await getBoardForPublicShare(boardId);
+            setTarget({ type: 'board', record });
+        } catch {
+            showToast('Failed to load board sharing settings', 'error');
+        }
+    }, [showToast]);
+
     const save = useCallback(async (options: PublicShareUpdateOptions) => {
         if (!target) {
             return null;
@@ -60,9 +73,16 @@ export function usePublicShareModalState() {
                 return updatedRecord;
             }
 
-            const updatedRecord = await updateFolderPublicShare(target.record, options);
-            setTarget({ type: 'folder', record: updatedRecord });
-            showToast(options.enabled ? 'Public folder saved' : 'Public folder disabled', 'success');
+            if (target.type === 'folder') {
+                const updatedRecord = await updateFolderPublicShare(target.record, options);
+                setTarget({ type: 'folder', record: updatedRecord });
+                showToast(options.enabled ? 'Public folder saved' : 'Public folder disabled', 'success');
+                return updatedRecord;
+            }
+
+            const updatedRecord = await updateBoardPublicShare(target.record, options);
+            setTarget({ type: 'board', record: updatedRecord });
+            showToast(options.enabled ? 'Public board saved' : 'Public board disabled', 'success');
             return updatedRecord;
         } catch {
             showToast('Failed to update public sharing settings', 'error');
@@ -78,6 +98,7 @@ export function usePublicShareModalState() {
         isOpen: target !== null,
         openDocument,
         openFolder,
+        openBoard,
         save,
         close,
     };

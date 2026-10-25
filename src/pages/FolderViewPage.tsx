@@ -124,7 +124,7 @@ export function FolderViewPage() {
   const description = isTrashMode
     ? 'Deleted notes and folders stay here until you restore or remove them.'
     : isSharedMode
-      ? 'Notes and folders with a public link.'
+      ? 'Notes, boards, and folders with a public link.'
       : currentFolderId
         ? 'Notes, boards, and subfolders in this folder. Drag items to reorganise, double-click a folder to open.'
         : 'Your library, kept in folders. Drag notes and boards between folders to organise them.';
@@ -139,7 +139,7 @@ export function FolderViewPage() {
   const emptyDescription = isTrashMode
     ? 'Deleted items will appear here.'
     : isSharedMode
-      ? 'Share a note or folder from its menu to see it here.'
+      ? 'Share a note, board, or folder from its menu to see it here.'
       : currentFolderId
         ? 'Add a note, a board, or a subfolder to get started.'
         : 'Create your first note, board, or folder, then keep the work moving.';
@@ -172,7 +172,7 @@ export function FolderViewPage() {
                 <span className="text-[13px] font-medium tabular-nums text-ink">{displayedDocuments.length}</span>
                 {displayedDocuments.length === 1 ? 'note' : 'notes'}
               </span>
-              {!isTrashMode && !isSharedMode && (
+              {!isTrashMode && (
                 <span className="inline-flex items-baseline gap-1.5">
                   <span className="text-[13px] font-medium tabular-nums text-ink">{displayedBoards.length}</span>
                   {displayedBoards.length === 1 ? 'board' : 'boards'}
@@ -474,13 +474,19 @@ export function FolderViewPage() {
               }
             }}
             onEditBoard={() => handleOpenEditBoard(contextMenu.boardId)}
+            onShareBoard={() => {
+              if (contextMenu.boardId) {
+                void publicShareModal.openBoard(contextMenu.boardId);
+                closeContextMenu();
+              }
+            }}
             onClose={closeContextMenu}
             isClosing={isClosingContextMenu}
           />,
           document.body
         )}
 
-      {canModify && (
+      {(canModify || Boolean(editingBoard)) && (
         <BoardDialog
           open={boardDialogOpen}
           board={editingBoard}

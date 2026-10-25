@@ -192,7 +192,6 @@ export function PreferencesTab() {
               onChange={(event) => handleHomepageChange(event.target.value as DefaultHomepage)}
             >
               <option value="timeline">Timeline</option>
-              <option value="board">Boards</option>
               <option value="folders">Folders</option>
               <option value="chat">Chat</option>
             </Select>

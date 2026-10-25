@@ -17,7 +17,7 @@ const LAST_NON_DOCUMENT_ROUTE_STORAGE_KEY = 'nana-last-non-document-route';
 const MIN_AUTO_SAVE_DELAY = 200;
 const DEFAULT_AUTO_SAVE_DELAY = 600;
 
-export type DefaultHomepage = 'timeline' | 'board' | 'folders' | 'chat';
+export type DefaultHomepage = 'timeline' | 'folders' | 'chat';
 const DEFAULT_HOMEPAGE: DefaultHomepage = 'timeline';
 
 // Get the current sidebar width from localStorage
@@ -121,7 +121,12 @@ export { MIN_AUTO_SAVE_DELAY, DEFAULT_AUTO_SAVE_DELAY };
 export function getDefaultHomepage(): DefaultHomepage {
     try {
         const stored = localStorage.getItem(DEFAULT_HOMEPAGE_STORAGE_KEY);
-        if (stored === 'timeline' || stored === 'board' || stored === 'folders' || stored === 'chat') {
+        // The board index was folded into the timeline; keep old preferences
+        // pointing somewhere useful instead of dropping them.
+        if (stored === 'board') {
+            return 'timeline';
+        }
+        if (stored === 'timeline' || stored === 'folders' || stored === 'chat') {
             return stored;
         }
     } catch (error) {
@@ -145,10 +150,6 @@ export function getDefaultHomepageRoute(homepage: DefaultHomepage = getDefaultHo
         return '/timeline';
     }
 
-    if (homepage === 'board') {
-        return '/board';
-    }
-
     if (homepage === 'folders') {
         return '/folders';
     }
@@ -167,7 +168,7 @@ export function useDefaultHomepage() {
         const handleChange = (event: Event) => {
             const customEvent = event as CustomEvent<DefaultHomepage>;
             const value = customEvent.detail;
-            if (value === 'timeline' || value === 'board' || value === 'folders' || value === 'chat') {
+            if (value === 'timeline' || value === 'folders' || value === 'chat') {
                 setHomepage(value);
                 return;
             }

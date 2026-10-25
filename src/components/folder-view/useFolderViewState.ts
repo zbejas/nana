@@ -272,8 +272,12 @@ export function useFolderViewState() {
     ]);
 
     const displayedBoards = useMemo<BoardSummary[]>(() => {
-        if (isRouteFolderPending || isTrashMode || isSharedMode) {
+        if (isRouteFolderPending || isTrashMode) {
             return [];
+        }
+
+        if (isSharedMode) {
+            return boards.filter((board) => board.is_public);
         }
 
         return boards.filter((board) => (board.folder || null) === currentFolderId);

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
+  ArchiveBoxIcon,
   ClockIcon,
   FolderIcon,
   ChatBubbleLeftRightIcon,
@@ -62,12 +63,15 @@ const noopLoadFolderDocuments = async (_folderId: string, _isTrash?: boolean) =>
 
 const NAV_ITEMS = [
   { key: 'timeline', label: 'Timeline', path: '/timeline', icon: ClockIcon },
-  { key: 'board', label: 'Boards', path: '/board', icon: ViewColumnsIcon },
   { key: 'folders', label: 'Folders', path: '/folders', icon: FolderIcon },
   { key: 'chat', label: 'Chat', path: '/chat', icon: ChatBubbleLeftRightIcon },
 ] as const;
 
 function isNavActive(pathname: string, path: string): boolean {
+  if (path === '/timeline') {
+    return pathname === '/timeline' || pathname.startsWith('/board');
+  }
+
   return pathname === path || pathname.startsWith(`${path}/`);
 }
 
@@ -370,6 +374,14 @@ export function Sidebar() {
                     >
                       <ViewColumnsIcon />
                     </IconButton>
+                    <IconButton
+                      label="Archived boards"
+                      size="sm"
+                      className="h-6 w-6 [&>svg]:h-3.5 [&>svg]:w-3.5"
+                      onClick={() => handleViewNavigation('/board/archive')}
+                    >
+                      <ArchiveBoxIcon />
+                    </IconButton>
                   </div>
 
                   <div className="space-y-px">
@@ -551,6 +563,12 @@ export function Sidebar() {
             if (board) {
               handleOpenEditBoard(board);
             } else {
+              closeContextMenu();
+            }
+          }}
+          onShareBoard={() => {
+            if (contextMenu.boardId) {
+              void publicShareModal.openBoard(contextMenu.boardId);
               closeContextMenu();
             }
           }}

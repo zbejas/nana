@@ -73,7 +73,7 @@ export function BoardArchivePage() {
   return (
     <PageShell contentClassName="desktop-page-content-enter">
       <PageHeader
-        back={{ label: 'Boards', onClick: () => navigate('/board') }}
+        back={{ label: 'Timeline', onClick: () => navigate('/timeline') }}
         title="Archived boards"
         description="Boards set aside with their tasks. Nothing here is deleted until you delete it for good."
         meta={

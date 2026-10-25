@@ -122,7 +122,12 @@ export function useTimelinePageState() {
 
     // Boards are a compact set, so load all active summaries once and let their
     // board/task realtime subscriptions keep lastActivity fresh.
-    const { boards, isLoading: isBoardsLoading } = useBoardSummaries(false);
+    const {
+        boards,
+        isLoading: isBoardsLoading,
+        replaceBoardLocally,
+        removeBoardLocally,
+    } = useBoardSummaries(false);
 
     const [documents, setDocuments] = useState<Document[]>(() => userCache?.documents ?? []);
     const [page, setPage] = useState(() => userCache?.page ?? 1);
@@ -604,5 +609,7 @@ export function useTimelinePageState() {
         getWordCount,
         getReadingTime,
         removeDocumentFromTimeline,
+        replaceBoardFromTimeline: replaceBoardLocally,
+        removeBoardFromTimeline: removeBoardLocally,
     };
 }

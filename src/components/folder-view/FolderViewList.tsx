@@ -289,6 +289,9 @@ export function FolderViewList({
                   {board.is_private && (
                     <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private board" />
                   )}
+                  {board.is_public && (
+                    <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />
+                  )}
                 </span>
                 <span className="mt-0.5 flex items-center gap-2 text-[11.5px] text-ink-muted">
                   <span>{updated ? `Updated ${updated}` : 'Board'}</span>

@@ -9,6 +9,7 @@ import {
   MagnifyingGlassIcon,
   PencilSquareIcon,
   PlusIcon,
+  ShareIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import type { Document } from '../lib/documents';
@@ -39,6 +40,8 @@ import { TaskDialog } from '../components/board/TaskDialog';
 import { ImportNoteDialog } from '../components/board/ImportNoteDialog';
 import { useBoardState } from '../components/board/useBoardState';
 import { formatRelativeDate } from '../components/board/dates';
+import { PublicShareModal } from '../components/modals/PublicShareModal';
+import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
 
 function isNotFound(error: unknown): boolean {
   return (
@@ -53,6 +56,7 @@ export function BoardPage() {
   const navigate = useNavigate();
   const { boardId } = useParams<{ boardId: string }>();
   const { showToast } = useToasts();
+  const publicShareModal = usePublicShareModalState();
 
   const [board, setBoard] = useState<Board | null>(null);
   const [isBoardLoading, setIsBoardLoading] = useState(true);
@@ -221,7 +225,7 @@ export function BoardPage() {
   return (
     <PageShell scroll="content" contentClassName="desktop-page-content-enter">
       <PageHeader
-        back={{ label: 'All boards', onClick: () => navigate('/board') }}
+        back={{ label: 'Timeline', onClick: () => navigate('/timeline') }}
         title={
           board ? (
             <span className="inline-flex items-center gap-2">
@@ -230,6 +234,12 @@ export function BoardPage() {
                 <LockClosedIcon
                   className="h-4 w-4 shrink-0 text-warning"
                   aria-label="Private board"
+                />
+              )}
+              {board.is_public && (
+                <ShareIcon
+                  className="h-4 w-4 shrink-0 text-success"
+                  aria-label="Shared publicly"
                 />
               )}
             </span>
@@ -269,6 +279,14 @@ export function BoardPage() {
                 New task
               </Button>
               <IconButton
+                label="Share board"
+                variant="secondary"
+                className="h-10 w-10"
+                onClick={() => void publicShareModal.openBoard(board.id)}
+              >
+                <ShareIcon />
+              </IconButton>
+              <IconButton
                 label="Edit board"
                 variant="secondary"
                 className="h-10 w-10"
@@ -290,9 +308,9 @@ export function BoardPage() {
             <Button
               variant="secondary"
               icon={<ChevronLeftIcon />}
-              onClick={() => navigate('/board')}
+              onClick={() => navigate('/timeline')}
             >
-              Back to boards
+              Back to timeline
             </Button>
           }
         />
@@ -313,7 +331,7 @@ export function BoardPage() {
       ) : board?.archived ? (
         <EmptyState
           title="This board is archived"
-          description="Restore it to work with its tasks again, or open the boards index to pick another board."
+          description="Restore it to work with its tasks again, or return to the timeline to pick another board."
           action={
             <>
               <Button
@@ -324,8 +342,8 @@ export function BoardPage() {
               >
                 Restore
               </Button>
-              <Button variant="ghost" onClick={() => navigate('/board')}>
-                All boards
+              <Button variant="ghost" onClick={() => navigate('/timeline')}>
+                Back to timeline
               </Button>
             </>
           }
@@ -539,6 +557,14 @@ export function BoardPage() {
         </>
       )}
 
+      <PublicShareModal
+        target={publicShareModal.target}
+        isOpen={publicShareModal.isOpen}
+        isSaving={publicShareModal.isSaving}
+        onClose={publicShareModal.close}
+        onSave={publicShareModal.save}
+      />
+
       {board && (
         <BoardDialog
           open={editOpen}
@@ -551,7 +577,7 @@ export function BoardPage() {
           }}
           onArchived={() => {
             showToast('Board archived', 'info');
-            navigate('/board');
+            navigate('/timeline');
           }}
         />
       )}
