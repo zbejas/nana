@@ -89,8 +89,6 @@ Browser facade routes decode the JWT locally for the caller id and expiry, then 
 
 `GET /docs` serves a Scalar API reference and `GET /docs/json` serves the OpenAPI document. Both are **public**; `/api/v1` itself is not. The Scalar bundle is served from `@scalar/api-reference` at `/docs/scalar.js`; the docs use the app's self-hosted Geist fonts at `/docs/geist.woff2` and `/docs/geist-mono.woff2`. No CDN or external font origin is needed, so the CSP stays `script-src 'self'` and `font-src 'self' data:` (the production bundle inlines the app fonts as data URIs).
 
-`GET /docs` serves a Scalar API reference and `GET /docs/json` serves the OpenAPI document. Both are **public**; `/api/v1` itself is not. The Scalar bundle is served from `@scalar/api-reference` at `/docs/scalar.js`; the docs use the app's self-hosted Geist fonts at `/docs/geist.woff2` and `/docs/geist-mono.woff2`. No CDN or external font origin is needed, so the CSP stays `script-src 'self'` and `font-src 'self'`.
-
 The spec uses `APP_VERSION`, grouped Folders/Notes/Boards/Tasks tags, stable operation ids, per-status error responses, request/response examples, and a `bearerAuth` HTTP security scheme. Scalar's own theme is disabled in favour of Graphite CSS variables so the reference reads like the rest of Nana.
 
 #### Endpoints
