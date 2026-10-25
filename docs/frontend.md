@@ -2,7 +2,7 @@
 
 ## Overview
 
-The frontend is a React 19 SPA built with Bun, styled with TailwindCSS v4 and the Graphite tokens, and routed with React Router v7. Jotai owns shared UI and document state; PocketBase is accessed through the JS SDK pointed at `/pb`. Board task state is route-local, not global. Active boards also appear in the folder view beside notes, and private boards carry a lock indicator.
+The frontend is a React 19 SPA built with Bun, styled with TailwindCSS v4 and the Graphite tokens, and routed with React Router v7. Jotai owns shared UI and document state; PocketBase is accessed through the JS SDK pointed at `/pb`. Board task state is route-local, not global. Boards live in the timeline, folder view, and sidebar rather than a separate index; private boards carry a lock and publicly shared boards carry a share indicator.
 
 The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth is in [`../PRODUCT.md`](../PRODUCT.md).
 
@@ -16,24 +16,26 @@ The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth
 | `src/lib/auth.tsx` | `AuthProvider` / `useAuth()`: session validation, sign-in, sign-up, OAuth, logout. |
 | `src/index.css` | Tailwind entry, Graphite tokens, self-hosted fonts, global styles, motion, Markdown overrides. |
 | `src/lib/theme.ts` | Theme preference (`system`/`dark`/`light`), resolution, `data-theme`, theme-color meta. |
-| `src/pages/BoardsPage.tsx` | Board index and board cards, including the private lock. |
-| `src/pages/TimelinePage.tsx` | Timeline feed and utility rail: notes and boards, search, calendar filter. |
+| `src/pages/TimelinePage.tsx` | Timeline feed and utility rail: notes and boards, search, calendar filter, board menus. |
 | `src/components/timeline/useTimelinePageState.ts` | Timeline paging, search, calendar range, merged note/board feed. |
 | `src/components/timeline/items.ts` | Pure feed helpers: board visibility and note/board merge ordering. |
 | `src/components/timeline/TimelineDocumentCard.tsx` | Note feed card: preview, tags, folder, reading statistics. |
-| `src/components/timeline/TimelineBoardCard.tsx` | Board feed card: description, folder, task counts, private lock. |
-| `src/pages/BoardPage.tsx` | Board detail: header actions, search, kanban columns, dialogs, private lock. |
+| `src/components/timeline/TimelineBoardCard.tsx` | Board feed card: description, folder, task counts, privacy/share indicators, board menu. |
+| `src/pages/BoardPage.tsx` | Board detail: header actions, sharing, search, kanban columns, dialogs, privacy. |
 | `src/pages/BoardArchivePage.tsx` | Archived boards, restore, permanent delete. |
+| `src/pages/PublicBoardPage.tsx` | Public board reader: fetch, header meta, error/empty states. |
+| `src/components/public/PublicBoardView.tsx` | Read-only board body grouped into status sections. |
+| `src/components/public/board.ts` | Pure public-board helpers: status grouping and task counts. |
 | `src/pages/FolderViewPage.tsx` | Folder contents, board rows beside notes, counts, drag targets, board menu, `BoardDialog`. |
 | `src/components/folder-view/useFolderViewState.ts` | Folder route state, board summaries for the current folder, board create/edit/menu wiring, drag handlers. |
 | `src/components/folder-view/FolderViewGrid.tsx` | Icon/grid folder contents; board cards, private lock, drag start. |
 | `src/components/folder-view/FolderViewList.tsx` | List folder contents; board rows, private lock, drag start. |
 | `src/components/file-folder-handling/useFileFolderDnD.ts` | Note, folder, and board drag state; board drops call `updateBoard({ folder })`. |
-| `src/components/file-folder-handling/context-menu/BoardContextMenu.tsx` | Board context menu: Open board, Edit board. |
+| `src/components/file-folder-handling/context-menu/BoardContextMenu.tsx` | Board context menu: Open board, Edit board, Share. |
 | `src/components/file-folder-handling/context-menu/FolderContextMenu.tsx` | Folder context menu, including `New board` filed in that folder. |
 | `src/pages/ChatPage.tsx` | Chat empty state, messages, tool activity, composer, history. |
 | `src/components/board/useBoardState.ts` | Task load, realtime refresh, create/edit/delete, drag state, optimistic reorder. |
-| `src/components/board/useBoardSummaries.ts` | Board index/folder/archive data and realtime refresh. |
+| `src/components/board/useBoardSummaries.ts` | Timeline/folder/archive board data and realtime refresh. |
 | `src/components/board/AddToBoardHost.tsx` | The single root picker host driven by `addToBoardRequestAtom`. |
 | `src/components/board/AddToBoardDialog.tsx` | Board picker for a note; create-inline board support. |
 | `src/components/board/ImportNoteDialog.tsx` | Board-scoped note import from the board header. |
@@ -59,8 +61,9 @@ The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth
 | `/confirm-email-change` | Email-change confirmation | Public |
 | `/public/document/:shareToken` | Public document view | Public |
 | `/public/folder/:shareToken` | Public folder view | Public |
+| `/public/board/:shareToken` | Public board reader | Public |
 | `/timeline` | Timeline | Protected |
-| `/board` | Board index | Protected |
+| `/board` | Redirect to `/timeline` | Protected |
 | `/board/archive` | Archived boards | Protected |
 | `/board/:boardId` | Board kanban | Protected |
 | `/folders`, `/folders/:folderId` | Folder view | Protected |
@@ -71,9 +74,9 @@ The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth
 | `/settings/admin/:section` | Workspace administration | Admin only |
 | `/document/:id` | Document editor | Protected |
 
-`ProtectedRoute` waits for auth loading, redirects unauthenticated users to `/`, and uses `<Navigate replace>`. Heavy routes are lazy-loaded: `BoardsPage`, `BoardArchivePage`, `BoardPage`, `SettingsPage`, `DocumentEditor`, `PublicDocumentPage`, and `PublicFolderPage`. Unknown paths redirect to `/`.
+`ProtectedRoute` waits for auth loading, redirects unauthenticated users to `/`, and uses `<Navigate replace>`. Heavy routes are lazy-loaded: `BoardArchivePage`, `BoardPage`, `SettingsPage`, `DocumentEditor`, `PublicDocumentPage`, `PublicFolderPage`, and `PublicBoardPage`. Unknown paths redirect to `/`; `/board` keeps old links working by redirecting to the timeline.
 
-Mobile route transitions follow the order `/timeline` → `/board` → `/folders` → `/chat` → `/settings`; document routes are treated separately. The transition is a 14px lateral slide under 768px.
+Mobile route transitions follow the order `/timeline` → `/folders` → `/chat` → `/settings`; board detail and archive routes group with the timeline. Document routes are treated separately. The transition is a 14px lateral slide under 768px.
 
 ### Auth flow
 
@@ -100,7 +103,7 @@ All shared atoms live in `src/state/atoms.ts`.
 | Loading | data loading lock, initial-load completion, loaded/loading folder sets |
 | Editor | selected document, creating flag, save callback, initial title/content, creation session ID |
 | Realtime | timeline tick / refresh triggers |
-| Board | `addToBoardRequestAtom` only; `useBoardState` owns the open board's tasks, `useBoardSummaries` owns index/archive/folder rows, including `folder` and `is_private` |
+| Board | `addToBoardRequestAtom` only; `useBoardState` owns the open board's tasks, `useBoardSummaries` owns timeline/archive/folder rows, including `folder`, `is_private`, and `is_public` |
 
 Critical rules:
 
@@ -124,22 +127,20 @@ Initial load order is recent documents, root documents, folders + trash folders,
 - Search matches note title/content/tags through `searchDocuments()` and board name/description locally. The calendar range filters both notes and boards by their activity timestamp.
 - A segmented **All / Notes / Boards** control filters the feed. Boards-only skips the note paging cutoff; notes-only skips the initial board wait. The labels and the rail count the records available in the current view.
 - **New** in the header opens the shared New menu (`NewContentMenu`): New note starts the editor, New board opens `BoardDialog` and then the created board.
-- Note cards keep the document context menu and add-to-board flow. Board cards open `/board/:id` and show the private lock, folder, and open/done counts; archived boards stay out of the feed.
-- The rail counts notes, boards, and folders in the current view.
+- Note cards keep the document context menu and add-to-board flow. Board cards open `/board/:id` and show the private lock, public-share icon, folder, and open/done counts; archived boards stay out of the feed.
+- Board cards match note-card interaction: right-click, the overflow button, or a touch long-press opens `BoardContextMenu` with Open board, Edit board, and Share. Editing uses `BoardDialog`; sharing uses the shared modal.
+- The rail counts notes, boards, and folders in the current view. Its lower action opens `/board/archive`.
 - Realtime note changes bump `timelineRealtimeTickAtom`; `useBoardSummaries()` refreshes boards from its board and task subscriptions.
+- There is no separate boards index. `/board` redirects to `/timeline`; archived boards remain at `/board/archive` and are linked from the timeline rail and the Library header.
 
-### Board index
+### Boards in the library
 
-`/board` is a card index, not a ledger.
+Boards are created and opened from the surfaces that already hold them.
 
+- The sidebar Library tree lists root boards and boards inside expanded folders. `useSidebarBoards()` loads active boards through `listBoards()` and refreshes on board realtime events.
+- The Library header has **New board** and **Archived boards** actions beside New folder and New note. Board rows use the column icon, private lock, public-share icon, Open/Edit/Share menu, and drag between folders.
 - `useBoardSummaries()` loads `listBoardSummaries()`: one boards query plus one task query, then sums open/done counts and records the latest task update per board as `lastActivity`.
-- Active boards only, newest first. Summary chips read `NN board(s)`, `NN open`, and `NN done`.
-- A private board shows a lock beside its name on the index card and the detail header. The lock is a visual cue; the private lock itself is enforced by the AI surfaces.
-- Cards sit on `md:grid-cols-2` / `2xl:grid-cols-3`. Each card carries an index, last updated, name, two-line description, a signal progress bar, done/total, open/done chips, and a circled arrow.
-- A board with no tasks shows `No tasks`; a missing description shows `No description`.
-- The page actions are `Archived` (to `/board/archive`) and `New board` (opens `BoardDialog`).
-- Empty state: `No boards yet`, with a `Create board` action.
-- Board and task realtime events both refresh the summaries after a 450ms debounce.
+- Board and task realtime events both refresh timeline and folder summaries after a 450ms debounce.
 
 ### Board detail
 
@@ -147,8 +148,9 @@ Initial load order is recent documents, root documents, folders + trash folders,
 
 - `getBoard(boardId)` loads the board; a `404` renders “That board is not here”.
 - `useBoardState(activeBoardId)` only receives an id when the board is loaded and not archived. An archived board therefore loads no tasks and renders a restore state.
-- Header actions for an active board: `Import note`, `New task`, and an edit icon that opens `BoardDialog`.
-- A private board shows a lock beside the title. `BoardDialog` has a `Private` switch; changing it updates `is_private` without moving the board.
+- Header actions for an active board: `Import note`, `New task`, a share icon that opens `PublicShareModal`, and an edit icon that opens `BoardDialog`.
+- A private board shows a lock beside the title; a publicly shared board shows a share icon. `BoardDialog` has a `Private` switch; changing it updates `is_private` without moving the board.
+- The header back link returns to the timeline. Archived boards and missing boards offer timeline actions, not a boards index.
 - Columns are fixed: `backlog`, `next`, `progress`, `done`, labelled Backlog, Next up, In progress, Done. Each lane has a status dot; only In progress is signal-coloured.
 - `xl` is a four-column grid. Below that, lanes are a horizontal snap row (`w-[min(86vw,340px)]`); mouse users scroll, touch users swipe.
 - Task cards are rounded `surface` panels inside a `surface-sunken` lane. They show title, a plain-text excerpt, a `P0`–`P3` priority chip, due date (danger when overdue and not done), a linked-note title, and up to two label chips. Done titles are muted and struck through.
@@ -163,7 +165,7 @@ Initial load order is recent documents, root documents, folders + trash folders,
 
 ### Board archive
 
-`/board/archive` lists only `archived = true` boards.
+`/board/archive` lists only `archived = true` boards and is reached from the Library header or the timeline rail.
 
 - Each card shows name, description, task count, archived date, Restore, and Delete forever.
 - `Restore` clears `archived` and removes the row locally.
@@ -174,14 +176,14 @@ Initial load order is recent documents, root documents, folders + trash folders,
 
 `/folders` and `/folders/:folderId` show notes, subfolders, and active boards for the current folder.
 
-- `useFolderViewState()` calls `useBoardSummaries(false)` and filters `board.folder === currentFolderId`. Boards are omitted in trash and shared modes and while a route folder is pending.
+- `useFolderViewState()` calls `useBoardSummaries(false)` and filters `board.folder === currentFolderId`. The shared view lists every active `is_public` board. Boards are omitted in trash and while a route folder is pending.
 - The header meta counts folders, notes, and boards. Actions are `New folder`, `New board`, and `New note`.
-- A board row/card shows a column icon, name, relative updated date, task counts (`N open · N/M done`, or `No tasks`), and a lock when private. Clicking it opens `/board/:id`; the overflow button opens `BoardContextMenu` with `Open board` and `Edit board…`.
+- A board row/card shows a column icon, name, relative updated date, task counts (`N open · N/M done`, or `No tasks`), a lock when private, and a share icon when public. Clicking it opens `/board/:id`; the overflow button opens `BoardContextMenu` with `Open board`, `Edit board…`, and `Share…`.
 - `New board` and the folder context menu's `New board` create in the current folder, or in the folder the context menu was opened on. `BoardDialog` receives that `folderId`; a successful create navigates to the new board.
 - Boards are draggable between folders like notes. The drop calls `updateBoard(board.id, { folder })`; an empty destination is the root. The PocketBase guard validates folder ownership.
 - Editing a board opens `BoardDialog` with the board, its current folder selected, and a folder selector for moving it without drag. The dialog can also archive the board.
-- Folder trash and permanent delete rehome boards to the root on the server. The folder view does not list boards in trash or shared views.
-- The folder view is not the board index. Archived boards are absent here; `/board` remains the full active index and `/board/archive` owns restore/delete.
+- Folder trash and permanent delete rehome boards to the root on the server. The folder view does not list boards in trash; the shared view lists public boards.
+- Archived boards are absent from folder views; `/board/archive` owns restore and permanent delete.
 
 ### Add to board
 
@@ -219,10 +221,11 @@ The board detail header uses a different flow: `ImportNoteDialog` imports into t
 - Attachments are protected files; the client obtains a short-lived file token for rendering.
 - Notes over 5 MB warn; over the 100 MB database limit the warning becomes an error. Thresholds live in `ContentSizeWarning.tsx`.
 - Sidebar: full sidebar docked at `>=1024px`; 768–1023px uses the 64px rail with the full sidebar as an overlay; below 768px the sidebar is an overlay plus a bottom navbar. Folder trees are in `src/components/sidebar/`; folder contents in `src/components/folder-view/`; drag-and-drop in `src/components/file-folder-handling/`.
-- The sidebar Library tree mixes root notes and root boards; an expanded folder shows its notes and boards together. `useSidebarBoards()` loads active boards through `listBoards()` and refreshes on board realtime events. Board rows use the column icon, private lock, Open/Edit menu, and drag between folders. The global **New** button opens `NewContentMenu` with New note and New board.
+- The sidebar Library tree mixes root notes and root boards; an expanded folder shows its notes and boards together. `useSidebarBoards()` loads active boards through `listBoards()` and refreshes on board realtime events. Board rows use the column icon, private lock, public-share icon, Open/Edit/Share menu, and drag between folders. The Library header includes **New board** and **Archived boards**; the global **New** button opens `NewContentMenu` with New note and New board.
 - Settings: `/settings/account`, `/settings/preferences`, `/settings/admin/general|people|email|signin|ai`, `/settings/about`. The URL owns the tab. AI covers providers, models, generation parameters, and prompts; there is no embedding or search-index section.
-- Public pages fetch through `/pb/api/public/...` and skip authenticated app data; `AppContent` disables `useDocumentData()` for `/public/`.
-- The `PublicShareModal` `Private` switch says the record is hidden from AI chat and MCP and from shared parents. It does not hide the record from its owner; the owner can still open it in the library.
+- Public pages fetch through `/pb/api/public/...` and skip authenticated app data; `AppContent` disables `useDocumentData()` for `/public/`. Documents, folders, and boards each have a public reader route; `PublicBoardPage` renders the board description and status-grouped tasks without task-note links.
+- The `PublicShareModal` supports documents, folders, and boards. Boards hide the attachment switch because they have no files. The `Private` switch hides the record from AI chat and MCP and from shared parents; a private board cannot be public. It does not hide the record from its owner.
+- The default homepage setting no longer offers a separate boards page; stored `board` preferences open the timeline instead.
 - PWA: the manifest and `/sw.js` are served by `src/index.ts`; `InstallBanner` uses `useInstallPrompt()`; the service worker is intentionally minimal.
 
 ### Styling and UI conventions
@@ -274,7 +277,7 @@ Performance:
 
 - **`useDocumentData()` must stay at `AppContent`.** A second call duplicates realtime subscriptions and initial loads.
 - **Board tasks are not Jotai state.** `useBoardState` owns the open board; `useBoardSummaries` owns index/archive/folder rows. Putting tasks in a global atom would fight both realtime refreshes and the drag skip flag.
-- **Folder boards are active only.** `useFolderViewState()` passes `false` to `useBoardSummaries()` and filters by `folder`; archived boards belong to `/board/archive`, not the folder view.
+- **Folder boards are active only.** `useFolderViewState()` passes `false` to `useBoardSummaries()` and filters by `folder`; shared mode lists active `is_public` boards. Archived boards belong to `/board/archive`, not the folder view.
 - **Board drag moves the folder only.** `useFileFolderDnD` calls `updateBoard(id, { folder })`; it does not touch the board's tasks, archive state, or `name`/`description`.
 - **Editing a board does not move it.** `BoardDialog` sends the folder only on create. Moving is a drag or the folder context menu, not an implicit edit side effect.
 - **Folder trash keeps boards.** The server rehomes boards to the root before removing the folder. Do not add a client-side board delete loop or treat a missing folder as a deleted board.

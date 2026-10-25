@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nana is a self-hosted document workspace: Markdown notes in folders, multiple task boards, version history, trash, public sharing, a read-only AI assistant, a JSON API, and an MCP server for external AI clients. Notes are `documents`; tasks are separate `tasks` records grouped by author-scoped `boards`. Boards can be filed in the same folder tree as notes and can be marked private.
+Nana is a self-hosted document workspace: Markdown notes in folders, multiple task boards, version history, trash, public sharing, a read-only AI assistant, a JSON API, and an MCP server for external AI clients. Notes are `documents`; tasks are separate `tasks` records grouped by author-scoped `boards`. Boards live in the same folder tree as notes, can be marked private, and can be shared publicly.
 
 The system is one deployable with two processes: **Bun** serves the SPA, the application API, the Elysia REST API at `/api/v1`, the public OpenAPI docs at `/docs`, and the MCP endpoint at `/mcp` on port `3000`; **PocketBase** serves data, auth, hooks, and admin APIs on port `8090`. The browser reaches PocketBase only through the Bun origin at `/pb/*`.
 
@@ -20,9 +20,9 @@ The system is one deployable with two processes: **Bun** serves the SPA, the app
 | `src/api/pocketbase/` | Caller-token PocketBase REST client shared by chat tools, REST services, and MCP. Never accepts the superuser token. |
 | `src/api/chat/` | Chat orchestration, providers, conversation persistence, read-only workspace tools. |
 | `src/api/chat/tools/` | `list_notes`, `read_note`, `list_boards`, `read_board` with bounds, author checks, and the private lock. |
-| `src/lib/boards/` | Board types, CRUD, archive/restore, permanent delete, folder/privacy fields, summaries, realtime subscription. |
+| `src/lib/boards/` | Board types, CRUD, archive/restore, permanent delete, folder/privacy/public-share fields, summaries, realtime subscription. |
 | `src/lib/tasks/` | Task types, CRUD, position persistence, note import, realtime subscription. |
-| `src/pages/` | Timeline, board index/detail/archive, chat, settings, auth, onboarding, public pages. |
+| `src/pages/` | Timeline, board detail/archive, chat, settings, auth, onboarding, public pages. |
 | `src/components/board/` | Board state, summaries, task rows/dialog, board dialog, add-to-board host/picker, note import. |
 | `src/components/folder-view/` | Folder contents grid/list, folder state, board rows beside notes, drag targets, board create/edit entry points. |
 | `src/components/file-folder-handling/` | Note, folder, and board drag-and-drop plus the folder/document/board context menus. |
@@ -118,13 +118,14 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 
 ### Board request
 
-1. `/board` loads `boards` and `tasks` through the SDK at `/pb`, then groups tasks with `listBoardSummaries()`.
+1. The timeline, sidebar, and folder view load `boards` and `tasks` through the SDK at `/pb` with `listBoardSummaries()`. There is no separate board index.
 2. `/board/:boardId` loads one board and `listTasks(boardId)`, sorted by `board_order` and `created`.
-3. The folder view also calls `listBoardSummaries()` and filters active boards to the current folder, so a board sits beside notes and subfolders.
+3. The folder view filters active board summaries to the current folder; the shared view lists active `is_public` boards.
 4. Dragging a card writes only the changed rows through `persistTaskPositions()`: `status` and `board_order`, never `board`.
 5. Dragging a board between folders calls `updateBoard(id, { folder })`. PocketBase runs `guards/board_guards.js`, which verifies the incoming folder belongs to the caller.
-6. Realtime task events refresh the open board; board and task events refresh the index and folder view after a short debounce.
+6. Realtime task events refresh the open board; board and task events refresh timeline and folder summaries after a short debounce.
 7. Archiving is a board `PATCH { archived: true }`. Permanent delete is allowed only for archived boards and cascades their tasks.
+8. Public board links use `public_share_token`; `/api/public/boards/:token` validates `is_public`, privacy, expiry, and archive state before returning tasks.
 
 ### Data flows
 
@@ -137,16 +138,16 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 | Folder trash | Browser → `/pb/api/trash/move-folder` → PB copies the subtree, moves documents to trash, rehomes boards to the root → `{ trashFolderId, movedDocumentIds, movedBoardIds }` |
 | Board folder move | Browser → `PATCH boards/:id { folder }` → `board_guards.js` ownership check → realtime refresh |
 | Task move | Browser → `/pb/api/collections/tasks/records/:id` (`status`, `board_order`) → realtime refresh |
-| Board index | Browser → `boards` + `tasks` (`fields=board,status`) → per-board open/done/total counts |
-| Folder view boards | Browser → `listBoardSummaries()` → filter active boards by `folder = currentFolderId` |
-| Board archive | Browser → `PATCH boards/:id { archived: true }` → active index excludes it |
+| Timeline boards | Browser → `boards` + `tasks` (`fields=board,status`) → per-board open/done/total counts → merged with notes |
+| Folder view boards | Browser → `listBoardSummaries()` → filter active boards by `folder = currentFolderId`; shared view filters `is_public` |
+| Board archive | Browser → `PATCH boards/:id { archived: true }` → timeline, sidebar, and folder views exclude it; public link returns `404` |
 | Board delete | Browser → `DELETE boards/:id` only while archived → PB cascades the board's tasks |
 | Note to task | Browser → `createTaskFromDocument()` → task with `board`, optional `document`, title, excerpt, up to six tags |
 | REST read/write | API client → `/api/v1` → Elysia handler → workspace service (`surface: "user"`) → PB REST with user token → JSON |
 | MCP tool call | MCP client → `POST /mcp` → per-request MCP server → workspace service (`surface: "ai"`) → PB REST with user token → tool result |
 | Chat | Browser → `/api/chat/send` → `streamText` + read tools → PB REST with user token → SSE |
 | Export | Browser → `/api/export` → resolve documents/folders → download attachments → Markdown or ZIP |
-| Public share | Public page → `/pb/api/public/*` → PB validates token, expiry, privacy, attachment sharing |
+| Public share | Public page → `/pb/api/public/*` → PB validates token, expiry, privacy, archive state, and attachment sharing |
 | Version check | About tab → `/api/app/version` → cached GitHub Releases lookup |
 
 ### Runtime modes

@@ -43,7 +43,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | | |
 |---|---|
 | **Markdown editor** | Live preview, rich formatting, and attachment support. |
-| **Boards** | Multiple four-column kanbans with drag-and-drop, note import, folders, private boards, an archive, and permanent delete for archived boards. |
+| **Boards** | Multiple four-column kanbans with drag-and-drop, note import, folders, private boards, public read-only board links, an archive, and permanent delete for archived boards. |
 | **AI chat** | Ask about your notes and boards. The assistant reads them on demand with OpenAI, Google, or Ollama, and never writes to your workspace. |
 | **API and MCP** | Reach the same workspace from your own tools with a JSON API and a stateless MCP endpoint. Private records stay hidden from AI. |
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline of recent notes and boards. |
@@ -54,7 +54,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 
 ## Boards in folders
 
-Boards live in the same folder tree as notes. The sidebar library and folder view show boards beside their notes; drag a board into another folder, or choose **New board** and it is filed where you are. Boards are archived before they can be deleted, and a folder never deletes the boards inside it: move a folder to trash and its boards return to the root with their tasks.
+Boards live in the same folder tree as notes. The timeline, sidebar library, and folder view show boards beside their notes; drag a board into another folder, or choose **New board** and it is filed where you are. Right-click a board to open, edit, or share it. A public board link opens a read-only page with its tasks, while private boards stay out of every public and AI surface. Boards are archived before they can be deleted, and a folder never deletes the boards inside it: move a folder to trash and its boards return to the root with their tasks.
 
 Mark a note, board, or folder **Private** to keep it out of AI chat and MCP. It stays in your workspace and you can still open and edit it.
 

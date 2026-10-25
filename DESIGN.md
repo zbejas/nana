@@ -83,7 +83,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 ## Shape and surface
 
 - Radii: controls **6px** (`rounded-control`), panels **10px** (`rounded-panel`), mobile sheets **16px** (`rounded-sheet`).
-- Route content is full bleed beside the sidebar. The sidebar’s 1px right rule is the only divider; do not wrap Timeline, Boards, Folders, Chat, Settings, or the editor in an outer card, border, radius, or inset.
+- Route content is full bleed beside the sidebar. The sidebar’s 1px right rule is the only divider; do not wrap Timeline, Folders, Chat, Settings, or the editor in an outer card, border, radius, or inset.
 - Every authenticated route uses `PageShell` for one shared page field, max **1280px** (reading 820px, wide 1600px), centered, with 20/32/48px gutters.
 - Panels are flat. `surface-raised` is a hover/menu state, not a permanent second layer.
 - The only shadow is `shadow-float`, used on overlays: dialogs, sheets, menus, toasts, and popovers. Nothing in the page body carries a shadow.
@@ -105,7 +105,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 - A full-width inverted `ink` **New** button sits under the brand and opens a Note/Board menu. It is global chrome, not the contextual primary action; page-level primary actions take `signal-bright`.
 - Primary navigation rows are 32px with 6px radius. The active row is `surface` with a hairline and an ember icon; inactive rows are transparent with muted icons. There are no inverted navigation chips.
 - Section labels are 11.5px medium muted: “Recent”, “Library”.
-- The Library tree lists root notes and root boards, then folders; an expanded folder lists its notes and boards with the same 20px row rhythm. Notes use the document glyph, boards the four-column glyph, and private boards keep the warning lock.
+- The Library tree lists root notes and root boards, then folders; an expanded folder lists its notes and boards with the same 20px row rhythm. Notes use the document glyph, boards the four-column glyph, private boards keep the warning lock, and public boards take the success share glyph. The Library header carries New folder, New note, New board, and Archived boards actions.
 - The profile bar stays at the bottom with avatar, name, email, and settings.
 - The collapsed rail uses 40px targets. The active icon sits on a `surface` tile with a hairline and takes the ember colour.
 
@@ -121,21 +121,19 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 `/timeline` is a 2-column reading view: a notes-and-boards feed and a 20rem utility rail.
 
-- Feed cards are 10px panels on `surface` with a hairline. Note cards carry a title, one-line metadata, a three-line plain-text preview, tags, and reading statistics. Board cards carry a board icon, title, updated/folder metadata, a description preview, and open/done counts. There is no hover rail and no rendered Markdown inside a card; note previews are stripped to text so the title never repeats.
+- Feed cards are 10px panels on `surface` with a hairline. Note cards carry a title, one-line metadata, a three-line plain-text preview, tags, and reading statistics. Board cards carry a board icon, title, updated/folder metadata, a description preview, and open/done counts. Both card types expose the same overflow button, right-click menu, and touch long-press menu; board menus include Share. There is no hover rail and no rendered Markdown inside a card; note previews are stripped to text so the title never repeats.
 - Group labels use a 12.5px semibold label, a rule, and a plain numeric count.
-- The rail holds the search field, month calendar, and an “In this view” card with note, board, and folder counts plus the board link.
+- The rail holds the search field, month calendar, and an “In this view” card with note, board, and folder counts. Its lower action opens Archived boards; there is no board index.
 - A compact segmented **All / Notes / Boards** filter sits above the feed and carries the current count in each label. **New** opens the Note/Board menu.
 - The calendar is a compact 7-column grid with 36px date cells and a `signal-bright` fill for the selected range.
 
-### Boards index
+### Public board reader
 
-`/board` is a card index, not a ledger.
+`/public/board/:shareToken` is a reading page, not a kanban.
 
-- A single meta strip reads `2 boards`, `5 open`, `2 done`, set between hairlines. No summary pills and no zero-padded index numbers.
-- Cards are `md:grid-cols-2` and `2xl:grid-cols-3`, at least 160px tall. A card carries the name, last updated, two-line description, a one-line progress summary, a 1px progress bar, and a quiet arrow.
-- When there are fewer than three boards, a dashed **New board** tile spans the row below the cards on `md` and above, and takes one cell on `2xl`. It is hidden on mobile, where the header action is the path.
-- Hover changes border and tone only. The card never lifts or scales.
-- The empty state is a centred panel with an explanation and one action.
+- The top bar carries the author, board name, open/done counts, update date, and expiry badge.
+- The body is one max-3xl panel. The board description renders as Markdown, then non-empty status sections follow: a mono index, status label, count, rule, and task rows.
+- Task rows are flat `surface` panels with a title, plain-text description, priority code, due date, and outline labels. Done rows use a success check and reduced opacity. There are no drag handles, menus, private links, or note links.
 
 ### Board detail
 
@@ -144,7 +142,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 - Each lane is a 10px `surface-sunken` panel with a 1px border, 10px inner padding, a status dot, label, plain count, add button, scrollable card body, and an Add task footer.
 - Task cards are 7px-radius `surface` panels with a 13.5px medium title, two-line excerpt, and compact meta chips for priority, due date, linked note, and labels. Done titles are muted and struck through.
 - Mobile is a horizontal snap row; the helper reads “Swipe between columns.” Desktop shows all four and reads “Drag between columns.”
-- The header is `PageHeader` with a back link to All boards, open/done in the meta strip, and Import note / New task / Edit actions.
+- The header is `PageHeader` with a back link to the timeline, open/done in the meta strip, a share icon, and Import note / New task / Edit actions. A public board also carries the success share glyph beside its title.
 
 ### Archive
 

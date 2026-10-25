@@ -115,7 +115,7 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 - **Styling:** theme-aware Tailwind utilities over the Graphite tokens; reuse `src/components/ui/` before adding a primitive. See [`../DESIGN.md`](../DESIGN.md).
 - **PocketBase hooks:** CommonJS `require()`, synchronous, `$os.getenv()`, `$app`.
 - **Bun:** stay on 1.4.4 or newer. Bun 1.3.x can emit a production `dist/index.html` that points at the wrong entry chunk, leaving the SPA blank. The Docker and CI pins are 1.4.4.
-- **Migrations:** append-only; the next free number is `0000021`. Use `migrate((app) => {}, (app) => {})`, a safe `down()`, and idempotent guards.
+- **Migrations:** append-only; the next free number is `0000022`. Use `migrate((app) => {}, (app) => {})`, a safe `down()`, and idempotent guards.
 
 ### Common tasks
 
@@ -165,7 +165,7 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 
 #### Add a migration
 
-1. Create `pocketbase/pb_migrations/0000021_<description>.js`.
+1. Create `pocketbase/pb_migrations/0000022_<description>.js`.
 2. Use the `migrate(up, down)` format.
 3. Guard field/collection additions and removals.
 4. Include a real `down()`.
@@ -250,7 +250,7 @@ For larger tasks:
 
 - **`bun run build` is mandatory before shipping**, even when the Docker suite passes. The suite runs source, not the production bundle.
 - **Docs-only changes still need a link check.** There is no docs build or Markdown linter; verify every relative link and every named path manually or with `grep`/`ls`.
-- **The next migration is `0000021`.** Do not reuse `0000018`–`0000020`; they are applied.
+- **The next migration is `0000022`.** Do not reuse `0000018`–`0000021`; they are applied.
 - **Board and task data is user data.** Never use `pb_data` fixtures from the host in tests, and never edit an applied migration in place.
 - **`useDocumentData()` is a single call site.** Moving it into a page duplicates subscriptions and breaks the initial-load order.
 - **The root AddToBoard host is the only picker.** New entry points set `addToBoardRequestAtom`; they do not open their own dialog.

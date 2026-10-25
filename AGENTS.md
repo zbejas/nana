@@ -39,7 +39,7 @@ src/
   components/           UI components (editor, sidebar, folder view, boards, modals, PWA)
   pages/                Route-level pages (timeline, boards, archive, chat, settings)
   state/                Jotai atoms + data/realtime/lazy-loading hooks
-  lib/boards/           Board CRUD, folder/privacy fields, archive/restore, summaries, realtime
+  lib/boards/           Board CRUD, folder/privacy/public-share fields, archive/restore, summaries, realtime
   lib/tasks/            Task CRUD, ordering, note import, realtime
   lib/                  Config, auth, logger, document/folder CRUD, settings
 pocketbase/
@@ -102,7 +102,7 @@ Bun :3000 ── src/index.ts
 9. **Use `createLogger()`** instead of `console.log` in application code.
 10. **Call `useDocumentData()` exactly once**, in `AppContent` (`src/App.tsx`). Never call it in a child component.
 11. **Register every new PocketBase hook or route** in its parent module and in `pocketbase/pb_hooks/index.pb.js`.
-12. **Migrations are append-only**, numbered from `0000021`, with a safe `down()` and idempotent guards. Never rename existing migration files.
+12. **Migrations are append-only**, numbered from `0000022`, with a safe `down()` and idempotent guards. Never rename existing migration files.
 13. **Preserve the streaming paths**: SSE chat with tool streaming, realtime PB proxy, export caching. There is no auto-embed or background indexer.
 14. **No secrets in the repo.** Use environment variables and the generated credentials file under `pb_data/`.
 15. **Verify the change.** Run `bun run test:unit` for pure logic, the Docker suite (`bun run test:docker`) for behavior changes, check desktop and mobile for UI changes, and build before shipping.

@@ -38,7 +38,7 @@ Authorization: Bearer <pocketbase-auth-token>
 | `src/api/chat/tools/` | Read-only `list_notes`, `read_note`, `list_boards`, `read_board`, shared with MCP reads. |
 | `src/api/export/` | Markdown and ZIP export. |
 | `src/api/app-version.ts` | Cached GitHub Releases lookup. |
-| `src/lib/boards/` | Browser-side board CRUD, folder/privacy fields, and summaries over the standard collection API. |
+| `src/lib/boards/` | Browser-side board CRUD, folder/privacy/public-share fields, and summaries over the standard collection API. |
 | `src/lib/tasks/` | Browser-side task CRUD, ordering, and note import. |
 | `pocketbase/pb_hooks/routes/` | Custom PocketBase routes: trash, admin, public shares, check-users. |
 | `pocketbase/pb_hooks/guards/board_guards.js` | Board folder ownership on API create/update. |
@@ -287,6 +287,7 @@ These paths are shown as PocketBase sees them. From the browser, prefix them wit
 | `/api/public/documents/:shareToken/files/:filename` | GET | Document attachment when `share_attachments` is true. |
 | `/api/public/folders/:shareToken` | GET | Folder tree plus descendant folders/documents. Private subtrees and private documents are skipped. |
 | `/api/public/folders/:shareToken/files/:documentId/:filename` | GET | Attachment for a document in a shared folder. |
+| `/api/public/boards/:shareToken` | GET | Board metadata plus tasks in board order. Archived, private, expired, and non-public boards return `404`. Linked task notes are omitted. |
 
 #### Trash
 
@@ -324,7 +325,7 @@ Standard PocketBase endpoints under `/api/collections/...` are used by the brows
 | --- | --- | --- |
 | `users` | `/pb/api/collections/users/...` | Auth, registration, password reset, email change, OAuth. |
 | `folders`, `documents`, `document_versions`, `conversations` | `/pb/api/collections/...` | CRUD governed by collection rules. |
-| `boards` | `/pb/api/collections/boards/records` | Author-scoped CRUD; delete only while archived; optional folder; private flag. |
+| `boards` | `/pb/api/collections/boards/records` | Author-scoped CRUD; delete only while archived; optional folder; private and public-share flags. |
 | `tasks` | `/pb/api/collections/tasks/records` | Author-scoped CRUD; create/update require an active board owned by the author. |
 | `settings` | `/pb/api/collections/settings/records` | Admin-only key/value store. |
 | `trash_*` | `/pb/api/collections/trash_*/records` | Readable but not writable; mutations go through trash routes. |
@@ -338,17 +339,21 @@ Standard PocketBase endpoints under `/api/collections/...` are used by the brows
   "archived": false,
   "folder": "optional_folder_id",
   "is_private": false,
+  "is_public": false,
+  "public_share_token": "",
+  "public_expires_at": "",
   "author": "user_record_id"
 }
 ```
 
 - `name` is required (max 120); `description` is optional (max 500).
-- `archived` defaults to false. Archiving is a normal `PATCH`; there is no separate archive route.
+- `archived` defaults to false. Archiving is a normal `PATCH`; there is no separate archive route. An archived board’s public link stops serving.
 - `folder` is optional. It must belong to the caller; `board_guards.js` checks the incoming relation. An empty value means the workspace root.
-- `is_private` hides the board from chat and MCP, not from its owner.
+- `is_private` hides the board from chat and MCP, not from its owner. A private board cannot be served publicly.
+- `is_public`, `public_share_token`, and `public_expires_at` are the board public-share fields; the browser generates the token and the public route validates it.
 - `author` is required and set on create. Ownership cannot be changed later.
 - A board may only be deleted while `archived = true`; that delete cascades its tasks.
-- List and view are author-scoped. Use `filter=archived=false` for the active index and `filter=archived=true` for the archive.
+- List and view are author-scoped. Use `filter=archived=false` for active boards and `filter=archived=true` for the archive.
 
 #### Task records
 
@@ -391,7 +396,31 @@ Document response:
 }
 ```
 
-Folder response includes `rootFolder`, `folders`, `documents`, and `entryDocumentId`. Expired shares are disabled on read and swept by a 15-minute cron.
+Board response:
+
+```json
+{
+  "type": "board",
+  "shareToken": "…",
+  "expiresAt": null,
+  "author": { "id": "…", "name": "…" },
+  "board": { "id": "…", "name": "…", "description": "…", "folder": "" },
+  "tasks": [
+    {
+      "id": "…",
+      "title": "…",
+      "description": "…",
+      "status": "backlog",
+      "priority": "",
+      "due_date": null,
+      "board_order": 0,
+      "labels": []
+    }
+  ]
+}
+```
+
+Folder response includes `rootFolder`, `folders`, `documents`, and `entryDocumentId`. Board tasks do not include `author`, `board`, or the linked `document`; the linked note keeps its own privacy and share state. Expired shares are disabled on read and swept by a 15-minute cron.
 
 ## Gotchas & invariants
 

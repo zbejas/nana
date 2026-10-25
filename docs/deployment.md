@@ -136,7 +136,7 @@ Existing tasks keep their `status` and `board_order`; only the relation is writt
 
 After the upgrade:
 
-- The board index shows all active boards; the archive is at `/board/archive`.
+- The timeline, sidebar, and folder views show active boards; the archive is at `/board/archive`.
 - A private board is still visible to its owner but is hidden from AI chat and MCP.
 - Archive a board before deleting it. PocketBase rejects deleting an active board.
 - Permanent delete is available only from the archive and cascades that board's tasks.
@@ -147,13 +147,15 @@ Migration `0000019_remove_embedding_settings.js` deletes the obsolete `embedding
 
 Migration `0000020_boards_in_folders.js` adds `boards.folder` as an optional relation (`cascadeDelete: false`), `boards.is_private`, and `idx_boards_author_folder`. It does not move or backfill existing boards: they stay at the workspace root until someone files them. Folder trash rehomes boards to the root instead of deleting them, so the upgrade cannot remove board data.
 
+Migration `0000021_add_board_public_sharing.js` adds the board public-share fields. Existing boards stay unshared. An archived board’s public link stops serving without deleting the token, so restoring the board restores its previous link.
+
 ### Upgrades
 
 1. Back up `pocketbase/pb_data/`.
 2. Pull the new image/tag.
 3. Start the container; the entrypoint runs migrations before serving.
 4. Check logs for migration errors and superuser bootstrap.
-5. Verify the board index: existing tasks should appear under `My board` (or their existing board), with status and order preserved.
+5. Verify the timeline and sidebar: existing tasks should appear under `My board` (or their existing board), with status and order preserved.
 6. Verify the archive flow: active boards cannot be deleted; archived boards can be restored or deleted forever.
 7. Verify boards in folders: create a folder, drag a board into it, and confirm the board remains after trashing the folder (it returns to the root).
 8. Verify the active AI provider/model in Settings → Workspace → AI. There is nothing to configure for embeddings.
@@ -203,7 +205,7 @@ The workflow is idempotent: if the release already exists it is a no-op, so edit
 - Set `DEBUG=true` temporarily when diagnosing chat provider or tool failures. It enables server-side verbose logs only; the browser bundle is built with `DEBUG=false`.
 - Monitor disk for attachments and SQLite. A legacy `zvec/` directory is safe to remove after a backup.
 - Restart after changing PocketBase hooks/migrations or the Dockerfile.
-- After each upgrade, open `/board` and `/board/archive` once to confirm the board data and archive state.
+- After each upgrade, open `/timeline` and `/board/archive` once to confirm the board data and archive state.
 
 ### Troubleshooting
 

@@ -44,8 +44,10 @@ tests/
     document-utils.test.ts
     export-documents.test.ts
     folder-tree.test.ts
+    public-board.test.ts
     sanitize.test.ts
     tasks-text.test.ts
+    timeline-items.test.ts
   pocketbase/
     bootstrap.test.ts
     guards/
@@ -254,6 +256,7 @@ Rules:
 | Folder trash and board rehoming | `tests/pocketbase/routes/08-board-folder-trash.test.ts` |
 | Board folder ownership or `is_private` schema | `tests/pocketbase/guards/05-board-folders.test.ts` |
 | Public sharing, expiry, attachment exposure | `tests/pocketbase/routes/06-public-shares.test.ts` |
+| Public board payload, archive/privacy guards, task ordering | `tests/pocketbase/routes/06-public-shares.test.ts` + `tests/unit/public-board.test.ts` |
 | Task rules, board moves, ordering | `tests/pocketbase/guards/03-task-rules.test.ts` |
 | Board archive/delete/cascade | `tests/pocketbase/guards/04-board-rules.test.ts` |
 | Auth/bootstrap/signup lockdown | `tests/pocketbase/bootstrap.test.ts` + `guards/00-user-guards.test.ts` |
