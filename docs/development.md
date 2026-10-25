@@ -226,7 +226,7 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 - **No embeddings or vector store.** Chat and MCP read through their tool sets; do not reintroduce auto-embed, `embedding_config`, or background indexing.
 - **The test container resets its database.** Never mount host `pb_data` into the test compose.
 - **`tests/preload.ts` is opt-in.** The Docker entrypoint and `bun run test:integration` pass it with `--preload`; a bare `bun test` does not wait for services.
-- **`src/api/admin/rate-limits/reload` is auth-only**, not role-checked. Be deliberate if you change or rely on it.
+- **Rate-limit admin routes are role-checked.** `GET`/`PATCH /api/v1/admin/rate-limits` and the legacy `POST /api/admin/rate-limits/reload` require the PocketBase admin flag; the `PATCH` persists and reloads together.
 - **No destructive git.** No `git reset --hard`, `git checkout --`, forced cleans, or deleting unmerged branches without preserving the work first.
 
 ### Git and change hygiene

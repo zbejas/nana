@@ -50,6 +50,7 @@ import {
     UpdateNoteBodySchema,
     UpdateTaskBodySchema,
 } from "./schemas";
+import { adminApi } from "./admin";
 import { browserApi } from "./browser";
 import {
     apiOpenApiConfig,
@@ -359,6 +360,7 @@ export const apiApp = new Elysia({ name: "nana-api" })
         detail: { hide: true },
     })
     .use(browserApi)
+    .use(adminApi)
     .use(v1);
 
 export type ApiApp = typeof apiApp;

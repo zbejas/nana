@@ -1,12 +1,14 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { bunRequest, expectJsonError, expectStatus, readJson } from "../helpers/client";
-import { createUser, type TestUser } from "../helpers/factories";
+import { createAdmin, createUser, type TestUser } from "../helpers/factories";
 
 describe("Bun app endpoints", () => {
     let user: TestUser;
+    let admin: TestUser;
 
     beforeAll(async () => {
         user = await createUser("api-version");
+        admin = await createAdmin("api-version-admin");
     });
 
     describe("GET /api/app/version", () => {
@@ -41,7 +43,7 @@ describe("Bun app endpoints", () => {
     });
 
     describe("POST /api/admin/rate-limits/reload", () => {
-        test("requires a valid user token", async () => {
+        test("requires a valid admin token", async () => {
             await expectStatus(
                 await bunRequest("/api/admin/rate-limits/reload", { method: "POST" }),
                 401,
@@ -53,12 +55,19 @@ describe("Bun app endpoints", () => {
                 }),
                 401,
             );
+            await expectStatus(
+                await bunRequest("/api/admin/rate-limits/reload", {
+                    method: "POST",
+                    headers: { Authorization: user.token },
+                }),
+                403,
+            );
         });
 
         test("reloads the rate-limit configuration", async () => {
             const res = await bunRequest("/api/admin/rate-limits/reload", {
                 method: "POST",
-                headers: { Authorization: user.token },
+                headers: { Authorization: admin.token },
             });
             await expectStatus(res, 200);
             const data = await readJson<{
@@ -76,7 +85,7 @@ describe("Bun app endpoints", () => {
             await expectStatus(
                 await bunRequest("/api/admin/rate-limits/reload", {
                     method: "GET",
-                    headers: { Authorization: user.token },
+                    headers: { Authorization: admin.token },
                 }),
                 405,
             );

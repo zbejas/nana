@@ -236,7 +236,7 @@ PocketBase evaluates relation rules against the **stored** record, not the incom
 | --- | --- |
 | `site_url` | `{ url: "https://nana.example.com" }` |
 | `ai_config` | `activeProvider`, `providers.{openai,google,ollama}`, generation params, `systemPrompt`, `titlePrompt`. See [`ai.md`](ai.md). |
-| `rate_limits` | `enabled`, `pbMaxPerMinute`, `appMaxPerMinute`. |
+| `rate_limits` | `enabled`, `pbMaxPerMinute` (the `/api/v1` bucket), `appMaxPerMinute` (everything else). The Bun admin API exposes these as `apiPerMinute` and `otherPerMinute`. |
 
 `embedding_config` no longer exists after `0000019_remove_embedding_settings.js`. A fresh install seeds it in `0000009` and removes it in `0000019`, so the final database has no record; upgrades delete the existing record. Legacy `pb_data/zvec` files are intentionally not removed by the migration; [`deployment.md`](deployment.md) owns the manual cleanup.
 

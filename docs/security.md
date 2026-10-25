@@ -157,11 +157,11 @@ Admin-only PocketBase routes call `requireAdmin(c)`, which:
 
 Route handlers pass caught errors to `sendError()` in `pocketbase/pb_hooks/utils.js`, so `ForbiddenError` becomes `403`, `BadRequestError` `400`, and `NotFoundError` `404`; only unknown failures become `500`. Do not swallow these into a generic 500 — clients and tests rely on the status.
 
-Admin capabilities include user updates, password changes, SMTP configuration, OAuth configuration, attachment limits, and app URL sync.
+Admin capabilities include user updates, password changes, SMTP configuration, OAuth configuration, attachment limits, app URL sync, and rate limits.
 
 The first user is auto-assigned `admin = true` and `verified = true`. After that, public signup is locked and only admins can create users. Only verified admins can grant admin to another user. Verified users cannot be deleted.
 
-`POST /api/admin/rate-limits/reload` lives under `/api/admin` in the Bun server but is guarded by `verifyAuth()` only, not a separate admin-role check. Keep that in mind if you change its behavior.
+`GET`/`PATCH /api/v1/admin/rate-limits` are role-checked through `requireBrowserAdmin()`, and the legacy `POST /api/admin/rate-limits/reload` uses `verifyAdmin()`. Both reject a valid non-admin token with `403`; do not lower either check to plain authentication.
 
 ### Browser facade safety
 
@@ -203,7 +203,7 @@ Production CSP: `default-src 'self'`; `script-src 'self' 'unsafe-inline'`; `work
 | `/api/v1/*` | `rate_limits.pbMaxPerMinute` (legacy key name) |
 | Everything else, including `/docs` and `/mcp` | `rate_limits.appMaxPerMinute` |
 
-`rate_limits.enabled` turns it on. The defaults in `src/api/rate-limiter.ts` are disabled, 600 API req/min, and 1200 app req/min. Reload with `POST /api/admin/rate-limits/reload` after changing settings.
+`rate_limits.enabled` turns it on. The defaults in `src/api/rate-limiter.ts` are disabled, 600 API req/min, and 1200 app req/min. Read and update the config at `GET`/`PATCH /api/v1/admin/rate-limits`; both require the PocketBase admin flag, and the `PATCH` persists the settings and reloads the limiter in one request. `POST /api/admin/rate-limits/reload` remains as an admin-only reload hook.
 
 The limiter is process-local, so it resets on restart and is not shared across replicas. MCP requests can fan out into several PocketBase reads (for example, `list_boards` counts tasks per board); the app limit is the outer bound.
 
@@ -296,7 +296,7 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 - **Folder delete never deletes boards.** `boards.folder` has `cascadeDelete: false`; the trash routes rehome boards to the root first.
 - **The board folder guard is required.** PocketBase relation rules evaluate the stored record, so the incoming `folder` needs `guards/board_guards.js`.
 - **The browser facade is an allowlist.** No system collections, no client-controlled upstream URLs, no superuser token injection, and no generic PocketBase pass-through.
-- **`src/api/admin/rate-limits/reload` is auth-only.** It is not role-checked despite the path.
+- **Rate-limit admin routes are role-checked.** `GET`/`PATCH /api/v1/admin/rate-limits` and the legacy `POST /api/admin/rate-limits/reload` require the PocketBase admin flag, not just a valid token.
 - **The rate limiter is per process.** It does not coordinate across replicas and resets on restart.
 - **Legacy runtime data is not application state.** Anything left from removed features is inert; handle cleanup as a deployment operation, not through application code.
 

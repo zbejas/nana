@@ -9,7 +9,7 @@ import { handleChat } from "./api/chat/index";
 import { APP_VERSION, handleAppVersion } from "./api/app-version";
 import { createStaticFileHandler } from "./api/static-files";
 import { checkRateLimit, reloadRateLimiter } from "./api/rate-limiter";
-import { verifyAuth, AuthError } from "./api/auth";
+import { verifyAdmin, AuthError } from "./api/auth";
 import { apiApp } from "./api/rest";
 import { handleMcpRequest } from "./api/mcp";
 import { createLogger } from "./lib/logger";
@@ -244,7 +244,7 @@ const server = serve({
         return withSecurityHeaders(new Response("Method Not Allowed", { status: 405 }));
       }
       try {
-        await verifyAuth(req);
+        await verifyAdmin(req);
       } catch (err) {
         const status = err instanceof AuthError ? err.status : 401;
         return withSecurityHeaders(new Response("Unauthorized", { status }));

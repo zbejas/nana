@@ -63,18 +63,19 @@ Authorization: Bearer <pocketbase-auth-token>
 | MCP | JSON-RPC over Streamable HTTP; tool failures are `isError` results, not HTTP failures. |
 | Application API errors | Bun handlers return `{ "error": "message" }`; PocketBase returns its standard error envelope. |
 | Auth failure | Missing or invalid user token (`401`); authenticated non-admin on an admin route (`403`). |
-| Rate limit | `429` with `Retry-After` when `settings.rate_limits.enabled` is true. `/api/v1` uses the `pbMaxPerMinute` bucket; everything else uses the app bucket. |
+| Rate limit | `429` with `Retry-After` when `settings.rate_limits.enabled` is true. `/api/v1` uses the API bucket (`pbMaxPerMinute`); everything else uses the app bucket (`appMaxPerMinute`). |
 | SSE | `/api/chat/send` and `/api/v1/realtime` disable the Bun request timeout. Chat streams the AI SDK UI message protocol; realtime relays PocketBase SSE. |
 | Browser URLs | Always same-origin `/api/v1`, never `:8090`. |
 
 ### Elysia `/api/v1`
 
-`/api/v1` is the **owner surface**. It has two layers:
+`/api/v1` is the **owner surface**. It has three layers:
 
 1. **Typed workspace API** — `/folders`, `/notes`, `/boards`, `/tasks`. These use the workspace services with `surface: "user"`, so the owner sees their private notes, boards, folders, and private-folder contents. The AI visibility lock applies only to chat and MCP.
 2. **Browser facade** — `/auth`, `/records`, `/files`, `/realtime`, `/trash`, `/admin`, `/public`, `/check-users`, `/me`. These keep the PocketBase record/error shape the SPA already understands while Elysia owns the public edge.
+3. **Admin settings** — `/admin/rate-limits`. This Bun-native route requires the admin flag, persists `settings.rate_limits` with the server's superuser token, and reloads the in-memory limiter in the same request. It is hidden from the public OpenAPI document.
 
-Neither layer replaces PocketBase. Both call the loopback PocketBase REST API with the caller's own token; PocketBase still enforces API rules, guards, hooks, cascades, trash copying, and file protection. The browser facade adds the missing public-edge checks: collection allowlisting, author injection, relation ownership, and note sanitization.
+The workspace and facade layers do not replace PocketBase. They call the loopback PocketBase REST API with the caller's own token; PocketBase still enforces API rules, guards, hooks, cascades, trash copying, and file protection. The browser facade adds the missing public-edge checks: collection allowlisting, author injection, relation ownership, and note sanitization.
 
 #### Authentication and docs
 
@@ -195,6 +196,7 @@ The browser facade is the replacement for `/pb`. It is public-facing Elysia code
 | `GET/PATCH` | `/api/v1/admin/attachments` | admin | Attachment limits. |
 | `GET/PATCH` | `/api/v1/admin/oauth/providers` | admin | OAuth provider config with masked secrets. |
 | `PATCH` | `/api/v1/admin/app-url` | admin | Sync PocketBase `meta.appURL`. |
+| `GET/PATCH` | `/api/v1/admin/rate-limits` | admin | Per-IP request ceilings; `PATCH` persists and reloads the in-memory limiter. |
 | `PATCH` | `/api/v1/admin/users/:id` | admin | Update email/name/admin/password. |
 | `POST` | `/api/v1/admin/users/:id/request-email-change` | admin | Send an admin-initiated email change. |
 | `GET` | `/api/v1/public/documents/:token` | public | Public document payload. |
@@ -216,7 +218,7 @@ Allowed record collections:
 | `document_versions` | yes | no | Read-only through the facade. |
 | `trash_documents`, `trash_folders` | yes | no | Mutations only through `/trash/:action`. |
 | `users` | yes | self/admin | Self updates exclude `admin`/`verified`; admin routes use the custom admin endpoints. |
-| `settings` | admin | admin | `site_url`, `ai_config`, `rate_limits`. |
+| `settings` | admin | admin | `site_url`, `ai_config`, and `rate_limits`. Use `/api/v1/admin/rate-limits` for rate-limit writes so the limiter reloads. |
 
 Browser facade behavior:
 
@@ -337,7 +339,11 @@ Conversation list/view/delete are author-scoped by PocketBase rules. Bun creates
 
 #### Admin
 
-`POST /api/admin/rate-limits/reload` requires auth and reloads `settings.rate_limits` into the in-memory limiter. It returns `{ success: true, config }`. It is guarded by `verifyAuth()` only, not an admin-role check.
+`GET /api/v1/admin/rate-limits` returns `{ rateLimits, defaults, scopes }` for the signed-in admin. `rateLimits` is `{ enabled, apiPerMinute, otherPerMinute }`; `defaults` carries the two default ceilings; `scopes` lists the route groups each ceiling covers.
+
+`PATCH /api/v1/admin/rate-limits` accepts the full `{ enabled, apiPerMinute, otherPerMinute }` object, validates positive integers up to 1,000,000, persists `settings.rate_limits`, and reloads the in-memory limiter in the same request. Both routes require the PocketBase admin flag: a missing or invalid token returns `401`, a valid non-admin token returns `403`, schema failures return `422`, and an unreachable settings store returns `502`. The admin routes are hidden from the public OpenAPI document.
+
+`POST /api/admin/rate-limits/reload` is the legacy admin-only reload hook. It takes no body and returns `{ success: true, config }` with the legacy `pbMaxPerMinute` and `appMaxPerMinute` keys. The settings UI uses the `/api/v1` endpoint, so the separate reload is no longer required.
 
 #### API, docs, and assets
 
@@ -525,7 +531,7 @@ Folder response includes `rootFolder`, `folders`, `documents`, `boards`, and `en
 - **A `403` and a `404` can look identical through the services.** PocketBase hides unauthorized records; the shared client maps both to a generic `not_found`.
 - **Cross-author folders are rejected twice.** The workspace service checks folder ownership before the write; `board_guards.js` checks the incoming relation again for direct API calls.
 - **A trashed folder does not trash its boards.** Boards are rehomed to the root and keep their tasks and archive state.
-- **Rate limits apply before handlers.** `/api/*`, `/api/v1`, `/docs`, and `/mcp` all pass through `checkRateLimit()`; a `429` includes `Retry-After`. The `/api/v1` bucket is still stored under the legacy `pbMaxPerMinute` settings key.
+- **Rate limits apply before handlers.** `/api/*`, `/api/v1`, `/docs`, and `/mcp` all pass through `checkRateLimit()`; a `429` includes `Retry-After`. The `/api/v1` bucket is still stored under the legacy `pbMaxPerMinute` settings key; update it through `PATCH /api/v1/admin/rate-limits` so the limiter reloads with the write.
 
 ## Related docs
 
