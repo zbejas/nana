@@ -144,19 +144,19 @@ export async function updateBoard(id: string, data: UpdateBoardData): Promise<Bo
   if (data.archived !== undefined) payload.archived = data.archived === true;
   if (data.folder !== undefined) payload.folder = data.folder;
   if (data.is_private !== undefined) payload.is_private = data.is_private === true;
-  if (data.is_private === true) {
-    // Private and public are mutually exclusive. Clearing the token here also
-    // prevents a stale share icon when privacy is changed outside the modal.
-    payload.is_public = false;
-    payload.public_share_token = '';
-    payload.public_expires_at = '';
-  }
   if (data.is_public !== undefined) payload.is_public = data.is_public === true;
   if (data.public_share_token !== undefined) {
     payload.public_share_token = data.public_share_token ?? '';
   }
   if (data.public_expires_at !== undefined) {
     payload.public_expires_at = data.public_expires_at ?? '';
+  }
+  if (data.is_private === true) {
+    // Private and public are mutually exclusive. Clear last so privacy wins
+    // even when a caller sends both states in one patch.
+    payload.is_public = false;
+    payload.public_share_token = '';
+    payload.public_expires_at = '';
   }
 
   const record = await pb.collection(COLLECTION).update<Board>(id, payload);
