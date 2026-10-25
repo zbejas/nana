@@ -90,8 +90,8 @@ if ! PB_MIGRATING=1 pocketbase migrate up $PB_ARGS >"$MIGRATE_LOG" 2>&1; then
     exit "$TEST_EXIT"
 fi
 
-log "Starting PocketBase on :8090..."
-pocketbase serve --http=0.0.0.0:8090 $PB_ARGS >"$PB_LOG" 2>&1 &
+log "Starting PocketBase on 127.0.0.1:8090 (internal only)..."
+pocketbase serve --http=127.0.0.1:8090 $PB_ARGS >"$PB_LOG" 2>&1 &
 PB_PID=$!
 
 log "Starting Bun server on :3000..."

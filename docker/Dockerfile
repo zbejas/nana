@@ -57,7 +57,7 @@ RUN mkdir -p /app/pocketbase/pb_data
 
 RUN chmod +x /app/docker/docker-entrypoint.sh
 
-EXPOSE 3000 8090
+EXPOSE 3000
 ENTRYPOINT ["/app/docker/docker-entrypoint.sh"]
 
 # -------------------------------------------------------------------
@@ -96,5 +96,5 @@ COPY docker/docker-entrypoint.sh ./docker/docker-entrypoint.sh
 RUN mkdir -p /app/pocketbase/pb_data
 RUN chmod +x /app/docker/docker-entrypoint.sh
 
-EXPOSE 3000 8090
+EXPOSE 3000
 ENTRYPOINT ["/app/docker/docker-entrypoint.sh"]
