@@ -38,6 +38,11 @@ export interface BoardSummary extends Board {
   openCount: number;
   doneCount: number;
   total: number;
+  /**
+   * Latest board or task update, as a PocketBase timestamp. The timeline uses
+   * it so working a board's tasks moves the board to the top of the feed.
+   */
+  lastActivity: string;
 }
 
 const COLLECTION = 'boards';
@@ -74,6 +79,10 @@ export async function listBoards(options: ListBoardsOptions = {}): Promise<Board
   const records = await pb.collection(COLLECTION).getFullList<Board>({
     filter: options.includeArchived ? '' : 'archived = false',
     sort: '-created',
+    // The sidebar, folder view, board index, and timeline can all read boards
+    // at the same time. Keep these small list requests out of the SDK's
+    // auto-cancellation pool so one surface cannot abort another.
+    requestKey: null,
   });
 
   const boards = records.map(normalizeBoard);
@@ -158,35 +167,42 @@ export async function listBoardSummaries(
     listBoards(options),
     pb
       .collection(TASKS_COLLECTION)
-      .getFullList<Pick<Task, 'board' | 'status'>>({
-        fields: 'board,status',
+      .getFullList<Pick<Task, 'board' | 'status' | 'updated'>>({
+        fields: 'board,status,updated',
         // Board summaries are often fetched alongside another task query (the
         // add-to-board picker). Keep this request out of auto-cancellation.
         requestKey: null,
       }),
   ]);
 
-  const counts = new Map<string, { open: number; done: number }>();
+  const counts = new Map<string, { open: number; done: number; lastActivity: string }>();
 
   for (const task of tasks) {
     if (!task.board) continue;
 
-    const current = counts.get(task.board) ?? { open: 0, done: 0 };
+    const current = counts.get(task.board) ?? { open: 0, done: 0, lastActivity: '' };
     if (task.status === 'done') {
       current.done += 1;
     } else {
       current.open += 1;
     }
+    if (task.updated && task.updated > current.lastActivity) {
+      current.lastActivity = task.updated;
+    }
     counts.set(task.board, current);
   }
 
   return boards.map((board) => {
-    const count = counts.get(board.id) ?? { open: 0, done: 0 };
+    const count = counts.get(board.id) ?? { open: 0, done: 0, lastActivity: '' };
     return {
       ...board,
       openCount: count.open,
       doneCount: count.done,
       total: count.open + count.done,
+      lastActivity:
+        count.lastActivity && count.lastActivity > board.updated
+          ? count.lastActivity
+          : board.updated,
     };
   });
 }

@@ -102,9 +102,10 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 ### Sidebar
 
 - Brand is the rabbit mascot glyph at 24px, plus the “Nana” wordmark and “Your workspace”. The mascot is also used in About, public pages, the install prompt, and the app icons, so the sidebar mark stays recognisably the same character.
-- A full-width inverted `ink` **New note** button sits under the brand. It is global chrome, not the contextual primary action; page-level primary actions take `signal-bright`.
+- A full-width inverted `ink` **New** button sits under the brand and opens a Note/Board menu. It is global chrome, not the contextual primary action; page-level primary actions take `signal-bright`.
 - Primary navigation rows are 32px with 6px radius. The active row is `surface` with a hairline and an ember icon; inactive rows are transparent with muted icons. There are no inverted navigation chips.
 - Section labels are 11.5px medium muted: “Recent”, “Library”.
+- The Library tree lists root notes and root boards, then folders; an expanded folder lists its notes and boards with the same 20px row rhythm. Notes use the document glyph, boards the four-column glyph, and private boards keep the warning lock.
 - The profile bar stays at the bottom with avatar, name, email, and settings.
 - The collapsed rail uses 40px targets. The active icon sits on a `surface` tile with a hairline and takes the ember colour.
 
@@ -118,11 +119,12 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 ### Timeline
 
-`/timeline` is a 2-column reading view: a note feed and a 20rem utility rail.
+`/timeline` is a 2-column reading view: a notes-and-boards feed and a 20rem utility rail.
 
-- Feed cards are 10px panels on `surface` with a hairline, title, one-line metadata, a three-line plain-text preview, tags, and reading statistics. There is no hover rail and no rendered Markdown inside the card; the preview is stripped to text so the title never repeats.
+- Feed cards are 10px panels on `surface` with a hairline. Note cards carry a title, one-line metadata, a three-line plain-text preview, tags, and reading statistics. Board cards carry a board icon, title, updated/folder metadata, a description preview, and open/done counts. There is no hover rail and no rendered Markdown inside a card; note previews are stripped to text so the title never repeats.
 - Group labels use a 12.5px semibold label, a rule, and a plain numeric count.
-- The rail holds the search field, month calendar, and an “In this view” card with note/folder counts and the board link.
+- The rail holds the search field, month calendar, and an “In this view” card with note, board, and folder counts plus the board link.
+- A compact segmented **All / Notes / Boards** filter sits above the feed and carries the current count in each label. **New** opens the Note/Board menu.
 - The calendar is a compact 7-column grid with 36px date cells and a `signal-bright` fill for the selected range.
 
 ### Boards index

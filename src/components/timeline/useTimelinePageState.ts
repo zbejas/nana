@@ -4,15 +4,18 @@ import { getTimelineDocumentsByDateRange, getTimelineDocumentsPage, type Documen
 import { initialLoadDoneAtom, timelineRealtimeTickAtom } from '../../state/atoms';
 import { useAuth } from '../../lib/auth';
 import { useDocumentSearch } from '../../lib/documents/useDocumentSearch';
+import { useBoardSummaries } from '../board/useBoardSummaries';
+import { filterTimelineBoards, mergeTimelineItems, type TimelineItem } from './items';
 
 const TIMELINE_PAGE_SIZE = 20;
 
 export type TimelineGroup = {
     label: string;
-    items: Document[];
+    items: TimelineItem[];
 };
 
 export type TimelineViewMode = 'timeline' | 'calendar';
+export type TimelineFeedFilter = 'all' | 'notes' | 'boards';
 
 type TimelineCacheState = {
     documents: Document[];
@@ -117,6 +120,10 @@ export function useTimelinePageState() {
     const timelineRealtimeTick = useAtomValue(timelineRealtimeTickAtom);
     const hasMountedSyncRef = useRef(false);
 
+    // Boards are a compact set, so load all active summaries once and let their
+    // board/task realtime subscriptions keep lastActivity fresh.
+    const { boards, isLoading: isBoardsLoading } = useBoardSummaries(false);
+
     const [documents, setDocuments] = useState<Document[]>(() => userCache?.documents ?? []);
     const [page, setPage] = useState(() => userCache?.page ?? 1);
     const [hasMore, setHasMore] = useState(() => userCache?.hasMore ?? true);
@@ -125,6 +132,7 @@ export function useTimelinePageState() {
     const [timelineError, setTimelineError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<TimelineViewMode>('timeline');
+    const [feedFilter, setFeedFilter] = useState<TimelineFeedFilter>('all');
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const [isMobile, setIsMobile] = useState(() => {
         if (typeof window === 'undefined') return false;
@@ -316,7 +324,7 @@ export function useTimelinePageState() {
     }, [isCalendarOpen, isMobile]);
 
     useEffect(() => {
-        if (viewMode !== 'timeline' || !hasMore || isInitialLoading || timelineError) {
+        if (viewMode !== 'timeline' || feedFilter === 'boards' || !hasMore || isInitialLoading || timelineError) {
             return;
         }
 
@@ -370,23 +378,99 @@ export function useTimelinePageState() {
         return () => {
             observer.disconnect();
         };
-    }, [currentUserId, page, hasMore, isInitialLoading, timelineError, viewMode]);
+    }, [currentUserId, feedFilter, page, hasMore, isInitialLoading, timelineError, viewMode]);
 
-    const filteredDocuments = hasSearchQuery ? searchedDocuments : documents;
+    const oldestLoadedDocumentUpdated = documents[documents.length - 1]?.updated ?? null;
+
+    // Everything available in the current search/calendar view, before the
+    // note-paging cutoff and before the All/Notes/Boards filter.
+    const boardsForView = useMemo(
+        () =>
+            filterTimelineBoards(boards, {
+                searchQuery,
+                calendarRange: viewMode === 'calendar' ? appliedCalendarRange : null,
+                hasMoreDocuments: false,
+                oldestLoadedDocumentUpdated,
+            }),
+        [
+            appliedCalendarRange,
+            boards,
+            oldestLoadedDocumentUpdated,
+            searchQuery,
+            viewMode,
+        ]
+    );
+
+    const visibleBoards = useMemo(() => {
+        if (feedFilter === 'boards') {
+            return boardsForView;
+        }
+
+        return filterTimelineBoards(boards, {
+            searchQuery,
+            calendarRange: viewMode === 'calendar' ? appliedCalendarRange : null,
+            hasMoreDocuments: hasMore,
+            oldestLoadedDocumentUpdated,
+        });
+    }, [
+        appliedCalendarRange,
+        boards,
+        boardsForView,
+        feedFilter,
+        hasMore,
+        oldestLoadedDocumentUpdated,
+        searchQuery,
+        viewMode,
+    ]);
+
+    const timelineItems = useMemo<TimelineItem[]>(
+        () =>
+            mergeTimelineItems(
+                hasSearchQuery ? searchedDocuments : documents,
+                visibleBoards
+            ),
+        [documents, hasSearchQuery, searchedDocuments, visibleBoards]
+    );
+
+    const visibleItems = useMemo(() => {
+        if (feedFilter === 'all') {
+            return timelineItems;
+        }
+
+        const kind = feedFilter === 'notes' ? 'document' : 'board';
+        return timelineItems.filter((item) => item.kind === kind);
+    }, [feedFilter, timelineItems]);
 
     const groups = useMemo<TimelineGroup[]>(() => {
-        const grouped = new Map<string, Document[]>();
+        const grouped = new Map<string, TimelineItem[]>();
 
-        filteredDocuments.forEach((document) => {
-            const updatedAt = new Date(document.updated);
-            const label = getGroupLabel(updatedAt);
+        visibleItems.forEach((item) => {
+            const label = getGroupLabel(new Date(item.updated));
             const existing = grouped.get(label) || [];
-            existing.push(document);
+            existing.push(item);
             grouped.set(label, existing);
         });
 
         return Array.from(grouped.entries()).map(([label, items]) => ({ label, items }));
-    }, [filteredDocuments]);
+    }, [visibleItems]);
+
+    const counts = useMemo(() => {
+        const sourceDocuments = hasSearchQuery ? searchedDocuments : documents;
+        return {
+            documents: sourceDocuments.length,
+            boards: boardsForView.length,
+        };
+    }, [boardsForView, documents, hasSearchQuery, searchedDocuments]);
+
+    // Do not hide cached notes behind a board refresh; wait for boards only
+    // when there is nothing else to render yet. The type filter skips the
+    // data source it does not need.
+    const isTimelineLoading =
+        (feedFilter !== 'boards' && (isInitialLoading || isSearchLoading)) ||
+        (feedFilter !== 'notes' &&
+            isBoardsLoading &&
+            boards.length === 0 &&
+            (feedFilter === 'boards' || documents.length === 0));
 
     const toggleCalendar = () => {
         setIsCalendarOpen((prev) => !prev);
@@ -486,12 +570,17 @@ export function useTimelinePageState() {
 
     return {
         groups,
+        counts,
         searchQuery,
         setSearchQuery,
         viewMode,
+        feedFilter,
+        setFeedFilter,
+        visibleItemCount: visibleItems.length,
         isCalendarOpen,
         isMobile,
         isInitialLoading,
+        isTimelineLoading,
         isLoadingMore,
         isCalendarLoading,
         isSearchLoading,

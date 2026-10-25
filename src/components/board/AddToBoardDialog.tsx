@@ -96,7 +96,7 @@ export function AddToBoardDialog({ request, onClose }: AddToBoardDialogProps) {
   const handleBoardCreated = (board: Board) => {
     setBoards((current) => [
       ...current,
-      { ...board, openCount: 0, doneCount: 0, total: 0 },
+      { ...board, openCount: 0, doneCount: 0, total: 0, lastActivity: board.updated },
     ]);
   };
 

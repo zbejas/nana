@@ -14,6 +14,7 @@ interface BoardDialogProps {
   board?: Board | null;
   /** Initial folder when creating a board. Editing uses the board's folder. */
   folderId?: string;
+  /** Omit when the caller only has the board record and no task count. */
   taskCount?: number;
   onClose: () => void;
   onSaved: (board: Board) => void;
@@ -38,7 +39,7 @@ export function BoardDialog({
   open,
   board = null,
   folderId,
-  taskCount = 0,
+  taskCount,
   onClose,
   onSaved,
   onArchived,
@@ -156,6 +157,11 @@ export function BoardDialog({
       setIsArchiving(false);
     }
   };
+
+  const archiveDescription =
+    taskCount === undefined
+      ? 'The board and its tasks leave your boards index. Nothing is deleted — restore it any time from Archived boards.'
+      : `The board and its ${taskCount} ${taskCount === 1 ? 'task' : 'tasks'} leave your boards index. Nothing is deleted — restore it any time from Archived boards.`;
 
   return (
     <>
@@ -289,7 +295,7 @@ export function BoardDialog({
         <ConfirmDialog
           open={showArchive}
           title={`Archive “${board.name}”?`}
-          description={`The board and its ${taskCount} tasks leave your boards index. Nothing is deleted — restore it any time from Archived boards.`}
+          description={archiveDescription}
           confirmLabel="Archive board"
           busy={isArchiving}
           onConfirm={() => void handleArchive()}

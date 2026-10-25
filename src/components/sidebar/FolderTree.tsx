@@ -1,6 +1,7 @@
 import { FolderIcon, ChevronRightIcon, EllipsisVerticalIcon, LockClosedIcon, ShareIcon } from '@heroicons/react/24/outline';
 import { useState, useRef, useEffect } from 'react';
 import type { FolderTreeNode } from "../../lib/folders";
+import type { Board } from "../../lib/boards";
 import type { Document } from "../../lib/documents";
 import type {
   DropPosition,
@@ -8,10 +9,12 @@ import type {
   OnDragLeave,
   OnDrop,
   OnDragStartDocument,
+  OnDragStartBoard,
   OnDragEnd,
   OnDragStartFolder,
 } from '../file-folder-handling';
 import { InlineNameInput } from "./InlineNameInput";
+import { BoardItem } from "./BoardItem";
 import { DocumentItem } from "./DocumentItem";
 
 const INDENT_PX = 16;
@@ -70,9 +73,11 @@ function RenameInput({ initialName, depth, onSubmit, onCancel }: {
 
 interface FolderTreeProps {
   nodes: FolderTreeNode[];
+  boards: Board[];
   depth?: number;
   parentFolderId?: string;
   activeDocumentId?: string;
+  activeBoardId?: string;
   expandedFolders: Set<string>;
   folderDocuments: Map<string, Document[]>;
   loadedFolders: Set<string>;
@@ -87,7 +92,7 @@ interface FolderTreeProps {
   renamingFolderId: string | null;
   onToggleFolder: (folderId: string) => void;
   onLoadFolder: (folderId: string) => Promise<void>;
-  onContextMenu: (e: React.MouseEvent | React.TouchEvent, type: 'folder' | 'document', options?: { folderId?: string; folderName?: string; documentId?: string }) => void;
+  onContextMenu: (e: React.MouseEvent | React.TouchEvent, type: 'folder' | 'document' | 'board', options?: { folderId?: string; folderName?: string; documentId?: string; boardId?: string; boardName?: string }) => void;
   onDragOver: OnDragOver;
   onDragLeave: OnDragLeave;
   onDrop: OnDrop;
@@ -95,7 +100,10 @@ interface FolderTreeProps {
   onDragEnd: OnDragEnd;
   onFolderDragStart?: OnDragStartFolder;
   onFolderDragEnd?: OnDragEnd;
+  onBoardDragStart: OnDragStartBoard;
+  onBoardDragEnd: OnDragEnd;
   onDocumentClick: (doc: Document) => void;
+  onBoardClick: (board: Board) => void;
   onInlineFolderSubmit: (name: string) => Promise<void>;
   onInlineCancel: () => void;
   onRenameSubmit: (folderId: string, newName: string) => Promise<void>;
@@ -104,9 +112,11 @@ interface FolderTreeProps {
 
 export function FolderTree({
   nodes,
+  boards,
   depth = 0,
   parentFolderId,
   activeDocumentId,
+  activeBoardId,
   expandedFolders,
   folderDocuments,
   loadedFolders,
@@ -125,7 +135,10 @@ export function FolderTree({
   onDragEnd,
   onFolderDragStart,
   onFolderDragEnd,
+  onBoardDragStart,
+  onBoardDragEnd,
   onDocumentClick,
+  onBoardClick,
   onInlineFolderSubmit,
   onInlineCancel,
   onRenameSubmit,
@@ -157,8 +170,9 @@ export function FolderTree({
       {nodes.map((folder) => {
         const isExpanded = expandedFolders.has(folder.id);
         const docs = folderDocuments.get(folder.id) || [];
+        const folderBoards = boards.filter((board) => board.folder === folder.id);
         const isLoading = loadingFolders.has(folder.id);
-        const hasContent = docs.length > 0 || folder.subfolders.length > 0 || (!loadedFolders.has(folder.id) && !isLoading);
+        const hasContent = docs.length > 0 || folderBoards.length > 0 || folder.subfolders.length > 0 || (!loadedFolders.has(folder.id) && !isLoading);
         const indent = depth * INDENT_PX;
         const isDropTarget = dropZone === folder.id;
 
@@ -247,12 +261,35 @@ export function FolderTree({
                   />
                 ))}
 
+                {folderBoards.map((board) => (
+                  <BoardItem
+                    key={board.id}
+                    board={board}
+                    draggable
+                    depth={depth + 1}
+                    currentFolderId={folder.id}
+                    active={board.id === activeBoardId}
+                    onClick={() => onBoardClick(board)}
+                    onContextMenu={(event) =>
+                      onContextMenu(event, 'board', {
+                        folderId: folder.id,
+                        boardId: board.id,
+                        boardName: board.name,
+                      })
+                    }
+                    onDragStart={onBoardDragStart}
+                    onDragEnd={onBoardDragEnd}
+                  />
+                ))}
+
                 {folder.subfolders.length > 0 && (
                   <FolderTree
                     nodes={folder.subfolders}
+                    boards={boards}
                     depth={depth + 1}
                     parentFolderId={folder.id}
                     activeDocumentId={activeDocumentId}
+                    activeBoardId={activeBoardId}
                     expandedFolders={expandedFolders}
                     folderDocuments={folderDocuments}
                     loadedFolders={loadedFolders}
@@ -271,7 +308,10 @@ export function FolderTree({
                     onDragEnd={onDragEnd}
                     onFolderDragStart={onFolderDragStart}
                     onFolderDragEnd={onFolderDragEnd}
+                    onBoardDragStart={onBoardDragStart}
+                    onBoardDragEnd={onBoardDragEnd}
                     onDocumentClick={onDocumentClick}
+                    onBoardClick={onBoardClick}
                     onInlineFolderSubmit={onInlineFolderSubmit}
                     onInlineCancel={onInlineCancel}
                     onRenameSubmit={onRenameSubmit}

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -9,12 +9,13 @@ import {
   ViewColumnsIcon,
   XMarkIcon,
   ChevronDoubleLeftIcon,
+  ChevronDownIcon,
   PlusIcon,
   FolderPlusIcon,
-  PencilSquareIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from "../lib/auth";
-import { useSidebar } from "../state/hooks";
+import { useSidebar, useToasts } from "../state/hooks";
+import type { Board } from "../lib/boards";
 import {
   foldersAtom,
   rootDocumentsAtom,
@@ -34,13 +35,17 @@ import {
 } from "../state/atoms";
 import { FolderContextMenu } from "./file-folder-handling/context-menu/FolderContextMenu";
 import { DocumentContextMenu } from "./file-folder-handling/context-menu/DocumentContextMenu";
+import { BoardContextMenu } from "./file-folder-handling/context-menu/BoardContextMenu";
 import { RecentDocumentsSection } from "./sidebar/RecentDocumentsSection";
 import { ProfileBar } from "./sidebar/ProfileBar";
 import { SidebarDialogs } from "./sidebar/SidebarDialogs";
 import { SearchBar } from "./sidebar/SearchBar";
-import { RootDocumentsSection } from "./sidebar/RootDocumentsSection";
+import { RootLibrarySection } from "./sidebar/RootLibrarySection";
 import { FoldersSection } from "./sidebar/FoldersSection";
 import { SidebarResizeHandle } from "./sidebar/SidebarResizeHandle";
+import { useSidebarBoards } from "./sidebar/useSidebarBoards";
+import { BoardDialog } from "./board/BoardDialog";
+import { NewContentMenu } from "./NewContentMenu";
 import { useSidebarHandlers } from "./sidebar/useSidebarHandlers";
 import { useInlineInputState } from "./sidebar/useInlineInputState";
 import { useDialogState } from "./sidebar/useDialogState";
@@ -72,6 +77,13 @@ export function Sidebar() {
   const location = useLocation();
   const sidebarHook = useSidebar();
   const { isResizing, setIsResizing } = sidebarHook;
+  const boards = useSidebarBoards();
+  const { showToast } = useToasts();
+  const [boardDialogOpen, setBoardDialogOpen] = useState(false);
+  const [editingBoard, setEditingBoard] = useState<Board | null>(null);
+  const [boardFolderId, setBoardFolderId] = useState<string | undefined>(undefined);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const newButtonRef = useRef<HTMLButtonElement>(null);
 
   const folders = useAtomValue(foldersAtom);
   const rootDocuments = useAtomValue(rootDocumentsAtom);
@@ -102,6 +114,11 @@ export function Sidebar() {
   });
 
   const recentDocuments = useMemo(() => allRecentDocuments.slice(0, 3), [allRecentDocuments]);
+  const rootBoards = useMemo(() => boards.filter((board) => !board.folder), [boards]);
+  const activeBoardId = useMemo(() => {
+    const match = location.pathname.match(/^\/board\/([^/]+)$/);
+    return match?.[1];
+  }, [location.pathname]);
 
   const { contextMenu, isClosingContextMenu, contextMenuRef, handleContextMenu, closeContextMenu } = useContextMenuState();
   const { inlineInput, setInlineInput, renamingFolderId, setRenamingFolderId } = useInlineInputState();
@@ -139,6 +156,48 @@ export function Sidebar() {
     navigate(path);
   };
 
+  const handleBoardClick = (board: Board) => {
+    handleViewNavigation(`/board/${board.id}`);
+  };
+
+  const handleOpenCreateBoard = (folderId?: string) => {
+    setEditingBoard(null);
+    setBoardFolderId(folderId);
+    setBoardDialogOpen(true);
+  };
+
+  const handleOpenEditBoard = (board: Board) => {
+    setEditingBoard(board);
+    setBoardFolderId(board.folder || undefined);
+    setBoardDialogOpen(true);
+    closeContextMenu();
+  };
+
+  const handleCloseBoardDialog = () => {
+    setBoardDialogOpen(false);
+    setEditingBoard(null);
+  };
+
+  const handleBoardSaved = (board: Board) => {
+    const isEdit = Boolean(editingBoard);
+    setBoardDialogOpen(false);
+    setEditingBoard(null);
+
+    if (isEdit) {
+      showToast('Board saved', 'success');
+      return;
+    }
+
+    showToast('Board created', 'success');
+    handleViewNavigation(`/board/${board.id}`);
+  };
+
+  const handleBoardArchived = () => {
+    setBoardDialogOpen(false);
+    setEditingBoard(null);
+    showToast('Board archived', 'info');
+  };
+
   if (!user) return null;
 
   return (
@@ -149,6 +208,14 @@ export function Sidebar() {
         onRequestSignOut={handleLogoutClick}
         onNavigateSettings={() => handleViewNavigation('/settings')}
         user={user}
+      />
+
+      <NewContentMenu
+        open={newMenuOpen}
+        anchorRect={newButtonRef.current?.getBoundingClientRect() ?? null}
+        onClose={() => setNewMenuOpen(false)}
+        onCreateNote={() => void handlers.handleAddDocument()}
+        onCreateBoard={() => handleOpenCreateBoard()}
       />
 
       <aside
@@ -222,12 +289,16 @@ export function Sidebar() {
             </div>
 
             <button
+              ref={newButtonRef}
               type="button"
-              onClick={() => void handlers.handleAddDocument()}
+              onClick={() => setNewMenuOpen((open) => !open)}
+              aria-haspopup="menu"
+              aria-expanded={newMenuOpen}
               className="mt-3 flex h-9 w-full items-center gap-2 rounded-control bg-ink px-3 text-[13px] font-medium text-canvas transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal"
             >
-              <PencilSquareIcon className="h-4 w-4" aria-hidden="true" />
-              New note
+              <PlusIcon className="h-4 w-4" aria-hidden="true" />
+              New
+              <ChevronDownIcon className="ml-auto h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
 
@@ -291,28 +362,50 @@ export function Sidebar() {
                     >
                       <PlusIcon />
                     </IconButton>
+                    <IconButton
+                      label="New board"
+                      size="sm"
+                      className="h-6 w-6 [&>svg]:h-3.5 [&>svg]:w-3.5"
+                      onClick={() => handleOpenCreateBoard()}
+                    >
+                      <ViewColumnsIcon />
+                    </IconButton>
                   </div>
 
                   <div className="space-y-px">
-                    <RootDocumentsSection
+                    <RootLibrarySection
                       documents={rootDocuments}
+                      boards={rootBoards}
                       isDataLoading={isDataLoading}
                       dropZone={handlers.dropZone}
                       activeDocumentId={selectedDocument?.id}
+                      activeBoardId={activeBoardId}
                       onDocumentClick={handlers.handleDocumentClick}
-                      onContextMenu={(event, documentId) => handleContextMenu(event, 'document', { documentId })}
-                      onDragStart={handlers.handleDragStart}
-                      onDragEnd={handlers.handleDragEnd}
+                      onDocumentContextMenu={(event, documentId) =>
+                        handleContextMenu(event, 'document', { documentId })
+                      }
+                      onBoardClick={handleBoardClick}
+                      onBoardContextMenu={(event, board) =>
+                        handleContextMenu(event, 'board', {
+                          boardId: board.id,
+                          boardName: board.name,
+                        })
+                      }
+                      onDocumentDragStart={handlers.handleDragStart}
+                      onDocumentDragEnd={handlers.handleDragEnd}
+                      onBoardDragStart={handlers.handleBoardDragStart}
+                      onBoardDragEnd={handlers.handleBoardDragEnd}
                       onDragOver={handlers.handleDragOver}
                       onDragLeave={(event) => handlers.handleDragLeave(event)}
                       onDrop={handlers.handleDrop}
-                      onAddDocument={handlers.handleAddDocument}
                     />
 
                     <FoldersSection
                       folders={folders}
+                      boards={boards}
                       isDataLoading={isDataLoading}
                       activeDocumentId={selectedDocument?.id}
+                      activeBoardId={activeBoardId}
                       expandedFolders={expandedFolders}
                       folderDocuments={folderDocuments}
                       loadedFolders={loadedFolders}
@@ -331,7 +424,10 @@ export function Sidebar() {
                       onDragEnd={handlers.handleDragEnd}
                       onFolderDragStart={handlers.handleFolderDragStart}
                       onFolderDragEnd={handlers.handleFolderDragEnd}
+                      onBoardDragStart={handlers.handleBoardDragStart}
+                      onBoardDragEnd={handlers.handleBoardDragEnd}
                       onDocumentClick={handlers.handleDocumentClick}
+                      onBoardClick={handleBoardClick}
                       onInlineFolderSubmit={async (name, parentFolderId) => {
                         await handlers.handleInlineFolderSubmit(name, parentFolderId);
                         setInlineInput(null);
@@ -407,6 +503,11 @@ export function Sidebar() {
           contextMenuRef={contextMenuRef}
           onAddFolder={contextMenuHandlers.handleAddFolder}
           onAddDocument={contextMenuHandlers.handleAddDocument}
+          onAddBoard={() => {
+            const folderId = contextMenu?.type === 'folder' ? contextMenu.folderId : undefined;
+            closeContextMenu();
+            handleOpenCreateBoard(folderId);
+          }}
           onRenameFolder={contextMenuHandlers.handleRenameFolder}
           onMakePublicFolder={() => {
             if (contextMenu?.folderId) {
@@ -423,6 +524,50 @@ export function Sidebar() {
         />,
         document.body
       )}
+
+      {contextMenu?.type === 'board' && createPortal(
+        <BoardContextMenu
+          contextMenu={{
+            x: contextMenu.x,
+            y: contextMenu.y,
+            type: 'board',
+            boardId: contextMenu.boardId,
+            boardName: contextMenu.boardName,
+          }}
+          contextMenuRef={contextMenuRef}
+          onOpenBoard={() => {
+            const board = contextMenu.boardId
+              ? boards.find((item) => item.id === contextMenu.boardId)
+              : undefined;
+            closeContextMenu();
+            if (board) {
+              handleBoardClick(board);
+            }
+          }}
+          onEditBoard={() => {
+            const board = contextMenu.boardId
+              ? boards.find((item) => item.id === contextMenu.boardId)
+              : undefined;
+            if (board) {
+              handleOpenEditBoard(board);
+            } else {
+              closeContextMenu();
+            }
+          }}
+          onClose={closeContextMenu}
+          isClosing={isClosingContextMenu}
+        />,
+        document.body
+      )}
+
+      <BoardDialog
+        open={boardDialogOpen}
+        board={editingBoard}
+        folderId={boardFolderId}
+        onClose={handleCloseBoardDialog}
+        onSaved={handleBoardSaved}
+        onArchived={handleBoardArchived}
+      />
 
       <SidebarDialogs
         showUnsavedDialog={showUnsavedDialog}

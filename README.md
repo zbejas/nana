@@ -46,7 +46,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | **Boards** | Multiple four-column kanbans with drag-and-drop, note import, folders, private boards, an archive, and permanent delete for archived boards. |
 | **AI chat** | Ask about your notes and boards. The assistant reads them on demand with OpenAI, Google, or Ollama, and never writes to your workspace. |
 | **API and MCP** | Reach the same workspace from your own tools with a JSON API and a stateless MCP endpoint. Private records stay hidden from AI. |
-| **Folders and tags** | Organize documents with nested folders, tags, and a timeline view. |
+| **Folders and tags** | Organize documents with nested folders, tags, and a timeline of recent notes and boards. |
 | **Public sharing** | Share individual documents or entire folders via link, with optional expiration. |
 | **Version history** | Save snapshots and restore earlier states when needed. |
 | **Trash system** | Recover deleted content instead of losing it permanently. |
@@ -54,7 +54,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 
 ## Boards in folders
 
-Boards live in the same folder tree as notes. Open a folder to see its boards beside its notes, drag a board into another folder, or choose **New board** and it is filed where you are. Boards are archived before they can be deleted, and a folder never deletes the boards inside it: move a folder to trash and its boards return to the root with their tasks.
+Boards live in the same folder tree as notes. The sidebar library and folder view show boards beside their notes; drag a board into another folder, or choose **New board** and it is filed where you are. Boards are archived before they can be deleted, and a folder never deletes the boards inside it: move a folder to trash and its boards return to the root with their tasks.
 
 Mark a note, board, or folder **Private** to keep it out of AI chat and MCP. It stays in your workspace and you can still open and edit it.
 

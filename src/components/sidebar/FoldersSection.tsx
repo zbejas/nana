@@ -1,10 +1,12 @@
 import { type FolderTreeNode } from '../../lib/folders';
+import type { Board } from '../../lib/boards';
 import type {
   DropPosition,
   OnDragOver,
   OnDragLeave,
   OnDrop,
   OnDragStartDocument,
+  OnDragStartBoard,
   OnDragEnd,
   OnDragStartFolder,
 } from '../file-folder-handling';
@@ -14,8 +16,10 @@ import { InlineNameInput } from './InlineNameInput';
 
 interface FoldersSectionProps {
   folders: FolderTreeNode[];
+  boards: Board[];
   isDataLoading: boolean;
   activeDocumentId?: string;
+  activeBoardId?: string;
   expandedFolders: Set<string>;
   folderDocuments: Map<string, any[]>;
   loadedFolders: Set<string>;
@@ -26,7 +30,7 @@ interface FoldersSectionProps {
   renamingFolderId: string | null;
   onToggleFolder: (folderId: string) => void;
   onLoadFolder: (folderId: string) => Promise<void>;
-  onContextMenu: (e: React.MouseEvent | React.TouchEvent, type: 'empty' | 'folder' | 'document' | 'trash-document' | 'trash-folder', data?: any) => void;
+  onContextMenu: (e: React.MouseEvent | React.TouchEvent, type: 'empty' | 'folder' | 'document' | 'trash-document' | 'trash-folder' | 'board', data?: any) => void;
   onDragOver: OnDragOver;
   onDragLeave: OnDragLeave;
   onDrop: OnDrop;
@@ -34,7 +38,10 @@ interface FoldersSectionProps {
   onDragEnd: OnDragEnd;
   onFolderDragStart: OnDragStartFolder;
   onFolderDragEnd: OnDragEnd;
+  onBoardDragStart: OnDragStartBoard;
+  onBoardDragEnd: OnDragEnd;
   onDocumentClick: (doc: any) => void;
+  onBoardClick: (board: Board) => void;
   onInlineFolderSubmit: (name: string, parentFolderId?: string) => Promise<void>;
   onInlineCancel: () => void;
   onRenameSubmit: (folderId: string, newName: string) => Promise<void>;
@@ -43,8 +50,10 @@ interface FoldersSectionProps {
 
 export function FoldersSection({
   folders,
+  boards,
   isDataLoading,
   activeDocumentId,
+  activeBoardId,
   expandedFolders,
   folderDocuments,
   loadedFolders,
@@ -63,7 +72,10 @@ export function FoldersSection({
   onDragEnd,
   onFolderDragStart,
   onFolderDragEnd,
+  onBoardDragStart,
+  onBoardDragEnd,
   onDocumentClick,
+  onBoardClick,
   onInlineFolderSubmit,
   onInlineCancel,
   onRenameSubmit,
@@ -76,7 +88,9 @@ export function FoldersSection({
     <div>
       <FolderTree
         nodes={folders}
+        boards={boards}
         activeDocumentId={activeDocumentId}
+        activeBoardId={activeBoardId}
         expandedFolders={expandedFolders}
         folderDocuments={folderDocuments}
         loadedFolders={loadedFolders}
@@ -95,7 +109,10 @@ export function FoldersSection({
         onDragEnd={onDragEnd}
         onFolderDragStart={onFolderDragStart}
         onFolderDragEnd={onFolderDragEnd}
+        onBoardDragStart={onBoardDragStart}
+        onBoardDragEnd={onBoardDragEnd}
         onDocumentClick={onDocumentClick}
+        onBoardClick={onBoardClick}
         onInlineFolderSubmit={(name) => onInlineFolderSubmit(name, inlineInput?.parentFolderId)}
         onInlineCancel={onInlineCancel}
         onRenameSubmit={onRenameSubmit}

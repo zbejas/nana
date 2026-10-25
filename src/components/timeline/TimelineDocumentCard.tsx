@@ -4,6 +4,7 @@ import type { Document } from '../../lib/documents';
 import { plainTextExcerpt, stripMarkdown } from '../../lib/tasks/text';
 import { highlightText } from '../../lib/highlightText';
 import { Badge, IconButton } from '../ui';
+import { formatUpdatedLabel } from './dates';
 
 type TimelineDocumentCardProps = {
   document: Document;
@@ -17,21 +18,6 @@ type TimelineDocumentCardProps = {
   readingTime: number;
   highlightQuery?: string;
 };
-
-function updatedLabel(value: string): string {
-  const date = new Date(value);
-  const diffMs = Date.now() - date.getTime();
-  const minutes = Math.floor(diffMs / 60000);
-  const hours = Math.floor(diffMs / 3600000);
-  const days = Math.floor(diffMs / 86400000);
-
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
-
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
 
 export function TimelineDocumentCard({
   document,
@@ -138,7 +124,7 @@ export function TimelineDocumentCard({
             <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] leading-4 text-ink-muted">
               <span className="inline-flex items-center gap-1 tabular-nums">
                 <ClockIcon className="h-3 w-3" aria-hidden="true" />
-                {updatedLabel(document.updated)}
+                {formatUpdatedLabel(document.updated)}
               </span>
               {folderName && (
                 <span className="inline-flex min-w-0 items-center gap-1">

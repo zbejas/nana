@@ -17,6 +17,11 @@ The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth
 | `src/index.css` | Tailwind entry, Graphite tokens, self-hosted fonts, global styles, motion, Markdown overrides. |
 | `src/lib/theme.ts` | Theme preference (`system`/`dark`/`light`), resolution, `data-theme`, theme-color meta. |
 | `src/pages/BoardsPage.tsx` | Board index and board cards, including the private lock. |
+| `src/pages/TimelinePage.tsx` | Timeline feed and utility rail: notes and boards, search, calendar filter. |
+| `src/components/timeline/useTimelinePageState.ts` | Timeline paging, search, calendar range, merged note/board feed. |
+| `src/components/timeline/items.ts` | Pure feed helpers: board visibility and note/board merge ordering. |
+| `src/components/timeline/TimelineDocumentCard.tsx` | Note feed card: preview, tags, folder, reading statistics. |
+| `src/components/timeline/TimelineBoardCard.tsx` | Board feed card: description, folder, task counts, private lock. |
 | `src/pages/BoardPage.tsx` | Board detail: header actions, search, kanban columns, dialogs, private lock. |
 | `src/pages/BoardArchivePage.tsx` | Archived boards, restore, permanent delete. |
 | `src/pages/FolderViewPage.tsx` | Folder contents, board rows beside notes, counts, drag targets, board menu, `BoardDialog`. |
@@ -35,6 +40,9 @@ The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth
 | `src/components/board/BoardDialog.tsx` | Create/edit board, folder selector, private switch, archive confirmation. |
 | `src/components/board/TaskDialog.tsx` | Create/edit task, column/priority select, delete confirmation. |
 | `src/components/board/TaskCard.tsx` | Ledger task row: title, excerpt, priority code, due date, linked note, labels. |
+| `src/components/NewContentMenu.tsx` | Shared New menu: New note / New board for the sidebar and timeline. |
+| `src/components/sidebar/BoardItem.tsx` | Board row in the sidebar Library tree. |
+| `src/components/sidebar/useSidebarBoards.ts` | Active board list for the sidebar tree, refreshed by board realtime events. |
 | `src/components/board/board-config.ts` | Column labels/hints and priority labels/codes. |
 | `src/components/ui/` | Shared primitives: PageShell, PageHeader, Button, Field, Card, Dialog, Sheet, Menu, ConfirmDialog, EmptyState. Toasts live in `src/components/Toast.tsx`. |
 | `src/state/atoms.ts` | UI, document, loading, editor, realtime, and add-to-board request atoms. |
@@ -106,11 +114,25 @@ Critical rules:
 
 Initial load order is recent documents, root documents, folders + trash folders, then trash documents. A 20-second timeout unblocks the UI if PocketBase is slow; don't remove it without a replacement.
 
+### Timeline
+
+`/timeline` is the cross-surface feed: notes and active boards, newest first.
+
+- `useTimelinePageState()` loads notes in pages of 20 through `getTimelineDocumentsPage()` and reads active `BoardSummary` rows from `useBoardSummaries(false)`. Summaries carry `lastActivity`, the later of the board's `updated` and its newest task's `updated`, so working a board's tasks moves the board in the feed.
+- Notes and boards merge into one list and group by activity day: Today, Yesterday, then a date label.
+- Infinite scroll pages notes only. Until every note page is loaded, boards older than the oldest loaded note wait for the next page; once the feed is complete, every active board appears. Boards are already fully loaded, so no board paging exists.
+- Search matches note title/content/tags through `searchDocuments()` and board name/description locally. The calendar range filters both notes and boards by their activity timestamp.
+- A segmented **All / Notes / Boards** control filters the feed. Boards-only skips the note paging cutoff; notes-only skips the initial board wait. The labels and the rail count the records available in the current view.
+- **New** in the header opens the shared New menu (`NewContentMenu`): New note starts the editor, New board opens `BoardDialog` and then the created board.
+- Note cards keep the document context menu and add-to-board flow. Board cards open `/board/:id` and show the private lock, folder, and open/done counts; archived boards stay out of the feed.
+- The rail counts notes, boards, and folders in the current view.
+- Realtime note changes bump `timelineRealtimeTickAtom`; `useBoardSummaries()` refreshes boards from its board and task subscriptions.
+
 ### Board index
 
 `/board` is a card index, not a ledger.
 
-- `useBoardSummaries()` loads `listBoardSummaries()`: one boards query plus one task query, then sums open/done counts per board.
+- `useBoardSummaries()` loads `listBoardSummaries()`: one boards query plus one task query, then sums open/done counts and records the latest task update per board as `lastActivity`.
 - Active boards only, newest first. Summary chips read `NN board(s)`, `NN open`, and `NN done`.
 - A private board shows a lock beside its name on the index card and the detail header. The lock is a visual cue; the private lock itself is enforced by the AI surfaces.
 - Cards sit on `md:grid-cols-2` / `2xl:grid-cols-3`. Each card carries an index, last updated, name, two-line description, a signal progress bar, done/total, open/done chips, and a circled arrow.
@@ -197,6 +219,7 @@ The board detail header uses a different flow: `ImportNoteDialog` imports into t
 - Attachments are protected files; the client obtains a short-lived file token for rendering.
 - Notes over 5 MB warn; over the 100 MB database limit the warning becomes an error. Thresholds live in `ContentSizeWarning.tsx`.
 - Sidebar: full sidebar docked at `>=1024px`; 768–1023px uses the 64px rail with the full sidebar as an overlay; below 768px the sidebar is an overlay plus a bottom navbar. Folder trees are in `src/components/sidebar/`; folder contents in `src/components/folder-view/`; drag-and-drop in `src/components/file-folder-handling/`.
+- The sidebar Library tree mixes root notes and root boards; an expanded folder shows its notes and boards together. `useSidebarBoards()` loads active boards through `listBoards()` and refreshes on board realtime events. Board rows use the column icon, private lock, Open/Edit menu, and drag between folders. The global **New** button opens `NewContentMenu` with New note and New board.
 - Settings: `/settings/account`, `/settings/preferences`, `/settings/admin/general|people|email|signin|ai`, `/settings/about`. The URL owns the tab. AI covers providers, models, generation parameters, and prompts; there is no embedding or search-index section.
 - Public pages fetch through `/pb/api/public/...` and skip authenticated app data; `AppContent` disables `useDocumentData()` for `/public/`.
 - The `PublicShareModal` `Private` switch says the record is hidden from AI chat and MCP and from shared parents. It does not hide the record from its owner; the owner can still open it in the library.

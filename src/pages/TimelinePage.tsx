@@ -1,10 +1,11 @@
 import { createPortal } from 'react-dom';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAtomValue, useSetAtom } from 'jotai';
 import {
   CalendarDaysIcon,
+  ChevronDownIcon,
   MagnifyingGlassIcon,
   PlusIcon,
   ViewColumnsIcon,
@@ -21,7 +22,10 @@ import { exportDocument } from '../lib/export';
 import type { FolderTreeNode } from '../lib/folders';
 import { useToasts } from '../state/hooks';
 import { CalendarFilterPanel } from '../components/timeline/CalendarFilterPanel';
+import { TimelineBoardCard } from '../components/timeline/TimelineBoardCard';
 import { TimelineDocumentCard } from '../components/timeline/TimelineDocumentCard';
+import { NewContentMenu } from '../components/NewContentMenu';
+import { BoardDialog } from '../components/board/BoardDialog';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('Timeline');
@@ -30,7 +34,7 @@ import { useContextMenuState } from '../components/file-folder-handling';
 import { DocumentContextMenu } from '../components/file-folder-handling/context-menu/DocumentContextMenu';
 import { PublicShareModal } from '../components/modals/PublicShareModal';
 import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
-import { Button, Card, ConfirmDialog, EmptyState, Input, PageHeader, PageShell, Spinner } from '../components/ui';
+import { Button, Card, ConfirmDialog, EmptyState, Input, PageHeader, PageShell, SegmentedControl, Spinner } from '../components/ui';
 
 export function TimelinePage() {
   const navigate = useNavigate();
@@ -41,18 +45,24 @@ export function TimelinePage() {
   const { showToast } = useToasts();
   const publicShareModal = usePublicShareModalState();
   const [deleteConfirmState, setDeleteConfirmState] = useState<{ id: string; title: string } | null>(null);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [createBoardOpen, setCreateBoardOpen] = useState(false);
+  const newButtonRef = useRef<HTMLButtonElement>(null);
   const { contextMenu, isClosingContextMenu, setContextMenu, contextMenuRef, closeContextMenu } = useContextMenuState();
   const {
     groups,
+    counts,
     searchQuery,
     setSearchQuery,
     viewMode,
+    feedFilter,
+    setFeedFilter,
+    visibleItemCount,
     isCalendarOpen,
     isMobile,
-    isInitialLoading,
+    isTimelineLoading,
     isLoadingMore,
     isCalendarLoading,
-    isSearchLoading,
     timelineError,
     calendarError,
     calendarVisibleMonth,
@@ -78,6 +88,10 @@ export function TimelinePage() {
   const handleDocumentClick = (document: Document) => {
     selectDocument(document);
     navigate(`/document/${document.id}`);
+  };
+
+  const handleBoardClick = (boardId: string) => {
+    navigate(`/board/${boardId}`);
   };
 
   const handleCreateFirstDocument = () => {
@@ -125,13 +139,13 @@ export function TimelinePage() {
   const handleDeleteDocument = () => {
     if (!contextMenu?.documentId) return;
 
-    const contextDocument = groups
+    const contextItem = groups
       .flatMap((group) => group.items)
-      .find((document) => document.id === contextMenu.documentId);
+      .find((item) => item.kind === 'document' && item.document.id === contextMenu.documentId);
 
     setDeleteConfirmState({
       id: contextMenu.documentId,
-      title: contextDocument?.title || 'Untitled',
+      title: contextItem?.kind === 'document' ? contextItem.document.title || 'Untitled' : 'Untitled',
     });
     closeContextMenu();
   };
@@ -187,8 +201,8 @@ export function TimelinePage() {
     return names;
   }, [folders]);
 
-  const isLoading = viewMode === 'timeline' ? isInitialLoading || isSearchLoading : isCalendarLoading;
-  const totalVisible = groups.reduce((count, group) => count + group.items.length, 0);
+  const isLoading = viewMode === 'timeline' ? isTimelineLoading : isCalendarLoading;
+  const totalVisible = visibleItemCount;
 
   const searchField = (
     <div className="relative">
@@ -197,8 +211,8 @@ export function TimelinePage() {
         type="text"
         value={searchQuery}
         onChange={(event) => setSearchQuery(event.target.value)}
-        placeholder="Search your notes"
-        aria-label="Search documents"
+        placeholder="Search notes and boards"
+        aria-label="Search notes and boards"
         className="h-9 rounded-control border-line bg-surface pl-10 text-[13px]"
       />
     </div>
@@ -209,7 +223,7 @@ export function TimelinePage() {
       <PageHeader
           eyebrow="Library"
           title="Timeline"
-          description="Everything you have touched, newest first. Search it, filter by date, or start something new."
+          description="Everything you have touched — notes and boards, newest first. Search it, filter by date, or start something new."
           actions={
             <>
               <Button
@@ -222,8 +236,16 @@ export function TimelinePage() {
               >
                 Dates
               </Button>
-              <Button variant="primary" icon={<PlusIcon />} onClick={handleCreateDocument}>
-                New note
+              <Button
+                ref={newButtonRef}
+                variant="primary"
+                icon={<PlusIcon />}
+                iconRight={<ChevronDownIcon />}
+                onClick={() => setNewMenuOpen((open) => !open)}
+                aria-haspopup="menu"
+                aria-expanded={newMenuOpen}
+              >
+                New
               </Button>
             </>
           }
@@ -232,6 +254,32 @@ export function TimelinePage() {
         <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_20rem] lg:gap-10">
           <main className="min-w-0">
             <div className="mb-4 xl:hidden">{searchField}</div>
+
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <SegmentedControl
+                size="sm"
+                label="Show in timeline"
+                value={feedFilter}
+                onChange={setFeedFilter}
+                options={[
+                  {
+                    value: 'all',
+                    label: `All ${counts.documents + counts.boards}`,
+                    title: 'Show notes and boards',
+                  },
+                  {
+                    value: 'notes',
+                    label: `Notes ${counts.documents}`,
+                    title: 'Show notes only',
+                  },
+                  {
+                    value: 'boards',
+                    label: `Boards ${counts.boards}`,
+                    title: 'Show boards only',
+                  },
+                ]}
+              />
+            </div>
 
             <div
               ref={calendarPopupRef}
@@ -287,11 +335,42 @@ export function TimelinePage() {
             ) : groups.length === 0 ? (
               searchQuery.trim() ? (
                 <EmptyState
-                  title="No notes match that search"
+                  title="Nothing matches that search"
                   description="Try a shorter phrase, or clear the search to see everything again."
                   action={
                     <Button variant="secondary" onClick={() => setSearchQuery('')}>
                       Clear search
+                    </Button>
+                  }
+                />
+              ) : viewMode === 'calendar' ? (
+                <EmptyState
+                  title="Nothing in that date range"
+                  description="Try a wider range, or reset the timeline to see everything again."
+                  action={
+                    <Button variant="secondary" onClick={resetTimeline}>
+                      Reset timeline
+                    </Button>
+                  }
+                />
+              ) : feedFilter === 'boards' ? (
+                <EmptyState
+                  title="No boards yet"
+                  description="Create a board to keep work beside your notes. Boards you touch show up here too."
+                  action={
+                    <Button variant="secondary" onClick={() => navigate('/board')}>
+                      Go to boards
+                    </Button>
+                  }
+                />
+              ) : feedFilter === 'notes' ? (
+                <EmptyState
+                  eyebrow="A blank page"
+                  title="No notes yet"
+                  description="Write in Markdown, keep the work beside it on the board, and share it when it is ready."
+                  action={
+                    <Button variant="primary" icon={<PlusIcon />} onClick={handleCreateFirstDocument}>
+                      Create a note
                     </Button>
                   }
                 />
@@ -311,7 +390,7 @@ export function TimelinePage() {
               <div className="space-y-8">
                 {searchQuery.trim() && (
                   <p className="text-xs text-ink-muted">
-                    {totalVisible} {totalVisible === 1 ? 'note' : 'notes'} matching “{searchQuery.trim()}”
+                    {totalVisible} {totalVisible === 1 ? 'result' : 'results'} matching “{searchQuery.trim()}”
                   </p>
                 )}
 
@@ -327,26 +406,50 @@ export function TimelinePage() {
                       </span>
                     </div>
                     <div className="space-y-3">
-                      {group.items.map((document) => (
-                        <TimelineDocumentCard
-                          key={document.id}
-                          document={document}
-                          isMobile={isMobile}
-                          folderName={document.folder ? folderNameById.get(document.folder) : undefined}
-                          highlightQuery={searchQuery}
-                          onClick={() => handleDocumentClick(document)}
-                          onContextMenu={(event) => handleDocumentContextMenu(event, document)}
-                          onOpenItemMenu={(event) => handleOpenItemMenu(event, document)}
-                          onLongPressMenu={(position) => handleLongPressMenu(document, position)}
-                          wordCount={getWordCount(document)}
-                          readingTime={getReadingTime(document)}
-                        />
-                      ))}
+                      {group.items.map((item) =>
+                        item.kind === 'document' ? (
+                          <TimelineDocumentCard
+                            key={item.id}
+                            document={item.document}
+                            isMobile={isMobile}
+                            folderName={
+                              item.document.folder
+                                ? folderNameById.get(item.document.folder)
+                                : undefined
+                            }
+                            highlightQuery={searchQuery}
+                            onClick={() => handleDocumentClick(item.document)}
+                            onContextMenu={(event) =>
+                              handleDocumentContextMenu(event, item.document)
+                            }
+                            onOpenItemMenu={(event) =>
+                              handleOpenItemMenu(event, item.document)
+                            }
+                            onLongPressMenu={(position) =>
+                              handleLongPressMenu(item.document, position)
+                            }
+                            wordCount={getWordCount(item.document)}
+                            readingTime={getReadingTime(item.document)}
+                          />
+                        ) : (
+                          <TimelineBoardCard
+                            key={item.id}
+                            board={item.board}
+                            folderName={
+                              item.board.folder
+                                ? folderNameById.get(item.board.folder)
+                                : undefined
+                            }
+                            highlightQuery={searchQuery}
+                            onClick={() => handleBoardClick(item.board.id)}
+                          />
+                        )
+                      )}
                     </div>
                   </section>
                 ))}
 
-                {viewMode === 'timeline' && (
+                {viewMode === 'timeline' && feedFilter !== 'boards' && (
                   <>
                     <div ref={loadMoreRef} className="h-2" />
                     {isLoadingMore && (
@@ -384,12 +487,16 @@ export function TimelinePage() {
               <Card className="overflow-hidden p-0">
                 <div className="p-4">
                   <p className="text-[11.5px] font-semibold text-ink-muted">In this view</p>
-                  <dl className="mt-3 grid grid-cols-2 gap-3">
-                    <div className="rounded-[8px] bg-surface-sunken px-3 py-2.5">
+                  <dl className="mt-3 grid grid-cols-3 gap-2">
+                    <div className="rounded-[8px] bg-surface-sunken px-2.5 py-2.5">
                       <dt className="text-[11.5px] font-medium text-ink-muted">Notes</dt>
-                      <dd className="mt-0.5 text-[20px] font-medium tabular-nums tracking-[-0.02em] text-ink">{totalVisible}</dd>
+                      <dd className="mt-0.5 text-[20px] font-medium tabular-nums tracking-[-0.02em] text-ink">{counts.documents}</dd>
                     </div>
-                    <div className="rounded-[8px] bg-surface-sunken px-3 py-2.5">
+                    <div className="rounded-[8px] bg-surface-sunken px-2.5 py-2.5">
+                      <dt className="text-[11.5px] font-medium text-ink-muted">Boards</dt>
+                      <dd className="mt-0.5 text-[20px] font-medium tabular-nums tracking-[-0.02em] text-ink">{counts.boards}</dd>
+                    </div>
+                    <div className="rounded-[8px] bg-surface-sunken px-2.5 py-2.5">
                       <dt className="text-[11.5px] font-medium text-ink-muted">Folders</dt>
                       <dd className="mt-0.5 text-[20px] font-medium tabular-nums tracking-[-0.02em] text-ink">{folders.length}</dd>
                     </div>
@@ -469,6 +576,24 @@ export function TimelinePage() {
         isSaving={publicShareModal.isSaving}
         onClose={publicShareModal.close}
         onSave={publicShareModal.save}
+      />
+
+      <NewContentMenu
+        open={newMenuOpen}
+        anchorRect={newButtonRef.current?.getBoundingClientRect() ?? null}
+        onClose={() => setNewMenuOpen(false)}
+        onCreateNote={handleCreateDocument}
+        onCreateBoard={() => setCreateBoardOpen(true)}
+      />
+
+      <BoardDialog
+        open={createBoardOpen}
+        onClose={() => setCreateBoardOpen(false)}
+        onSaved={(board) => {
+          setCreateBoardOpen(false);
+          showToast('Board created', 'success');
+          navigate(`/board/${board.id}`);
+        }}
       />
     </PageShell>
   );
