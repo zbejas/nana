@@ -13,7 +13,7 @@ The docs describe **how the code works today**. When code and docs disagree, the
 | [`frontend.md`](frontend.md) | React, routing, auth, Jotai, editor, boards in folders, chat, settings, UI quality | Changing UI or client state |
 | [`pocketbase.md`](pocketbase.md) | JSVM hooks, migrations, collections, settings, trash, board folders, sharing | Changing schema or backend behavior |
 | [`ai.md`](ai.md) | Chat, MCP, providers, tool contracts, privacy lock, persistence, failures | Touching AI features |
-| [`security.md`](security.md) | Trust boundaries, auth, MCP authorization, proxy, CSP, rate limits, secrets | Changing access or exposure |
+| [`security.md`](security.md) | Trust boundaries, auth, MCP authorization, browser facade, CSP, rate limits, secrets | Changing access or exposure |
 | [`testing.md`](testing.md) | Unit + Docker integration layers, layout, helpers, conventions | Adding or fixing tests |
 | [`deployment.md`](deployment.md) | Build, Docker, compose, releases, operations | Building, shipping, debugging deploys |
 | [`development.md`](development.md) | Local setup, workflow, common tasks, sharp edges | Beginning implementation |

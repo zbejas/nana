@@ -2,7 +2,7 @@
 
 ## Overview
 
-The frontend is a React 19 SPA built with Bun, styled with TailwindCSS v4 and the Graphite tokens, and routed with React Router v7. Jotai owns shared UI and document state; PocketBase is accessed through the JS SDK pointed at `/pb`. Board task state is route-local, not global. Boards live in the timeline, folder view, and sidebar rather than a separate index; private boards carry a lock and publicly shared boards carry a share indicator.
+The frontend is a React 19 SPA built with Bun, styled with TailwindCSS v4 and the Graphite tokens, and routed with React Router v7. Jotai owns shared UI and document state; data is accessed through the small client in `src/lib/pocketbase.ts`, which talks only to Elysia `/api/v1`. Board task state is route-local, not global. Boards live in the timeline, folder view, and sidebar rather than a separate index; private boards carry a lock and publicly shared boards carry a share indicator.
 
 The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth is in [`../PRODUCT.md`](../PRODUCT.md).
 
@@ -13,6 +13,7 @@ The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth
 | `src/index.html` | SPA shell; loads `src/frontend.tsx` and the theme bootstrap. |
 | `src/frontend.tsx` | Creates the React root, wraps the app in Jotai `Provider` and `AuthProvider`, registers the service worker. |
 | `src/App.tsx` | Router, protected routes, layout, sidebar, mobile navigation, lazy pages, `AddToBoardHost`. |
+| `src/lib/pocketbase.ts` | Browser client over `/api/v1`: `collection` CRUD, auth store, files, filters, and realtime. |
 | `src/lib/auth.tsx` | `AuthProvider` / `useAuth()`: session validation, sign-in, sign-up, OAuth, logout. |
 | `src/index.css` | Tailwind entry, Graphite tokens, self-hosted fonts, global styles, motion, Markdown overrides. |
 | `src/lib/theme.ts` | Theme preference (`system`/`dark`/`light`), resolution, `data-theme`, theme-color meta. |
@@ -80,15 +81,15 @@ Mobile route transitions follow the order `/timeline` → `/folders` → `/chat`
 
 ### Auth flow
 
-1. `AuthProvider` reads the PocketBase auth store on mount.
+1. `AuthProvider` reads the local auth store in `src/lib/pocketbase.ts` on mount.
 2. A stored session is trusted only while its token is unexpired; expired or half-populated stores are cleared.
-3. Valid tokens are confirmed with `pb.collection('users').authRefresh()`. Auth failures clear the session and show a session-expired toast; network failures keep it for a later check.
+3. Valid tokens are confirmed with `pb.collection('users').authRefresh()` through `/api/v1/auth/refresh`. Auth failures clear the session and show a session-expired toast; network failures keep it for a later check.
 4. While the app is open, the session is re-validated on focus/visibility change and at most every five minutes.
-5. `pb.afterSend` clears the auth store on a `401` only when the failing request used the current token, so a delayed response from an older session cannot sign out a fresh login.
-6. `checkHasUsers()` calls `/api/check-users` to choose onboarding vs sign-in.
+5. The request helper clears the auth store on a `401` only when the failing request used the current token, so a delayed response from an older session cannot sign out a fresh login.
+6. `checkHasUsers()` calls `/api/v1/check-users` to choose onboarding vs sign-in.
 7. Sign-in uses `authWithPassword`; sign-up creates a user then signs in.
 8. On auth change, the client requests an attachment file token (see `src/lib/documents/attachments.ts`).
-9. Server-side, protected Bun APIs call `verifyAuth()`; PocketBase collection rules protect browser data access.
+9. Server-side, protected Bun APIs call `verifyAuth()`; the browser facade validates the caller and PocketBase rules protect record and file access.
 
 The first user becomes an admin and is auto-verified by PocketBase hooks. Public signup is locked after that; admins create additional users from settings.
 
@@ -223,7 +224,7 @@ The board detail header uses a different flow: `ImportNoteDialog` imports into t
 - Sidebar: full sidebar docked at `>=1024px`; 768–1023px uses the 64px rail with the full sidebar as an overlay; below 768px the sidebar is an overlay plus a bottom navbar. Folder trees are in `src/components/sidebar/`; folder contents in `src/components/folder-view/`; drag-and-drop in `src/components/file-folder-handling/`.
 - The sidebar Library tree mixes root notes and root boards; an expanded folder shows its notes and boards together. `useSidebarBoards()` loads active boards through `listBoards()` and refreshes on board realtime events. Board rows use the column icon, private lock, public-share icon, Open/Edit/Share menu, and drag between folders. The Library header includes **New board** and **Archived boards**; the global **New** button opens `NewContentMenu` with New note and New board.
 - Settings: `/settings/account`, `/settings/preferences`, `/settings/admin/general|people|email|signin|ai`, `/settings/about`. The URL owns the tab. AI covers providers, models, generation parameters, and prompts; there is no embedding or search-index section.
-- Public pages fetch through `/pb/api/public/...` and skip authenticated app data; `AppContent` disables `useDocumentData()` for `/public/`. Documents, folders, and boards each have a public reader route; `PublicBoardPage` renders the board description and status-grouped tasks without task-note links.
+- Public pages fetch through `/api/v1/public/...` and skip authenticated app data; `AppContent` disables `useDocumentData()` for `/public/`. Documents, folders, and boards each have a public reader route; `PublicBoardPage` renders the board description and status-grouped tasks without task-note links.
 - The `PublicShareModal` supports documents, folders, and boards. Boards hide the attachment switch because they have no files. The `Private` switch hides the record from AI chat and MCP and from shared parents; a private board cannot be public. It does not hide the record from its owner.
 - The default homepage setting no longer offers a separate boards page; stored `board` preferences open the timeline instead.
 - PWA: the manifest and `/sw.js` are served by `src/index.ts`; `InstallBanner` uses `useInstallPrompt()`; the service worker is intentionally minimal.
@@ -281,7 +282,7 @@ Performance:
 - **Board drag moves the folder only.** `useFileFolderDnD` calls `updateBoard(id, { folder })`; it does not touch the board's tasks, archive state, or `name`/`description`.
 - **Editing a board does not move it.** `BoardDialog` sends the folder only on create. Moving is a drag or the folder context menu, not an implicit edit side effect.
 - **Folder trash keeps boards.** The server rehomes boards to the root before removing the folder. Do not add a client-side board delete loop or treat a missing folder as a deleted board.
-- **The private lock is not a UI gate.** `/api/v1` and the browser SDK still show private records to their owner; chat and MCP hide them. The lock icon only explains the state.
+- **The private lock is not a UI gate.** `/api/v1` and the browser client still show private records to their owner; chat and MCP hide them. The lock icon only explains the state.
 - **The board detail passes `undefined` to `useBoardState` while archived.** That is what prevents task loading; don't “fix” it by always passing `boardId`.
 - **Search pauses dragging.** A filtered column has a different index than the stored order; allowing a drop would write the wrong `board_order`.
 - **There is one AddToBoard picker.** `AddToBoardHost` is mounted at the app root; call sites only set `addToBoardRequestAtom`.

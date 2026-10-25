@@ -34,6 +34,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 - Markdown-first editing with live preview and attachments.
 - Multiple kanban boards for the work around your notes, with an archive.
 - Built-in AI chat that reads your notes and boards.
+- A first-class Elysia `/api/v1` API with self-hosted Scalar docs, plus an MCP endpoint for external AI clients.
 - A calm, paper-like interface with night and daylight themes.
 - Modern stack: Bun, React, TailwindCSS, and PocketBase.
 - Responsive UI that works on desktop and mobile.
@@ -100,11 +101,10 @@ If you are upgrading from a release with built-in semantic search, the old vecto
 
 | Port | Service |
 |---|---|
-| `3000` | Nana web app |
-| `8090` | PocketBase admin UI (development stack) |
+| `3000` | Nana web app (the only public surface) |
 
 > [!NOTE]
-> The production compose file publishes only `3000`. Port `8090` is exposed by the development stack for PocketBase administration; use the app's settings for normal admin work.
+> PocketBase is bound to `127.0.0.1:8090` inside the container. It is never published, so the app's auth, rate limits, API rules, and Elysia surface cannot be bypassed. Use the app's settings for admin work.
 
 ## Environment Variables
 

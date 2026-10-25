@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nana ships as one container with two processes: PocketBase on `:8090` and Bun on `:3000`. Only `:3000` should be public. Migrations run before either process starts, so upgrades include schema changes and data backfills.
+Nana ships as one container with two processes: PocketBase bound to `127.0.0.1:8090` and Bun/Elysia on `:3000`. Only `:3000` is public; PocketBase is loopback-only inside the container. Migrations run before either process starts, so upgrades include schema changes and data backfills.
 
 ## Key files
 
@@ -13,7 +13,7 @@ Nana ships as one container with two processes: PocketBase on `:8090` and Bun on
 | `docker/docker-entrypoint.sh` | Runs migrations, starts PocketBase and Bun, prefixes logs, handles shutdown. |
 | `docker/docker-test-entrypoint.sh` | Resets a disposable database and runs the unit phase plus the phased integration suite. |
 | `compose.yml` | Production image, port `3000`, bind-mounted `./pocketbase/pb_data`. |
-| `docker/compose.dev.yml` | Development build with source and hook watches, ports `3000` and `8090`. |
+| `docker/compose.dev.yml` | Development build with source and hook watches, port `3000`; PocketBase stays loopback-only. |
 | `docker/compose.test.yml` | Isolated test container; no host ports or volumes. |
 | `src/lib/config.ts` | Server environment configuration. |
 | `pocketbase/pb_hooks/bootstrap.js` | Superuser, `site_url`, and `meta.appURL` bootstrap. |
@@ -81,7 +81,7 @@ The Bun and PocketBase versions are pinned as `ARG BUN_VERSION` and `ARG PB_VERS
 `docker/docker-entrypoint.sh`:
 
 1. Runs `PB_MIGRATING=1 pocketbase migrate up`.
-2. Starts PocketBase on `0.0.0.0:8090`.
+2. Starts PocketBase on `127.0.0.1:8090` (loopback only).
 3. Starts Bun (`bun run dev` in development, `bun src/index.ts` in production).
 4. Prefixes logs with `[PocketBase]` / `[Bun]`.
 5. Traps `SIGTERM`/`SIGINT` and shuts both processes down.
@@ -93,7 +93,7 @@ Keep the dual-process and graceful-shutdown behavior. Migrations run on every bo
 | File | Use |
 | --- | --- |
 | `compose.yml` | Production; pulls `ghcr.io/zbejas/nana:latest`, exposes `:3000`, mounts `./pocketbase/pb_data`. |
-| `docker/compose.dev.yml` | Development; builds the `development` stage, exposes `:3000` and `:8090`, watches `src/`, `pb_hooks/`, `pb_migrations/`. |
+| `docker/compose.dev.yml` | Development; builds the `development` stage, exposes `:3000`, watches `src/`, `pb_hooks/`, `pb_migrations/`. PocketBase stays loopback-only. |
 | `docker/compose.test.yml` | Isolated test container; no host ports/volumes; runs the test entrypoint. |
 
 Production compose:
@@ -108,7 +108,7 @@ services:
       - ./pocketbase/pb_data:/app/pocketbase/pb_data
 ```
 
-Do not uncomment `8090:8090` on a public host unless you intentionally want to expose the PocketBase admin UI. Prefer the Bun proxy and the app's admin settings.
+Do not publish `8090`. PocketBase listens on the container loopback only, so a published port would not reach it anyway; the app's admin settings are the supported surface. This is deliberate: a public PocketBase port would bypass Elysia's auth, rate limits, and validation.
 
 ### Persistence
 
@@ -212,7 +212,7 @@ The workflow is idempotent: if the release already exists it is a no-op, so edit
 | Symptom | Check |
 | --- | --- |
 | App serves the dev SPA in production | `NODE_ENV=production` and `dist/index.html` both exist. |
-| `502` on `/pb/*` | PocketBase is running and `POCKETBASE_URL` is correct. |
+| `502` on `/api/v1/*` | PocketBase is running and `POCKETBASE_URL` is correct. |
 | AI calls fail at startup | `ai_config` exists and has an active provider/model. |
 | Chat tools return `unauthorized` | The user token expired; sign in again. |
 | Chat tools return `not_found` | The record belongs to another user, is missing, or the board is archived. |

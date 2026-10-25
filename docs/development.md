@@ -46,7 +46,7 @@ docker compose -f docker/compose.dev.yml up --build
 ```
 
 - Bun: <http://localhost:3000>
-- PocketBase admin: <http://localhost:8090>
+- PocketBase is loopback-only inside the container; there is no direct admin URL. Use the app's settings for normal admin work.
 - API reference: <http://localhost:3000/docs> (OpenAPI JSON at `/docs/json`)
 - Workspace JSON API: `/api/v1` (authenticated)
 - MCP endpoint: `POST /mcp` (authenticated)
@@ -213,10 +213,10 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 - **Archived boards block task writes.** A task update returns an error while the board is archived; deletes still work. This is enforced by PocketBase rules plus `pb_hooks/guards/task_guards.js`.
 - **Task moves need the request guard.** The update rule sees the stored board, not the incoming one. `task_guards.js` validates the new `board` relation for ownership and archived state.
 - **Board folder moves need their own guard.** PocketBase relation rules see the stored board, so `board_guards.js` validates the incoming `folder`. Folder trash must rehome boards to the root; `boards.folder` does not cascade.
-- **Private is an AI lock, not an owner lock.** `loadAiVisibility()` applies to chat and MCP. `/api/v1` and the browser SDK deliberately show private records to their owner.
+- **Private is an AI lock, not an owner lock.** `loadAiVisibility()` applies to chat and MCP. `/api/v1` and the browser client deliberately show private records to their owner.
 - **MCP is stateless and POST-only.** A new server and transport handle one request; there is no session to reuse. `/mcp` is not chat and does not share its read-only rule.
-- **`/docs` is public.** The OpenAPI document and Swagger UI assets need no token. `/api/v1` and `/mcp` do.
-- **`/api/v1` is not `/pb/api`.** The former is an Elysia facade; the latter is the transparent PocketBase proxy.
+- **`/docs` is public.** The OpenAPI document and self-hosted Scalar assets need no token. `/api/v1` and `/mcp` do.
+- **The browser uses `/api/v1`, not PocketBase.** `/api/v1` has a typed workspace API and a PocketBase-shaped browser facade; `/pb` returns `404`. Server code talks to loopback PocketBase directly through `serverConfig.pocketbaseUrl`.
 - **The integration suite shares one database.** Use `tests/helpers/factories.ts` for unique users and records. Only the onboarding test may rely on an empty database.
 - **Admin tests restore instance settings.** Snapshot with `snapshotAdminSettings()` and restore in `afterAll`; never leave SMTP, OAuth, attachment, or app-url changes behind for the next file.
 - **Board deletion is two-step.** Active board → archive → permanent delete. The delete cascades tasks; do not add a client-side task loop.

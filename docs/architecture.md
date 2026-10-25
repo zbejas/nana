@@ -4,22 +4,24 @@
 
 Nana is a self-hosted document workspace: Markdown notes in folders, multiple task boards, version history, trash, public sharing, a read-only AI assistant, a JSON API, and an MCP server for external AI clients. Notes are `documents`; tasks are separate `tasks` records grouped by author-scoped `boards`. Boards live in the same folder tree as notes, can be marked private, and can be shared publicly.
 
-The system is one deployable with two processes: **Bun** serves the SPA, the application API, the Elysia REST API at `/api/v1`, the public OpenAPI docs at `/docs`, and the MCP endpoint at `/mcp` on port `3000`; **PocketBase** serves data, auth, hooks, and admin APIs on port `8090`. The browser reaches PocketBase only through the Bun origin at `/pb/*`.
+The system is one deployable with two processes: **Bun** serves the SPA, the application API, the Elysia REST API at `/api/v1`, the public OpenAPI docs at `/docs`, and the MCP endpoint at `/mcp` on port `3000`; **PocketBase** serves data, auth, hooks, and admin APIs on `127.0.0.1:8090`. PocketBase is loopback-only; the browser never reaches it directly.
 
 ## Key files
 
 | Path | Role |
 | --- | --- |
-| `src/index.ts` | Bun route registration, security headers, PWA assets, proxy mount, graceful shutdown. |
+| `src/index.ts` | Bun route registration, security headers, PWA assets, `/api/v1` mount, `/pb` 404 guard, graceful shutdown. |
 | `src/frontend.tsx` | React root, Jotai provider, `AuthProvider`, service-worker registration. |
 | `src/App.tsx` | Router, protected routes, layout, mobile navigation, `useDocumentData()` call site, `AddToBoardHost`. |
-| `src/api/` | Server handlers: PocketBase proxy, chat, export, version, auth, rate limiting, static files. |
-| `src/api/rest/` | Elysia `/api/v1` routes, PocketBase token auth, TypeBox request/response schemas, public OpenAPI and Swagger UI. |
+| `src/api/` | Server handlers: chat, export, version, auth, rate limiting, static files. |
+| `src/api/rest/` | Elysia typed workspace API and browser facade, PocketBase token auth, TypeBox schemas, public OpenAPI and Scalar reference. |
+| `src/api/rest/browser/` | Browser-only facade: auth, allowlisted records, files, SSE relay, trash, admin, public shares. |
 | `src/api/mcp/` | Stateless Streamable HTTP MCP server, tool registration, and per-request transport handling. |
 | `src/api/workspace/` | Shared folder, note, board, and task services used by REST and MCP; `Surface` selection and the AI visibility lock. |
 | `src/api/pocketbase/` | Caller-token PocketBase REST client shared by chat tools, REST services, and MCP. Never accepts the superuser token. |
 | `src/api/chat/` | Chat orchestration, providers, conversation persistence, read-only workspace tools. |
 | `src/api/chat/tools/` | `list_notes`, `read_note`, `list_boards`, `read_board` with bounds, author checks, and the private lock. |
+| `src/lib/pocketbase.ts` | Browser client over `/api/v1`; PB-shaped `collection`, `authStore`, `files`, `filter`, and realtime helpers. |
 | `src/lib/boards/` | Board types, CRUD, archive/restore, permanent delete, folder/privacy/public-share fields, summaries, realtime subscription. |
 | `src/lib/tasks/` | Task types, CRUD, position persistence, note import, realtime subscription. |
 | `src/pages/` | Timeline, board detail/archive, chat, settings, auth, onboarding, public pages. |
@@ -46,11 +48,12 @@ Browser / API client / MCP client (same origin; no CORS)
   │
   ▼
 Bun :3000 ── src/index.ts
-  ├── /pb/* ──────────────▶ PocketBase :8090
-  │                          ├── collections + API rules
-  │                          └── pb_hooks: routes, guards, mailers, cron
-  ├── /api/v1/* ──────────▶ Elysia REST ──▶ workspace services ──▶ PB REST (user token)
-  ├── /docs, /docs/json ──▶ OpenAPI spec + self-hosted Swagger UI (public)
+  ├── /api/v1/* ──────────▶ Elysia
+  │                          ├── typed workspace ──▶ workspace services ──▶ PB REST (user token)
+  │                          ├── browser facade ───▶ allowlists + auth ──▶ PB REST (user token)
+  │                          └── auth/files/realtime/public/trash/admin ──▶ PB REST
+  ├── /pb, /pb/* ─────────▶ 404 (the public PocketBase proxy is gone)
+  ├── /docs, /docs/json ──▶ OpenAPI spec + self-hosted Scalar reference (public)
   ├── /mcp ───────────────▶ MCP Streamable HTTP ──▶ workspace services ──▶ PB REST (user token)
   ├── /api/chat/* ────────▶ AI SDK providers + read tools ──▶ PB REST (user token)
   ├── /api/export ────────▶ PB documents/attachments → Markdown/ZIP
@@ -64,36 +67,39 @@ There is no embedding service, vector store, or background indexer in the topolo
 
 | Process | Owns | Entry point |
 | --- | --- | --- |
-| Bun | SPA serving, application API routes, Elysia `/api/v1`, public OpenAPI docs, MCP endpoint, PocketBase proxy, auth verification, rate limiting, CSP, export, chat/provider orchestration, workspace services, read-only chat tools | `src/index.ts` |
-| PocketBase | Data, auth records, API rules, schema, hooks, custom routes, mailers, cron | `pocketbase/pb_hooks/index.pb.js` |
-| Browser | React UI, Jotai state, PocketBase SDK calls through `/pb`, SSE chat client | `src/frontend.tsx` |
+| Bun | SPA serving, application API routes, Elysia `/api/v1`, public OpenAPI docs, MCP endpoint, auth verification, rate limiting, CSP, export, chat/provider orchestration, workspace services, read-only chat tools | `src/index.ts` |
+| PocketBase | Data, auth records, API rules, schema, hooks, custom routes, mailers, cron; loopback only | `pocketbase/pb_hooks/index.pb.js` |
+| Browser | React UI, Jotai state, `/api/v1` client calls, SSE chat client, SSE realtime relay | `src/frontend.tsx` |
 | API / MCP clients | JSON requests to `/api/v1` or `/mcp` with a PocketBase user token; no browser session required | `src/api/rest/`, `src/api/mcp/` |
 
 ### Page load
 
 1. Bun serves `index.html` and built assets from `dist/` in production, or the HMR bundle in development.
 2. `src/frontend.tsx` mounts React inside `AuthProvider` and the Jotai `Provider`.
-3. `src/App.tsx` validates the stored PocketBase token with `authRefresh()`.
-4. Authenticated routes call `useDocumentData()` once in `AppContent`, which loads root documents, recents, folders, trash, and starts realtime subscriptions.
+3. `src/App.tsx` validates the stored token through `pb.authStore` and `/api/v1/auth/refresh`.
+4. Authenticated routes call `useDocumentData()` once in `AppContent`, which loads root documents, recents, folders, trash through `/api/v1/records`, and starts the `/api/v1/realtime` SSE relay.
 5. `AddToBoardHost` mounts once at the app root and waits for a note request atom.
 
-### PocketBase request
+### Browser request
 
-1. Browser calls the PocketBase SDK at `/pb/...`.
-2. `src/api/pocketbase-proxy.ts` forwards method, headers, query, and body to `POCKETBASE_URL`.
-3. PocketBase enforces collection rules and runs hooks.
-4. The proxy returns the response unchanged. It has no embedding or indexing side effects; realtime connections get `server.timeout(req, 0)`.
+1. The browser client in `src/lib/pocketbase.ts` calls `/api/v1/...`; it never calls PocketBase.
+2. Auth calls proxy `/api/v1/auth/*`; records calls hit `/api/v1/records/:collection`; files use `/api/v1/files/*`; live updates use `/api/v1/realtime`.
+3. The browser facade decodes the JWT for the caller id and rejects an expired/missing token with `401`.
+4. Records writes parse JSON or multipart, drop unknown fields and `author`, inject the caller id, validate folder/board/note ownership, and sanitize document content.
+5. Elysia calls PocketBase REST on `127.0.0.1:8090` with the caller's token. PocketBase enforces rules and runs hooks, guards, cascades, trash copying, and file protection.
+6. The response keeps PocketBase's record shape and `{ code, message, data }` envelope so the SPA's existing error handling stays intact.
+7. Realtime is a streaming relay: the unauthenticated `GET /api/v1/realtime` opens the SSE handshake, and the authenticated `POST /api/v1/realtime` subscribes the client id to topics. Bun's timeout is disabled for the GET.
 
-### REST request
+### Typed REST request
 
-1. A client calls `/api/v1/...` with a PocketBase user token, sent raw or as `Authorization: Bearer <token>`.
+1. A client calls `/api/v1/folders`, `/notes`, `/boards`, or `/tasks` with a PocketBase user token, sent raw or as `Authorization: Bearer <token>`.
 2. `authenticateApiRequest()` validates it against PocketBase `auth-refresh` and keeps the refreshed token for downstream calls.
 3. Elysia validates paths, query strings, and JSON bodies with TypeBox. Validation failures return `422`, malformed JSON returns `400`.
 4. The handler calls a workspace service with `surface: "user"` and the caller's `ToolContext`.
 5. The service calls PocketBase REST with the caller's token, adds author filters and author checks, and maps upstream `403`/`404` to one generic `not_found`.
 6. The response is JSON. Errors are `{ "error": "message" }` with the status from the `ApiError`.
 
-`GET /docs` serves Swagger UI and `GET /docs/json` serves the OpenAPI document. Both are public and use self-hosted assets; `/api/v1` itself is authenticated. See [`api.md`](api.md) for the endpoint table.
+`GET /docs` serves a Scalar API reference and `GET /docs/json` serves the OpenAPI document. Both are public and use self-hosted assets, including the app's Geist fonts; `/api/v1` itself is authenticated. See [`api.md`](api.md) for the endpoint table.
 
 ### MCP request
 
@@ -118,7 +124,7 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 
 ### Board request
 
-1. The timeline, sidebar, and folder view load `boards` and `tasks` through the SDK at `/pb` with `listBoardSummaries()`. There is no separate board index.
+1. The timeline, sidebar, and folder view load `boards` and `tasks` through `listBoardSummaries()` over `/api/v1/records`. There is no separate board index.
 2. `/board/:boardId` loads one board and `listTasks(boardId)`, sorted by `board_order` and `created`.
 3. The folder view filters active board summaries to the current folder; the shared view lists active `is_public` boards.
 4. Dragging a card writes only the changed rows through `persistTaskPositions()`: `status` and `board_order`, never `board`.
@@ -131,23 +137,26 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 
 | Flow | Path |
 | --- | --- |
-| Document save | Browser → `/pb/api/collections/documents/...` → PB hooks (word count, version snapshot) → response |
-| Document delete | Browser → PB delete → document and its versions removed; no external index to update |
-| Trash move | Browser → `/pb/api/trash/move-*` → PB copies to `trash_*` and deletes the original |
-| Trash restore | Browser → `/pb/api/trash/restore-*` → PB moves the record back |
-| Folder trash | Browser → `/pb/api/trash/move-folder` → PB copies the subtree, moves documents to trash, rehomes boards to the root → `{ trashFolderId, movedDocumentIds, movedBoardIds }` |
-| Board folder move | Browser → `PATCH boards/:id { folder }` → `board_guards.js` ownership check → realtime refresh |
-| Task move | Browser → `/pb/api/collections/tasks/records/:id` (`status`, `board_order`) → realtime refresh |
+| Document save | Browser → `/api/v1/records/documents` (JSON or multipart) → Elysia author/relation/sanitize checks → PB hooks (word count, version snapshot) → response |
+| Document delete | Browser → `/api/v1/records/documents/:id` DELETE → PB removes the document and versions; no external index to update |
+| Trash move | Browser → `/api/v1/trash/move-document` → PB copies to `trash_*` and deletes the original |
+| Trash restore | Browser → `/api/v1/trash/restore-document` → PB moves the record back |
+| Folder trash | Browser → `/api/v1/trash/move-folder` → PB copies the subtree, moves documents to trash, rehomes boards to the root → `{ trashFolderId, movedDocumentIds, movedBoardIds }` |
+| Board folder move | Browser → `PATCH /api/v1/records/boards/:id { folder }` → Elysia folder ownership + `board_guards.js` → realtime refresh |
+| Task move | Browser → `PATCH /api/v1/records/tasks/:id` (`status`, `board_order`) → realtime refresh |
 | Timeline boards | Browser → `boards` + `tasks` (`fields=board,status`) → per-board open/done/total counts → merged with notes |
 | Folder view boards | Browser → `listBoardSummaries()` → filter active boards by `folder = currentFolderId`; shared view filters `is_public` |
-| Board archive | Browser → `PATCH boards/:id { archived: true }` → timeline, sidebar, and folder views exclude it; public link returns `404` |
-| Board delete | Browser → `DELETE boards/:id` only while archived → PB cascades the board's tasks |
+| Board archive | Browser → `PATCH /api/v1/records/boards/:id { archived: true }` → timeline, sidebar, and folder views exclude it; public link returns `404` |
+| Board delete | Browser → `DELETE /api/v1/records/boards/:id` only while archived → PB cascades the board's tasks |
 | Note to task | Browser → `createTaskFromDocument()` → task with `board`, optional `document`, title, excerpt, up to six tags |
-| REST read/write | API client → `/api/v1` → Elysia handler → workspace service (`surface: "user"`) → PB REST with user token → JSON |
+| Browser auth | Browser → `/api/v1/auth/*` → PB auth endpoints; token and record keep the PB shape |
+| Browser files | Browser → `/api/v1/files/token` + `/api/v1/files/:collection/:record/:file` → PB file token/bytes/thumbnails |
+| Browser realtime | Browser → `GET /api/v1/realtime` SSE handshake + authenticated `POST /api/v1/realtime` subscription → PB realtime |
+| Typed REST read/write | API client → `/api/v1` → Elysia handler → workspace service (`surface: "user"`) → PB REST with user token → JSON |
 | MCP tool call | MCP client → `POST /mcp` → per-request MCP server → workspace service (`surface: "ai"`) → PB REST with user token → tool result |
 | Chat | Browser → `/api/chat/send` → `streamText` + read tools → PB REST with user token → SSE |
 | Export | Browser → `/api/export` → resolve documents/folders → download attachments → Markdown or ZIP |
-| Public share | Public page → `/pb/api/public/*` → PB validates token, expiry, privacy, archive state, and attachment sharing |
+| Public share | Public page → `/api/v1/public/*` → PB validates token, expiry, privacy, archive state, and attachment sharing |
 | Version check | About tab → `/api/app/version` → cached GitHub Releases lookup |
 
 ### Runtime modes
@@ -162,7 +171,7 @@ Production detection is deliberate: Bun treats the app as production only when `
 
 ### Design constraints
 
-- **Single origin.** Browser code never hardcodes `:8090` or a PocketBase URL outside `/pb`. `/api/v1` and `/mcp` are same-origin surfaces; there is no CORS layer.
+- **Single origin.** Browser code never hardcodes `:8090` or calls PocketBase; it uses `/api/v1`. `/api/v1` and `/mcp` are same-origin surfaces; there is no CORS layer.
 - **Two processes, one container.** The Docker entrypoint runs PocketBase and Bun in parallel and shuts both down.
 - **Server-side admin reads.** Settings and AI configuration are admin-only; Bun reads them with the auto-provisioned superuser token.
 - **Chat tools are read-only and user-scoped.** `src/api/chat/tools/` must never use the superuser token, and every read is author-scoped and private-locked.
@@ -191,13 +200,14 @@ Production detection is deliberate: Bun treats the app as production only when `
 ## Gotchas & invariants
 
 - **Production needs both `NODE_ENV=production` and `dist/index.html`.** Missing `dist` silently serves the dev SPA.
-- **`server.timeout(req, 0)` is required** on `/api/chat/send` and `/pb/api/realtime`; otherwise long streams are cut off.
-- **The proxy is transparent.** It forwards auth headers and never injects a superuser token. Adding side effects or client-controlled upstream URLs breaks the trust boundary.
+- **`server.timeout(req, 0)` is required** on `/api/chat/send` and `/api/v1/realtime`; otherwise long streams are cut off.
+- **The browser facade is an allowlist, not a proxy.** It forwards only allowlisted collections and routes, never system/schema/log/backup/superuser paths, and never injects a superuser token.
+- **PocketBase is loopback-only.** The container entrypoint binds `127.0.0.1:8090`; `/pb` returns `404`. Do not publish `8090` or add a pass-through proxy back to PocketBase.
 - **The superuser token belongs to configuration reads only.** `fetchAIConfig()` and the rate limiter use it; chat tools, REST, and MCP must use the caller's token.
 - **Chat is read-only; MCP is the write surface.** Do not add write tools to `src/api/chat/tools/`. MCP writes go through `src/api/workspace/` with a user token, author checks, and `surface: "ai"`.
 - **Private means hidden from AI, not from the owner.** `/api/v1` is the owner surface and intentionally returns private notes, boards, and folder contents. Only chat and MCP apply `loadAiVisibility()`.
 - **MCP tool failures are not HTTP failures.** `POST /mcp` returns `200` with an `isError` text result; only auth, transport, and JSON-RPC errors use HTTP statuses.
-- **`/docs` is public by design.** The API itself is authenticated. The Swagger UI bundle and CSS are served under `/docs/` from `node_modules`, not a CDN.
+- **`/docs` is public by design.** The API itself is authenticated. The Scalar bundle and Geist fonts are served under `/docs/` from `node_modules` and `src/assets/fonts`, not a CDN.
 - **A task requires a board.** The `board` relation is required after migration `0000018_created_boards.js`; UI code cannot create a task without one.
 - **Archived boards freeze task writes.** `createRule`/`updateRule` require `board.archived = false`. Deletion of a task on an archived board remains allowed.
 - **Deleting an archived board cascades its tasks.** The `tasks.board` relation has `cascadeDelete: true`; notes linked through `tasks.document` stay in the library.

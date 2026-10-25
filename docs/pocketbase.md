@@ -2,7 +2,7 @@
 
 ## Overview
 
-PocketBase is the source of truth for data, auth, schema, and server-side behavior. Nana customizes it through JavaScript hooks and append-only migrations in `pocketbase/`. Boards and tasks are ordinary collections; their archive, folder, and cascade behavior is enforced by collection rules, relation settings, and request guards for task board moves and board folder changes, not by custom routes.
+PocketBase is the source of truth for data, auth, schema, and server-side behavior. It listens on `127.0.0.1:8090` inside the container and is never a public browser surface; the browser reaches it through the Elysia `/api/v1` facade. Nana customizes PocketBase through JavaScript hooks and append-only migrations in `pocketbase/`. Boards and tasks are ordinary collections; their archive, folder, and cascade behavior is enforced by collection rules, relation settings, and request guards for task board moves and board folder changes, not by custom routes.
 
 ## Key files
 
@@ -183,7 +183,7 @@ PocketBase evaluates relation rules against the **stored** record, so the incomi
 - A missing folder throws `BadRequestError` (`400`).
 - A folder owned by another user throws `ForbiddenError` (`403`).
 
-The Bun workspace service checks the same ownership before a write, so REST and MCP get a generic `not_found`; the guard is the second line of defence for direct browser SDK calls. Keep the guard when changing board rules.
+The Bun workspace service and the browser facade check the same ownership before a write, so REST, MCP, and `/api/v1/records` get a generic `not_found`; the guard is the second line of defence for direct API calls. Keep the guard when changing board rules.
 
 ### Task schema and rules
 

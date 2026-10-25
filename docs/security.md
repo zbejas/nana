@@ -4,7 +4,7 @@
 
 Nana is self-hosted, so the operator controls the network boundary. The application still enforces a trust boundary between the browser, the Bun server, and PocketBase, and between one user's data and another's.
 
-Nana exposes four access paths through the Bun origin: the browser PocketBase proxy at `/pb`, the application API (`/api/chat`, `/api/export`, `/api/admin`), the Elysia REST API at `/api/v1` with public docs at `/docs`, and the MCP endpoint at `/mcp`. Chat is read-only. MCP is a separate write-capable AI surface with its own authorization rules. `/api/v1` is the owner surface.
+Nana exposes three public access paths through the Bun origin: the application API (`/api/chat`, `/api/export`, `/api/admin`), the Elysia `/api/v1` typed workspace API plus browser facade with public docs at `/docs`, and the MCP endpoint at `/mcp`. PocketBase is a loopback-only backend. Chat is read-only. MCP is a separate write-capable AI surface with its own authorization rules. `/api/v1` is the owner surface.
 
 ## Key files
 
@@ -12,9 +12,10 @@ Nana exposes four access paths through the Bun origin: the browser PocketBase pr
 | --- | --- |
 | `src/api/auth.ts` | `verifyAuth()` for protected Bun application routes. |
 | `src/api/rest/auth.ts` | `authenticateApiRequest()` for `/api/v1` and `/mcp`; raw/Bearer tokens and `auth-refresh`. |
-| `src/api/rest/index.ts` | Elysia routes, request validation, OpenAPI docs, error mapping. |
+| `src/api/rest/index.ts` | Elysia routes, request validation, OpenAPI docs, error mapping, browser facade mount. |
+| `src/api/rest/browser/` | Browser facade: auth, allowlisted records, files, realtime relay, trash, admin, public shares. |
+| `src/api/rest/browser/records.ts` | Collection allowlist, author injection, relation ownership, document sanitization. |
 | `src/api/mcp/index.ts` | MCP server, tool registration, auth-before-work, stateless transport, `isError` results. |
-| `src/api/pocketbase-proxy.ts` | Transparent `/pb/*` forwarding; no auth injection or side effects. |
 | `src/index.ts` | CSP, security headers, route registration, rate-limit checks. |
 | `src/api/rate-limiter.ts` | Per-IP rate limiting from `settings.rate_limits`. |
 | `src/api/pocketbase/client.ts` | Caller-token PocketBase access; maps upstream statuses without echoing bodies. |
@@ -41,36 +42,39 @@ Browser / API client / MCP client (untrusted)
   ▼
 Bun :3000 (trusted server)
   ├── /api/v1, /docs
+  │    ├── typed workspace API
+  │    └── browser facade (records/auth/files/realtime/trash/admin/public)
   ├── /mcp
   ├── /api/chat, /api/export, /api/admin
-  └── /pb (transparent proxy)
+  └── /pb → 404
   │
   ▼
-PocketBase :8090 (trusted backend, not exposed publicly)
+PocketBase 127.0.0.1:8090 (loopback-only trusted backend)
 ```
 
-- The browser never talks to PocketBase on `:8090`; it uses the same-origin `/pb` proxy.
+- The browser never talks to PocketBase on `:8090`; it uses the same-origin `/api/v1` facade.
 - PocketBase is the authority for users, API rules, and collection permissions.
-- Bun is the authority for API auth checks, rate limiting, CSP, server-side admin reads, and workspace authorization.
-- Chat tools, REST services, and MCP tools sit inside Bun but call PocketBase with the user's token, so they do not gain superuser authority.
+- Bun is the authority for API auth checks, collection allowlisting, author/relation checks, rate limiting, CSP, server-side admin reads, and workspace authorization.
+- Chat tools, typed REST services, browser facade writes, and MCP tools sit inside Bun but call PocketBase with the user's token, so they do not gain superuser authority.
 - `/api/v1` and `/mcp` are same-origin surfaces. The server adds no CORS headers; cross-origin browser clients are not supported.
 
-Production compose exposes only `:3000`. Do not publish `:8090` unless explicitly requested.
+Production compose exposes only `:3000`. PocketBase binds to `127.0.0.1:8090`, and `EXPOSE`/compose mappings for `8090` are intentionally absent.
 
 ### Authentication layers
 
 | Layer | Mechanism |
 | --- | --- |
-| Browser session | PocketBase auth store; token validated with `authRefresh()` on startup and on focus. |
+| Browser session | Local auth store in `src/lib/pocketbase.ts`; token validated through `/api/v1/auth/refresh` on startup and on focus. |
 | Bun application API | `verifyAuth(req)` calls PB `auth-refresh` and returns the user ID. |
-| Elysia REST `/api/v1` | `authenticateApiRequest()` accepts a raw token or `Bearer`, refreshes it, and returns the user ID and refreshed token. |
+| Elysia typed workspace API | `authenticateApiRequest()` accepts a raw token or `Bearer`, refreshes it, and returns the user ID and refreshed token. |
+| Elysia browser facade | Decodes the JWT for caller id/expiry, then PocketBase verifies the unchanged token on every upstream call. |
 | MCP `/mcp` | The same `authenticateApiRequest()`, before any MCP work. |
 | PocketBase collections | Per-collection API rules (`author = @request.auth.id`, etc.). |
 | PocketBase admin routes | `$apis.requireAuth()` plus `requireAdmin(c)`. |
 | Server-side admin reads | Auto-provisioned PocketBase superuser token. |
 | Chat tools | The caller's raw `Authorization` header and user id. |
 | REST/MCP workspace services | The caller's refreshed token, user id, and a `Surface` (`user` or `ai`). |
-| Public docs | `/docs`, `/docs/json`, and `/docs/swagger-ui-*` require no token. |
+| Public docs | `/docs`, `/docs/json`, `/docs/scalar.js`, and the `/docs/geist*.woff2` fonts require no token. |
 
 `src/api/auth.ts` throws `AuthError` with `401` for missing/invalid tokens. `authenticateApiRequest()` also returns `401` when PocketBase cannot be reached to verify the session, rather than falling back to an unauthenticated path.
 
@@ -130,13 +134,16 @@ Do not add a write tool to the chat set. A new MCP write goes through `src/api/w
 These intentionally do not require a user token:
 
 - `GET /api/app/version`
-- `GET /docs`, `GET /docs/json`, and the self-hosted Swagger UI assets under `/docs/`
-- `GET /api/check-users`
-- `GET /pb/api/public/documents/:token` and its attachment route
-- `GET /pb/api/public/folders/:token` and its attachment route
+- `GET /docs`, `GET /docs/json`, and the self-hosted Scalar and font assets under `/docs/`
+- `GET /api/v1/check-users`
+- `POST /api/v1/auth/login`, `/auth/methods`, password-reset/email-confirm, and OAuth endpoints
+- `GET /api/v1/public/documents/:token` and its attachment route
+- `GET /api/v1/public/folders/:token` and its attachment route
+- `GET /api/v1/public/boards/:token`
+- `GET /api/v1/realtime` handshake (the subscription POST requires auth)
 - Static SPA assets
 
-All other Bun application routes call `verifyAuth()`. Every `/api/v1` route authenticates through the scoped `derive`. `POST /mcp` authenticates before handling. PocketBase collection routes rely on API rules; do not assume a route is private just because it is under `/pb`.
+All other Bun application routes call `verifyAuth()` for Bun-level auth. Typed `/api/v1` workspace routes authenticate through `authenticateApiRequest()`, browser facade routes validate the token envelope and let PocketBase verify every upstream call, and `POST /mcp` authenticates before handling. PocketBase collection rules stay in force; do not assume a route is private just because it is under `/api/v1`.
 
 The OpenAPI document is public by design. It describes routes and schemas, not user data. Do not add secrets, internal URLs, or examples containing live tokens to it.
 
@@ -156,21 +163,25 @@ The first user is auto-assigned `admin = true` and `verified = true`. After that
 
 `POST /api/admin/rate-limits/reload` lives under `/api/admin` in the Bun server but is guarded by `verifyAuth()` only, not a separate admin-role check. Keep that in mind if you change its behavior.
 
-### Proxy safety
+### Browser facade safety
 
-`src/api/pocketbase-proxy.ts`:
+`src/api/rest/browser/` replaced the old transparent `/pb` proxy:
 
-- Forwards method, headers, query string, and body to `POCKETBASE_URL`.
-- Sets the upstream `Host` header.
-- Disables Bun's timeout for PocketBase realtime connections.
-- Does not add or remove authentication; PocketBase enforces it.
-- Has no mutation observers or indexing side effects.
+- Collection names are allowlisted; system collections, schema, logs, backups, and superuser paths are unreachable.
+- Reads forward PocketBase `filter`, `sort`, `expand`, `fields`, and paging only for allowlisted collections.
+- Writes drop unknown fields, ignore browser-supplied `author`, inject the caller id, and remove `author` on update.
+- Folder parents, board folders, task boards, and task note links are checked for ownership before the upstream write.
+- Document `content` is sanitized at the edge; PocketBase file rules and file tokens still protect attachments.
+- Admin routes require `admin = true`; settings routes are admin-only.
+- File routes allowlist `documents`, `users`, and `trash_documents`.
+- Realtime relays PocketBase SSE; the subscription POST requires the user token.
+- No superuser token is ever injected into browser traffic.
 
-Keep the proxy transparent. Do not add client-controlled upstream URLs, and do not bypass PocketBase rules by injecting a superuser token into browser requests.
+Do not turn this into a generic proxy. Do not add client-controlled upstream URLs, and do not bypass PocketBase rules by injecting a superuser token.
 
 ### CSP and response headers
 
-`src/index.ts` wraps API, proxy, docs, MCP, manifest, service-worker, icon, PDF-worker, and production static responses with these headers. The development SPA route is served by Bun's HTML bundle; production serves the built files through the wrapped static handler.
+`src/index.ts` wraps API, docs, MCP, manifest, service-worker, icon, PDF-worker, and production static responses with these headers. The development SPA route is served by Bun's HTML bundle; production serves the built files through the wrapped static handler.
 
 | Header | Value |
 | --- | --- |
@@ -179,9 +190,9 @@ Keep the proxy transparent. Do not add client-controlled upstream URLs, and do n
 | `X-Frame-Options` | `DENY` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 
-Production CSP: `default-src 'self'`; `script-src 'self' 'unsafe-inline'`; `worker-src 'self'`; `style-src 'self' 'unsafe-inline'`; `img-src 'self' data: blob: https:`; `connect-src 'self'`; `font-src 'self'`; `frame-src 'none'`; `object-src 'none'`; `base-uri 'self'`.
+Production CSP: `default-src 'self'`; `script-src 'self' 'unsafe-inline'`; `worker-src 'self'`; `style-src 'self' 'unsafe-inline'`; `img-src 'self' data: blob: https:`; `connect-src 'self'`; `font-src 'self' data:`; `frame-src 'none'`; `object-src 'none'`; `base-uri 'self'`.
 
-`unsafe-inline` is required by the current editor/bundled styles. Fonts are self-hosted, so `font-src 'self'` stays closed. Swagger UI is self-hosted under `/docs/`; do not add a CDN origin for it. Do not widen `connect-src` or add remote script/font origins without a concrete need.
+`unsafe-inline` is required by the current editor/bundled styles. `font-src 'self' data:` is required because the production bundle inlines the self-hosted Geist fonts as data URIs; no remote font origin is allowed. Scalar and its Geist fonts are self-hosted under `/docs/`; do not add a CDN origin for them. Do not widen `connect-src` or add remote script/font origins without a concrete need.
 
 ### Rate limiting
 
@@ -189,10 +200,10 @@ Production CSP: `default-src 'self'`; `script-src 'self' 'unsafe-inline'`; `work
 
 | Scope | Config |
 | --- | --- |
-| `/pb/*` | `rate_limits.pbMaxPerMinute` |
-| Everything else, including `/api/v1`, `/docs`, and `/mcp` | `rate_limits.appMaxPerMinute` |
+| `/api/v1/*` | `rate_limits.pbMaxPerMinute` (legacy key name) |
+| Everything else, including `/docs` and `/mcp` | `rate_limits.appMaxPerMinute` |
 
-`rate_limits.enabled` turns it on. The defaults in `src/api/rate-limiter.ts` are disabled, 600 PB req/min, and 1200 app req/min. Reload with `POST /api/admin/rate-limits/reload` after changing settings.
+`rate_limits.enabled` turns it on. The defaults in `src/api/rate-limiter.ts` are disabled, 600 API req/min, and 1200 app req/min. Reload with `POST /api/admin/rate-limits/reload` after changing settings.
 
 The limiter is process-local, so it resets on restart and is not shared across replicas. MCP requests can fan out into several PocketBase reads (for example, `list_boards` counts tasks per board); the app limit is the outer bound.
 
@@ -246,7 +257,7 @@ Never commit or expose:
 - SMTP/OAuth credentials.
 - `.env` files.
 
-Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKETBASE_URL`, etc.) or the admin UI. `createLogger()` must not log tokens, API keys, credentials, tool inputs, or tool outputs.
+Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKETBASE_URL`, etc.) or the app's Workspace settings. PocketBase's own admin UI is not exposed. `createLogger()` must not log tokens, API keys, credentials, tool inputs, or tool outputs.
 
 ### Security review checklist
 
@@ -272,7 +283,7 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 - **`403` and `404` collapse to one error.** That is deliberate: PocketBase hides records the caller cannot view, and the service must not reveal the difference.
 - **Chat read-only is a security property, not a prompt.** The model cannot be trusted to ignore injected instructions; the chat tool set has no write path.
 - **MCP writes require the separate design.** User token, author checks, `surface: "ai"`, the private lock, and explicit tool schemas. Do not add a write by extending the chat tools.
-- **Private means hidden from AI, not from the owner.** Chat and MCP apply `loadAiVisibility()`; `/api/v1` and the browser SDK deliberately do not.
+- **Private means hidden from AI, not from the owner.** Chat and MCP apply `loadAiVisibility()`; `/api/v1` and the browser client deliberately do not.
 - **A private folder hides its descendants.** The lock walks `parent`; a child does not need its own `is_private` flag.
 - **MCP has no CORS and no session.** That is deliberate. Cross-origin browser use is unsupported, and every request re-authenticates.
 - **Workspace requests are time-bounded.** REST and MCP requests get a 60-second Bun ceiling; the shared PocketBase client defaults to 30 seconds, and chat tools pass their tighter 8-second signal.
@@ -284,7 +295,7 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 - **Board deletion cascades tasks but not notes.** `tasks.board` has `cascadeDelete: true`; `tasks.document` does not.
 - **Folder delete never deletes boards.** `boards.folder` has `cascadeDelete: false`; the trash routes rehome boards to the root first.
 - **The board folder guard is required.** PocketBase relation rules evaluate the stored record, so the incoming `folder` needs `guards/board_guards.js`.
-- **The proxy must stay transparent.** No auth injection, no client-controlled upstream URL, no indexing side effects.
+- **The browser facade is an allowlist.** No system collections, no client-controlled upstream URLs, no superuser token injection, and no generic PocketBase pass-through.
 - **`src/api/admin/rate-limits/reload` is auth-only.** It is not role-checked despite the path.
 - **The rate limiter is per process.** It does not coordinate across replicas and resets on restart.
 - **Legacy runtime data is not application state.** Anything left from removed features is inert; handle cleanup as a deployment operation, not through application code.

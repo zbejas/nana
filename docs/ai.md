@@ -86,7 +86,7 @@ AI settings live in the admin-only `settings` record with key `ai_config`:
 | Chat tools | `/api/chat/send` | `ai` | Hidden. |
 | MCP | `POST /mcp` | `ai` | Hidden. |
 | Elysia REST | `/api/v1` | `user` | Visible to their owner. |
-| Browser SDK | `/pb` | PocketBase rules | Visible to their owner. |
+| Browser facade | `/api/v1/records` | `user` | Visible to their owner. |
 
 Consequences that are easy to miss:
 
@@ -112,7 +112,7 @@ The lock is structural, not prompt-based. The system instruction for chat and th
 
 ### Chat tool contract
 
-All chat tools are **read-only** and author-scoped. They call PocketBase REST directly at `serverConfig.pocketbaseUrl` with the caller's token, not through `/pb` and not with the superuser token. They load the private lock before a list or read and apply it to every record.
+All chat tools are **read-only** and author-scoped. They call PocketBase REST directly at `serverConfig.pocketbaseUrl` with the caller's token, not through the browser facade and not with the superuser token. They load the private lock before a list or read and apply it to every record.
 
 | Tool | Input | Result |
 | --- | --- | --- |
@@ -232,7 +232,7 @@ Tool logs contain the tool name, duration, and result count only. Inputs, output
 - **The superuser token is for configuration only.** Chat tools, REST, and MCP must use `context.authHeader`; swapping in `getSuperuserToken()` would expose every user's notes and boards.
 - **Every AI read needs author scoping.** Lists filter on `author`; single-record reads check `record.author`. PocketBase rules are the second line of defence, not the only one.
 - **The private lock is not a prompt.** `loadAiVisibility()` runs before lists and reads, `aiVisibilityConditions()` filters totals, and `noteIsLocked()`/`boardIsLocked()` guard records. A prompt statement alone is not enough.
-- **Private means hidden from AI, not from the owner.** `/api/v1` and the browser SDK still show private records to their owner. Do not reuse `surface: "user"` for chat or MCP.
+- **Private means hidden from AI, not from the owner.** `/api/v1` and the browser client still show private records to their owner. Do not reuse `surface: "user"` for chat or MCP.
 - **A private folder hides its descendants even when they are not flagged.** Visibility is computed from `parent`, not from the child's own `is_private`.
 - **Creating a private record through MCP makes it disappear from that surface.** The write succeeds; subsequent reads return `not_found`. That is expected.
 - **Archived boards are readable metadata but not readable work.** `list_boards({ includeArchived: true })` can list them; `read_board` always returns `not_found` for an archived board.

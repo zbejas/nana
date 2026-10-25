@@ -1,15 +1,15 @@
-# API — Bun, Elysia REST, MCP, and PocketBase surfaces
+# API — Elysia, MCP, and internal PocketBase
 
 ## Overview
 
 Nana exposes four HTTP surfaces through one Bun origin:
 
 - **Bun application API** — `/api/chat`, `/api/export`, `/api/app/version`, and `/api/admin`.
-- **Elysia REST API** — `/api/v1` for folders, notes, boards, and tasks, with public OpenAPI docs at `/docs` and `/docs/json`.
+- **Elysia `/api/v1`** — the owner workspace API (folders, notes, boards, tasks), the browser facade (auth, records, files, realtime, trash, admin, public shares), and public OpenAPI docs at `/docs` and `/docs/json`.
 - **MCP** — `POST /mcp`, a stateless Streamable HTTP endpoint for AI clients.
-- **PocketBase** — collection/auth routes and custom `/api/*` routes, reached by the browser through the `/pb` proxy.
+- **PocketBase** — an internal data/auth/hook engine on `127.0.0.1:8090`. It is not a public surface.
 
-The browser uses the PocketBase SDK at `/pb` for normal reads and writes. `/api/v1` and `/mcp` are for external clients and automation; they authenticate with a PocketBase user token and call PocketBase with that same token.
+The browser uses the small client in `src/lib/pocketbase.ts`, which talks only to `/api/v1`. The compatibility-shaped browser facade in `src/api/rest/browser/` keeps PocketBase's record and error shapes so the SPA did not need a screen-by-screen rewrite. `/pb` is gone: `GET /pb` and `/pb/*` return `404`.
 
 `/api/v1` and `/mcp` accept the user token raw or as a Bearer token:
 
@@ -18,28 +18,33 @@ Authorization: <pocketbase-auth-token>
 Authorization: Bearer <pocketbase-auth-token>
 ```
 
-`verifyAuth()` validates tokens for the application API. `authenticateApiRequest()` validates them for `/api/v1` and `/mcp`, accepts either form, and uses the refreshed token for downstream calls. PocketBase collection routes enforce their own API rules; admin routes additionally call `requireAdmin()`.
+`verifyAuth()` validates tokens for the application API. `authenticateApiRequest()` validates them for the typed workspace API and `/mcp`, accepts either form, and uses the refreshed token for downstream calls. The browser facade decodes the JWT for the caller id, then lets PocketBase verify the token on every upstream call. PocketBase collection rules, guards, hooks, cascades, trash logic, and file protection stay in force.
 
 ## Key files
 
 | File | Role |
 | --- | --- |
-| `src/index.ts` | Bun route table, Elysia mount, MCP mount, rate-limit checks, security headers, proxy mount. |
-| `src/api/rest/index.ts` | Elysia `/api/v1` routes, OpenAPI metadata, self-hosted Swagger UI assets, REST error mapping. |
-| `src/api/rest/auth.ts` | `authenticateApiRequest()`; raw/Bearer token handling and `auth-refresh`. |
+| `src/index.ts` | Bun route table, Elysia mount, MCP mount, rate-limit checks, security headers, and the 404 guard for the old `/pb` path. |
+| `src/api/rest/index.ts` | Elysia typed workspace routes, REST error mapping, browser facade mount, and self-hosted Scalar assets. |
+| `src/api/rest/browser/` | Browser facade: auth, allowlisted records, files, realtime relay, trash, admin, public shares. |
+| `src/api/rest/browser/records.ts` | Collection allowlist, author injection, relation ownership checks, document sanitization, and PB-shaped errors. |
+| `src/api/rest/browser/realtime.ts` | SSE relay for `/api/v1/realtime` plus authenticated subscription POSTs. |
+| `src/api/rest/openapi.ts` | OpenAPI document metadata, Scalar configuration, Graphite docs theme, and shared docs paths. |
+| `src/api/rest/responses.ts` | Shared error response schemas used by runtime validation and the OpenAPI document. |
+| `src/api/rest/auth.ts` | `authenticateApiRequest()`; raw/Bearer token handling and `auth-refresh` for typed workspace routes. |
 | `src/api/rest/schemas.ts` | TypeBox request, query, params, and response schemas. |
 | `src/api/mcp/index.ts` | MCP server construction, folder/note/board/task tool registrations, stateless transport, JSON-RPC errors. |
-| `src/api/workspace/` | Shared folder, note, board, and task services used by REST and MCP. |
+| `src/api/workspace/` | Shared folder, note, board, and task services used by the typed workspace API and MCP. |
 | `src/api/workspace/privacy.ts` | `loadAiVisibility()`, `aiVisibilityConditions()`, and the record lock helpers. |
 | `src/api/pocketbase/client.ts` | Caller-token PocketBase REST client and status mapping. |
 | `src/api/auth.ts` | `verifyAuth()` and `AuthError`. |
-| `src/api/pocketbase-proxy.ts` | Transparent `/pb/*` forwarding; no side effects. |
 | `src/api/chat/index.ts` | Chat request parsing, SSE response, conversation dispatch. |
 | `src/api/chat/tools/` | Read-only `list_notes`, `read_note`, `list_boards`, `read_board`, shared with MCP reads. |
 | `src/api/export/` | Markdown and ZIP export. |
 | `src/api/app-version.ts` | Cached GitHub Releases lookup. |
-| `src/lib/boards/` | Browser-side board CRUD, folder/privacy/public-share fields, and summaries over the standard collection API. |
-| `src/lib/tasks/` | Browser-side task CRUD, ordering, and note import. |
+| `src/lib/pocketbase.ts` | Browser client over `/api/v1`; preserves the small `pb.collection` / `pb.authStore` / `pb.files` surface the SPA uses. |
+| `src/lib/boards/` | Browser-side board CRUD, folder/privacy/public-share fields, and summaries over `/api/v1/records`. |
+| `src/lib/tasks/` | Browser-side task CRUD, ordering, and note import over `/api/v1/records`. |
 | `pocketbase/pb_hooks/routes/` | Custom PocketBase routes: trash, admin, public shares, check-users. |
 | `pocketbase/pb_hooks/guards/board_guards.js` | Board folder ownership on API create/update. |
 | `pocketbase/pb_migrations/` | Collection schema and API rules. |
@@ -50,33 +55,43 @@ Authorization: Bearer <pocketbase-auth-token>
 
 | Topic | Convention |
 | --- | --- |
-| `/api/v1` content type | JSON; camelCase response fields. |
-| `/api/v1` errors | `{ "error": "message" }` with an HTTP status. |
+| Typed workspace API | `/api/v1/folders`, `/notes`, `/boards`, `/tasks`: JSON with camelCase fields and `{ "error": "message" }` failures. |
+| Browser facade | `/api/v1/records`, `/auth`, `/files`, `/realtime`, `/trash`, `/admin`, `/public`: PocketBase-shaped records (snake_case fields) and `{ code, message, data }` failures. |
 | `/api/v1` auth | Raw user token or `Authorization: Bearer <token>`; invalid or expired tokens return `401`. |
-| `/api/v1` validation | Path/query/body schemas return `422`; malformed JSON returns `400`. |
+| Typed validation | Path/query/body schemas return `422`; malformed JSON returns `400`. |
+| Browser facade validation | The facade rejects unknown collections, cross-user relations, author spoofing, and unsafe writes with `400`/`404`; PocketBase field errors pass through. |
 | MCP | JSON-RPC over Streamable HTTP; tool failures are `isError` results, not HTTP failures. |
 | Application API errors | Bun handlers return `{ "error": "message" }`; PocketBase returns its standard error envelope. |
 | Auth failure | Missing or invalid user token (`401`); authenticated non-admin on an admin route (`403`). |
-| Rate limit | `429` with `Retry-After` when `settings.rate_limits.enabled` is true. `/pb` uses the PB limiter; everything else uses the app limiter. |
-| SSE | `/api/chat/send` disables the Bun request timeout and streams the AI SDK UI message protocol. |
-| Browser URLs | Always same-origin `/pb`, never `:8090`. |
+| Rate limit | `429` with `Retry-After` when `settings.rate_limits.enabled` is true. `/api/v1` uses the `pbMaxPerMinute` bucket; everything else uses the app bucket. |
+| SSE | `/api/chat/send` and `/api/v1/realtime` disable the Bun request timeout. Chat streams the AI SDK UI message protocol; realtime relays PocketBase SSE. |
+| Browser URLs | Always same-origin `/api/v1`, never `:8090`. |
 
-### Elysia REST API
+### Elysia `/api/v1`
 
-`/api/v1` is the **owner surface**. It uses the workspace services with `surface: "user"`, so the owner sees their private notes, boards, folders, and private-folder contents. The AI visibility lock applies only to chat and MCP. This is deliberate: an owner editing their own workspace must be able to see and change private records.
+`/api/v1` is the **owner surface**. It has two layers:
 
-It is a server-side facade over the same PocketBase collections; it does not replace the browser SDK calls.
+1. **Typed workspace API** — `/folders`, `/notes`, `/boards`, `/tasks`. These use the workspace services with `surface: "user"`, so the owner sees their private notes, boards, folders, and private-folder contents. The AI visibility lock applies only to chat and MCP.
+2. **Browser facade** — `/auth`, `/records`, `/files`, `/realtime`, `/trash`, `/admin`, `/public`, `/check-users`, `/me`. These keep the PocketBase record/error shape the SPA already understands while Elysia owns the public edge.
+
+Neither layer replaces PocketBase. Both call the loopback PocketBase REST API with the caller's own token; PocketBase still enforces API rules, guards, hooks, cascades, trash copying, and file protection. The browser facade adds the missing public-edge checks: collection allowlisting, author injection, relation ownership, and note sanitization.
 
 #### Authentication and docs
 
-Every `/api/v1` route calls `authenticateApiRequest()` before the handler:
+Typed workspace routes and MCP call `authenticateApiRequest()` before the handler:
 
 1. Extract the raw token or the value after `Bearer`.
 2. POST it to PocketBase `auth-refresh` (8-second timeout).
 3. Use the returned record id as the author and the refreshed token for downstream PocketBase calls.
 4. Return `401 { "error": "..." }` when the header is missing, the token is invalid/expired, or PocketBase cannot verify it.
 
-`GET /docs` serves Swagger UI and `GET /docs/json` serves the OpenAPI document. Both are **public**; `/api/v1` itself is not. The UI assets are served from `swagger-ui-dist` at `/docs/swagger-ui-bundle.js` and `/docs/swagger-ui.css`, so the CSP needs no external script or style origin. The spec uses `APP_VERSION`, tags for Folders, Notes, Boards, and Tasks, and a `bearerAuth` HTTP security scheme.
+Browser facade routes decode the JWT locally for the caller id and expiry, then send the unchanged token upstream. PocketBase rejects a forged or revoked token, so no write or read succeeds without its authorization. Auth, public-share, and file-token routes are the deliberate exceptions to "decode first"; they proxy PocketBase's public/auth endpoints directly.
+
+`GET /docs` serves a Scalar API reference and `GET /docs/json` serves the OpenAPI document. Both are **public**; `/api/v1` itself is not. The Scalar bundle is served from `@scalar/api-reference` at `/docs/scalar.js`; the docs use the app's self-hosted Geist fonts at `/docs/geist.woff2` and `/docs/geist-mono.woff2`. No CDN or external font origin is needed, so the CSP stays `script-src 'self'` and `font-src 'self' data:` (the production bundle inlines the app fonts as data URIs).
+
+`GET /docs` serves a Scalar API reference and `GET /docs/json` serves the OpenAPI document. Both are **public**; `/api/v1` itself is not. The Scalar bundle is served from `@scalar/api-reference` at `/docs/scalar.js`; the docs use the app's self-hosted Geist fonts at `/docs/geist.woff2` and `/docs/geist-mono.woff2`. No CDN or external font origin is needed, so the CSP stays `script-src 'self'` and `font-src 'self'`.
+
+The spec uses `APP_VERSION`, grouped Folders/Notes/Boards/Tasks tags, stable operation ids, per-status error responses, request/response examples, and a `bearerAuth` HTTP security scheme. Scalar's own theme is disabled in favour of Graphite CSS variables so the reference reads like the rest of Nana.
 
 #### Endpoints
 
@@ -148,6 +163,73 @@ List endpoints return:
 | `422` | Elysia schema validation failed. |
 | `500` | Unexpected server failure; the body is generic. |
 | `502` | PocketBase was unreachable or returned an unreadable response. |
+
+#### Browser facade
+
+The browser facade is the replacement for `/pb`. It is public-facing Elysia code with PocketBase-shaped payloads; PocketBase itself is loopback-only.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/check-users` | public | `{ hasUsers, totalUsers }` for onboarding vs sign-in. |
+| `GET` | `/api/v1/auth/methods` | public | Password/OAuth provider discovery. |
+| `POST` | `/api/v1/auth/login` | public | `{ identity, password }` → `{ token, record }`. |
+| `POST` | `/api/v1/auth/refresh` | user | Refresh the session and return a new token. |
+| `POST` | `/api/v1/auth/logout` | user | `204`; the client clears its local auth store. |
+| `POST` | `/api/v1/auth/password-reset/request` | public | Request a reset email. |
+| `POST` | `/api/v1/auth/password-reset/confirm` | public | Confirm with token and new password. |
+| `POST` | `/api/v1/auth/email-change/request` | user | Request an email change. |
+| `POST` | `/api/v1/auth/email-change/confirm` | public | Confirm with token and password. |
+| `POST` | `/api/v1/auth/oauth2` | public | Exchange an OAuth2 code. |
+| `GET` | `/api/v1/auth/oauth2/callback` | public | Popup callback page; posts the provider query back to the opener. Configure providers to allow `<origin>/api/v1/auth/oauth2/callback`. |
+| `GET` | `/api/v1/me` | user | The caller's own user record. |
+| `GET` | `/api/v1/records/:collection` | user | Allowlisted PocketBase list with `filter`, `sort`, `expand`, `fields`, `page`, `perPage`, `skipTotal`. |
+| `POST` | `/api/v1/records/:collection` | user¹ | Create a record with an allowlisted body. |
+| `GET` | `/api/v1/records/:collection/:id` | user | Read one record. |
+| `PATCH` | `/api/v1/records/:collection/:id` | user | Partial update; ownership cannot be changed. |
+| `DELETE` | `/api/v1/records/:collection/:id` | user | Delete through PocketBase rules. |
+| `POST` | `/api/v1/files/token` | user | Short-lived protected-file token. |
+| `GET` | `/api/v1/files/:collection/:recordId/:filename` | token/query | Protected file or thumbnail; supports `?token=`, `?thumb=`, `?download=`. |
+| `GET` | `/api/v1/realtime` | public handshake | SSE stream; PocketBase sends `PB_CONNECT`. |
+| `POST` | `/api/v1/realtime` | user | `{ clientId, subscriptions }`; authenticated subscription POST. |
+| `POST` | `/api/v1/trash/:action` | user | `move-document`, `restore-document`, `permanent-delete-document`, `move-folder`, `restore-folder`, `permanent-delete-folder`. |
+| `GET/PATCH` | `/api/v1/admin/smtp` | admin | SMTP settings; password is never returned. |
+| `POST` | `/api/v1/admin/smtp/test`, `/api/v1/admin/smtp/send-password` | admin | Test mail / send a password email. |
+| `GET/PATCH` | `/api/v1/admin/attachments` | admin | Attachment limits. |
+| `GET/PATCH` | `/api/v1/admin/oauth/providers` | admin | OAuth provider config with masked secrets. |
+| `PATCH` | `/api/v1/admin/app-url` | admin | Sync PocketBase `meta.appURL`. |
+| `PATCH` | `/api/v1/admin/users/:id` | admin | Update email/name/admin/password. |
+| `POST` | `/api/v1/admin/users/:id/request-email-change` | admin | Send an admin-initiated email change. |
+| `GET` | `/api/v1/public/documents/:token` | public | Public document payload. |
+| `GET` | `/api/v1/public/documents/:token/files/:filename` | public | Public attachment. |
+| `GET` | `/api/v1/public/folders/:token` | public | Public folder tree and documents. |
+| `GET` | `/api/v1/public/folders/:token/files/:documentId/:filename` | public | Public folder attachment. |
+| `GET` | `/api/v1/public/boards/:token` | public | Public board and tasks. |
+
+¹ `POST /records/users` is public for first-user onboarding; PocketBase locks public signup after the first account.
+
+Allowed record collections:
+
+| Collection | Read | Write | Notes |
+| --- | --- | --- | --- |
+| `documents` | yes | yes | `content` is sanitized by Elysia; `author` is injected; `folder` must be owned. |
+| `folders` | yes | yes | `parent` must be owned; cycles/self-parent are rejected. |
+| `boards` | yes | yes | `folder` must be owned; archive-before-delete stays in PocketBase. |
+| `tasks` | yes | yes | `board` must be owned and active; `document` must be owned. |
+| `document_versions` | yes | no | Read-only through the facade. |
+| `trash_documents`, `trash_folders` | yes | no | Mutations only through `/trash/:action`. |
+| `users` | yes | self/admin | Self updates exclude `admin`/`verified`; admin routes use the custom admin endpoints. |
+| `settings` | admin | admin | `site_url`, `ai_config`, `rate_limits`. |
+
+Browser facade behavior:
+
+- **Author injection.** `author` from the browser is ignored on create and removed on update. The caller's JWT id is used, and PocketBase independently checks ownership.
+- **Relation checks.** Folder parents, board folders, task boards, and task note links are checked against the caller before the upstream write. Unknown or foreign records return `404`.
+- **Sanitization.** Document `content` is sanitized on create and update inside Elysia. Uploaded attachments are still protected by PocketBase file rules.
+- **Read-only collections.** Version and trash collections accept only reads; writes return `405`.
+- **Query pass-through.** Reads forward PocketBase `filter`, `sort`, `expand`, `fields`, `page`, `perPage`, and `skipTotal`. This preserves the SPA's raw PB queries without exposing arbitrary system collections.
+- **Error shape.** The facade preserves PocketBase's `{ code, message, data }` error envelope and status codes so the client's field-error and auth handling stays intact.
+- **Files.** Only `documents`, `users`, and `trash_documents` file paths are allowlisted. Protected files still require a PocketBase file token or a public-share route.
+- **Realtime.** The SSE handshake is unauthenticated, like PocketBase; the subscription POST requires the user token. Elysia sets the Bun timeout to `0` for `/api/v1/realtime`.
 
 ### MCP
 
@@ -259,14 +341,16 @@ Conversation list/view/delete are author-scoped by PocketBase rules. Bun creates
 
 `POST /api/admin/rate-limits/reload` requires auth and reloads `settings.rate_limits` into the in-memory limiter. It returns `{ success: true, config }`. It is guarded by `verifyAuth()` only, not an admin-role check.
 
-#### Proxy, docs, and assets
+#### API, docs, and assets
 
 | Route | Method | Behavior |
 | --- | --- | --- |
-| `/pb/*` | any | Forward to PocketBase preserving method, headers, query, and body. No side effects. |
-| `/api/v1/*` | any | Elysia REST API. Authenticated per route. |
-| `/docs`, `/docs/json` | GET | Public Swagger UI and OpenAPI document. |
-| `/docs/swagger-ui-bundle.js`, `/docs/swagger-ui.css` | GET | Self-hosted Swagger UI assets. |
+| `/pb`, `/pb/*` | any | `404`. The public PocketBase proxy was removed. |
+| `/api/v1/*` | any | Elysia typed workspace API and browser facade. Authenticated per route. |
+| `/api/v1/realtime` | GET | SSE relay; Bun timeout is disabled. |
+| `/docs`, `/docs/json` | GET | Public Scalar API reference and OpenAPI document. |
+| `/docs/scalar.js` | GET | Self-hosted Scalar standalone bundle. |
+| `/docs/geist.woff2`, `/docs/geist-mono.woff2` | GET | Self-hosted Geist fonts for the reference. |
 | `/mcp` | POST | Stateless MCP endpoint. |
 | `/manifest.webmanifest` | GET | PWA manifest. |
 | `/sw.js` | GET | Minimal service worker. |
@@ -274,9 +358,9 @@ Conversation list/view/delete are author-scoped by PocketBase rules. Bun creates
 | `/pdfjs/pdf.worker.min.mjs` | GET | PDF.js worker from `node_modules`. |
 | `/*` | GET | Production static files with SPA fallback, or the development HMR entry. |
 
-### PocketBase routes
+### PocketBase routes (internal)
 
-These paths are shown as PocketBase sees them. From the browser, prefix them with `/pb` (for example `/pb/api/trash/move-document`).
+PocketBase listens only on `127.0.0.1:8090`. The paths below are shown as PocketBase sees them; the browser reaches the same behavior through `/api/v1/trash`, `/api/v1/admin`, `/api/v1/public`, and `/api/v1/records`.
 
 #### Public
 
@@ -319,16 +403,16 @@ All require a user token with `admin = true`.
 
 ### Collection routes
 
-Standard PocketBase endpoints under `/api/collections/...` are used by the browser SDK. The UI keeps using them for boards and tasks as well; `/api/v1` is a separate server-side facade, not a replacement.
+PocketBase's standard collection endpoints under `/api/collections/...` are internal. The browser reaches the allowlisted subset through `/api/v1/records/...`; the rest (system collections, schema, logs, backups, superusers) is not exposed.
 
 | Collection | Browser path | Access |
 | --- | --- | --- |
-| `users` | `/pb/api/collections/users/...` | Auth, registration, password reset, email change, OAuth. |
-| `folders`, `documents`, `document_versions`, `conversations` | `/pb/api/collections/...` | CRUD governed by collection rules. |
-| `boards` | `/pb/api/collections/boards/records` | Author-scoped CRUD; delete only while archived; optional folder; private and public-share flags. |
-| `tasks` | `/pb/api/collections/tasks/records` | Author-scoped CRUD; create/update require an active board owned by the author. |
-| `settings` | `/pb/api/collections/settings/records` | Admin-only key/value store. |
-| `trash_*` | `/pb/api/collections/trash_*/records` | Readable but not writable; mutations go through trash routes. |
+| `users` | `/api/v1/records/users` / `/api/v1/auth/*` | Auth, registration, password reset, email change, OAuth, self profile/avatar. |
+| `folders`, `documents`, `boards`, `tasks` | `/api/v1/records/<collection>` | Author-scoped CRUD with injected ownership and relation checks. |
+| `document_versions` | `/api/v1/records/document_versions` | Read-only. |
+| `settings` | `/api/v1/records/settings` | Admin-only key/value store. |
+| `trash_documents`, `trash_folders` | `/api/v1/records/trash_*` | Readable but not writable; mutations go through `/api/v1/trash/:action`. |
+| `conversations` | none | Server-side chat only; `/api/chat/conversations`. |
 
 #### Board records
 
@@ -424,13 +508,15 @@ Folder response includes `rootFolder`, `folders`, `documents`, and `entryDocumen
 
 ## Gotchas & invariants
 
-- **`/api/v1` is not PocketBase.** `/pb/api/...` is the proxied PocketBase collection API; `/api/v1` is an Elysia facade with its own DTOs, validation, and error envelope. Do not mix their paths.
-- **The browser UI still uses collection endpoints.** Do not rewrite the SDK calls to `/api/v1`, and do not add `/api/boards` or `/api/tasks` aliases beside the existing `/api/v1` routes.
-- **Private records are visible on REST.** `/api/v1` is the owner surface. Only chat and MCP apply the private lock; do not add `aiVisibilityConditions()` to REST handlers.
-- **`/docs` is public.** The OpenAPI document and Swagger UI assets are intentionally unauthenticated; `/api/v1` routes are not.
+- **`/api/v1` has two contracts.** The typed workspace routes return camelCase DTOs and `{ error }` failures; the browser facade returns PocketBase-shaped records and `{ code, message, data }` failures. Do not mix their paths or schemas.
+- **The browser never calls PocketBase.** `src/lib/pocketbase.ts` is a small client over `/api/v1`; `/pb` returns `404`. Server-side code uses `serverConfig.pocketbaseUrl` on loopback.
+- **The browser facade is an allowlist, not a proxy.** Do not add system collections, schema, logs, backups, or superuser paths to `/api/v1/records`. New collections need an explicit entry in `src/api/rest/browser/records.ts`.
+- **Ownership is server-injected.** Browser `author` values are ignored on create and removed on update. Folder parents, board folders, task boards, and note links are checked before the upstream write.
+- **Document content is sanitized at the edge.** The facade calls `sanitizeHtml()` on create/update; PocketBase is still the storage and rules engine.
+- **Private records are visible to their owner.** `/api/v1` is the owner surface. Only chat and MCP apply the private lock; do not add `aiVisibilityConditions()` to REST or browser facade handlers.
+- **`/docs` is public.** The OpenAPI document and Scalar assets are intentionally unauthenticated; `/api/v1` routes are not.
 - **MCP is POST-only and stateless.** There is no session to continue. Every request authenticates, builds a server, handles one payload, and closes the transport.
 - **MCP tool failures are model-facing, not HTTP failures.** An `isError` text result still returns `200`; only auth, parse, and transport failures return HTTP errors.
-- **`/pb` is a transparent proxy.** It does not add auth, rewrite rules, or run background work. PocketBase decides access.
 - **Chat has no `documentIds`.** A request containing extra fields is ignored; only `conversationId`, `message`, and `regenerate` are read.
 - **No RAG headers or sources.** Clients must not expect `X-RAG-Sources` or a `sources` field in new assistant messages.
 - **Chat tool errors are model-facing, not HTTP errors.** `list_notes` etc. return `{ ok: false, code, message }` inside the stream; the chat `POST` still succeeds.
@@ -440,12 +526,12 @@ Folder response includes `rootFolder`, `folders`, `documents`, and `entryDocumen
 - **A `403` and a `404` can look identical through the services.** PocketBase hides unauthorized records; the shared client maps both to a generic `not_found`.
 - **Cross-author folders are rejected twice.** The workspace service checks folder ownership before the write; `board_guards.js` checks the incoming relation again for direct API calls.
 - **A trashed folder does not trash its boards.** Boards are rehomed to the root and keep their tasks and archive state.
-- **Rate limits apply before handlers.** `/api/*`, `/api/v1`, `/docs`, `/mcp`, and `/pb/*` all pass through `checkRateLimit()`; a `429` includes `Retry-After`.
+- **Rate limits apply before handlers.** `/api/*`, `/api/v1`, `/docs`, and `/mcp` all pass through `checkRateLimit()`; a `429` includes `Retry-After`. The `/api/v1` bucket is still stored under the legacy `pbMaxPerMinute` settings key.
 
 ## Related docs
 
 - [`architecture.md`](architecture.md) — topology, request flow, and data flows.
 - [`ai.md`](ai.md) — chat tools, MCP, privacy lock, providers, and failures.
 - [`pocketbase.md`](pocketbase.md) — collection rules, migrations, and settings.
-- [`security.md`](security.md) — auth layers, MCP authorization, proxy safety, and CSP.
+- [`security.md`](security.md) — auth layers, MCP authorization, browser facade safety, and CSP.
 - [`frontend.md`](frontend.md) — routes and client calls that consume these endpoints.

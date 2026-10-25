@@ -83,8 +83,8 @@ Numeric prefixes in `pocketbase/guards/` preserve the bootstrap ordering. Do not
 | Layer | Location | Runs against | Use it for |
 | --- | --- | --- | --- |
 | Unit | `tests/unit/` | Imported modules only | Parsing, formatting, bounds, schemas, sanitizers, pure builders, privacy tree walks. |
-| PocketBase integration | `tests/pocketbase/` | Real PocketBase via the Bun `/pb` proxy | Rules, guards, hooks, migrations, custom PocketBase routes, folder board rehoming. |
-| Bun integration | `tests/api/` | Real Bun origin + real PocketBase | Bun routes, proxying, security headers, export, chat, read tools, Elysia `/api/v1`, MCP. |
+| PocketBase integration | `tests/pocketbase/` | Real PocketBase on loopback | Rules, guards, hooks, migrations, custom PocketBase routes, folder board rehoming. |
+| Bun integration | `tests/api/` | Real Bun origin + real PocketBase | Bun routes, security headers, export, chat, read tools, typed Elysia `/api/v1`, browser facade, MCP. |
 
 Unit tests must not import a module that performs network I/O at import time. Integration tests must not replace PocketBase or Bun with a fake.
 
@@ -114,7 +114,7 @@ Do not point the test stack at real data. The entrypoint deletes and recreates i
 1. Runs the unit phase.
 2. Deletes and recreates `/app/pocketbase/pb_data`.
 3. Runs `PB_MIGRATING=1 pocketbase migrate up`.
-4. Starts PocketBase on `:8090` and Bun on `:3000`, logging to `/tmp/nana-pocketbase.log` and `/tmp/nana-bun.log`.
+4. Starts PocketBase on `127.0.0.1:8090` (loopback only) and Bun on `:3000`, logging to `/tmp/nana-pocketbase.log` and `/tmp/nana-bun.log`.
 5. Waits up to 30 seconds for each port.
 6. Runs the integration phases with `tests/preload.ts`.
 
@@ -123,9 +123,9 @@ Do not point the test stack at real data. The entrypoint deletes and recreates i
 | 1/4 Unit | `tests/unit/` | No services; quick signal on pure-logic breakage. |
 | 2/4 Bootstrap + guards | `bootstrap.test.ts` + `guards/` | First-user onboarding must reach the fresh database before lockdown and fixtures. |
 | 3/4 Hooks + routes | `hooks/` + `routes/` | Hooks and custom routes after bootstrap; admin tests restore global settings when done. |
-| 4/4 Bun API | `api/` | Routes, proxy, export, chat, tools, REST, and MCP after PocketBase is seeded. |
+| 4/4 Bun API | `api/` | Routes, export, chat, tools, typed REST, browser facade, and MCP after PocketBase is seeded. |
 
-The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000020_boards_in_folders.js` applied. There is no separate "apply migration" step in a test file.
+The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000021_add_board_public_sharing.js` applied. There is no separate "apply migration" step in a test file.
 
 On failure the entrypoint prints the tail of both server logs. On success it reports per-phase and total duration.
 
@@ -161,7 +161,7 @@ Integration files share one database but not fixture records.
 
 | Helper | Purpose |
 | --- | --- |
-| `bunRequest(path)`, `pbRequest(path)` | Fetch through the Bun origin or `/pb` proxy. |
+| `bunRequest(path)`, `pbRequest(path)` | Fetch through the Bun origin or the loopback PocketBase origin (fixtures and PB route/hook assertions). |
 | `expectStatus(res, status, label?)` | Assert status and include the response body on failure. |
 | `readJson(res)`, `expectJsonError(res, status, contains?)` | Parse JSON or assert the `{ error }` envelope. |
 | `postJson()`, `patchJson()` | JSON requests to Bun routes. |
@@ -239,15 +239,17 @@ Rules:
 | --- | --- |
 | Pure parser, formatter, bounds, schema, sanitizer | `tests/unit/` |
 | New Bun application route | `tests/api/` |
-| New `/api/v1` route or DTO | `tests/api/rest-api.test.ts` |
+| New typed `/api/v1` route or DTO | `tests/api/rest-api.test.ts` |
 | REST auth, validation, status mapping | `tests/api/rest-api.test.ts` |
+| New browser facade route or collection | `tests/api/browser-api.test.ts` |
+| Browser auth, records, files, realtime, trash, admin, public shares | `tests/api/browser-api.test.ts` |
+| `/pb` removal, security headers, public surface | `tests/api/security.test.ts` |
 | MCP transport, auth, JSON-RPC errors | `tests/api/mcp.test.ts` |
 | MCP tool behavior, writes, destructive rules | `tests/api/mcp.test.ts` |
 | Chat route, provider validation, conversation persistence | `tests/api/chat.test.ts` |
 | Chat read tool, bounds, or scoping | `tests/api/chat-tools.test.ts` + `tests/unit/chat-*` |
 | AI private lock, hidden-folder subtrees, filters | `tests/unit/ai-visibility.test.ts` + `tests/api/chat-tools.test.ts` + `tests/api/mcp.test.ts` + `tests/api/rest-api.test.ts` |
 | Export format, filename, folder path, attachment | `tests/api/export.test.ts` + `tests/unit/export-documents.test.ts` |
-| Security headers, CSP, proxy forwarding | `tests/api/security.test.ts` |
 | Manifest, service worker, icons, SPA fallback | `tests/api/static.test.ts` |
 | New PocketBase hook | `tests/pocketbase/hooks/` |
 | Guard or permission change | `tests/pocketbase/guards/` |
@@ -282,7 +284,7 @@ The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.te
 | Area | Assertions |
 | --- | --- |
 | Auth | Raw and Bearer tokens work; missing/invalid tokens return `401`. |
-| Docs | `/docs` serves Swagger UI, `/docs/json` publishes `/api/v1` paths, and the Swagger bundle/CSS are self-hosted. |
+| Docs | `/docs` serves the self-hosted Scalar reference, `/docs/json` publishes `/api/v1` paths and stable operation ids, and the Scalar bundle plus Geist fonts are self-hosted. |
 | Folders | List/create; the created folder appears in the caller's list. |
 | Notes | Metadata-only list filtered by folder and sorted by title; create/read/update/delete; sanitized content and generated slug; root move with `""`/`null`; private note remains visible to its owner; another user gets `404` and an empty list; trash result carries `trashDocumentId`. |
 | Boards | Create with folder and private flag; list with `includeArchived`/`folderId`; read/update; active delete conflict; archive; archived delete `204` and task cascade. |
@@ -300,6 +302,18 @@ The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.te
 | Writes | Note/board/task create, update, move, archive/restore; note delete returns `trashDocumentId`; task delete is permanent; active board delete returns a conflict. |
 | Private lock | Private notes, boards, folders, and private-folder subtrees are omitted from lists and return `not_found` for reads and writes. |
 | Failures | Tool failures are `isError` text results, not HTTP failures. |
+
+`tests/api/browser-api.test.ts` exercises the `/api/v1` browser facade, the replacement for `/pb`:
+
+| Area | Assertions |
+| --- | --- |
+| Auth | Login, refresh, `/me`, auth methods, bad credentials, missing token. |
+| Records | Author injection, document sanitization, foreign folder/board rejection, task board checks, self-promotion rejection, trash move/restore, multipart attachment upload. |
+| Files | File token + protected file bytes through `/api/v1/files`. |
+| Realtime | The SSE handshake returns `text/event-stream` and a `PB_CONNECT` frame. |
+| Admin/public | Settings and admin routes are admin-only; public document shares work and private shares return `404`. |
+
+`tests/api/security.test.ts` asserts `/pb` and `/pb/*` return `404`, security headers are present, the facade requires a token, and the loopback PocketBase fixture path still works.
 
 `tests/pocketbase/guards/05-board-folders.test.ts` covers the board folder guard and `boards.is_private` field. `tests/pocketbase/routes/08-board-folder-trash.test.ts` covers folder trash rehoming, `movedBoardIds`, restore behavior, and permanent-delete preservation of rehomed boards and their tasks.
 
@@ -330,13 +344,14 @@ The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.te
 - **Admin routes return real 403s.** `requireAdmin()` throws `ForbiddenError`, and the route handlers map known errors through `sendError()` in `pb_hooks/utils.js`. Assert `403`; a `500` means an error-mapping regression.
 - **Trash routes return `400` for every failure.** Missing IDs, unknown IDs, and records owned by someone else all come back as `400 { error }`. They do not use 403/404.
 - **Task board moves need the request guard.** PocketBase applies relation rules to the stored record, so `task_guards.js` checks the new `board` value on update. Without it a user can move a task onto another user's board. Test both cross-author and archived-board moves.
-- **Protected file downloads need a file token.** `GET /api/files/...` with only an `Authorization` header returns 404. Create one with `POST /api/files/token`, then append `?token=...`.
+- **Protected file downloads need a file token.** `GET /api/v1/files/...` with only an `Authorization` header returns 404. Create one with `POST /api/v1/files/token`, then append `?token=...`.
 - **Expired public shares are disabled on read.** A 404 for an expired token also clears `is_public` and `public_share_token`; assert the stored record, not just the response.
 - **The suite is not mocked.** A unit test does not prove a guard, route, or tool is wired. Add the integration assertion.
 - **The suite starts from an empty database.** It exercises the current schema, not legacy upgrade paths. To verify the `0000018` task-to-board backfill, migrate a disposable data directory to `0000017`, create a user and a boardless task, apply `0000018`, then confirm the task lands on that author's `My board` with its status and order intact.
-- **The Docker suite applies `0000020` automatically.** The entrypoint runs `migrate up` on a fresh database, so REST, MCP, and board-folder tests see `boards.folder`, `boards.is_private`, and `idx_boards_author_folder` without an explicit migration step.
+- **The Docker suite applies `0000021` automatically.** The entrypoint runs `migrate up` on a fresh database, so REST, MCP, and board-folder tests see `boards.folder`, `boards.is_private`, `boards.is_public`, the share token/expiry fields, and `idx_boards_author_folder` without an explicit migration step.
 - **Private fixtures need their owner.** The private-lock tests must read as the owner. A second user seeing `not_found` proves cross-author scoping, not the private lock; use `createUser()` and the owner's token for the private cases.
 - **MCP tests must `POST`.** A `GET /mcp` returns `405`; the test helper must send a JSON-RPC body with the user token and assert the tool result, not an HTTP error, for workspace failures.
+- **Browser fixtures use loopback PocketBase; public behavior uses Bun.** `pbRequest()` targets `127.0.0.1:8090` for setup, hook, guard, and route assertions. Public-facing browser behavior must go through `/api/v1` (`BROWSER_API`) so a deleted `/pb` route cannot hide behind a direct-PB test.
 - **`bun run build` is separate.** The suite runs TypeScript sources; a passing suite does not prove the production bundle builds.
 - **The test container must never mount host `pb_data`.** The entrypoint deletes and recreates its own copy.
 
