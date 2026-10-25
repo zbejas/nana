@@ -297,12 +297,121 @@ describe("Public share routes", () => {
             expect(data.expiresAt).toBeNull();
         });
 
+        test("returns boards in the shared folder tree with their tasks", async () => {
+            const token = uniqueToken();
+            const folder = await createFolder(user, { name: "Board folder" });
+            const child = await createFolder(user, { name: "Board child", parent: folder.id });
+            const rootBoard = await createBoard(user, {
+                name: "Root board",
+                description: "The shared plan",
+                folder: folder.id,
+            });
+            const childBoard = await createBoard(user, {
+                name: "Child board",
+                folder: child.id,
+            });
+            const linkedNote = await createNote(user, { title: "Linked note" });
+            const firstTask = await createTask(user, rootBoard.id, {
+                title: "First task",
+                status: "done",
+                board_order: 1,
+                labels: ["release"],
+            });
+            const secondTask = await createTask(user, rootBoard.id, {
+                title: "Second task",
+                status: "next",
+                priority: "high",
+                board_order: 2,
+                document: linkedNote.id,
+            });
+            await createTask(user, childBoard.id, { title: "Child task" });
+            await shareFolder(folder.id, token);
+
+            const data = await readJson<{
+                boards: Array<{
+                    id: string;
+                    name: string;
+                    description: string;
+                    folder: string;
+                    tasks: Array<Record<string, unknown>>;
+                }>;
+                documents: unknown[];
+                entryDocumentId: string | null;
+            }>(await pbRequest(`${PUBLIC_API}/folders/${token}`));
+
+            expect(data.documents).toEqual([]);
+            expect(data.entryDocumentId).toBeNull();
+            expect(data.boards.map((board) => board.id)).toEqual(
+                expect.arrayContaining([rootBoard.id, childBoard.id]),
+            );
+
+            const serializedRoot = data.boards.find((board) => board.id === rootBoard.id)!;
+            expect(serializedRoot.name).toBe("Root board");
+            expect(serializedRoot.description).toBe("The shared plan");
+            expect(serializedRoot.folder).toBe(folder.id);
+            expect(serializedRoot.tasks.map((task) => task.id)).toEqual([
+                firstTask.id,
+                secondTask.id,
+            ]);
+            expect(serializedRoot.tasks.map((task) => task.title)).toEqual([
+                "First task",
+                "Second task",
+            ]);
+            expect(serializedRoot.tasks[0]?.status).toBe("done");
+            expect(serializedRoot.tasks[0]?.labels).toEqual(["release"]);
+            expect(Object.keys(serializedRoot.tasks[0]!).sort()).toEqual(
+                [
+                    "id",
+                    "title",
+                    "description",
+                    "status",
+                    "priority",
+                    "due_date",
+                    "board_order",
+                    "labels",
+                    "created",
+                    "updated",
+                ].sort(),
+            );
+            expect(serializedRoot.tasks[0]).not.toHaveProperty("document");
+            expect(serializedRoot.tasks[0]).not.toHaveProperty("author");
+            expect(serializedRoot.tasks[0]).not.toHaveProperty("board");
+            expect(serializedRoot.tasks[1]).not.toHaveProperty("document");
+        });
+
+        test("excludes private, archived, and outside boards from a folder share", async () => {
+            const token = uniqueToken();
+            const folder = await createFolder(user, { name: "Visible folder" });
+            const privateChild = await createFolder(user, { name: "Private child", parent: folder.id });
+            const outside = await createFolder(user, { name: "Outside folder" });
+            const visible = await createBoard(user, { folder: folder.id });
+            const privateBoard = await createBoard(user, { folder: folder.id });
+            const archivedBoard = await createBoard(user, { folder: folder.id, archived: true });
+            const privateSubtreeBoard = await createBoard(user, { folder: privateChild.id });
+            const outsideBoard = await createBoard(user, { folder: outside.id });
+
+            await superuserUpdate("boards", privateBoard.id, { is_private: true });
+            await superuserUpdate("folders", privateChild.id, { is_private: true });
+            await shareFolder(folder.id, token);
+
+            const data = await readJson<{ boards: Array<{ id: string }> }>(
+                await pbRequest(`${PUBLIC_API}/folders/${token}`),
+            );
+            const boardIds = data.boards.map((board) => board.id);
+
+            expect(boardIds).toContain(visible.id);
+            expect(boardIds).not.toContain(privateBoard.id);
+            expect(boardIds).not.toContain(archivedBoard.id);
+            expect(boardIds).not.toContain(privateSubtreeBoard.id);
+            expect(boardIds).not.toContain(outsideBoard.id);
+        });
+
         test("exposes the documented folder fields", async () => {
             const token = uniqueToken();
             const folder = await createFolder(user);
             await shareFolder(folder.id, token);
 
-            const data = await readJson<{ rootFolder: Record<string, unknown>; folders: unknown[]; documents: unknown[]; entryDocumentId: unknown }>(
+            const data = await readJson<{ rootFolder: Record<string, unknown>; folders: unknown[]; documents: unknown[]; boards: unknown[]; entryDocumentId: unknown }>(
                 await pbRequest(`${PUBLIC_API}/folders/${token}`),
             );
 
@@ -311,6 +420,7 @@ describe("Public share routes", () => {
             );
             expect(Array.isArray(data.folders)).toBe(true);
             expect(Array.isArray(data.documents)).toBe(true);
+            expect(Array.isArray(data.boards)).toBe(true);
             expect(data).toHaveProperty("entryDocumentId");
         });
 

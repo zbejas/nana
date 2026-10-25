@@ -117,6 +117,7 @@ routerAdd("GET", "/api/public/folders/{shareToken}", function(c) {
       descendantFolderIds.push(descendantFolders[i].id)
     }
     var descendantDocuments = h.collectFolderDocuments(descendantFolderIds)
+    var descendantBoards = h.collectFolderBoards(descendantFolderIds, folderRecord.getString("author"))
     var authorRecord = h.findAuthorRecord(folderRecord.getString("author"))
 
     var serializedFolders = []
@@ -129,6 +130,11 @@ routerAdd("GET", "/api/public/folders/{shareToken}", function(c) {
       serializedDocuments.push(h.serializeDocument(descendantDocuments[k]))
     }
 
+    var serializedBoards = []
+    for (var b = 0; b < descendantBoards.length; b++) {
+      serializedBoards.push(h.serializeBoardWithTasks(descendantBoards[b]))
+    }
+
     return c.json(200, {
       type: "folder",
       shareToken: shareToken,
@@ -138,6 +144,7 @@ routerAdd("GET", "/api/public/folders/{shareToken}", function(c) {
       rootFolder: h.serializeFolder(folderRecord),
       folders: serializedFolders,
       documents: serializedDocuments,
+      boards: serializedBoards,
       entryDocumentId: descendantDocuments.length > 0 ? descendantDocuments[0].id : null,
     })
   } catch (err) {

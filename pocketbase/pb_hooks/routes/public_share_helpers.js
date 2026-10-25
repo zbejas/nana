@@ -128,6 +128,24 @@ function serializeTask(record) {
   }
 }
 
+/**
+ * A public folder board is the board payload plus its tasks. The tasks keep
+ * the same read-only contract as a standalone board share: no author, board,
+ * or linked note.
+ */
+function serializeBoardWithTasks(record) {
+  var serialized = serializeBoard(record)
+  var taskRecords = collectBoardTasks(record.id)
+  var tasks = []
+
+  for (var i = 0; i < taskRecords.length; i++) {
+    tasks.push(serializeTask(taskRecords[i]))
+  }
+
+  serialized.tasks = tasks
+  return serialized
+}
+
 function collectBoardTasks(boardId) {
   return $app.findRecordsByFilter(
     "tasks",
@@ -198,6 +216,34 @@ function collectFolderDocuments(folderIds) {
   return documents
 }
 
+/**
+ * Collects active boards in the given folder IDs. A folder share never exposes
+ * private boards, archived boards, or boards owned by someone else even if the
+ * stored folder relation is inconsistent.
+ */
+function collectFolderBoards(folderIds, authorId) {
+  var boards = []
+
+  for (var f = 0; f < folderIds.length; f++) {
+    var folderBoards = $app.findRecordsByFilter(
+      "boards",
+      "folder = {:folderId} && archived = false && author = {:authorId}",
+      "+name",
+      500,
+      0,
+      { folderId: folderIds[f], authorId: authorId }
+    )
+
+    for (var b = 0; b < folderBoards.length; b++) {
+      if (!folderBoards[b].getBool("is_private")) {
+        boards.push(folderBoards[b])
+      }
+    }
+  }
+
+  return boards
+}
+
 function buildRecordFileKey(record, filename) {
   var baseFilesPath = String(record.baseFilesPath() || "").replace(/\/+$/, "")
   var cleanFilename = String(filename || "").replace(/^\/+/, "")
@@ -235,9 +281,11 @@ if (typeof module !== "undefined" && module.exports) {
     serializeFolder: serializeFolder,
     serializeBoard: serializeBoard,
     serializeTask: serializeTask,
+    serializeBoardWithTasks: serializeBoardWithTasks,
     collectBoardTasks: collectBoardTasks,
     collectFolderDescendants: collectFolderDescendants,
     collectFolderDocuments: collectFolderDocuments,
+    collectFolderBoards: collectFolderBoards,
     buildRecordFileKey: buildRecordFileKey,
     getOriginalFilename: getOriginalFilename,
     ensureAttachmentExists: ensureAttachmentExists,
