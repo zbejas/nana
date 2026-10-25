@@ -1,13 +1,31 @@
-import { DocumentTextIcon, EllipsisVerticalIcon, FolderIcon, LockClosedIcon, ShareIcon } from '@heroicons/react/24/outline';
+import {
+  DocumentTextIcon,
+  EllipsisVerticalIcon,
+  FolderIcon,
+  LockClosedIcon,
+  ShareIcon,
+  ViewColumnsIcon,
+} from '@heroicons/react/24/outline';
 import type React from 'react';
+import type { BoardSummary } from '../../lib/boards';
 import type { FolderTreeNode } from '../../lib/folders';
 import type { Document } from '../../lib/documents';
 import type { DropPosition } from '../file-folder-handling/types';
 import type { PendingCreate, PendingRename } from './types';
 import { Badge, Button, IconButton } from '../ui';
+import { formatRelativeDate } from '../board/dates';
+
+function boardTaskLabel(board: BoardSummary): string {
+  if (board.total === 0) {
+    return 'No tasks';
+  }
+
+  return `${board.openCount} open · ${board.doneCount}/${board.total} done`;
+}
 
 type FolderViewGridProps = {
   displayedFolders: FolderTreeNode[];
+  displayedBoards: BoardSummary[];
   displayedDocuments: Document[];
   currentFolderId: string | null;
   selectedFolderIds: string[];
@@ -25,22 +43,37 @@ type FolderViewGridProps = {
   onRenameCancel: () => void;
   onFolderClick: (event: React.MouseEvent, folderId: string) => void;
   onFolderDoubleClick: (folderId: string) => void;
+  onBoardClick: (board: BoardSummary) => void;
   onDocumentClick: (event: React.MouseEvent, document: Document) => void;
   onDocumentDoubleClick: (document: Document) => void;
   onItemContextMenu: (
     event: React.MouseEvent,
-    type: 'folder' | 'document' | 'trash-folder' | 'trash-document' | 'empty',
-    options?: { folderId?: string; folderName?: string; documentId?: string }
+    type: 'folder' | 'board' | 'document' | 'trash-folder' | 'trash-document' | 'empty',
+    options?: {
+      folderId?: string;
+      folderName?: string;
+      documentId?: string;
+      boardId?: string;
+      boardName?: string;
+    }
   ) => void;
   onOpenItemMenu: (
     event: React.MouseEvent<HTMLButtonElement>,
-    type: 'folder' | 'document' | 'trash-folder' | 'trash-document',
-    options?: { folderId?: string; folderName?: string; documentId?: string }
+    type: 'folder' | 'board' | 'document' | 'trash-folder' | 'trash-document',
+    options?: {
+      folderId?: string;
+      folderName?: string;
+      documentId?: string;
+      boardId?: string;
+      boardName?: string;
+    }
   ) => void;
   onDragStart: (event: React.DragEvent, documentId: string, folderId?: string) => void;
   onDragEnd: () => void;
   onFolderDragStart: (event: React.DragEvent, folderId: string, parentFolderId?: string) => void;
   onFolderDragEnd: () => void;
+  onBoardDragStart: (event: React.DragEvent, boardId: string, folderId?: string) => void;
+  onBoardDragEnd: () => void;
   onDragOver: (event: React.DragEvent, targetFolderId?: string, dropPosition?: DropPosition) => void;
   onDragLeave: (event: React.DragEvent) => void;
   onDrop: (event: React.DragEvent, targetFolderId?: string, targetParentId?: string) => void;
@@ -99,6 +132,7 @@ function InlineNameCard({
 
 export function FolderViewGrid({
   displayedFolders,
+  displayedBoards,
   displayedDocuments,
   currentFolderId,
   selectedFolderIds,
@@ -116,6 +150,7 @@ export function FolderViewGrid({
   onRenameCancel,
   onFolderClick,
   onFolderDoubleClick,
+  onBoardClick,
   onDocumentClick,
   onDocumentDoubleClick,
   onItemContextMenu,
@@ -124,6 +159,8 @@ export function FolderViewGrid({
   onDragEnd,
   onFolderDragStart,
   onFolderDragEnd,
+  onBoardDragStart,
+  onBoardDragEnd,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -205,6 +242,54 @@ export function FolderViewGrid({
                 <EllipsisVerticalIcon />
               </IconButton>
             )}
+          </div>
+        );
+      })}
+
+      {displayedBoards.map((board) => {
+        const updated = formatRelativeDate(board.updated);
+
+        return (
+          <div key={board.id} className="group relative">
+            <button
+              draggable
+              onClick={() => onBoardClick(board)}
+              onContextMenu={(event) =>
+                onItemContextMenu(event, 'board', { boardId: board.id, boardName: board.name })
+              }
+              onDragStart={(event) => onBoardDragStart(event, board.id, board.folder || undefined)}
+              onDragEnd={onBoardDragEnd}
+              className="flex min-h-[9rem] w-full flex-col justify-between rounded-panel border border-line bg-surface p-4 text-left transition-colors hover:border-line-strong hover:bg-surface-raised"
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-[8px] border border-line bg-surface-sunken text-ink-secondary">
+                <ViewColumnsIcon className="h-4 w-4" />
+              </span>
+              <span className="mt-4 block">
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate text-[13.5px] font-medium text-ink">{board.name}</span>
+                  {board.is_private && (
+                    <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private board" />
+                  )}
+                </span>
+                <span className="mt-0.5 block truncate text-[11.5px] text-ink-muted">
+                  {updated ? `Updated ${updated}` : 'Board'}
+                </span>
+                <span className="mt-0.5 block truncate text-[11.5px] text-ink-muted">
+                  {boardTaskLabel(board)}
+                </span>
+              </span>
+            </button>
+
+            <IconButton
+              label={`Actions for ${board.name}`}
+              size="sm"
+              className="absolute right-1.5 top-1.5 h-7 w-7 bg-surface opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+              onClick={(event) =>
+                onOpenItemMenu(event, 'board', { boardId: board.id, boardName: board.name })
+              }
+            >
+              <EllipsisVerticalIcon />
+            </IconButton>
           </div>
         );
       })}

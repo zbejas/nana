@@ -7,6 +7,8 @@ export interface Board extends RecordModel {
   description: string;
   archived: boolean;
   author: string;
+  folder: string;
+  is_private: boolean;
   created: string;
   updated: string;
 }
@@ -15,12 +17,16 @@ export interface CreateBoardData {
   name: string;
   description?: string;
   archived?: boolean;
+  folder?: string;
+  is_private?: boolean;
 }
 
 export interface UpdateBoardData {
   name?: string;
   description?: string;
   archived?: boolean;
+  folder?: string;
+  is_private?: boolean;
 }
 
 export interface ListBoardsOptions {
@@ -43,6 +49,8 @@ function normalizeBoard(board: Board): Board {
     name: board.name ?? '',
     description: board.description ?? '',
     archived: board.archived === true,
+    folder: board.folder ?? '',
+    is_private: board.is_private === true,
   };
 }
 
@@ -90,19 +98,25 @@ export async function getBoard(id: string): Promise<Board> {
 }
 
 export async function createBoard(data: CreateBoardData): Promise<Board> {
-  const record = await pb.collection(COLLECTION).create<Board>({
+  const payload: Record<string, unknown> = {
     name: normalizeName(data.name),
     description: data.description ?? '',
     archived: data.archived === true,
     author: requireAuthor(),
-  });
+  };
+
+  if (data.folder) payload.folder = data.folder;
+  if (data.is_private !== undefined) payload.is_private = data.is_private === true;
+
+  const record = await pb.collection(COLLECTION).create<Board>(payload);
 
   return normalizeBoard(record);
 }
 
 /**
  * Updates mutable board metadata. Ownership is set on create and cannot be
- * changed afterwards; archiving goes through `archived: true`.
+ * changed afterwards; archiving goes through `archived: true`. An empty
+ * `folder` clears the board's folder and returns it to the root.
  */
 export async function updateBoard(id: string, data: UpdateBoardData): Promise<Board> {
   const payload: Record<string, unknown> = {};
@@ -110,6 +124,8 @@ export async function updateBoard(id: string, data: UpdateBoardData): Promise<Bo
   if (data.name !== undefined) payload.name = normalizeName(data.name);
   if (data.description !== undefined) payload.description = data.description;
   if (data.archived !== undefined) payload.archived = data.archived === true;
+  if (data.folder !== undefined) payload.folder = data.folder;
+  if (data.is_private !== undefined) payload.is_private = data.is_private === true;
 
   const record = await pb.collection(COLLECTION).update<Board>(id, payload);
   return normalizeBoard(record);

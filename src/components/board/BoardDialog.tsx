@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArchiveBoxIcon } from '@heroicons/react/24/outline';
 import {
   archiveBoard,
@@ -6,20 +6,38 @@ import {
   updateBoard,
   type Board,
 } from '../../lib/boards';
-import { Button, ConfirmDialog, Dialog, Field, Input, Textarea } from '../ui';
+import { getAllFolders, type Folder } from '../../lib/folders';
+import { Button, ConfirmDialog, Dialog, Field, Input, Select, Switch, Textarea } from '../ui';
 
 interface BoardDialogProps {
   open: boolean;
   board?: Board | null;
+  /** Initial folder when creating a board. Editing uses the board's folder. */
+  folderId?: string;
   taskCount?: number;
   onClose: () => void;
   onSaved: (board: Board) => void;
   onArchived?: (board: Board) => void;
 }
 
+function folderPath(folder: Folder, byId: Map<string, Folder>): string {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  let current: Folder | undefined = folder;
+
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    names.unshift(current.name || 'Untitled');
+    current = current.parent ? byId.get(current.parent) : undefined;
+  }
+
+  return names.join(' / ');
+}
+
 export function BoardDialog({
   open,
   board = null,
+  folderId,
   taskCount = 0,
   onClose,
   onSaved,
@@ -27,6 +45,9 @@ export function BoardDialog({
 }: BoardDialogProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -40,13 +61,38 @@ export function BoardDialog({
 
     setName(board?.name ?? '');
     setDescription(board?.description ?? '');
+    setIsPrivate(board?.is_private ?? false);
+    setSelectedFolderId(board?.folder ?? folderId ?? '');
     setNameError(null);
     setFormError(null);
     setIsSaving(false);
     setShowArchive(false);
     setIsArchiving(false);
     setArchiveError(null);
-  }, [open, board]);
+
+    let cancelled = false;
+    void getAllFolders()
+      .then((records) => {
+        if (!cancelled) setFolders(records);
+      })
+      .catch(() => {
+        if (!cancelled) setFolders([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, board, folderId]);
+
+  const folderOptions = useMemo(() => {
+    const byId = new Map(folders.map((folder) => [folder.id, folder]));
+    return folders
+      .map((folder) => ({
+        id: folder.id,
+        name: folderPath(folder, byId),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [folders]);
 
   const handleSubmit = async () => {
     const trimmedName = name.trim();
@@ -61,9 +107,24 @@ export function BoardDialog({
     setIsSaving(true);
 
     try {
-      const saved = board
-        ? await updateBoard(board.id, { name: trimmedName, description })
-        : await createBoard({ name: trimmedName, description });
+      let saved: Board;
+
+      if (board) {
+        const patch = {
+          name: trimmedName,
+          description,
+          is_private: isPrivate,
+          ...(selectedFolderId !== (board.folder ?? '') ? { folder: selectedFolderId } : {}),
+        };
+        saved = await updateBoard(board.id, patch);
+      } else {
+        saved = await createBoard({
+          name: trimmedName,
+          description,
+          folder: selectedFolderId || undefined,
+          is_private: isPrivate,
+        });
+      }
 
       onSaved(saved);
       onClose();
@@ -104,8 +165,10 @@ export function BoardDialog({
         title={board ? 'Edit board' : 'New board'}
         description={
           board
-            ? 'Rename the board or change what it is for. Archiving keeps every task until you restore it.'
-            : 'A board keeps a set of tasks together. Notes stay in your library.'
+            ? 'Rename the board, move it to a folder, or change what it is for. Archiving keeps every task until you restore it.'
+            : folderId
+              ? 'A board keeps a set of tasks together. It will be filed in this folder; notes stay in your library.'
+              : 'A board keeps a set of tasks together. Choose a folder, or leave it at the workspace root.'
         }
         size="md"
         initialFocusRef={nameRef}
@@ -178,6 +241,36 @@ export function BoardDialog({
               placeholder="Ship the next release, research, personal admin…"
             />
           </Field>
+
+          <Field
+            label="Folder"
+            htmlFor="board-folder"
+            hint="Boards sit beside notes in the folder tree. The workspace root is always available."
+          >
+            <Select
+              id="board-folder"
+              value={selectedFolderId}
+              onChange={(event) => setSelectedFolderId(event.target.value)}
+            >
+              <option value="">Workspace root</option>
+              {folderOptions.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.name}
+                </option>
+              ))}
+              {selectedFolderId && !folderOptions.some((folder) => folder.id === selectedFolderId) && (
+                <option value={selectedFolderId}>Current folder</option>
+              )}
+            </Select>
+          </Field>
+
+          <Switch
+            id="board-private"
+            label="Private"
+            description="Hidden from AI chat and MCP. It stays in your workspace and can still be opened here."
+            checked={isPrivate}
+            onChange={setIsPrivate}
+          />
 
           {formError && (
             <p className="text-sm text-danger" role="alert">

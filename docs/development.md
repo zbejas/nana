@@ -15,6 +15,9 @@ Nana is developed against a real PocketBase and a real Bun server. Use the Docke
 | `build.ts` | Production bundle. |
 | `docker/compose.dev.yml` | Recommended local stack. |
 | `docker/compose.test.yml` | Isolated Docker test stack. |
+| `src/api/rest/` | Elysia `/api/v1`, OpenAPI docs, and REST auth. |
+| `src/api/mcp/` | MCP server and tool registration. |
+| `src/api/workspace/` | Shared folder/note/board/task services and the AI privacy lock. |
 | `tests/unit/` | Pure-function unit tests. |
 | `tests/helpers/setup.ts` | Auth and HTTP environment for integration tests. |
 | `tests/helpers/client.ts` | Status-asserting HTTP and PocketBase collection helpers. |
@@ -44,6 +47,9 @@ docker compose -f docker/compose.dev.yml up --build
 
 - Bun: <http://localhost:3000>
 - PocketBase admin: <http://localhost:8090>
+- API reference: <http://localhost:3000/docs> (OpenAPI JSON at `/docs/json`)
+- Workspace JSON API: `/api/v1` (authenticated)
+- MCP endpoint: `POST /mcp` (authenticated)
 - Watch sync: `src/`, `pb_hooks/`, `pb_migrations/`
 - Rebuild: `package.json` or Dockerfile changes
 
@@ -76,7 +82,11 @@ NODE_ENV=production bun src/index.ts
 | Behavior change | Full Docker suite (`bun run test:docker`). |
 | PocketBase hook/migration/guard/route | Full Docker suite + updated tests. |
 | Board or task behavior | Board/task guard tests and the board pages on desktop and mobile. |
+| Board folder or folder-trash behavior | `guards/05-board-folders.test.ts`, `routes/08-board-folder-trash.test.ts`, and the folder view on desktop and mobile. |
 | Chat or tool behavior | `tests/api/chat-tools.test.ts` plus the chat API tests. |
+| REST `/api/v1` or OpenAPI behavior | `tests/api/rest-api.test.ts` and the `/docs` page. |
+| MCP transport or tool behavior | `tests/api/mcp.test.ts`. |
+| Private-lock behavior | `tests/unit/ai-visibility.test.ts` plus the chat, REST, and MCP integration files. |
 | UI | Build, run the dev stack, check desktop and mobile in both themes. |
 | Docker/build/release | Build the image and run the production target if possible. |
 
@@ -104,11 +114,12 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 - **Frontend state:** Jotai atoms; use `useAtomValue` / `useSetAtom`; keep `useDocumentData()` at `AppContent` only. Board tasks are route-local in `useBoardState`.
 - **Styling:** theme-aware Tailwind utilities over the Graphite tokens; reuse `src/components/ui/` before adding a primitive. See [`../DESIGN.md`](../DESIGN.md).
 - **PocketBase hooks:** CommonJS `require()`, synchronous, `$os.getenv()`, `$app`.
-- **Migrations:** append-only; the next free number is `0000020`. Use `migrate((app) => {}, (app) => {})`, a safe `down()`, and idempotent guards.
+- **Bun:** stay on 1.4.4 or newer. Bun 1.3.x can emit a production `dist/index.html` that points at the wrong entry chunk, leaving the SPA blank. The Docker and CI pins are 1.4.4.
+- **Migrations:** append-only; the next free number is `0000021`. Use `migrate((app) => {}, (app) => {})`, a safe `down()`, and idempotent guards.
 
 ### Common tasks
 
-#### Add a Bun API route
+#### Add a Bun application API route
 
 1. Add the handler under `src/api/<area>/`.
 2. Register the path in `src/index.ts` (inside `routes`).
@@ -116,6 +127,25 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 4. Add rate limiting if it is expensive or exposed.
 5. Add tests under `tests/api/`; pure helpers also get a `tests/unit/` case.
 6. Update [`api.md`](api.md) and the route list in [`architecture.md`](architecture.md) if the surface changed.
+
+For a workspace route, do not add a parallel handler: add it to the Elysia app under `/api/v1` and call the shared service.
+
+#### Add an Elysia REST route
+
+1. Add the TypeBox schema to `src/api/rest/schemas.ts`.
+2. Call an existing service in `src/api/workspace/` with `surface: "user"`; add a service function rather than writing PocketBase calls in the route.
+3. Register the route on the `v1` Elysia app in `src/api/rest/index.ts` with `params`, `body`, `query`, and `response` schemas.
+4. `/api/v1` routes inherit `authenticateApiRequest()` from the scoped `derive`; do not add a second auth path.
+5. Add coverage to `tests/api/rest-api.test.ts` and update the endpoint table in [`api.md`](api.md). The OpenAPI page is generated from the schemas.
+
+#### Add an MCP tool
+
+1. Add the tool in `src/api/mcp/index.ts` using a Zod input schema and a clear `description`.
+2. Call a shared service in `src/api/workspace/` with `surface: "ai"` and the caller's `ToolContext`. Never call PocketBase directly from the tool.
+3. Use `runWorkspace()` or `fromToolResult()` so failures become `isError` results, not HTTP errors.
+4. Preserve author scoping and the private lock. Hidden records must return `not_found`.
+5. Add coverage to `tests/api/mcp.test.ts` and update the tool table in [`api.md`](api.md).
+6. Do not add the tool to the chat set. Chat stays read-only.
 
 #### Add a PocketBase hook or route
 
@@ -135,7 +165,7 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 
 #### Add a migration
 
-1. Create `pocketbase/pb_migrations/0000020_<description>.js`.
+1. Create `pocketbase/pb_migrations/0000021_<description>.js`.
 2. Use the `migrate(up, down)` format.
 3. Guard field/collection additions and removals.
 4. Include a real `down()`.
@@ -145,23 +175,25 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 #### Change boards or tasks
 
 1. Read [`pocketbase.md`](pocketbase.md) for the board/task rules and [`frontend.md`](frontend.md) for the UI split.
-2. Keep `boards` and `tasks` on the standard PocketBase collection endpoints; there is no custom Bun board API.
-3. Preserve the required `tasks.board` relation and the archive-first delete rule.
+2. Keep the browser UI on the standard PocketBase collection endpoints. External automation uses the `/api/v1` facade, which calls the shared workspace services; do not add `/api/boards` or `/api/tasks` aliases.
+3. Preserve the required `tasks.board` relation, the archive-first delete rule, and the optional `boards.folder` relation.
 4. If you change the backfill, keep `0000018`'s order: optional relation → backfill → required relation → rules.
 5. Remember that deleting an archived board cascades tasks but never notes.
-6. Update `tests/pocketbase/guards/03-task-rules.test.ts` and `04-board-rules.test.ts`, then run the Docker suite.
+6. Board folder writes need `guards/board_guards.js`; folder trash must rehome boards, never delete them.
+7. Update `tests/pocketbase/guards/03-task-rules.test.ts`, `04-board-rules.test.ts`, and `05-board-folders.test.ts`; add folder-trash coverage in `routes/08-board-folder-trash.test.ts`, then run the Docker suite.
 
-#### Change AI or read tools
+#### Change AI tools
 
-1. Read [`ai.md`](ai.md) first.
-2. Keep tools read-only and scoped to `context.authHeader` / `context.userId`. Never use the superuser token for tools.
+1. Read [`ai.md`](ai.md) first. Chat tools are read-only; MCP is the separate write surface.
+2. Keep chat tools scoped to `context.authHeader` / `context.userId`. Never use the superuser token for tools.
 3. Add or preserve author scoping: filter lists on `author`, and verify `record.author` on single-record reads, even when PocketBase rules also enforce it.
-4. Keep queries bounded (`perPage`, line windows, byte caps) and keep the 8-second tool timeout.
-5. If you add or rename a tool, update `CHAT_TOOL_NAMES` in `src/api/chat/tools/index.ts` and the label map in `src/pages/ChatPage.tsx`; persisted activity is allowlisted.
-6. Persist only `{ name, status }` for tool activity; never inputs, outputs, or note text.
-7. Keep `stopWhen(stepCountIs(8))` unless you have measured the read fan-out; the default stops after one step.
-8. Handle missing provider/model configuration with actionable errors.
-9. Add or update `tests/api/chat-tools.test.ts`; verify with `DEBUG=true` when diagnosing provider failures.
+4. Apply the private lock. Lists use `aiVisibilityConditions()`; reads and writes check `noteIsLocked()` / `boardIsLocked()` and return `not_found` for hidden records.
+5. Keep queries bounded (`perPage`, line windows, byte caps) and keep the 8-second tool timeout.
+6. If you add or rename a chat tool, update `CHAT_TOOL_NAMES` in `src/api/chat/tools/index.ts` and the label map in `src/pages/ChatPage.tsx`; persisted activity is allowlisted. MCP tool names are not persisted.
+7. Persist only `{ name, status }` for chat tool activity; never inputs, outputs, or note text.
+8. Keep `stopWhen(stepCountIs(8))` unless you have measured the read fan-out; the default stops after one step.
+9. Handle missing provider/model configuration with actionable errors.
+10. Add or update `tests/api/chat-tools.test.ts` for chat and `tests/api/mcp.test.ts` for MCP; verify with `DEBUG=true` when diagnosing provider failures.
 
 #### Add a frontend feature
 
@@ -180,13 +212,18 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 - **Tool loops need an explicit stop condition.** `streamText` stops after one step without `stopWhen(stepCountIs(8))`, so list → read chains fail.
 - **Archived boards block task writes.** A task update returns an error while the board is archived; deletes still work. This is enforced by PocketBase rules plus `pb_hooks/guards/task_guards.js`.
 - **Task moves need the request guard.** The update rule sees the stored board, not the incoming one. `task_guards.js` validates the new `board` relation for ownership and archived state.
+- **Board folder moves need their own guard.** PocketBase relation rules see the stored board, so `board_guards.js` validates the incoming `folder`. Folder trash must rehome boards to the root; `boards.folder` does not cascade.
+- **Private is an AI lock, not an owner lock.** `loadAiVisibility()` applies to chat and MCP. `/api/v1` and the browser SDK deliberately show private records to their owner.
+- **MCP is stateless and POST-only.** A new server and transport handle one request; there is no session to reuse. `/mcp` is not chat and does not share its read-only rule.
+- **`/docs` is public.** The OpenAPI document and Swagger UI assets need no token. `/api/v1` and `/mcp` do.
+- **`/api/v1` is not `/pb/api`.** The former is an Elysia facade; the latter is the transparent PocketBase proxy.
 - **The integration suite shares one database.** Use `tests/helpers/factories.ts` for unique users and records. Only the onboarding test may rely on an empty database.
 - **Admin tests restore instance settings.** Snapshot with `snapshotAdminSettings()` and restore in `afterAll`; never leave SMTP, OAuth, attachment, or app-url changes behind for the next file.
 - **Board deletion is two-step.** Active board → archive → permanent delete. The delete cascades tasks; do not add a client-side task loop.
 - **Migration `0000018` backfills only empty boards.** It creates `My board` for authors with unassigned tasks, then makes `tasks.board` required. Do not create a default board for every user in a later migration without a product decision.
 - **Superuser credentials are bootstrapped.** Tests read `pb_data/superuser_credentials.json`; changing env credentials changes the login.
 - **Migration compatibility hook:** old filenames are rewritten in `_migrations` on startup. Don't rename historical migrations.
-- **No embeddings or vector store.** Chat reads through the read tools; do not reintroduce auto-embed, `embedding_config`, or background indexing.
+- **No embeddings or vector store.** Chat and MCP read through their tool sets; do not reintroduce auto-embed, `embedding_config`, or background indexing.
 - **The test container resets its database.** Never mount host `pb_data` into the test compose.
 - **`tests/preload.ts` is opt-in.** The Docker entrypoint and `bun run test:integration` pass it with `--preload`; a bare `bun test` does not wait for services.
 - **`src/api/admin/rate-limits/reload` is auth-only**, not role-checked. Be deliberate if you change or rely on it.
@@ -213,11 +250,12 @@ For larger tasks:
 
 - **`bun run build` is mandatory before shipping**, even when the Docker suite passes. The suite runs source, not the production bundle.
 - **Docs-only changes still need a link check.** There is no docs build or Markdown linter; verify every relative link and every named path manually or with `grep`/`ls`.
-- **The next migration is `0000020`.** Do not reuse `0000018`/`0000019`; they are applied.
+- **The next migration is `0000021`.** Do not reuse `0000018`–`0000020`; they are applied.
 - **Board and task data is user data.** Never use `pb_data` fixtures from the host in tests, and never edit an applied migration in place.
 - **`useDocumentData()` is a single call site.** Moving it into a page duplicates subscriptions and breaks the initial-load order.
 - **The root AddToBoard host is the only picker.** New entry points set `addToBoardRequestAtom`; they do not open their own dialog.
-- **The chat tool set is a security boundary.** Read-only is deliberate; a write tool needs its own authorization design.
+- **The chat tool set is a security boundary.** Chat stays read-only. MCP is the separate write surface and must keep user-token auth, author scoping, and the private lock.
+- **A folder delete never deletes boards.** `boards.folder` has `cascadeDelete: false`; the trash routes rehome boards to the root.
 
 ## Related docs
 
@@ -225,5 +263,6 @@ For larger tasks:
 - [`testing.md`](testing.md) — test stack and conventions.
 - [`deployment.md`](deployment.md) — build and release details.
 - [`pocketbase.md`](pocketbase.md) — hook/migration rules and board lifecycle.
-- [`frontend.md`](frontend.md) — React/Jotai conventions and board/chat surfaces.
-- [`ai.md`](ai.md) — chat providers and read tools.
+- [`frontend.md`](frontend.md) — React/Jotai conventions, board folders, and chat.
+- [`api.md`](api.md) — application routes, `/api/v1`, and MCP.
+- [`ai.md`](ai.md) — chat, MCP, privacy lock, and providers.

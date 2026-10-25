@@ -43,13 +43,30 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | | |
 |---|---|
 | **Markdown editor** | Live preview, rich formatting, and attachment support. |
-| **Boards** | Multiple four-column kanbans with drag-and-drop, note import, an archive, and permanent delete for archived boards. |
-| **AI chat** | Ask about your notes and boards. The assistant reads them on demand with OpenAI, Google, or Ollama. |
+| **Boards** | Multiple four-column kanbans with drag-and-drop, note import, folders, private boards, an archive, and permanent delete for archived boards. |
+| **AI chat** | Ask about your notes and boards. The assistant reads them on demand with OpenAI, Google, or Ollama, and never writes to your workspace. |
+| **API and MCP** | Reach the same workspace from your own tools with a JSON API and a stateless MCP endpoint. Private records stay hidden from AI. |
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline view. |
 | **Public sharing** | Share individual documents or entire folders via link, with optional expiration. |
 | **Version history** | Save snapshots and restore earlier states when needed. |
 | **Trash system** | Recover deleted content instead of losing it permanently. |
 | **Mobile-friendly** | Clean, responsive interface across screen sizes, with dark and light themes. |
+
+## Boards in folders
+
+Boards live in the same folder tree as notes. Open a folder to see its boards beside its notes, drag a board into another folder, or choose **New board** and it is filed where you are. Boards are archived before they can be deleted, and a folder never deletes the boards inside it: move a folder to trash and its boards return to the root with their tasks.
+
+Mark a note, board, or folder **Private** to keep it out of AI chat and MCP. It stays in your workspace and you can still open and edit it.
+
+## API and MCP
+
+Nana exposes its workspace to your own tools:
+
+- `GET /docs` — interactive API reference, with the OpenAPI document at `/docs/json`. The docs are public.
+- `/api/v1` — JSON API for folders, notes, boards, and tasks. It is the owner's surface, so private records are visible to their owner.
+- `POST /mcp` — stateless MCP endpoint for AI clients, with tools to read and write the same workspace. Private records stay hidden.
+
+`/api/v1` and `/mcp` authenticate with a PocketBase user token, sent raw or as `Authorization: Bearer <token>`. They use the same origin and the same account as the app; the server adds no separate CORS configuration.
 
 ## Quick Start
 
@@ -75,7 +92,7 @@ Open `http://localhost:3000`, create your first account, and start writing.
 
 ## Upgrading
 
-Existing tasks that predate multiple boards are moved onto a per-author “My board” the first time the current release starts. Boards are archived before they can be deleted permanently; deleting an archived board removes its tasks, but leaves the notes those tasks came from in your library.
+Existing tasks that predate multiple boards are moved onto a per-author “My board” the first time the current release starts. Existing boards start at the root; move them into folders from the folder view whenever you like. Boards are archived before they can be deleted permanently; deleting an archived board removes its tasks, but leaves the notes those tasks came from in your library.
 
 If you are upgrading from a release with built-in semantic search, the old vector index is no longer used. Stop the stack, back up your data directory, and remove its `zvec` folder to reclaim disk. The [deployment guide](docs/deployment.md#manual-zvec-cleanup-optional) has the exact commands.
 

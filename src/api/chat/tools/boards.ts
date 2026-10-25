@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { aiVisibilityConditions, boardIsLocked, loadAiVisibility } from "../../workspace/privacy";
 import { pbGet, queryString, type PBListResponse, type ToolContext, type ToolFailure, type ToolResult } from "./http";
 import {
     createToolSignal,
@@ -37,6 +38,8 @@ interface PBBoardRecord {
     name?: string;
     description?: string;
     archived?: boolean;
+    folder?: string;
+    is_private?: boolean;
     author?: string;
     created?: string;
     updated?: string;
@@ -247,8 +250,13 @@ export async function listBoards(
     }
 
     const { includeArchived, page, perPage } = parsed.data;
+    const signal = createToolSignal(abortSignal);
+    const visibility = await loadAiVisibility(context, signal);
+    if (!visibility.ok) return visibility;
+
     const conditions = [`author="${escapeFilterString(context.userId)}"`];
     if (!includeArchived) conditions.push("archived=false");
+    conditions.push(...aiVisibilityConditions(visibility));
 
     const path = `/api/collections/boards/records${queryString({
         filter: conditions.join(" && "),
@@ -257,7 +265,6 @@ export async function listBoards(
         perPage,
     })}`;
 
-    const signal = createToolSignal(abortSignal);
     const result = await pbGet<PBListResponse<PBBoardRecord>>(path, context, signal);
     if (!result.ok) return result;
 
@@ -323,6 +330,10 @@ export async function readBoard(
     if (!board || typeof board.id !== "string" || board.author !== context.userId || board.archived) {
         return notFound();
     }
+
+    const visibility = await loadAiVisibility(context, signal);
+    if (!visibility.ok) return visibility;
+    if (boardIsLocked(visibility, board)) return notFound();
 
     const conditions = [
         `author="${escapeFilterString(context.userId)}"`,

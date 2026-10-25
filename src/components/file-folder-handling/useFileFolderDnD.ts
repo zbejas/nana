@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { updateBoard } from '../../lib/boards';
 import { updateDocument } from '../../lib/documents';
 import { updateFolder } from '../../lib/folders';
 import { createLogger } from '../../lib/logger';
@@ -8,6 +9,7 @@ import type {
     DropPosition,
     OnDragStartDocument,
     OnDragStartFolder,
+    OnDragStartBoard,
     OnDragEnd,
     OnDragOver,
     OnDragLeave,
@@ -16,6 +18,7 @@ import type {
 
 type DraggedDocument = { id: string; currentFolderId?: string };
 type DraggedFolder = { id: string; parentFolderId?: string };
+type DraggedBoard = { id: string; currentFolderId?: string };
 
 function normalizeFolderValue(folderId?: string): string {
     return folderId ?? '';
@@ -24,12 +27,14 @@ function normalizeFolderValue(folderId?: string): string {
 export function useFileFolderDnD() {
     const [draggedDocument, setDraggedDocument] = useState<DraggedDocument | null>(null);
     const [draggedFolder, setDraggedFolder] = useState<DraggedFolder | null>(null);
+    const [draggedBoard, setDraggedBoard] = useState<DraggedBoard | null>(null);
     const [dropZone, setDropZone] = useState<string | null>(null);
     const [dropPosition, setDropPosition] = useState<DropPosition | null>(null);
 
     const clearDragState = useCallback(() => {
         setDraggedDocument(null);
         setDraggedFolder(null);
+        setDraggedBoard(null);
         setDropZone(null);
         setDropPosition(null);
     }, []);
@@ -54,8 +59,18 @@ export function useFileFolderDnD() {
         clearDragState();
     }, [clearDragState]);
 
+    const handleBoardDragStart: OnDragStartBoard = useCallback((e, boardId, currentFolderId) => {
+        e.stopPropagation();
+        setDraggedBoard({ id: boardId, currentFolderId });
+        e.dataTransfer.effectAllowed = 'move';
+    }, []);
+
+    const handleBoardDragEnd: OnDragEnd = useCallback(() => {
+        clearDragState();
+    }, [clearDragState]);
+
     const handleDragOver: OnDragOver = useCallback((e, targetFolderId, position = 'into') => {
-        if (!draggedDocument && !draggedFolder) return;
+        if (!draggedDocument && !draggedFolder && !draggedBoard) return;
 
         e.preventDefault();
         e.stopPropagation();
@@ -68,7 +83,7 @@ export function useFileFolderDnD() {
 
         setDropZone(targetFolderId || 'root');
         setDropPosition(position);
-    }, [draggedDocument, draggedFolder]);
+    }, [draggedDocument, draggedFolder, draggedBoard]);
 
     const handleDragLeave: OnDragLeave = useCallback((e) => {
         e.stopPropagation();
@@ -85,6 +100,31 @@ export function useFileFolderDnD() {
         let destinationFolderId = targetFolderId;
         if (dropPosition === 'above' || dropPosition === 'below') {
             destinationFolderId = targetParentId;
+        }
+
+        if (draggedBoard) {
+            const { id: boardId, currentFolderId } = draggedBoard;
+            const destination = normalizeFolderValue(destinationFolderId);
+
+            if (normalizeFolderValue(currentFolderId) === destination) {
+                clearDragState();
+                return;
+            }
+
+            try {
+                logger.debug('Moving board', {
+                    boardId,
+                    from: currentFolderId || 'root',
+                    to: destination || 'root',
+                });
+                await updateBoard(boardId, { folder: destination });
+                logger.info('Board moved successfully', { boardId, destinationFolderId: destination || 'root' });
+            } catch (error: any) {
+                logger.error('Failed to move board', { error: error?.message ?? String(error) });
+            } finally {
+                clearDragState();
+            }
+            return;
         }
 
         if (draggedDocument) {
@@ -139,17 +179,20 @@ export function useFileFolderDnD() {
                 clearDragState();
             }
         }
-    }, [draggedDocument, draggedFolder, dropPosition, clearDragState]);
+    }, [draggedDocument, draggedFolder, draggedBoard, dropPosition, clearDragState]);
 
     return {
         draggedDocument,
         draggedFolder,
+        draggedBoard,
         dropZone,
         dropPosition,
         handleDragStart,
         handleDragEnd,
         handleFolderDragStart,
         handleFolderDragEnd,
+        handleBoardDragStart,
+        handleBoardDragEnd,
         handleDragOver,
         handleDragLeave,
         handleDrop,

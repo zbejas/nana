@@ -2,7 +2,7 @@
 
 ## Overview
 
-The frontend is a React 19 SPA built with Bun, styled with TailwindCSS v4 and the Graphite tokens, and routed with React Router v7. Jotai owns shared UI and document state; PocketBase is accessed through the JS SDK pointed at `/pb`. Board task state is route-local, not global.
+The frontend is a React 19 SPA built with Bun, styled with TailwindCSS v4 and the Graphite tokens, and routed with React Router v7. Jotai owns shared UI and document state; PocketBase is accessed through the JS SDK pointed at `/pb`. Board task state is route-local, not global. Active boards also appear in the folder view beside notes, and private boards carry a lock indicator.
 
 The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth is in [`../PRODUCT.md`](../PRODUCT.md).
 
@@ -16,16 +16,23 @@ The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth
 | `src/lib/auth.tsx` | `AuthProvider` / `useAuth()`: session validation, sign-in, sign-up, OAuth, logout. |
 | `src/index.css` | Tailwind entry, Graphite tokens, self-hosted fonts, global styles, motion, Markdown overrides. |
 | `src/lib/theme.ts` | Theme preference (`system`/`dark`/`light`), resolution, `data-theme`, theme-color meta. |
-| `src/pages/BoardsPage.tsx` | Board index and board cards. |
-| `src/pages/BoardPage.tsx` | Board detail: header actions, search, kanban columns, dialogs. |
+| `src/pages/BoardsPage.tsx` | Board index and board cards, including the private lock. |
+| `src/pages/BoardPage.tsx` | Board detail: header actions, search, kanban columns, dialogs, private lock. |
 | `src/pages/BoardArchivePage.tsx` | Archived boards, restore, permanent delete. |
+| `src/pages/FolderViewPage.tsx` | Folder contents, board rows beside notes, counts, drag targets, board menu, `BoardDialog`. |
+| `src/components/folder-view/useFolderViewState.ts` | Folder route state, board summaries for the current folder, board create/edit/menu wiring, drag handlers. |
+| `src/components/folder-view/FolderViewGrid.tsx` | Icon/grid folder contents; board cards, private lock, drag start. |
+| `src/components/folder-view/FolderViewList.tsx` | List folder contents; board rows, private lock, drag start. |
+| `src/components/file-folder-handling/useFileFolderDnD.ts` | Note, folder, and board drag state; board drops call `updateBoard({ folder })`. |
+| `src/components/file-folder-handling/context-menu/BoardContextMenu.tsx` | Board context menu: Open board, Edit board. |
+| `src/components/file-folder-handling/context-menu/FolderContextMenu.tsx` | Folder context menu, including `New board` filed in that folder. |
 | `src/pages/ChatPage.tsx` | Chat empty state, messages, tool activity, composer, history. |
 | `src/components/board/useBoardState.ts` | Task load, realtime refresh, create/edit/delete, drag state, optimistic reorder. |
-| `src/components/board/useBoardSummaries.ts` | Board index/archive data and realtime refresh. |
+| `src/components/board/useBoardSummaries.ts` | Board index/folder/archive data and realtime refresh. |
 | `src/components/board/AddToBoardHost.tsx` | The single root picker host driven by `addToBoardRequestAtom`. |
 | `src/components/board/AddToBoardDialog.tsx` | Board picker for a note; create-inline board support. |
 | `src/components/board/ImportNoteDialog.tsx` | Board-scoped note import from the board header. |
-| `src/components/board/BoardDialog.tsx` | Create/edit board and archive confirmation. |
+| `src/components/board/BoardDialog.tsx` | Create/edit board, folder selector, private switch, archive confirmation. |
 | `src/components/board/TaskDialog.tsx` | Create/edit task, column/priority select, delete confirmation. |
 | `src/components/board/TaskCard.tsx` | Ledger task row: title, excerpt, priority code, due date, linked note, labels. |
 | `src/components/board/board-config.ts` | Column labels/hints and priority labels/codes. |
@@ -85,7 +92,7 @@ All shared atoms live in `src/state/atoms.ts`.
 | Loading | data loading lock, initial-load completion, loaded/loading folder sets |
 | Editor | selected document, creating flag, save callback, initial title/content, creation session ID |
 | Realtime | timeline tick / refresh triggers |
-| Board | `addToBoardRequestAtom` only; `useBoardState` owns the open board's tasks, `useBoardSummaries` owns index/archive rows |
+| Board | `addToBoardRequestAtom` only; `useBoardState` owns the open board's tasks, `useBoardSummaries` owns index/archive/folder rows, including `folder` and `is_private` |
 
 Critical rules:
 
@@ -105,6 +112,7 @@ Initial load order is recent documents, root documents, folders + trash folders,
 
 - `useBoardSummaries()` loads `listBoardSummaries()`: one boards query plus one task query, then sums open/done counts per board.
 - Active boards only, newest first. Summary chips read `NN board(s)`, `NN open`, and `NN done`.
+- A private board shows a lock beside its name on the index card and the detail header. The lock is a visual cue; the private lock itself is enforced by the AI surfaces.
 - Cards sit on `md:grid-cols-2` / `2xl:grid-cols-3`. Each card carries an index, last updated, name, two-line description, a signal progress bar, done/total, open/done chips, and a circled arrow.
 - A board with no tasks shows `No tasks`; a missing description shows `No description`.
 - The page actions are `Archived` (to `/board/archive`) and `New board` (opens `BoardDialog`).
@@ -118,6 +126,7 @@ Initial load order is recent documents, root documents, folders + trash folders,
 - `getBoard(boardId)` loads the board; a `404` renders “That board is not here”.
 - `useBoardState(activeBoardId)` only receives an id when the board is loaded and not archived. An archived board therefore loads no tasks and renders a restore state.
 - Header actions for an active board: `Import note`, `New task`, and an edit icon that opens `BoardDialog`.
+- A private board shows a lock beside the title. `BoardDialog` has a `Private` switch; changing it updates `is_private` without moving the board.
 - Columns are fixed: `backlog`, `next`, `progress`, `done`, labelled Backlog, Next up, In progress, Done. Each lane has a status dot; only In progress is signal-coloured.
 - `xl` is a four-column grid. Below that, lanes are a horizontal snap row (`w-[min(86vw,340px)]`); mouse users scroll, touch users swipe.
 - Task cards are rounded `surface` panels inside a `surface-sunken` lane. They show title, a plain-text excerpt, a `P0`–`P3` priority chip, due date (danger when overdue and not done), a linked-note title, and up to two label chips. Done titles are muted and struck through.
@@ -138,6 +147,19 @@ Initial load order is recent documents, root documents, folders + trash folders,
 - `Restore` clears `archived` and removes the row locally.
 - `Delete forever` opens a danger `ConfirmDialog` that states the board and its tasks are removed permanently and the source notes stay in the library.
 - `deleteBoardPermanently()` relies on the PocketBase delete rule and the `tasks.board` cascade. There is no client-side task deletion loop.
+
+### Folder view
+
+`/folders` and `/folders/:folderId` show notes, subfolders, and active boards for the current folder.
+
+- `useFolderViewState()` calls `useBoardSummaries(false)` and filters `board.folder === currentFolderId`. Boards are omitted in trash and shared modes and while a route folder is pending.
+- The header meta counts folders, notes, and boards. Actions are `New folder`, `New board`, and `New note`.
+- A board row/card shows a column icon, name, relative updated date, task counts (`N open · N/M done`, or `No tasks`), and a lock when private. Clicking it opens `/board/:id`; the overflow button opens `BoardContextMenu` with `Open board` and `Edit board…`.
+- `New board` and the folder context menu's `New board` create in the current folder, or in the folder the context menu was opened on. `BoardDialog` receives that `folderId`; a successful create navigates to the new board.
+- Boards are draggable between folders like notes. The drop calls `updateBoard(board.id, { folder })`; an empty destination is the root. The PocketBase guard validates folder ownership.
+- Editing a board opens `BoardDialog` with the board, its current folder selected, and a folder selector for moving it without drag. The dialog can also archive the board.
+- Folder trash and permanent delete rehome boards to the root on the server. The folder view does not list boards in trash or shared views.
+- The folder view is not the board index. Archived boards are absent here; `/board` remains the full active index and `/board/archive` owns restore/delete.
 
 ### Add to board
 
@@ -177,6 +199,7 @@ The board detail header uses a different flow: `ImportNoteDialog` imports into t
 - Sidebar: full sidebar docked at `>=1024px`; 768–1023px uses the 64px rail with the full sidebar as an overlay; below 768px the sidebar is an overlay plus a bottom navbar. Folder trees are in `src/components/sidebar/`; folder contents in `src/components/folder-view/`; drag-and-drop in `src/components/file-folder-handling/`.
 - Settings: `/settings/account`, `/settings/preferences`, `/settings/admin/general|people|email|signin|ai`, `/settings/about`. The URL owns the tab. AI covers providers, models, generation parameters, and prompts; there is no embedding or search-index section.
 - Public pages fetch through `/pb/api/public/...` and skip authenticated app data; `AppContent` disables `useDocumentData()` for `/public/`.
+- The `PublicShareModal` `Private` switch says the record is hidden from AI chat and MCP and from shared parents. It does not hide the record from its owner; the owner can still open it in the library.
 - PWA: the manifest and `/sw.js` are served by `src/index.ts`; `InstallBanner` uses `useInstallPrompt()`; the service worker is intentionally minimal.
 
 ### Styling and UI conventions
@@ -227,7 +250,12 @@ Performance:
 ## Gotchas & invariants
 
 - **`useDocumentData()` must stay at `AppContent`.** A second call duplicates realtime subscriptions and initial loads.
-- **Board tasks are not Jotai state.** `useBoardState` owns the open board; `useBoardSummaries` owns index/archive rows. Putting tasks in a global atom would fight both realtime refreshes and the drag skip flag.
+- **Board tasks are not Jotai state.** `useBoardState` owns the open board; `useBoardSummaries` owns index/archive/folder rows. Putting tasks in a global atom would fight both realtime refreshes and the drag skip flag.
+- **Folder boards are active only.** `useFolderViewState()` passes `false` to `useBoardSummaries()` and filters by `folder`; archived boards belong to `/board/archive`, not the folder view.
+- **Board drag moves the folder only.** `useFileFolderDnD` calls `updateBoard(id, { folder })`; it does not touch the board's tasks, archive state, or `name`/`description`.
+- **Editing a board does not move it.** `BoardDialog` sends the folder only on create. Moving is a drag or the folder context menu, not an implicit edit side effect.
+- **Folder trash keeps boards.** The server rehomes boards to the root before removing the folder. Do not add a client-side board delete loop or treat a missing folder as a deleted board.
+- **The private lock is not a UI gate.** `/api/v1` and the browser SDK still show private records to their owner; chat and MCP hide them. The lock icon only explains the state.
 - **The board detail passes `undefined` to `useBoardState` while archived.** That is what prevents task loading; don't “fix” it by always passing `boardId`.
 - **Search pauses dragging.** A filtered column has a different index than the stored order; allowing a drop would write the wrong `board_order`.
 - **There is one AddToBoard picker.** `AddToBoardHost` is mounted at the app root; call sites only set `addToBoardRequestAtom`.
@@ -236,7 +264,7 @@ Performance:
 - **Chat has no attachments.** There is no document picker, no `documentIds`, and no source chips. Adding one requires a new retrieval design, not a UI-only change.
 - **Tool activity is not a citation list.** It shows names and statuses only; the answer must cite titles in its own text.
 - **`PageHeader` accepts an eyebrow it does not render.** The prop is kept for compatibility; adding an eyebrow back is a design change, not a styling tweak. `EmptyState.icon` is rendered as a neutral tile when not compact.
-- **Mobile drag is not available.** The task dialog's column select is the supported touch path.
+- **Mobile drag is not available.** HTML5 drag-and-drop is pointer-only, so note, folder, task, and board moves are desktop paths. The task dialog's column select is the supported touch path for tasks; board folder moves have no touch path yet.
 - **The 20-second initial-load timeout is deliberate.** It unblocks a slow PocketBase; removing it can leave the shell on a spinner.
 
 ## Related docs

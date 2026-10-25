@@ -19,6 +19,7 @@ Nana ships as one container with two processes: PocketBase on `:8090` and Bun on
 | `pocketbase/pb_hooks/bootstrap.js` | Superuser, `site_url`, and `meta.appURL` bootstrap. |
 | `pocketbase/pb_migrations/0000018_created_boards.js` | Boards schema and task backfill. |
 | `pocketbase/pb_migrations/0000019_remove_embedding_settings.js` | Deletes the obsolete embedding setting. |
+| `pocketbase/pb_migrations/0000020_boards_in_folders.js` | Adds the optional board folder relation, private flag, and author/folder index. |
 
 ## How it works
 
@@ -136,12 +137,15 @@ Existing tasks keep their `status` and `board_order`; only the relation is writt
 After the upgrade:
 
 - The board index shows all active boards; the archive is at `/board/archive`.
+- A private board is still visible to its owner but is hidden from AI chat and MCP.
 - Archive a board before deleting it. PocketBase rejects deleting an active board.
 - Permanent delete is available only from the archive and cascades that board's tasks.
 - Notes linked through `tasks.document` remain in the library.
 - New users create their own boards; there is no automatic default board.
 
 Migration `0000019_remove_embedding_settings.js` deletes the obsolete `embedding_config` record. It does not delete vector files on disk. No embedding service, model, or vector store is used after this release.
+
+Migration `0000020_boards_in_folders.js` adds `boards.folder` as an optional relation (`cascadeDelete: false`), `boards.is_private`, and `idx_boards_author_folder`. It does not move or backfill existing boards: they stay at the workspace root until someone files them. Folder trash rehomes boards to the root instead of deleting them, so the upgrade cannot remove board data.
 
 ### Upgrades
 
@@ -151,7 +155,8 @@ Migration `0000019_remove_embedding_settings.js` deletes the obsolete `embedding
 4. Check logs for migration errors and superuser bootstrap.
 5. Verify the board index: existing tasks should appear under `My board` (or their existing board), with status and order preserved.
 6. Verify the archive flow: active boards cannot be deleted; archived boards can be restored or deleted forever.
-7. Verify the active AI provider/model in Settings → Workspace → AI. There is nothing to configure for embeddings.
+7. Verify boards in folders: create a folder, drag a board into it, and confirm the board remains after trashing the folder (it returns to the root).
+8. Verify the active AI provider/model in Settings → Workspace → AI. There is nothing to configure for embeddings.
 
 Migrations are append-only. Do not rename or remove historical migration files; `bootstrap.js` has a temporary compatibility rewrite for old filenames.
 
@@ -227,6 +232,7 @@ The workflow is idempotent: if the release already exists it is a no-op, so edit
 - **The test container must never see host `pb_data`.** It deletes and recreates its own database.
 - **A missing `dist/index.html` silently serves the dev SPA** even with `NODE_ENV=production`.
 - **The image pins the Bun and PocketBase versions in ARGs.** Bumping a dependency in `package.json` alone does not change the runtime.
+- **Keep Bun on the 1.4 line or newer.** Bun 1.3.x writes the wrong entry chunk into `dist/index.html` when code splitting is enabled, which produces a blank SPA even though `bun run build` succeeds. The Docker and CI pins are deliberately on 1.4.4; after changing the pin, load `/` and confirm the React root mounts before shipping.
 
 ## Related docs
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { aiVisibilityConditions, loadAiVisibility, noteIsLocked } from "../../workspace/privacy";
 import { pbGet, queryString, type PBListResponse, type ToolContext, type ToolFailure, type ToolResult } from "./http";
 import {
     MAX_LINE_CHARS,
@@ -73,6 +74,10 @@ function invalidInput(message: string): ToolFailure {
     return { ok: false, code: "invalid_input", message };
 }
 
+function notFound(): ToolFailure {
+    return { ok: false, code: "not_found", message: "That note was not found." };
+}
+
 function summarizeNote(record: PBNoteRecord): PBNoteSummary {
     return {
         id: record.id,
@@ -118,7 +123,12 @@ export async function listNotes(
         return invalidInput("That folder id is not valid.");
     }
 
+    const signal = createToolSignal(abortSignal);
+    const visibility = await loadAiVisibility(context, signal);
+    if (!visibility.ok) return visibility;
+
     const conditions = [`author="${escapeFilterString(context.userId)}"`];
+    conditions.push(...aiVisibilityConditions(visibility));
     if (query && query.trim()) {
         const escaped = escapeFilterString(query.trim());
         conditions.push(`(title ~ "${escaped}" || tags ~ "${escaped}")`);
@@ -139,7 +149,7 @@ export async function listNotes(
         fields: NOTE_LIST_FIELDS,
     })}`;
 
-    const result = await pbGet<PBListResponse<PBNoteRecord>>(path, context, createToolSignal(abortSignal));
+    const result = await pbGet<PBListResponse<PBNoteRecord>>(path, context, signal);
     if (!result.ok) return result;
 
     const items = Array.isArray(result.items) ? result.items : [];
@@ -196,13 +206,18 @@ export async function readNote(
         fields: NOTE_READ_FIELDS,
     })}`;
 
-    const result = await pbGet<PBNoteRecord>(path, context, createToolSignal(abortSignal));
+    const signal = createToolSignal(abortSignal);
+    const result = await pbGet<PBNoteRecord>(path, context, signal);
     if (!result.ok) return result;
 
     const record: PBNoteRecord = result;
     if (!record || typeof record.id !== "string" || record.author !== context.userId) {
-        return { ok: false, code: "not_found", message: "That note was not found." };
+        return notFound();
     }
+
+    const visibility = await loadAiVisibility(context, signal);
+    if (!visibility.ok) return visibility;
+    if (noteIsLocked(visibility, record)) return notFound();
 
     const rawContent = typeof record.content === "string" ? record.content : "";
     const rawBytes = new TextEncoder().encode(rawContent);

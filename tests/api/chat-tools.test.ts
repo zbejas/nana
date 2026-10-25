@@ -4,6 +4,7 @@ import type { ToolContext } from "../../src/api/chat/tools/http";
 import { listNotes, readNote } from "../../src/api/chat/tools/notes";
 import {
     createBoard,
+    createFolder,
     createNote,
     createTask,
     createUser,
@@ -28,6 +29,20 @@ const boards: Record<"roadmap" | "archived" | "private", TestRecord> = {
     archived: { id: "" },
     private: { id: "" },
 };
+
+const hiddenNotes: Record<"privateNote" | "folderNote" | "childNote", TestRecord> = {
+    privateNote: { id: "" },
+    folderNote: { id: "" },
+    childNote: { id: "" },
+};
+
+const hiddenBoards: Record<"privateBoard" | "folderBoard", TestRecord> = {
+    privateBoard: { id: "" },
+    folderBoard: { id: "" },
+};
+
+let privateFolder: TestRecord;
+let privateChildFolder: TestRecord;
 
 const tasks: Record<"backlog" | "next" | "progress" | "done1" | "done2", TestRecord> = {
     backlog: { id: "" },
@@ -78,6 +93,41 @@ beforeAll(async () => {
         archived: true,
     });
     boards.private = await createBoard(other, { name: "Private Board" });
+
+    // AI visibility fixtures: a private folder locks its whole subtree, and
+    // private records stay hidden even when the caller owns them.
+    privateFolder = await createFolder(owner, { name: "Owner Private Folder", is_private: true });
+    privateChildFolder = await createFolder(owner, {
+        name: "Owner Private Child Folder",
+        parent: privateFolder.id,
+    });
+
+    hiddenNotes.privateNote = await createNote(owner, {
+        title: "Owner Private Note",
+        content: "Owner private body",
+        is_private: true,
+    });
+    hiddenNotes.folderNote = await createNote(owner, {
+        title: "Owner Folder Note",
+        content: "Owner folder body",
+        folder: privateFolder.id,
+    });
+    hiddenNotes.childNote = await createNote(owner, {
+        title: "Owner Child Folder Note",
+        content: "Owner child folder body",
+        folder: privateChildFolder.id,
+    });
+
+    hiddenBoards.privateBoard = await createBoard(owner, {
+        name: "Owner Private Board",
+        description: "Hidden from AI",
+        is_private: true,
+    });
+    hiddenBoards.folderBoard = await createBoard(owner, {
+        name: "Owner Folder Board",
+        description: "Hidden with its folder",
+        folder: privateFolder.id,
+    });
 
     tasks.backlog = await createTask(owner, boards.roadmap.id, {
         title: "Backlog item",
@@ -167,6 +217,30 @@ describe("list_notes", () => {
         expect(result.notes[0]).not.toHaveProperty("content");
     });
 
+    test("hides private notes and the private folder subtree from lists and totals", async () => {
+        const result = await listNotes(ownerContext, {});
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        const ids = result.notes.map((note) => note.id);
+        expect(ids).not.toContain(hiddenNotes.privateNote.id);
+        expect(ids).not.toContain(hiddenNotes.folderNote.id);
+        expect(ids).not.toContain(hiddenNotes.childNote.id);
+        expect(result.totalItems).toBe(3);
+
+        const inPrivateFolder = await listNotes(ownerContext, { folderId: privateFolder.id });
+        expect(inPrivateFolder.ok).toBe(true);
+        if (!inPrivateFolder.ok) return;
+        expect(inPrivateFolder.notes).toEqual([]);
+        expect(inPrivateFolder.totalItems).toBe(0);
+
+        const inChildFolder = await listNotes(ownerContext, { folderId: privateChildFolder.id });
+        expect(inChildFolder.ok).toBe(true);
+        if (!inChildFolder.ok) return;
+        expect(inChildFolder.notes).toEqual([]);
+        expect(inChildFolder.totalItems).toBe(0);
+    });
+
     test("does not leak notes for an invalid token", async () => {
         const result = await listNotes(
             { authHeader: "invalid-token-value", userId: owner.id },
@@ -244,6 +318,15 @@ describe("read_note", () => {
         expect(result.code).toBe("not_found");
     });
 
+    test("hides private notes and notes inside private folders", async () => {
+        for (const note of Object.values(hiddenNotes)) {
+            const result = await readNote(ownerContext, { noteId: note.id });
+            expect(result.ok).toBe(false);
+            if (result.ok) return;
+            expect(result.code).toBe("not_found");
+        }
+    });
+
     test("rejects malformed ids and out-of-range windows", async () => {
         const malformed = await readNote(ownerContext, { noteId: 'bad"id' });
         expect(malformed.ok).toBe(false);
@@ -301,6 +384,18 @@ describe("list_boards", () => {
         expect(result.totalBoards).toBe(2);
         expect(result.totalPages).toBe(2);
         expect(result.hasMore).toBe(true);
+    });
+
+    test("hides private boards and boards inside private folders from lists and totals", async () => {
+        const result = await listBoards(ownerContext, { includeArchived: true });
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        const ids = result.boards.map((board) => board.id);
+        expect(ids).not.toContain(hiddenBoards.privateBoard.id);
+        expect(ids).not.toContain(hiddenBoards.folderBoard.id);
+        expect(ids).toContain(boards.roadmap.id);
+        expect(result.totalBoards).toBe(2);
     });
 
     test("returns unauthorized without a token", async () => {
@@ -406,6 +501,15 @@ describe("read_board", () => {
         expect(archived.ok).toBe(false);
         if (archived.ok) return;
         expect(archived.code).toBe("not_found");
+    });
+
+    test("hides private boards and boards inside private folders", async () => {
+        for (const board of Object.values(hiddenBoards)) {
+            const result = await readBoard(ownerContext, { boardId: board.id });
+            expect(result.ok).toBe(false);
+            if (result.ok) return;
+            expect(result.code).toBe("not_found");
+        }
     });
 
     test("rejects malformed board ids and columns", async () => {

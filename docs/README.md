@@ -9,11 +9,11 @@ The docs describe **how the code works today**. When code and docs disagree, the
 | Doc | Covers | Read when… |
 | --- | --- | --- |
 | [`architecture.md`](architecture.md) | System topology, request lifecycle, data flows, key files | Starting any work |
-| [`api.md`](api.md) | Bun API routes, PocketBase routes, payloads, auth | Changing an endpoint or integration |
-| [`frontend.md`](frontend.md) | React, routing, auth, Jotai, editor, boards, chat, settings, UI quality | Changing UI or client state |
-| [`pocketbase.md`](pocketbase.md) | JSVM hooks, migrations, collections, settings, trash, sharing | Changing schema or backend behavior |
-| [`ai.md`](ai.md) | Chat, providers, read tools, persistence, failures | Touching AI features |
-| [`security.md`](security.md) | Trust boundaries, auth, proxy, CSP, rate limits, secrets | Changing access or exposure |
+| [`api.md`](api.md) | Bun application routes, Elysia `/api/v1`, MCP, PocketBase routes, payloads, auth | Changing an endpoint or integration |
+| [`frontend.md`](frontend.md) | React, routing, auth, Jotai, editor, boards in folders, chat, settings, UI quality | Changing UI or client state |
+| [`pocketbase.md`](pocketbase.md) | JSVM hooks, migrations, collections, settings, trash, board folders, sharing | Changing schema or backend behavior |
+| [`ai.md`](ai.md) | Chat, MCP, providers, tool contracts, privacy lock, persistence, failures | Touching AI features |
+| [`security.md`](security.md) | Trust boundaries, auth, MCP authorization, proxy, CSP, rate limits, secrets | Changing access or exposure |
 | [`testing.md`](testing.md) | Unit + Docker integration layers, layout, helpers, conventions | Adding or fixing tests |
 | [`deployment.md`](deployment.md) | Build, Docker, compose, releases, operations | Building, shipping, debugging deploys |
 | [`development.md`](development.md) | Local setup, workflow, common tasks, sharp edges | Beginning implementation |

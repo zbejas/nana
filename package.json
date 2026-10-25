@@ -16,11 +16,15 @@
   "dependencies": {
     "@ai-sdk/google": "^3.0.64",
     "@ai-sdk/openai": "^3.0.53",
+    "@elysia/openapi": "^1.4.16",
     "@heroicons/react": "^2.2.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@sinclair/typebox": "^0.34.52",
     "@uiw/react-md-editor": "^4.1.0",
     "ai": "^6.0.168",
     "ai-sdk-ollama": "^3.8.3",
     "bun-plugin-tailwind": "^0.1.2",
+    "elysia": "^1.4.30",
     "jotai": "^2.19.1",
     "jszip": "^3.10.1",
     "pocketbase": "^0.26.8",
@@ -30,6 +34,7 @@
     "react-pdf": "^10.4.1",
     "react-router-dom": "^7.14.2",
     "rehype-sanitize": "^6.0.0",
+    "swagger-ui-dist": "^5.34.0",
     "tailwindcss": "^4.2.4",
     "zod": "^4.3.6"
   },

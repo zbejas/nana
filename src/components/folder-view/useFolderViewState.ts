@@ -27,7 +27,9 @@ import {
 import { permanentlyDeleteFolder, restoreFolder } from '../../lib/folders';
 import { exportDocument, exportFolder, exportSelectionAsZip } from '../../lib/export';
 import { useFileFolderDnD, useContextMenuState } from '../file-folder-handling';
+import { useBoardSummaries } from '../board/useBoardSummaries';
 import { useToasts } from '../../state/hooks';
+import type { Board, BoardSummary } from '../../lib/boards';
 import type { FolderTreeNode } from '../../lib/folders';
 import type { Document } from '../../lib/documents';
 import type { PendingCreate, PendingRename, ViewMode } from './types';
@@ -154,6 +156,11 @@ export function useFolderViewState() {
     const [selectionAnchorKey, setSelectionAnchorKey] = useState<string | null>(null);
     const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
     const [deleteConfirmState, setDeleteConfirmState] = useState<DeleteConfirmState | null>(null);
+    const [boardDialogOpen, setBoardDialogOpen] = useState(false);
+    const [editingBoard, setEditingBoard] = useState<BoardSummary | null>(null);
+    const [boardFolderId, setBoardFolderId] = useState<string | undefined>(undefined);
+
+    const { boards } = useBoardSummaries(false);
 
     const { contextMenu, isClosingContextMenu, setContextMenu, contextMenuRef, handleContextMenu, closeContextMenu } = useContextMenuState();
     const {
@@ -162,6 +169,8 @@ export function useFolderViewState() {
         handleDragEnd,
         handleFolderDragStart,
         handleFolderDragEnd,
+        handleBoardDragStart,
+        handleBoardDragEnd,
         handleDragOver,
         handleDragLeave,
         handleDrop,
@@ -262,6 +271,14 @@ export function useFolderViewState() {
         trashFolders,
     ]);
 
+    const displayedBoards = useMemo<BoardSummary[]>(() => {
+        if (isRouteFolderPending || isTrashMode || isSharedMode) {
+            return [];
+        }
+
+        return boards.filter((board) => (board.folder || null) === currentFolderId);
+    }, [isRouteFolderPending, isTrashMode, isSharedMode, boards, currentFolderId]);
+
     const isLoadingCurrentFolder = isRouteFolderPending || (currentFolderId ? loadingSet.has(currentFolderId) : false);
 
     const orderedSelectionKeys = useMemo(() => {
@@ -295,6 +312,15 @@ export function useFolderViewState() {
         setSelectionAnchorKey(null);
         setPendingRename(null);
     }, [currentFolderId]);
+
+    useEffect(() => {
+        if (!isTrashMode && !isSharedMode) {
+            return;
+        }
+
+        setBoardDialogOpen(false);
+        setEditingBoard(null);
+    }, [isTrashMode, isSharedMode]);
 
     useEffect(() => {
         const handleResize = () => setIsDesktop(window.innerWidth >= 768);
@@ -712,6 +738,67 @@ export function useFolderViewState() {
         closeContextMenu();
     };
 
+    const handleOpenCreateBoard = () => {
+        if (isTrashMode || isSharedMode) {
+            closeContextMenu();
+            return;
+        }
+
+        const targetFolderId = getTargetFolderForCreation();
+        setEditingBoard(null);
+        setBoardFolderId(targetFolderId);
+        setBoardDialogOpen(true);
+        closeContextMenu();
+    };
+
+    const handleOpenEditBoard = (boardId?: string) => {
+        const targetBoardId = boardId ?? contextMenu?.boardId;
+        if (!targetBoardId) {
+            closeContextMenu();
+            return;
+        }
+
+        const targetBoard = boards.find((board) => board.id === targetBoardId);
+        if (!targetBoard) {
+            closeContextMenu();
+            return;
+        }
+
+        setEditingBoard(targetBoard);
+        setBoardFolderId(targetBoard.folder || undefined);
+        setBoardDialogOpen(true);
+        closeContextMenu();
+    };
+
+    const handleCloseBoardDialog = () => {
+        setBoardDialogOpen(false);
+        setEditingBoard(null);
+    };
+
+    const handleBoardSaved = (board: Board) => {
+        const isEdit = Boolean(editingBoard);
+        setBoardDialogOpen(false);
+        setEditingBoard(null);
+
+        if (isEdit) {
+            showToast('Board saved', 'success');
+            return;
+        }
+
+        showToast('Board created', 'success');
+        navigate(`/board/${board.id}`);
+    };
+
+    const handleBoardArchived = () => {
+        setBoardDialogOpen(false);
+        setEditingBoard(null);
+        showToast('Board archived', 'info');
+    };
+
+    const handleBoardClick = (board: BoardSummary) => {
+        navigate(`/board/${board.id}`);
+    };
+
     const handleInlineCreateSubmit = async () => {
         if (!pendingCreate || isCreating) return;
 
@@ -965,8 +1052,14 @@ export function useFolderViewState() {
 
     const openItemMenu = (
         event: React.MouseEvent<HTMLButtonElement>,
-        type: 'folder' | 'document' | 'trash-folder' | 'trash-document',
-        options?: { folderId?: string; folderName?: string; documentId?: string }
+        type: 'folder' | 'board' | 'document' | 'trash-folder' | 'trash-document',
+        options?: {
+            folderId?: string;
+            folderName?: string;
+            documentId?: string;
+            boardId?: string;
+            boardName?: string;
+        }
     ) => {
         event.preventDefault();
         event.stopPropagation();
@@ -1148,6 +1241,8 @@ export function useFolderViewState() {
             handleDragEnd: () => undefined,
             handleFolderDragStart: (_event: React.DragEvent, _folderId: string, _parentFolderId?: string) => undefined,
             handleFolderDragEnd: () => undefined,
+            handleBoardDragStart: (_event: React.DragEvent, _boardId: string, _folderId?: string) => undefined,
+            handleBoardDragEnd: () => undefined,
             handleDragOver: (_event: React.DragEvent, _targetFolderId?: string) => undefined,
             handleDragLeave: (_event: React.DragEvent) => undefined,
             handleDrop: (_event: React.DragEvent, _targetFolderId?: string, _targetParentId?: string) => undefined,
@@ -1157,12 +1252,14 @@ export function useFolderViewState() {
             handleDragEnd,
             handleFolderDragStart,
             handleFolderDragEnd,
+            handleBoardDragStart,
+            handleBoardDragEnd,
             handleDragOver,
             handleDragLeave,
             handleDrop,
         };
 
-    const hasItems = displayedFolders.length > 0 || displayedDocuments.length > 0 || !!pendingCreate;
+    const hasItems = displayedFolders.length > 0 || displayedBoards.length > 0 || displayedDocuments.length > 0 || !!pendingCreate;
 
     return {
         viewMode,
@@ -1173,6 +1270,7 @@ export function useFolderViewState() {
         currentFolder,
         breadcrumbPath,
         displayedFolders,
+        displayedBoards,
         displayedDocuments,
         selectedFolderIds,
         selectedDocumentIds,
@@ -1180,6 +1278,9 @@ export function useFolderViewState() {
         hasSelection,
         clearSelection,
         deleteConfirmState,
+        boardDialogOpen,
+        editingBoard,
+        boardFolderId,
         pendingCreate,
         pendingRename,
         isCreating,
@@ -1196,6 +1297,7 @@ export function useFolderViewState() {
         setPendingCreate,
         handleFolderClick,
         handleFolderDoubleClick,
+        handleBoardClick,
         handleNavigateUp,
         handleBreadcrumbClick,
         setFilterMode,
@@ -1204,6 +1306,11 @@ export function useFolderViewState() {
         handleSelectAll,
         handleAddFolder,
         handleAddDocument,
+        handleOpenCreateBoard,
+        handleOpenEditBoard,
+        handleCloseBoardDialog,
+        handleBoardSaved,
+        handleBoardArchived,
         handleInlineCreateSubmit,
         handleInlineCreateCancel,
         setPendingRename,

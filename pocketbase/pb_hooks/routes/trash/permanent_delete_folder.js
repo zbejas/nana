@@ -28,6 +28,19 @@ routerAdd("POST", "/api/trash/permanent-delete-folder", (c) => {
 
         const tree = collectTrashTree(root)
         const folderIds = tree.map((item) => item.id)
+        const rehomeFolderIds = []
+        for (const item of tree) {
+            rehomeFolderIds.push(item.id)
+            const originalFolderId = String(item.get("original_folder_id") || "").trim()
+            if (originalFolderId && !rehomeFolderIds.includes(originalFolderId)) {
+                rehomeFolderIds.push(originalFolderId)
+            }
+        }
+
+        // Rehome before any trash folder is removed. Boards and their tasks
+        // are preserved; only their folder pointer changes.
+        h.rehomeBoardsFromFolderIds(rehomeFolderIds)
+
         const trashDocs = $app.findRecordsByFilter("trash_documents", `author = "${userId}"`, "")
 
         for (const trashDoc of trashDocs) {

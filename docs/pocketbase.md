@@ -2,7 +2,7 @@
 
 ## Overview
 
-PocketBase is the source of truth for data, auth, schema, and server-side behavior. Nana customizes it through JavaScript hooks and append-only migrations in `pocketbase/`. Boards and tasks are ordinary collections; their archive and cascade behavior is enforced by collection rules and relation settings, plus a request guard for task board moves, not by custom routes.
+PocketBase is the source of truth for data, auth, schema, and server-side behavior. Nana customizes it through JavaScript hooks and append-only migrations in `pocketbase/`. Boards and tasks are ordinary collections; their archive, folder, and cascade behavior is enforced by collection rules, relation settings, and request guards for task board moves and board folder changes, not by custom routes.
 
 ## Key files
 
@@ -11,17 +11,21 @@ PocketBase is the source of truth for data, auth, schema, and server-side behavi
 | `pocketbase/pb_hooks/index.pb.js` | The only file PocketBase loads automatically; requires every active hook module. |
 | `pocketbase/pb_hooks/bootstrap.js` | Seeds `site_url`, syncs `meta.appURL`, provisions the superuser, handles first-user/signup bootstrap and legacy migration filenames. |
 | `pocketbase/pb_hooks/documents/` | Word count/reading time and version snapshots. |
-| `pocketbase/pb_hooks/guards/` | User signup/deletion, trash immutability, version immutability, task board ownership on move. |
+| `pocketbase/pb_hooks/guards/` | User signup/deletion, trash immutability, version immutability, task board ownership on move, board folder ownership. |
+| `pocketbase/pb_hooks/guards/board_guards.js` | Board `folder` ownership on API create/update; empty folder clears to root. |
 | `pocketbase/pb_hooks/mailer/` | Password reset, email change, OTP, auth-alert templates. |
 | `pocketbase/pb_hooks/routes/` | Custom routes: trash, admin, public shares, check-users. |
+| `pocketbase/pb_hooks/routes/trash/move_folder.js` | Moves a folder subtree to trash and rehomes boards in that subtree to the root. |
+| `pocketbase/pb_hooks/routes/trash/permanent_delete_folder.js` | Defensively rehomes boards before permanently deleting a trash folder subtree. |
 | `pocketbase/pb_hooks/templates/` | HTML and text email templates. |
 | `pocketbase/pb_hooks/public_sharing_cron.js` | Clears expired public shares every 15 minutes. |
 | `pocketbase/pb_hooks/utils.js` | `requireAdmin`, `parseRequestBody`, `escapeHtml`, `sanitizeUrl`, `sendError`, site/sender helpers. |
+| `pocketbase/pb_migrations/0000015_raise_content_size_limit.js` | Raises editor content limits to 100 MB. |
 | `pocketbase/pb_migrations/0000016_created_tasks.js` | Creates `tasks` with its original author/status/order index. |
 | `pocketbase/pb_migrations/0000017_tighten_task_rules.js` | Makes task creation author-scoped. |
 | `pocketbase/pb_migrations/0000018_created_boards.js` | Creates `boards`, adds the required `tasks.board` relation, backfills tasks, and applies archive rules. |
 | `pocketbase/pb_migrations/0000019_remove_embedding_settings.js` | Deletes the obsolete `embedding_config` setting. |
-| `pocketbase/pb_migrations/0000015_raise_content_size_limit.js` | Raises editor content limits to 100 MB. |
+| `pocketbase/pb_migrations/0000020_boards_in_folders.js` | Adds the optional `boards.folder` relation, `boards.is_private`, and the author/folder index. |
 
 ## How it works
 
@@ -47,6 +51,7 @@ require(`${__hooks}/documents/calculate_stats.js`);
 require(`${__hooks}/documents/create_version.js`);
 require(`${__hooks}/routes/trash.js`);
 require(`${__hooks}/guards/user_guards.js`);
+require(`${__hooks}/guards/board_guards.js`);
 ```
 
 Groups:
@@ -55,7 +60,7 @@ Groups:
 | --- | --- |
 | `bootstrap.js` | Seed `site_url` from `SITE_URL`, sync `meta.appURL`, provision the superuser, first-user/signup bootstrap, legacy migration filename compatibility. |
 | `documents/` | Word count/reading time and version snapshots. |
-| `guards/` | User signup/deletion, trash immutability, version immutability, task board ownership on move. |
+| `guards/` | User signup/deletion, trash immutability, version immutability, task board ownership on move, board folder ownership. |
 | `mailer/` | Password reset, email change, OTP, auth alert templates. |
 | `routes/` | Custom HTTP routes (trash, admin, public shares, check-users). |
 | `templates/` | HTML/text email templates. |
@@ -63,7 +68,7 @@ Groups:
 
 ### Migrations
 
-Files are sequential and zero-padded. **The next migration is `0000020_<description>.js`.**
+Files are sequential and zero-padded. **The next migration is `0000021_<description>.js`.**
 
 | Migration | Purpose |
 | --- | --- |
@@ -86,6 +91,7 @@ Files are sequential and zero-padded. **The next migration is `0000020_<descript
 | `0000017_tighten_task_rules.js` | Author-scoped task creation. |
 | `0000018_created_boards.js` | Boards collection, required task board relation, backfill, archive rules. |
 | `0000019_remove_embedding_settings.js` | Delete the obsolete `embedding_config` record. |
+| `0000020_boards_in_folders.js` | Add optional `boards.folder`, `boards.is_private`, and `idx_boards_author_folder`. |
 
 Use the migration API, not `module.exports`:
 
@@ -113,7 +119,7 @@ Rules:
 - Guard additions/removals so retries are idempotent.
 - Never rename an existing migration. `bootstrap.js` contains a temporary compatibility hook that rewrites old filenames in the `_migrations` table.
 - For data migrations, use `findRecordsByFilter` and tolerate missing records when the schema may not be seeded yet.
-- Migrations are append-only; start the next one at `0000020`.
+- Migrations are append-only; start the next one at `0000021`.
 
 ### Collections
 
@@ -123,7 +129,7 @@ Rules:
 | `folders` | Nested folder tree | Self-referencing `parent`; `published` flag retained alongside public-share fields. |
 | `documents` | Markdown documents | Content, attachments, tags, stats, folder relation, sharing fields. |
 | `document_versions` | Version snapshots | Created when a document is saved with `published = true`. |
-| `boards` | Task boards | Author-scoped; name, description, archived flag. |
+| `boards` | Task boards | Author-scoped; name, description, archived flag, optional folder, private flag. |
 | `tasks` | Board work items | Author-scoped; required board relation, fixed status set, optional priority/due date/labels, optional source document. |
 | `conversations` | Chat history | Messages stored inline as JSON; author-scoped. |
 | `settings` | Admin key/value store | `site_url`, `ai_config`, `rate_limits`. |
@@ -144,12 +150,15 @@ Rules:
 | `name` | Text | Required, max 120. |
 | `description` | Text | Optional, max 500. |
 | `archived` | Bool | Defaults false. |
+| `folder` | Relation → `folders` | Optional, `cascadeDelete: false`, max 1. Empty means the workspace root. |
+| `is_private` | Bool | Optional. Hides the board from chat and MCP; the owner still sees it. |
 | `author` | Relation → `users` | Required, `cascadeDelete: false`, max 1. |
 | `created`, `updated` | Autodate | Managed by PocketBase. |
 
 Indexes:
 
 - `idx_boards_author_archived` on `(author, archived)`.
+- `idx_boards_author_folder` on `(author, folder)` from `0000020`.
 - No separate slug or unique-name constraint; board names are labels, not identifiers.
 
 Rules:
@@ -160,6 +169,17 @@ Rules:
 | Delete | `@request.auth.id != '' && author = @request.auth.id && archived = true` |
 
 A board is archived with a normal `PATCH { "archived": true }`. Restore is `PATCH { "archived": false }`. Permanent delete is only possible after archiving and cascades the board's tasks. Tasks deleted this way are not moved to trash.
+
+#### Board folder guard
+
+PocketBase evaluates relation rules against the **stored** record, so the incoming `folder` needs an explicit ownership check. `guards/board_guards.js` runs on board create and update API requests:
+
+- It skips requests with no auth or superuser auth; internal saves (trash rehoming, migrations) bypass request hooks.
+- An empty `folder` is always allowed.
+- A missing folder throws `BadRequestError` (`400`).
+- A folder owned by another user throws `ForbiddenError` (`403`).
+
+The Bun workspace service checks the same ownership before a write, so REST and MCP get a generic `not_found`; the guard is the second line of defence for direct browser SDK calls. Keep the guard when changing board rules.
 
 ### Task schema and rules
 
@@ -204,6 +224,7 @@ PocketBase evaluates relation rules against the **stored** record, not the incom
 4. Restore clears `archived` and leaves every task intact.
 5. Permanent delete is exposed only on `/board/archive`, after a `ConfirmDialog`. PocketBase enforces `archived = true` and cascades `tasks.board`.
 6. Notes linked through `tasks.document` remain in the library; only the tasks are removed.
+7. Archiving does not change `folder`. Archived boards keep their folder relation but are excluded from the board index and folder view until restored.
 
 ### Settings keys
 
@@ -215,7 +236,7 @@ PocketBase evaluates relation rules against the **stored** record, not the incom
 
 `embedding_config` no longer exists after `0000019_remove_embedding_settings.js`. A fresh install seeds it in `0000009` and removes it in `0000019`, so the final database has no record; upgrades delete the existing record. Legacy `pb_data/zvec` files are intentionally not removed by the migration; [`deployment.md`](deployment.md) owns the manual cleanup.
 
-The `settings` collection is admin-only. Server-side code reads it with the auto-provisioned superuser token. Chat tools do not use that token.
+The `settings` collection is admin-only. Server-side code reads it with the auto-provisioned superuser token. Chat tools, REST services, and MCP do not use that token.
 
 SMTP, OAuth, and instance-level settings are stored in PocketBase's built-in app settings (`$app.settings()`), not the `settings` collection. Attachment limits are schema fields on `documents.attachments` and `trash_documents.attachments`.
 
@@ -231,6 +252,8 @@ There is no soft-delete flag on live records. Moving to trash:
 
 Trash routes are in `pocketbase/pb_hooks/routes/trash/`; shared logic lives in `trash_helpers.js`. Guards make the trash collections immutable through the API, so all mutations go through these routes. Tasks and boards do not use this trash flow.
 
+Boards are archived, not trashed. A folder move to trash therefore cannot cascade into boards: `move_folder.js` rehomes every board whose `folder` is in the trashed subtree to the root before deleting the folder records, and returns the affected ids as `movedBoardIds`. `permanent_delete_folder.js` repeats the defensive rehome for boards still pointing at a trashed or original folder id, covering data written before this behavior existed. Restoring a folder does not move rehomed boards back.
+
 ### Guards and invariants
 
 | Guard | Behavior |
@@ -242,6 +265,7 @@ Trash routes are in `pocketbase/pb_hooks/routes/trash/`; shared logic lives in `
 | Trash | Direct API create/update/delete on `trash_*` is rejected. |
 | Versions | Direct API create/update/delete on `document_versions` is rejected. |
 | Board delete | Only archived boards can be deleted. |
+| Board folder | Create/update require the incoming folder to belong to the caller. |
 | Task board | Create/update require an authored, active board. |
 
 ### Versions
@@ -265,7 +289,7 @@ Fields added to `documents` and `folders`:
 | `is_public` | Sharing enabled. |
 | `public_share_token` | Unique 20-byte hex token. |
 | `public_expires_at` | Optional expiry. |
-| `is_private` | Hide this record (and, for folders, its entire subtree). |
+| `is_private` | Hide this record from AI surfaces; for documents and folders, also exclude it (and, for folders, its subtree) from public shares. |
 | `share_attachments` | Allow public attachment downloads. |
 
 Behavior:
@@ -275,6 +299,7 @@ Behavior:
 - Folder shares collect descendant folders and documents, skipping private subtrees/documents.
 - A cron runs every 15 minutes to clear expired shares.
 - Public attachment routes verify the share, `share_attachments`, and document membership in the shared tree.
+- Boards have no public-share flow. `boards.is_private` is an AI visibility flag; it does not create a public share.
 
 ### Superuser and bootstrap
 
@@ -291,7 +316,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 
 ### Adding backend behavior
 
-1. Add or update the schema in a new migration (`0000020+`).
+1. Add or update the schema in a new migration (`0000021+`).
 2. Add hooks/routes under the relevant `pb_hooks/` directory.
 3. Require the new module from `index.pb.js` (or from a parent module that is already required).
 4. Use `requireAdmin(c)`, `parseRequestBody(c)`, `escapeHtml()`, and `sanitizeUrl()` from `utils.js`; admin route catch blocks should return `sendError(c, err, fallbackMessage)` so known failures keep 400/401/403/404.
@@ -307,15 +332,20 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 - **Archived boards block task updates, not deletes.** A `PATCH` on a task whose board is archived fails; `DELETE` still succeeds for the owner. This keeps cleanup possible.
 - **Task board moves are guarded twice.** The update rule checks the stored task; `guards/task_guards.js` checks the incoming `board` relation for ownership and archived state. Removing the guard reintroduces cross-author moves because PocketBase does not re-evaluate the old relation.
 - **`tasks.board` cascades; `tasks.document` does not.** Deleting a board removes its tasks; deleting a note leaves its tasks and their note link dangling.
+- **`0000020` adds an optional folder relation and private flag without a backfill.** Existing boards stay at the root. The `down()` removes the index before dropping `folder`, then drops `is_private`; do not reverse that order.
+- **`boards.folder` never cascades.** `cascadeDelete: false` is deliberate. Folder trash and permanent delete rehome boards to the root; changing this would delete boards when a folder is removed.
+- **Board folder moves are guarded.** `guards/board_guards.js` checks the incoming `folder` on API create/update. Without it, a caller could file a board into another user's folder because PocketBase relation rules see the stored board.
+- **Folder trash does not restore boards to the folder.** A rehomed board stays at the root when the folder is restored. It keeps its tasks and archive state.
 - **`0000019` is destructive and one-way for custom settings.** It deletes every `embedding_config` record. The `down()` re-seeds defaults, not the previous custom values.
 - **Zvec files are not deleted by a migration.** `pb_data/zvec` can survive upgrades; remove it manually after stopping the stack, per [`deployment.md`](deployment.md).
 - **Board names are not unique.** `boards` has no unique-name index; two boards can share a name. Do not use the name as an id.
-- **Do not add a board/task custom route.** The standard collection endpoints and rules already enforce archive and ownership.
+- **Do not add custom PocketBase board/task routes.** The standard collection endpoints and rules already enforce archive, ownership, and folder checks. The Bun `/api/v1` surface is a facade over those collections, not a new PocketBase route.
+- **The next migration is `0000021`.** `0000020` is applied; never edit it in place.
 
 ## Related docs
 
-- [`api.md`](api.md) — collection routes and board/task payloads.
+- [`api.md`](api.md) — collection routes, Elysia `/api/v1`, and board/task payloads.
 - [`architecture.md`](architecture.md) — where PocketBase sits in the request flow.
-- [`security.md`](security.md) — auth, admin checks, public-share safety.
+- [`security.md`](security.md) — auth, admin checks, board folder guard, public-share safety.
 - [`testing.md`](testing.md) — guard, route, and migration tests.
 - [`deployment.md`](deployment.md) — migration-on-boot and Zvec cleanup.

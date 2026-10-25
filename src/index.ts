@@ -10,6 +10,8 @@ import { APP_VERSION, handleAppVersion } from "./api/app-version";
 import { createStaticFileHandler } from "./api/static-files";
 import { checkRateLimit, reloadRateLimiter } from "./api/rate-limiter";
 import { verifyAuth, AuthError } from "./api/auth";
+import { apiApp } from "./api/rest";
+import { handleMcpRequest } from "./api/mcp";
 import { createLogger } from "./lib/logger";
 
 const log = createLogger("Server");
@@ -113,6 +115,19 @@ function withSecurityHeaders(response: Response): Response {
   });
 }
 
+/**
+ * REST/OpenAPI surface: /api/v1, /docs, and /docs/json.
+ * Rate limits and security headers stay at the Bun edge.
+ */
+async function handleRest(req: Request): Promise<Response> {
+  // Workspace writes can fan out into PocketBase calls; give the JSON surface
+  // more headroom than the default request timeout.
+  server.timeout(req, 60);
+  const blocked = await checkRateLimit(req, server);
+  if (blocked) return withSecurityHeaders(blocked);
+  return withSecurityHeaders(await apiApp.handle(req));
+}
+
 const server = serve({
   port: serverConfig.port,
   // Apply security headers to all responses
@@ -160,6 +175,20 @@ const server = serve({
     "/nana.svg": (): Response => withSecurityHeaders(new Response(Bun.file(iconSvg))),
     "/nana-192.png": (): Response => withSecurityHeaders(new Response(Bun.file(icon192))),
     "/nana-512.png": (): Response => withSecurityHeaders(new Response(Bun.file(icon512))),
+
+    // REST API and OpenAPI docs (public docs, authenticated /api/v1)
+    "/docs": handleRest,
+    "/docs/*": handleRest,
+    "/api/v1": handleRest,
+    "/api/v1/*": handleRest,
+
+    // MCP Streamable HTTP API (POST only, authenticated)
+    "/mcp": async (req): Promise<Response> => {
+      server.timeout(req, 60);
+      const blocked = await checkRateLimit(req, server);
+      if (blocked) return withSecurityHeaders(blocked);
+      return withSecurityHeaders(await handleMcpRequest(req));
+    },
 
     // Server-side export API
     "/api/export": async (req): Promise<Response> => {

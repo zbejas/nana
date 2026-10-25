@@ -48,11 +48,13 @@ routerAdd("POST", "/api/trash/move-folder", (c) => {
             }
         }
 
+        const movedBoardIds = h.rehomeBoardsFromFolderIds(nodes.map((node) => node.id))
+
         for (let i = nodes.length - 1; i >= 0; i -= 1) {
             $app.delete(nodes[i])
         }
 
-        return c.json(200, { trashFolderId: folderMap[folder.id] || null, movedDocumentIds })
+        return c.json(200, { trashFolderId: folderMap[folder.id] || null, movedDocumentIds, movedBoardIds })
     } catch (err) {
         console.error("Failed to move folder to trash:", err)
         return c.json(400, { error: String(err) })

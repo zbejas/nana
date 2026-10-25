@@ -7,6 +7,7 @@ import {
   PencilSquareIcon,
   ShareIcon,
   TrashIcon,
+  ViewColumnsIcon,
   XCircleIcon,
 } from '@heroicons/react/24/outline';
 import { ContextMenuItem, ContextMenuSeparator, ContextMenuShell } from './ContextMenuShell';
@@ -22,6 +23,7 @@ interface FolderContextMenuProps {
   contextMenuRef: RefObject<HTMLDivElement | null>;
   onAddFolder: () => void;
   onAddDocument: () => void;
+  onAddBoard?: () => void;
   onRenameFolder: () => void;
   onMakePublicFolder: () => void;
   onDeleteFolder: () => void;
@@ -36,6 +38,7 @@ export function FolderContextMenu({
   contextMenu,
   onAddFolder,
   onAddDocument,
+  onAddBoard,
   onRenameFolder,
   onMakePublicFolder,
   onDeleteFolder,
@@ -71,6 +74,9 @@ export function FolderContextMenu({
         <>
           <ContextMenuItem icon={<FolderPlusIcon />} label={isEmpty ? 'New folder' : 'New subfolder'} onClick={onAddFolder} />
           <ContextMenuItem icon={<DocumentPlusIcon />} label="New note" onClick={onAddDocument} />
+          {onAddBoard && (
+            <ContextMenuItem icon={<ViewColumnsIcon />} label="New board" onClick={onAddBoard} />
+          )}
           {!isEmpty && (
             <>
               <ContextMenuSeparator />

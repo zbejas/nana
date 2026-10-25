@@ -168,6 +168,46 @@ function moveDocumentToTrashById(documentId, userId, options) {
   return trashDocument
 }
 
+/**
+ * Boards are archived, not trashed. When a folder leaves the live tree, move
+ * its boards to the root so a relation can never orphan them. Returns the ids
+ * that were moved.
+ */
+function rehomeBoardsFromFolderIds(folderIds) {
+  const movedBoardIds = []
+  if (!Array.isArray(folderIds) || folderIds.length === 0) {
+    return movedBoardIds
+  }
+
+  let boardsCollection
+  try {
+    boardsCollection = $app.findCollectionByNameOrId("boards")
+  } catch (_) {
+    return movedBoardIds
+  }
+
+  if (!boardsCollection.fields.getByName("folder")) {
+    return movedBoardIds
+  }
+
+  const seenBoardIds = {}
+  for (const folderId of folderIds) {
+    const id = String(folderId || "")
+    if (!id) continue
+
+    const boards = $app.findRecordsByFilter("boards", `folder = "${id}"`, "")
+    for (const board of boards) {
+      if (seenBoardIds[board.id]) continue
+      seenBoardIds[board.id] = true
+      board.set("folder", "")
+      $app.save(board)
+      movedBoardIds.push(board.id)
+    }
+  }
+
+  return movedBoardIds
+}
+
 function collectFolderTree(folderRecord, collectionName) {
   const sourceCollection = collectionName || "folders"
   const result = [folderRecord]
@@ -190,5 +230,6 @@ module.exports = {
   restoreDocumentVersions,
   permanentlyDeleteTrashVersions,
   moveDocumentToTrashById,
+  rehomeBoardsFromFolderIds,
   collectFolderTree,
 }

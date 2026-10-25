@@ -1,4 +1,4 @@
-ARG BUN_VERSION=1.3.13
+ARG BUN_VERSION=1.4.4
 ARG PB_VERSION=0.37.2
 ARG TARGETARCH
 
@@ -35,7 +35,7 @@ RUN apt-get update && \
 FROM app-base AS builder
 
 COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile --production --trust-dependencies
+RUN bun install --frozen-lockfile --production
 COPY tsconfig.json bunfig.toml build.ts ./
 COPY src/ ./src/
 RUN bun run build.ts
@@ -48,7 +48,7 @@ FROM app-base AS development
 ENV NODE_ENV=development
 
 COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile --trust-dependencies
+RUN bun install --frozen-lockfile
 
 COPY . .
 
@@ -68,7 +68,7 @@ FROM app-base AS testing
 ENV NODE_ENV=test
 
 COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile --trust-dependencies
+RUN bun install --frozen-lockfile
 
 COPY . .
 
@@ -85,7 +85,7 @@ FROM app-base AS production
 ENV NODE_ENV=production
 
 COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile --production --trust-dependencies
+RUN bun install --frozen-lockfile --production
 
 COPY --from=builder /app/dist ./dist
 COPY src ./src

@@ -2,11 +2,13 @@ import { createPortal } from 'react-dom';
 import { useSetAtom } from 'jotai';
 import { addToBoardRequestAtom } from '../state/atoms';
 import { DocumentContextMenu } from '../components/file-folder-handling/context-menu/DocumentContextMenu';
+import { BoardContextMenu } from '../components/file-folder-handling/context-menu/BoardContextMenu';
 import { FolderContextMenu } from '../components/file-folder-handling/context-menu/FolderContextMenu';
 import { FolderViewHeader } from '../components/folder-view/FolderViewHeader';
 import { FolderViewList } from '../components/folder-view/FolderViewList';
 import { FolderViewGrid } from '../components/folder-view/FolderViewGrid';
 import { useFolderViewState } from '../components/folder-view/useFolderViewState';
+import { BoardDialog } from '../components/board/BoardDialog';
 import { PublicShareModal } from '../components/modals/PublicShareModal';
 import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
 import {
@@ -15,6 +17,7 @@ import {
   FolderPlusIcon,
   DocumentPlusIcon,
   FolderIcon,
+  ViewColumnsIcon,
 } from '@heroicons/react/24/outline';
 import {
   Button,
@@ -38,6 +41,7 @@ export function FolderViewPage() {
     currentFolder,
     breadcrumbPath,
     displayedFolders,
+    displayedBoards,
     displayedDocuments,
     selectedFolderIds,
     selectedDocumentIds,
@@ -45,6 +49,9 @@ export function FolderViewPage() {
     hasSelection,
     clearSelection,
     deleteConfirmState,
+    boardDialogOpen,
+    editingBoard,
+    boardFolderId,
     pendingCreate,
     pendingRename,
     isCreating,
@@ -61,12 +68,15 @@ export function FolderViewPage() {
     handleDragEnd,
     handleFolderDragStart,
     handleFolderDragEnd,
+    handleBoardDragStart,
+    handleBoardDragEnd,
     handleDragOver,
     handleDragLeave,
     handleDrop,
     setPendingCreate,
     handleFolderClick,
     handleFolderDoubleClick,
+    handleBoardClick,
     handleNavigateUp,
     handleBreadcrumbClick,
     setFilterMode,
@@ -75,6 +85,11 @@ export function FolderViewPage() {
     handleSelectAll,
     handleAddFolder,
     handleAddDocument,
+    handleOpenCreateBoard,
+    handleOpenEditBoard,
+    handleCloseBoardDialog,
+    handleBoardSaved,
+    handleBoardArchived,
     handleInlineCreateSubmit,
     handleInlineCreateCancel,
     setPendingRename,
@@ -111,8 +126,8 @@ export function FolderViewPage() {
     : isSharedMode
       ? 'Notes and folders with a public link.'
       : currentFolderId
-        ? 'Everything inside this folder. Drag items to reorganise, double-click to open.'
-        : 'Your library, kept in folders. Drag notes between folders to organise them.';
+        ? 'Notes, boards, and subfolders in this folder. Drag items to reorganise, double-click a folder to open.'
+        : 'Your library, kept in folders. Drag notes and boards between folders to organise them.';
 
   const emptyTitle = isTrashMode
     ? 'Trash is empty'
@@ -126,8 +141,8 @@ export function FolderViewPage() {
     : isSharedMode
       ? 'Share a note or folder from its menu to see it here.'
       : currentFolderId
-        ? 'Add a note or a subfolder to get started.'
-        : 'Create your first note or folder, then keep the work moving on the board.';
+        ? 'Add a note, a board, or a subfolder to get started.'
+        : 'Create your first note, board, or folder, then keep the work moving.';
 
   return (
     <PageShell scroll="content" contentClassName="desktop-page-content-enter">
@@ -157,6 +172,12 @@ export function FolderViewPage() {
                 <span className="text-[13px] font-medium tabular-nums text-ink">{displayedDocuments.length}</span>
                 {displayedDocuments.length === 1 ? 'note' : 'notes'}
               </span>
+              {!isTrashMode && !isSharedMode && (
+                <span className="inline-flex items-baseline gap-1.5">
+                  <span className="text-[13px] font-medium tabular-nums text-ink">{displayedBoards.length}</span>
+                  {displayedBoards.length === 1 ? 'board' : 'boards'}
+                </span>
+              )}
             </>
           }
           actions={
@@ -164,6 +185,9 @@ export function FolderViewPage() {
               <>
                 <Button variant="secondary" icon={<FolderPlusIcon />} onClick={() => void handleAddFolder()}>
                   New folder
+                </Button>
+                <Button variant="secondary" icon={<ViewColumnsIcon />} onClick={handleOpenCreateBoard}>
+                  New board
                 </Button>
                 <Button variant="primary" icon={<DocumentPlusIcon />} onClick={() => void handleAddDocument()}>
                   New note
@@ -185,7 +209,7 @@ export function FolderViewPage() {
             ]}
           />
           <span className="hidden text-[11.5px] text-ink-muted sm:inline">
-            Drag notes into folders to organise them.
+            Drag notes and boards into folders to organise them.
           </span>
         </div>
 
@@ -230,9 +254,14 @@ export function FolderViewPage() {
                   description={emptyDescription}
                   action={
                     canModify ? (
-                      <Button variant="secondary" icon={<DocumentPlusIcon />} onClick={() => void handleAddDocument()}>
-                        New note
-                      </Button>
+                      <>
+                        <Button variant="primary" icon={<DocumentPlusIcon />} onClick={() => void handleAddDocument()}>
+                          New note
+                        </Button>
+                        <Button variant="secondary" icon={<ViewColumnsIcon />} onClick={handleOpenCreateBoard}>
+                          New board
+                        </Button>
+                      </>
                     ) : undefined
                   }
                   className="w-full max-w-md"
@@ -241,6 +270,7 @@ export function FolderViewPage() {
             ) : viewMode === 'list' ? (
               <FolderViewList
                 displayedFolders={displayedFolders}
+                displayedBoards={displayedBoards}
                 displayedDocuments={displayedDocuments}
                 currentFolderId={currentFolderId}
                 selectedFolderIds={selectedFolderIds}
@@ -262,6 +292,7 @@ export function FolderViewPage() {
                 onRenameCancel={handleInlineRenameCancel}
                 onFolderClick={handleFolderClick}
                 onFolderDoubleClick={handleFolderDoubleClick}
+                onBoardClick={handleBoardClick}
                 onDocumentClick={handleDocumentClick}
                 onDocumentDoubleClick={handleDocumentDoubleClick}
                 onItemContextMenu={(event, type, options) =>
@@ -290,6 +321,8 @@ export function FolderViewPage() {
                 onDragEnd={handleDragEnd}
                 onFolderDragStart={handleFolderDragStart}
                 onFolderDragEnd={handleFolderDragEnd}
+                onBoardDragStart={handleBoardDragStart}
+                onBoardDragEnd={handleBoardDragEnd}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -297,6 +330,7 @@ export function FolderViewPage() {
             ) : (
               <FolderViewGrid
                 displayedFolders={displayedFolders}
+                displayedBoards={displayedBoards}
                 displayedDocuments={displayedDocuments}
                 currentFolderId={currentFolderId}
                 selectedFolderIds={selectedFolderIds}
@@ -318,6 +352,7 @@ export function FolderViewPage() {
                 onRenameCancel={handleInlineRenameCancel}
                 onFolderClick={handleFolderClick}
                 onFolderDoubleClick={handleFolderDoubleClick}
+                onBoardClick={handleBoardClick}
                 onDocumentClick={handleDocumentClick}
                 onDocumentDoubleClick={handleDocumentDoubleClick}
                 onItemContextMenu={(event, type, options) =>
@@ -346,6 +381,8 @@ export function FolderViewPage() {
                 onDragEnd={handleDragEnd}
                 onFolderDragStart={handleFolderDragStart}
                 onFolderDragEnd={handleFolderDragEnd}
+                onBoardDragStart={handleBoardDragStart}
+                onBoardDragEnd={handleBoardDragEnd}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -398,6 +435,7 @@ export function FolderViewPage() {
             contextMenuRef={contextMenuRef}
             onAddFolder={handleAddFolder}
             onAddDocument={handleAddDocument}
+            onAddBoard={handleOpenCreateBoard}
             onRenameFolder={handleRenameFolder}
             onMakePublicFolder={() => {
               if (contextMenu?.folderId) {
@@ -414,6 +452,45 @@ export function FolderViewPage() {
           />,
           document.body
         )}
+
+      {contextMenu?.type === 'board' &&
+        createPortal(
+          <BoardContextMenu
+            contextMenu={{
+              x: contextMenu.x,
+              y: contextMenu.y,
+              type: 'board',
+              boardId: contextMenu.boardId,
+              boardName: contextMenu.boardName,
+            }}
+            contextMenuRef={contextMenuRef}
+            onOpenBoard={() => {
+              const board = contextMenu.boardId
+                ? displayedBoards.find((item) => item.id === contextMenu.boardId)
+                : undefined;
+              closeContextMenu();
+              if (board) {
+                handleBoardClick(board);
+              }
+            }}
+            onEditBoard={() => handleOpenEditBoard(contextMenu.boardId)}
+            onClose={closeContextMenu}
+            isClosing={isClosingContextMenu}
+          />,
+          document.body
+        )}
+
+      {canModify && (
+        <BoardDialog
+          open={boardDialogOpen}
+          board={editingBoard}
+          folderId={boardFolderId}
+          taskCount={editingBoard?.total ?? 0}
+          onClose={handleCloseBoardDialog}
+          onSaved={handleBoardSaved}
+          onArchived={handleBoardArchived}
+        />
+      )}
 
       <ConfirmDialog
         open={Boolean(deleteConfirmState)}

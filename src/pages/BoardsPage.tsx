@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArchiveBoxIcon,
   ArrowPathIcon,
+  LockClosedIcon,
   PlusIcon,
 } from '@heroicons/react/24/outline';
 import type { Board } from '../lib/boards';
@@ -114,8 +115,14 @@ export function BoardsPage() {
                   className="group relative flex min-h-40 flex-col rounded-panel border border-line bg-surface p-5 text-left transition-colors hover:border-line-strong hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal"
                 >
                   <span className="flex items-start justify-between gap-3">
-                    <span className="block text-[17px] font-semibold leading-snug tracking-[-0.015em] text-ink">
-                      {board.name}
+                    <span className="flex min-w-0 items-center gap-1.5 text-[17px] font-semibold leading-snug tracking-[-0.015em] text-ink">
+                      <span className="min-w-0 truncate">{board.name}</span>
+                      {board.is_private && (
+                        <LockClosedIcon
+                          className="h-3.5 w-3.5 shrink-0 text-warning"
+                          aria-label="Private board"
+                        />
+                      )}
                     </span>
                     <span className="shrink-0 pt-0.5 text-[11.5px] text-ink-muted">{updated || '—'}</span>
                   </span>

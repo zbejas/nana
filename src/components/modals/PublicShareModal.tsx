@@ -160,8 +160,8 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
                     label="Private"
                     description={
                         target.type === 'document'
-                            ? 'Hide this note even when its parent folder is public.'
-                            : 'Hide this folder and everything inside it from shared parents.'
+                            ? 'Hidden from AI chat and MCP. It also stays out of shared parents and can still be opened here.'
+                            : 'Hidden from AI chat and MCP. It also hides everything inside it from shared parents and can still be opened here.'
                     }
                     checked={isPrivate}
                     onChange={(next) => {

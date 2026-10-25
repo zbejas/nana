@@ -5,6 +5,7 @@ import {
   ArrowUturnLeftIcon,
   ChevronLeftIcon,
   DocumentPlusIcon,
+  LockClosedIcon,
   MagnifyingGlassIcon,
   PencilSquareIcon,
   PlusIcon,
@@ -221,7 +222,21 @@ export function BoardPage() {
     <PageShell scroll="content" contentClassName="desktop-page-content-enter">
       <PageHeader
         back={{ label: 'All boards', onClick: () => navigate('/board') }}
-        title={board?.name ?? 'Board'}
+        title={
+          board ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="min-w-0 break-words">{board.name}</span>
+              {board.is_private && (
+                <LockClosedIcon
+                  className="h-4 w-4 shrink-0 text-warning"
+                  aria-label="Private board"
+                />
+              )}
+            </span>
+          ) : (
+            'Board'
+          )
+        }
         description={board?.description || undefined}
         meta={
           board?.archived ? (
