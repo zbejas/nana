@@ -263,6 +263,7 @@ export const apiOpenApiConfig = {
         url: DOCS_SPEC_PATH,
         theme: "none",
         darkMode: true,
+        favicon: "/nana.svg",
         persistAuth: true,
         withDefaultFonts: false,
         customCss: SCALAR_CSS,

@@ -180,6 +180,16 @@ const server = serve({
     },
 
     "/nana.svg": (): Response => withSecurityHeaders(new Response(Bun.file(iconSvg))),
+    // Scalar's page and browser defaults request this path directly.
+    "/favicon.ico": (): Response =>
+      withSecurityHeaders(
+        new Response(Bun.file(iconSvg), {
+          headers: {
+            "Content-Type": "image/svg+xml",
+            "Cache-Control": "public, max-age=86400",
+          },
+        })
+      ),
     "/nana-192.png": (): Response => withSecurityHeaders(new Response(Bun.file(icon192))),
     "/nana-512.png": (): Response => withSecurityHeaders(new Response(Bun.file(icon512))),
 

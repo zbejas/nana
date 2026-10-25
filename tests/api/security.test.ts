@@ -20,7 +20,7 @@ describe("Security headers and public surface", () => {
     });
 
     describe("security headers", () => {
-        const paths = ["/api/app/version", "/manifest.webmanifest", "/api/v1/check-users", "/nana.svg"];
+        const paths = ["/api/app/version", "/manifest.webmanifest", "/api/v1/check-users", "/nana.svg", "/favicon.ico"];
 
         test("are present on Bun, API, static, and SPA responses", async () => {
             for (const path of paths) {
