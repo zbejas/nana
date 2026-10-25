@@ -4,7 +4,6 @@ import type { ErrorHandler } from "elysia";
 import { existsSync } from "fs";
 import { resolve } from "path";
 import { createLogger } from "../../lib/logger";
-import { APP_VERSION } from "../app-version";
 import {
     addNoteToBoard,
     createBoard,
@@ -51,27 +50,33 @@ import {
     UpdateNoteBodySchema,
     UpdateTaskBodySchema,
 } from "./schemas";
+import {
+    apiOpenApiConfig,
+    GEIST_FONT_PATH,
+    GEIST_MONO_FONT_PATH,
+    SCALAR_BUNDLE_PATH,
+} from "./openapi";
+import {
+    ConflictErrorSchema,
+    NotFoundErrorSchema,
+    workspaceErrorSchemas,
+} from "./responses";
 
 const log = createLogger("REST");
 
-const swaggerDistDir = resolve(import.meta.dir, "../../../node_modules/swagger-ui-dist");
-const swaggerBundlePath = resolve(swaggerDistDir, "swagger-ui-bundle.js");
-const swaggerStylesPath = resolve(swaggerDistDir, "swagger-ui.css");
+const docsAssetsDir = resolve(import.meta.dir, "../../../node_modules/@scalar/api-reference/dist/browser");
+const scalarBundlePath = resolve(docsAssetsDir, "standalone.js");
+const geistFontPath = resolve(import.meta.dir, "../../assets/fonts/geist-variable.woff2");
+const geistMonoFontPath = resolve(import.meta.dir, "../../assets/fonts/geist-mono-variable.woff2");
 
-const API_DESCRIPTION = [
-    "JSON API for Nana notes, folders, boards, and tasks.",
-    "Every /api/v1 route requires a PocketBase user token, sent either raw or as `Bearer <token>`.",
-    "This surface is the owning user's surface: private notes and boards are visible to their owner.",
-].join(" ");
-
-function assetResponse(path: string, contentType: string): Response {
+function assetResponse(path: string, contentType: string, cacheControl = "public, max-age=3600"): Response {
     if (!existsSync(path)) {
         return new Response("Not Found", { status: 404 });
     }
     return new Response(Bun.file(path), {
         headers: {
             "Content-Type": contentType,
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": cacheControl,
         },
     });
 }
@@ -127,11 +132,12 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
     })
     // ── Folders ─────────────────────────────────────────────────────
     .get("/folders", ({ workspace }) => listFolders(workspace), {
-        response: { 200: FolderListSchema },
+        response: { 200: FolderListSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Folders"],
+            operationId: "listFolders",
             summary: "List folders",
-            description: "Returns the caller's folders. AI surfaces hide private subtrees; this REST surface is the owner's.",
+            description: "Returns every folder owned by the caller as a flat array, sorted by name. Build the tree from `parentId`. AI surfaces hide private subtrees; this owner surface does not.",
         },
     })
     .post("/folders", ({ workspace, body, set }) => {
@@ -139,21 +145,23 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
         return createFolder(workspace, "user", body);
     }, {
         body: CreateFolderBodySchema,
-        response: { 201: FolderDtoSchema },
+        response: { 201: FolderDtoSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Folders"],
+            operationId: "createFolder",
             summary: "Create a folder",
-            description: "Optionally nests the folder under an owned parent.",
+            description: "Creates a folder, optionally nested under an owned parent. The caller becomes the author; the server never accepts an author from the request body.",
         },
     })
     // ── Notes ───────────────────────────────────────────────────────
     .get("/notes", ({ workspace, query }) => listNotes(workspace, "user", query), {
         query: ListNotesQuerySchema,
-        response: { 200: NoteListSchema },
+        response: { 200: NoteListSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Notes"],
+            operationId: "listNotes",
             summary: "List notes",
-            description: "Metadata only: note content is never returned by the list endpoint. Searches titles and tags.",
+            description: "Returns note metadata only: `content` is never included in a list. `query` searches titles and tags (not bodies). Use `folderId` to scope to one folder; omit it for the whole library.",
         },
     })
     .post("/notes", ({ workspace, body, set }) => {
@@ -161,49 +169,54 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
         return createNote(workspace, "user", body);
     }, {
         body: CreateNoteBodySchema,
-        response: { 201: NoteDtoSchema },
+        response: { 201: NoteDtoSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Notes"],
+            operationId: "createNote",
             summary: "Create a note",
-            description: "Content is sanitized before it is stored. Titles default to Untitled.",
+            description: "Creates a note and returns the full record. `content` is sanitized before it is stored. Titles default to `Untitled`; slugs are generated from the title.",
         },
     })
     .get("/notes/:id", ({ workspace, params }) => getNote(workspace, "user", params.id), {
         params: IdParamsSchema,
-        response: { 200: NoteDtoSchema },
+        response: { 200: NoteDtoSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Notes"],
+            operationId: "getNote",
             summary: "Read a note",
-            description: "Returns the full note including sanitized content.",
+            description: "Returns the full note, including sanitized content, slug, tags, folder, privacy flags, and reading statistics.",
         },
     })
     .patch("/notes/:id", ({ workspace, params, body }) => updateNote(workspace, "user", params.id, body), {
         params: IdParamsSchema,
         body: UpdateNoteBodySchema,
-        response: { 200: NoteDtoSchema },
+        response: { 200: NoteDtoSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Notes"],
+            operationId: "updateNote",
             summary: "Update a note",
-            description: "Send `folderId: \"\"` or `null` to move the note to the root. Attachments are not managed here.",
+            description: "Partial update. Send `folderId: \"\"` or `null` to move the note to the workspace root. Attachments, publishing, and versions are not managed by this endpoint.",
         },
     })
     .delete("/notes/:id", ({ workspace, params }) => deleteNote(workspace, "user", params.id), {
         params: IdParamsSchema,
-        response: { 200: DeleteNoteResultSchema },
+        response: { 200: DeleteNoteResultSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Notes"],
+            operationId: "deleteNote",
             summary: "Move a note to trash",
-            description: "Delegates to the PocketBase trash route and returns the trash record id.",
+            description: "Moves the note to trash through the PocketBase trash route and returns the trash record id. Restore or permanently delete it from the trash surface.",
         },
     })
     // ── Boards ──────────────────────────────────────────────────────
     .get("/boards", ({ workspace, query }) => listBoards(workspace, "user", query), {
         query: ListBoardsQuerySchema,
-        response: { 200: BoardListSchema },
+        response: { 200: BoardListSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Boards"],
+            operationId: "listBoards",
             summary: "List boards",
-            description: "Active boards by default, newest updated first.",
+            description: "Returns the caller's boards, newest updated first. Active boards only by default; set `includeArchived=true` to include the archive. Use `folderId` to list one folder.",
         },
     })
     .post("/boards", ({ workspace, body, set }) => {
@@ -211,28 +224,33 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
         return createBoard(workspace, "user", body);
     }, {
         body: CreateBoardBodySchema,
-        response: { 201: BoardDtoSchema },
+        response: { 201: BoardDtoSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Boards"],
+            operationId: "createBoard",
             summary: "Create a board",
+            description: "Creates an active board at the workspace root or inside an owned folder. A private board is hidden from chat and MCP, but remains visible on this owner surface.",
         },
     })
     .get("/boards/:id", ({ workspace, params }) => getBoard(workspace, "user", params.id), {
         params: IdParamsSchema,
-        response: { 200: BoardDtoSchema },
+        response: { 200: BoardDtoSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Boards"],
+            operationId: "getBoard",
             summary: "Read a board",
+            description: "Returns board metadata. Use `GET /boards/:id/tasks` for the board's tasks.",
         },
     })
     .patch("/boards/:id", ({ workspace, params, body }) => updateBoard(workspace, "user", params.id, body), {
         params: IdParamsSchema,
         body: UpdateBoardBodySchema,
-        response: { 200: BoardDtoSchema },
+        response: { 200: BoardDtoSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Boards"],
+            operationId: "updateBoard",
             summary: "Update a board",
-            description: "Archive with `archived: true`. Send `folderId: \"\"` or `null` to move the board to the root.",
+            description: "Partial update. Archive with `archived: true`; restore with `archived: false`. Send `folderId: \"\"` or `null` to move the board to the workspace root.",
         },
     })
     .delete("/boards/:id", async ({ workspace, params }) => {
@@ -240,13 +258,12 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
         return status(204);
     }, {
         params: IdParamsSchema,
+        response: { 404: NotFoundErrorSchema, 409: ConflictErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Boards"],
+            operationId: "deleteBoard",
             summary: "Delete an archived board",
-            description: "Only archived boards may be deleted. PocketBase cascades their tasks.",
-            responses: {
-                204: { description: "Board and its tasks deleted." },
-            },
+            description: "Permanently deletes a board and every task on it. The board must be archived first; deleting an active board returns `409`.",
         },
     })
     // ── Tasks ───────────────────────────────────────────────────────
@@ -254,11 +271,12 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
         listTasks(workspace, "user", params.id, query), {
         params: IdParamsSchema,
         query: ListTasksQuerySchema,
-        response: { 200: TaskListSchema },
+        response: { 200: TaskListSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Tasks"],
+            operationId: "listTasks",
             summary: "List tasks on a board",
-            description: "Ordered by board order then creation time.",
+            description: "Returns a board's tasks ordered by `boardOrder`, then creation time. Use `status` to fetch one column.",
         },
     })
     .post("/boards/:id/tasks", ({ workspace, params, body, set }) => {
@@ -267,11 +285,12 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
     }, {
         params: IdParamsSchema,
         body: CreateTaskBodySchema,
-        response: { 201: TaskDtoSchema },
+        response: { 201: TaskDtoSchema, 404: NotFoundErrorSchema, 409: ConflictErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Tasks"],
+            operationId: "createTask",
             summary: "Create a task",
-            description: "The board must belong to the caller and must not be archived.",
+            description: "Creates a task on the board in the path. The board must belong to the caller and must not be archived.",
         },
     })
     .post("/boards/:id/notes", ({ workspace, params, body, set }) => {
@@ -280,29 +299,33 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
     }, {
         params: IdParamsSchema,
         body: AddNoteToBoardBodySchema,
-        response: { 201: TaskDtoSchema },
+        response: { 201: TaskDtoSchema, 404: NotFoundErrorSchema, 409: ConflictErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Tasks"],
+            operationId: "addNoteToBoard",
             summary: "Add a note to a board",
-            description: "Copies the note title, a plain-text excerpt, and up to six labels into a new task.",
+            description: "Creates a task from a note. Copies the title, a plain-text excerpt (up to 4,000 characters), up to six labels, and the note relation; the note itself is unchanged.",
         },
     })
     .get("/tasks/:id", ({ workspace, params }) => getTask(workspace, "user", params.id), {
         params: IdParamsSchema,
-        response: { 200: TaskDtoSchema },
+        response: { 200: TaskDtoSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Tasks"],
+            operationId: "getTask",
             summary: "Read a task",
+            description: "Returns one task, including its board, optional note link, column, priority, labels, and due date.",
         },
     })
     .patch("/tasks/:id", ({ workspace, params, body }) => updateTask(workspace, "user", params.id, body), {
         params: IdParamsSchema,
         body: UpdateTaskBodySchema,
-        response: { 200: TaskDtoSchema },
+        response: { 200: TaskDtoSchema, 404: NotFoundErrorSchema, 409: ConflictErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Tasks"],
+            operationId: "updateTask",
             summary: "Update or move a task",
-            description: "Send `boardId`, `status`, and/or `boardOrder` to move. Send `noteId: \"\"` to clear the note link.",
+            description: "Partial update, including column/order moves. Send `boardId` to move the task to another active owned board, and `noteId: \"\"` to clear the note link.",
         },
     })
     .delete("/tasks/:id", async ({ workspace, params }) => {
@@ -310,60 +333,28 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
         return status(204);
     }, {
         params: IdParamsSchema,
+        response: { 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
         detail: {
             tags: ["Tasks"],
+            operationId: "deleteTask",
             summary: "Delete a task",
-            description: "Tasks are permanently deleted; they have no trash flow.",
-            responses: {
-                204: { description: "Task deleted." },
-            },
+            description: "Permanently deletes the task. Tasks have no trash flow.",
         },
     });
 
 export const apiApp = new Elysia({ name: "nana-api" })
     .onError(handleApiError)
-    .use(openapi({
-        path: "/docs",
-        specPath: "/docs/json",
-        provider: "swagger-ui",
-        documentation: {
-            info: {
-                title: "Nana API",
-                version: APP_VERSION,
-                description: API_DESCRIPTION,
-            },
-            tags: [
-                { name: "Folders", description: "Folder tree and privacy metadata." },
-                { name: "Notes", description: "Markdown notes and metadata." },
-                { name: "Boards", description: "Author-scoped task boards." },
-                { name: "Tasks", description: "Tasks grouped by board and column." },
-            ],
-            components: {
-                securitySchemes: {
-                    bearerAuth: {
-                        type: "http",
-                        scheme: "bearer",
-                        bearerFormat: "PocketBase user token",
-                    },
-                },
-            },
-            security: [{ bearerAuth: [] }],
-        },
-        swagger: {
-            cdn: "/docs/swagger-ui-bundle.js",
-            theme: "/docs/swagger-ui.css",
-            persistAuthorization: true,
-        },
-        exclude: {
-            paths: ["/docs/swagger-ui-bundle.js", "/docs/swagger-ui.css"],
-        },
-    }))
-    .get("/docs/swagger-ui-bundle.js", () =>
-        assetResponse(swaggerBundlePath, "application/javascript; charset=utf-8"), {
+    .use(openapi(apiOpenApiConfig))
+    .get(SCALAR_BUNDLE_PATH, () =>
+        assetResponse(scalarBundlePath, "application/javascript; charset=utf-8", "public, max-age=31536000, immutable"), {
         detail: { hide: true },
     })
-    .get("/docs/swagger-ui.css", () =>
-        assetResponse(swaggerStylesPath, "text/css; charset=utf-8"), {
+    .get(GEIST_FONT_PATH, () =>
+        assetResponse(geistFontPath, "font/woff2", "public, max-age=31536000, immutable"), {
+        detail: { hide: true },
+    })
+    .get(GEIST_MONO_FONT_PATH, () =>
+        assetResponse(geistMonoFontPath, "font/woff2", "public, max-age=31536000, immutable"), {
         detail: { hide: true },
     })
     .use(v1);
