@@ -1,30 +1,47 @@
-import { ChevronDownIcon, ChevronRightIcon, DocumentTextIcon, FolderIcon } from '@heroicons/react/24/outline';
+import {
+    ChevronDownIcon,
+    ChevronRightIcon,
+    DocumentTextIcon,
+    FolderIcon,
+    ViewColumnsIcon,
+} from '@heroicons/react/24/outline';
 import { useState } from 'react';
 import type { Document } from '../../lib/documents';
 import type { FolderTreeNode } from '../../lib/folders';
+import type { PublicFolderBoard } from '../../lib/public-sharing';
 
 interface PublicFolderTreeProps {
     nodes: FolderTreeNode[];
     documentsByFolderId: Map<string, Document[]>;
+    boardsByFolderId: Map<string, PublicFolderBoard[]>;
     selectedDocumentId: string | null;
+    selectedBoardId: string | null;
     onSelectDocument: (documentId: string) => void;
+    onSelectBoard: (boardId: string) => void;
     rootFolderId: string;
 }
 
 function PublicFolderBranch({
     node,
     documentsByFolderId,
+    boardsByFolderId,
     selectedDocumentId,
+    selectedBoardId,
     onSelectDocument,
+    onSelectBoard,
 }: {
     node: FolderTreeNode;
     documentsByFolderId: Map<string, Document[]>;
+    boardsByFolderId: Map<string, PublicFolderBoard[]>;
     selectedDocumentId: string | null;
+    selectedBoardId: string | null;
     onSelectDocument: (documentId: string) => void;
+    onSelectBoard: (boardId: string) => void;
 }) {
     const [expanded, setExpanded] = useState(true);
     const documents = documentsByFolderId.get(node.id) || [];
-    const hasChildren = node.subfolders.length > 0 || documents.length > 0;
+    const boards = boardsByFolderId.get(node.id) || [];
+    const hasChildren = node.subfolders.length > 0 || documents.length > 0 || boards.length > 0;
 
     return (
         <div className="space-y-2">
@@ -44,6 +61,26 @@ function PublicFolderBranch({
 
             {expanded && (
                 <div className="ml-5 space-y-1 border-l border-line pl-3">
+                    {boards.map((board) => {
+                        const isSelected = selectedBoardId === board.id;
+
+                        return (
+                            <button
+                                key={board.id}
+                                type="button"
+                                onClick={() => onSelectBoard(board.id)}
+                                className={`flex w-full items-center gap-2 rounded-control px-2 py-2 text-left text-sm transition-colors ${
+                                    isSelected
+                                        ? 'bg-signal-soft text-ink ring-1 ring-signal/35'
+                                        : 'text-ink-muted hover:bg-surface-raised hover:text-ink'
+                                }`}
+                            >
+                                <ViewColumnsIcon className="h-4 w-4 shrink-0" />
+                                <span className="truncate">{board.name || 'Untitled board'}</span>
+                            </button>
+                        );
+                    })}
+
                     {documents.map((document) => {
                         const isSelected = selectedDocumentId === document.id;
 
@@ -69,8 +106,11 @@ function PublicFolderBranch({
                             key={child.id}
                             node={child}
                             documentsByFolderId={documentsByFolderId}
+                            boardsByFolderId={boardsByFolderId}
                             selectedDocumentId={selectedDocumentId}
+                            selectedBoardId={selectedBoardId}
                             onSelectDocument={onSelectDocument}
+                            onSelectBoard={onSelectBoard}
                         />
                     ))}
                 </div>
@@ -82,8 +122,11 @@ function PublicFolderBranch({
 export function PublicFolderTree({
     nodes,
     documentsByFolderId,
+    boardsByFolderId,
     selectedDocumentId,
+    selectedBoardId,
     onSelectDocument,
+    onSelectBoard,
     rootFolderId,
 }: PublicFolderTreeProps) {
     const rootNode = nodes.find((node) => node.id === rootFolderId) || nodes[0];
@@ -96,8 +139,11 @@ export function PublicFolderTree({
         <PublicFolderBranch
             node={rootNode}
             documentsByFolderId={documentsByFolderId}
+            boardsByFolderId={boardsByFolderId}
             selectedDocumentId={selectedDocumentId}
+            selectedBoardId={selectedBoardId}
             onSelectDocument={onSelectDocument}
+            onSelectBoard={onSelectBoard}
         />
     );
 }

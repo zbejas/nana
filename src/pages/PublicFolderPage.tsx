@@ -1,9 +1,11 @@
-import { BookOpenIcon } from '@heroicons/react/24/outline';
+import { BookOpenIcon, ClockIcon } from '@heroicons/react/24/outline';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { PublicDocumentView } from '../components/public/PublicDocumentView';
 import { PublicTopBar } from '../components/public/PublicTopBar';
 import { PublicFolderTree } from '../components/public/PublicFolderTree';
+import { PublicBoardView } from '../components/public/PublicBoardView';
+import { countDoneTasks, countOpenTasks } from '../components/public/board';
 import { Badge, Button } from '../components/ui';
 import logo from '../assets/nana.svg';
 import {
@@ -11,6 +13,7 @@ import {
     fetchPublicFolderShare,
     getPublicFolderAttachmentUrl,
     rewritePublicAttachmentUrls,
+    type PublicFolderBoard,
     type PublicFolderShareResponse,
 } from '../lib/public-sharing';
 
@@ -50,6 +53,10 @@ export function PublicFolderPage() {
     }, [shareToken]);
 
     const selectedDocumentId = searchParams.get('document');
+    const selectedBoardId = searchParams.get('board');
+
+    const boards = useMemo(() => data?.boards ?? [], [data]);
+
     const documentsByFolderId = useMemo(() => {
         const map = new Map<string, PublicFolderShareResponse['documents']>();
 
@@ -67,6 +74,23 @@ export function PublicFolderPage() {
         return map;
     }, [data]);
 
+    const boardsByFolderId = useMemo(() => {
+        const map = new Map<string, PublicFolderBoard[]>();
+
+        if (!data) {
+            return map;
+        }
+
+        for (const board of boards) {
+            const key = board.folder || data.rootFolder.id || '';
+            const group = map.get(key) || [];
+            group.push(board);
+            map.set(key, group);
+        }
+
+        return map;
+    }, [boards, data]);
+
     const folderTree = useMemo(() => (data ? buildPublicFolderTree(data) : []), [data]);
 
     const activeDocument = useMemo(() => {
@@ -74,19 +98,69 @@ export function PublicFolderPage() {
             return null;
         }
 
-        const nextDocumentId = selectedDocumentId || data.entryDocumentId;
+        if (selectedDocumentId) {
+            const selectedDocument = data.documents.find((document) => document.id === selectedDocumentId);
+            if (selectedDocument) {
+                return selectedDocument;
+            }
+        }
+
+        if (selectedBoardId) {
+            return null;
+        }
+
+        const nextDocumentId = data.entryDocumentId;
         return data.documents.find((document) => document.id === nextDocumentId) || data.documents[0] || null;
-    }, [data, selectedDocumentId]);
+    }, [data, selectedBoardId, selectedDocumentId]);
+
+    const activeBoard = useMemo(() => {
+        if (!data) {
+            return null;
+        }
+
+        if (selectedBoardId) {
+            return boards.find((board) => board.id === selectedBoardId) || null;
+        }
+
+        if (selectedDocumentId || activeDocument) {
+            return null;
+        }
+
+        return boards[0] || null;
+    }, [activeDocument, boards, data, selectedBoardId, selectedDocumentId]);
 
     useEffect(() => {
-        if (!data || !activeDocument || selectedDocumentId === activeDocument.id) {
+        if (!data) {
             return;
         }
 
-        const nextSearchParams = new URLSearchParams(searchParams);
-        nextSearchParams.set('document', activeDocument.id);
-        setSearchParams(nextSearchParams, { replace: true });
-    }, [activeDocument, data, searchParams, selectedDocumentId, setSearchParams]);
+        if (activeBoard) {
+            if (selectedBoardId === activeBoard.id) {
+                return;
+            }
+
+            const nextSearchParams = new URLSearchParams(searchParams);
+            nextSearchParams.delete('document');
+            nextSearchParams.set('board', activeBoard.id);
+            setSearchParams(nextSearchParams, { replace: true });
+            return;
+        }
+
+        if (activeDocument && selectedDocumentId !== activeDocument.id) {
+            const nextSearchParams = new URLSearchParams(searchParams);
+            nextSearchParams.delete('board');
+            nextSearchParams.set('document', activeDocument.id);
+            setSearchParams(nextSearchParams, { replace: true });
+        }
+    }, [activeBoard, activeDocument, data, searchParams, selectedBoardId, selectedDocumentId, setSearchParams]);
+
+    const activeBoardCounts = useMemo(
+        () => ({
+            open: activeBoard ? countOpenTasks(activeBoard.tasks) : 0,
+            done: activeBoard ? countDoneTasks(activeBoard.tasks) : 0,
+        }),
+        [activeBoard],
+    );
 
     const renderedContent = useMemo(() => {
         if (!activeDocument) {
@@ -106,7 +180,15 @@ export function PublicFolderPage() {
 
     const handleSelectDocument = (documentId: string) => {
         const nextSearchParams = new URLSearchParams(searchParams);
+        nextSearchParams.delete('board');
         nextSearchParams.set('document', documentId);
+        setSearchParams(nextSearchParams, { replace: true });
+    };
+
+    const handleSelectBoard = (boardId: string) => {
+        const nextSearchParams = new URLSearchParams(searchParams);
+        nextSearchParams.delete('document');
+        nextSearchParams.set('board', boardId);
         setSearchParams(nextSearchParams, { replace: true });
     };
 
@@ -141,9 +223,20 @@ export function PublicFolderPage() {
 
     const topBarRight = (
         <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
-            {activeDocument?.updated && (
+            {activeBoard && (
+                <span className="inline-flex items-center gap-1.5 text-[11.5px] tabular-nums text-ink-muted">
+                    <ClockIcon className="h-3.5 w-3.5" />
+                    {activeBoardCounts.open} open · {activeBoardCounts.done} done
+                </span>
+            )}
+            {(activeBoard?.updated || activeDocument?.updated) && (
                 <span className="hidden text-[11.5px] text-ink-muted sm:inline">
-                    Updated {new Date(activeDocument.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    Updated{' '}
+                    {new Date(activeBoard?.updated || activeDocument?.updated || '').toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                    })}
                 </span>
             )}
             {data.expiresAt && <Badge tone="warning">Expires {new Date(data.expiresAt).toLocaleDateString()}</Badge>}
@@ -155,7 +248,7 @@ export function PublicFolderPage() {
             <PublicTopBar
                 subtitle={data.rootFolder.name}
                 author={data.author?.name}
-                title={activeDocument?.title || data.rootFolder.name}
+                title={activeBoard?.name || activeDocument?.title || data.rootFolder.name}
                 rightContent={topBarRight}
                 logo={logo}
             />
@@ -171,8 +264,11 @@ export function PublicFolderPage() {
                             <PublicFolderTree
                                 nodes={folderTree}
                                 documentsByFolderId={documentsByFolderId}
+                                boardsByFolderId={boardsByFolderId}
                                 selectedDocumentId={activeDocument?.id || null}
+                                selectedBoardId={activeBoard?.id || null}
                                 onSelectDocument={handleSelectDocument}
+                                onSelectBoard={handleSelectBoard}
                                 rootFolderId={data.rootFolder.id}
                             />
                         </div>
@@ -180,7 +276,9 @@ export function PublicFolderPage() {
                 </aside>
 
                 <div className="mx-auto w-full min-w-0 max-w-3xl flex-1">
-                    {activeDocument ? (
+                    {activeBoard ? (
+                        <PublicBoardView board={activeBoard} tasks={activeBoard.tasks} />
+                    ) : activeDocument ? (
                         <PublicDocumentView
                             content={renderedContent}
                             attachments={data.shareAttachments ? activeDocument.attachments : []}
@@ -193,7 +291,7 @@ export function PublicFolderPage() {
                             content=""
                             attachments={[]}
                             getAttachmentUrl={() => ''}
-                            emptyMessage="The owner has not added any documents to this folder yet."
+                            emptyMessage="The owner has not added any notes or boards to this folder yet."
                         />
                     )}
                 </div>

@@ -37,6 +37,7 @@ export interface PublicFolderShareResponse {
     rootFolder: Folder;
     folders: Folder[];
     documents: Document[];
+    boards: PublicFolderBoard[];
     entryDocumentId: string | null;
 }
 
@@ -69,6 +70,14 @@ export interface PublicBoardShareResponse {
     expiresAt: string | null;
     author: PublicAuthor | null;
     board: PublicBoard;
+    tasks: PublicBoardTask[];
+}
+
+/**
+ * A board reached through a shared folder. It carries its tasks so the folder
+ * reader can render it without a separate share token.
+ */
+export interface PublicFolderBoard extends PublicBoard {
     tasks: PublicBoardTask[];
 }
 
