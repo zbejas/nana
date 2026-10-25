@@ -59,7 +59,7 @@ export function LimitsSettings() {
       setMessage(null);
 
       try {
-        const response = await fetch('/pb/api/admin/attachments', { headers: buildHeaders() });
+        const response = await fetch('/api/v1/admin/attachments', { headers: buildHeaders() });
         if (!response.ok) {
           throw new Error(`Failed to load limits (${response.status})`);
         }
@@ -130,7 +130,7 @@ export function LimitsSettings() {
         },
       };
 
-      const response = await fetch('/pb/api/admin/attachments', {
+      const response = await fetch('/api/v1/admin/attachments', {
         method: 'PATCH',
         headers: buildHeaders(),
         body: JSON.stringify(payload),
@@ -265,9 +265,9 @@ export function LimitsSettings() {
 
         <form className="mt-5 flex flex-1 flex-col gap-4" onSubmit={handleRateLimitSave}>
           <Field
-            label="PocketBase proxy"
+            label="API"
             htmlFor="rl-pb"
-            hint="Requests per minute per IP for /pb routes."
+            hint="Requests per minute per IP for /api/v1 routes."
             error={rlError}
           >
             <div className="relative">

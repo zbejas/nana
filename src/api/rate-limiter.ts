@@ -12,7 +12,8 @@ const POCKETBASE_URL = serverConfig.pocketbaseUrl;
 
 export interface RateLimitConfig {
     enabled: boolean;
-    /** Max requests per minute for /pb/* routes */
+    /** Max requests per minute for /api/v1/* routes. Kept under the legacy
+     * `pbMaxPerMinute` key so existing settings records keep working. */
     pbMaxPerMinute: number;
     /** Max requests per minute for all other routes (app / static) */
     appMaxPerMinute: number;
@@ -67,8 +68,8 @@ export async function checkRateLimit(
     if (!config.enabled) return null;
 
     const url = new URL(req.url);
-    const isPb = url.pathname.startsWith("/pb");
-    const limiter = isPb ? pbLimiter : appLimiter;
+    const isApi = url.pathname.startsWith("/api/v1");
+    const limiter = isApi ? pbLimiter : appLimiter;
     if (!limiter) return null;
 
     // Resolve client IP

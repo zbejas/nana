@@ -4,8 +4,12 @@ import { resolve } from "path";
 const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, "");
 
 export const BASE_URL = trimTrailingSlash(process.env.TEST_BASE_URL || "http://127.0.0.1:3000");
-export const PB_API = `${BASE_URL}/pb/api`;
+/** Internal PocketBase origin. Tests use it for fixtures and PB hook/route assertions; the browser never does. */
+export const PB_DIRECT_URL = trimTrailingSlash(process.env.POCKETBASE_URL || "http://127.0.0.1:8090");
+export const PB_API = `${PB_DIRECT_URL}/api`;
 export const PUBLIC_API = `${PB_API}/public`;
+/** Public Elysia browser facade. */
+export const BROWSER_API = `${BASE_URL}/api/v1`;
 export const TEST_PASSWORD = "testPassword123!";
 
 const CONTAINER_CREDENTIALS_PATH = "/app/pocketbase/pb_data/superuser_credentials.json";

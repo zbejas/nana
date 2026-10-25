@@ -2,9 +2,10 @@
  * Small HTTP helpers shared by the integration suite.
  *
  * Everything here talks to the real stack: `bunRequest` hits the Bun origin
- * and `pbRequest` hits PocketBase through the Bun `/pb` proxy, exactly like the
- * browser does. Helpers throw with the response body attached so a failing
- * assertion shows the server's own explanation.
+ * and `pbRequest` hits the loopback PocketBase origin for fixtures and hook/
+ * route assertions. Browser-facing behavior lives under `/api/v1` and is
+ * covered separately. Helpers throw with the response body attached so a
+ * failing assertion shows the server's own explanation.
  */
 
 import { BASE_URL, PB_API } from "./setup";

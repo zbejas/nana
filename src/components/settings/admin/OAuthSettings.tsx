@@ -62,7 +62,7 @@ export function OAuthSettings() {
 
   const isAuthenticated = pb.authStore.isValid;
   const redirectUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/pb/api/oauth2-redirect`
+    ? `${window.location.origin}/api/v1/auth/oauth2/callback`
     : '';
 
   const buildHeaders = (): HeadersInit => {
@@ -81,7 +81,7 @@ export function OAuthSettings() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch('/pb/api/admin/oauth/providers', {
+        const res = await fetch('/api/v1/admin/oauth/providers', {
           headers: buildHeaders(),
         });
         if (!res.ok) throw new Error(`Failed to load settings (${res.status})`);
@@ -122,7 +122,7 @@ export function OAuthSettings() {
         })),
       };
 
-      const res = await fetch('/pb/api/admin/oauth/providers', {
+      const res = await fetch('/api/v1/admin/oauth/providers', {
         method: 'PATCH',
         headers: buildHeaders(),
         body: JSON.stringify(payload),

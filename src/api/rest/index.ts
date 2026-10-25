@@ -50,6 +50,7 @@ import {
     UpdateNoteBodySchema,
     UpdateTaskBodySchema,
 } from "./schemas";
+import { browserApi } from "./browser";
 import {
     apiOpenApiConfig,
     GEIST_FONT_PATH,
@@ -357,6 +358,7 @@ export const apiApp = new Elysia({ name: "nana-api" })
         assetResponse(geistMonoFontPath, "font/woff2", "public, max-age=31536000, immutable"), {
         detail: { hide: true },
     })
+    .use(browserApi)
     .use(v1);
 
 export type ApiApp = typeof apiApp;

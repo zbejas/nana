@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { bunRequest, expectStatus, pbRequest, readJson } from "../helpers/client";
 import { createNote, createUser, getSuperuserToken, type TestUser } from "../helpers/factories";
+import { authHeaders, BROWSER_API } from "../helpers/setup";
 
 const SECURITY_HEADERS = [
     "Content-Security-Policy",
@@ -9,7 +10,7 @@ const SECURITY_HEADERS = [
     "Referrer-Policy",
 ] as const;
 
-describe("Security headers and PocketBase proxy", () => {
+describe("Security headers and public surface", () => {
     let user: TestUser;
     let superuserToken: string;
 
@@ -19,15 +20,15 @@ describe("Security headers and PocketBase proxy", () => {
     });
 
     describe("security headers", () => {
-        const paths = ["/api/app/version", "/manifest.webmanifest", "/pb/api/health", "/nana.svg"];
+        const paths = ["/api/app/version", "/manifest.webmanifest", "/api/v1/check-users", "/nana.svg"];
 
-        test("are present on Bun, proxy, static, and SPA responses", async () => {
+        test("are present on Bun, API, static, and SPA responses", async () => {
             for (const path of paths) {
                 const res = await bunRequest(path);
                 await expectStatus(res, 200, path);
 
                 for (const header of SECURITY_HEADERS) {
-                    expect(res.headers.get(header)).toBeTruthy();
+                    expect(res.headers.get(header), `${path} missing ${header}`).toBeTruthy();
                 }
             }
         });
@@ -51,7 +52,49 @@ describe("Security headers and PocketBase proxy", () => {
         });
     });
 
-    describe("PocketBase proxy", () => {
+    describe("public PocketBase surface is gone", () => {
+        test("/pb and /pb/* return 404 instead of proxying PocketBase", async () => {
+            for (const path of ["/pb", "/pb/api/health", "/pb/api/collections/users/records"]) {
+                const res = await bunRequest(path);
+                await expectStatus(res, 404, path);
+                expect(await res.text()).not.toContain("PocketBase");
+            }
+        });
+
+        test("the browser facade requires a user token", async () => {
+            const res = await bunRequest(`${BROWSER_API}/records/documents`);
+            await expectStatus(res, 401);
+            const body = await readJson<{ message?: string }>(res);
+            expect((body.message ?? "").toLowerCase()).toContain("authorization");
+        });
+    });
+
+    describe("Elysia browser facade", () => {
+        test("reads records with PB filters using the caller's token", async () => {
+            await createNote(user, { title: "Find me by filter", content: "through Elysia" });
+
+            const res = await bunRequest(
+                `${BROWSER_API}/records/documents?filter=${encodeURIComponent(`title="Find me by filter"`)}`,
+                { headers: authHeaders(user.token) },
+            );
+            await expectStatus(res, 200);
+            const page = await readJson<{ items: Array<{ title: string; content: string }> }>(res);
+            expect(page.items.some((item) => item.title === "Find me by filter")).toBe(true);
+            expect(page.items[0]?.content).toBe("through Elysia");
+        });
+
+        test("hides another user's record behind 404", async () => {
+            const note = await createNote(user, { title: "Private to proxy test" });
+            const other = await createUser("api-security-other");
+
+            const res = await bunRequest(`${BROWSER_API}/records/documents/${note.id}`, {
+                headers: authHeaders(other.token),
+            });
+            await expectStatus(res, 404);
+        });
+    });
+
+    describe("loopback PocketBase (test fixture access)", () => {
         test("forwards GET queries and upstream status codes", async () => {
             const res = await pbRequest("/health");
             await expectStatus(res, 200);
@@ -67,16 +110,16 @@ describe("Security headers and PocketBase proxy", () => {
             expect(page.items).toHaveLength(1);
         });
 
-        test("passes through method, JSON body, auth, and 404s", async () => {
-            const note = await createNote(user, { title: "Proxy note", content: "through the proxy" });
+        test("supports method, JSON body, auth, and 404s", async () => {
+            const note = await createNote(user, { title: "Loopback note", content: "direct PB" });
 
             const readRes = await pbRequest(`/collections/documents/records/${note.id}`, {
                 headers: { Authorization: user.token },
             });
             await expectStatus(readRes, 200);
             const read = await readJson<{ title: string; content: string }>(readRes);
-            expect(read.title).toBe("Proxy note");
-            expect(read.content).toBe("through the proxy");
+            expect(read.title).toBe("Loopback note");
+            expect(read.content).toBe("direct PB");
 
             const missing = await pbRequest("/collections/documents/records/nonexistent123456", {
                 headers: { Authorization: user.token },
@@ -90,18 +133,6 @@ describe("Security headers and PocketBase proxy", () => {
                 headers: { Authorization: "invalid-token-value" },
             });
             await expectStatus(res, 401);
-        });
-
-        test("preserves filter query strings", async () => {
-            await createNote(user, { title: "Find me by filter" });
-
-            const res = await pbRequest(
-                `/collections/documents/records?filter=${encodeURIComponent(`title="Find me by filter"`)}`,
-                { headers: { Authorization: user.token } },
-            );
-            await expectStatus(res, 200);
-            const page = await readJson<{ items: Array<{ title: string }> }>(res);
-            expect(page.items.some((item) => item.title === "Find me by filter")).toBe(true);
         });
     });
 });

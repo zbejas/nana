@@ -149,7 +149,7 @@ export async function updateUser(
         }
 
         // Use admin endpoint that bypasses oldPassword requirement
-        const response = await fetch(`/pb/api/admin/users/${id}`, {
+        const response = await fetch(`/api/v1/admin/users/${id}`, {
             method: 'PATCH',
             headers: {
                 'Content-Type': 'application/json',
@@ -262,7 +262,7 @@ export async function requestEmailChange(userId: string, newEmail: string): Prom
     try {
         logger.debug('Requesting email change', { userId, newEmail });
 
-        const response = await fetch(`/pb/api/admin/users/${userId}/request-email-change`, {
+        const response = await fetch(`/api/v1/admin/users/${userId}/request-email-change`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

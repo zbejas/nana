@@ -49,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkHasUsers = useCallback(async (): Promise<boolean> => {
     try {
       // Use PocketBase hook endpoint that runs with admin privileges
-      const response = await fetch('/pb/api/check-users');
+      const response = await fetch('/api/v1/check-users');
       
       if (!response.ok) {
         logger.warn('Failed to check users endpoint, assuming users exist');

@@ -6,7 +6,7 @@ import type { Document } from './types';
 
 async function postTrashAction(path: string, payload: Record<string, unknown>) {
     const token = pb.authStore.token;
-    const response = await fetch(`/pb${path}`, {
+    const response = await fetch(`/api/v1${path.replace(/^\/api/, '')}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

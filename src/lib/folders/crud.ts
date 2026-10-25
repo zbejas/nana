@@ -65,7 +65,7 @@ export async function getFolder(id: string): Promise<Folder> {
  * Deletes a folder permanently (and all its subfolders due to cascade)
  */
 export async function deleteFolder(id: string): Promise<boolean> {
-    const response = await fetch('/pb/api/trash/move-folder', {
+    const response = await fetch('/api/v1/trash/move-folder', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

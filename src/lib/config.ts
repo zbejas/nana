@@ -39,13 +39,13 @@ export const serverConfig = {
 
 // Client-side configuration (browser)
 export const clientConfig = {
-    /** PocketBase URL for client-side requests (always proxied through /pb) */
-    get pocketbaseUrl() {
+    /** Elysia browser API base. PocketBase is never called by the browser. */
+    get apiUrl() {
         if (typeof window !== 'undefined') {
-            return `${window.location.origin}/pb`;
+            return `${window.location.origin}/api/v1`;
         }
         // Fallback for SSR/build time
-        return 'http://127.0.0.1:3000/pb';
+        return 'http://127.0.0.1:3000/api/v1';
     },
 };
 

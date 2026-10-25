@@ -62,7 +62,7 @@ export function SMTPSettings() {
       setError(null);
       setMessage(null);
       try {
-        const res = await fetch('/pb/api/admin/smtp', {
+        const res = await fetch('/api/v1/admin/smtp', {
           headers: buildHeaders(),
         });
         if (!res.ok) {
@@ -118,7 +118,7 @@ export function SMTPSettings() {
         },
       };
 
-      const res = await fetch('/pb/api/admin/smtp', {
+      const res = await fetch('/api/v1/admin/smtp', {
         method: 'PATCH',
         headers: buildHeaders(),
         body: JSON.stringify(payload),
@@ -144,7 +144,7 @@ export function SMTPSettings() {
     setTestResult(null);
     setError(null);
     try {
-      const res = await fetch('/pb/api/admin/smtp/test', {
+      const res = await fetch('/api/v1/admin/smtp/test', {
         method: 'POST',
         headers: buildHeaders(),
       });

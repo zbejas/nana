@@ -3,7 +3,7 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 import index from "./index.html";
 import { serverConfig } from "./lib/config";
-import { handlePocketBaseProxy } from "./api/pocketbase-proxy";
+
 import { handleExport } from "./api/export/index";
 import { handleChat } from "./api/chat/index";
 import { APP_VERSION, handleAppVersion } from "./api/app-version";
@@ -120,9 +120,16 @@ function withSecurityHeaders(response: Response): Response {
  * Rate limits and security headers stay at the Bun edge.
  */
 async function handleRest(req: Request): Promise<Response> {
-  // Workspace writes can fan out into PocketBase calls; give the JSON surface
-  // more headroom than the default request timeout.
-  server.timeout(req, 60);
+  const path = new URL(req.url).pathname;
+  if (path === "/api/v1/realtime") {
+    // EventSource stays open for the lifetime of the tab. Never apply the
+    // normal JSON request timeout to the SSE relay.
+    server.timeout(req, 0);
+  } else {
+    // Workspace writes can fan out into PocketBase calls; give the JSON
+    // surface more headroom than the default request timeout.
+    server.timeout(req, 60);
+  }
   const blocked = await checkRateLimit(req, server);
   if (blocked) return withSecurityHeaders(blocked);
   return withSecurityHeaders(await apiApp.handle(req));
@@ -249,12 +256,11 @@ const server = serve({
       }
     },
 
-    // Proxy all PocketBase requests through our server
-    "/pb/*": async (req): Promise<Response> => {
-      const blocked = await checkRateLimit(req, server);
-      if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handlePocketBaseProxy(req, server));
-    },
+    // PocketBase is loopback-only. The old public proxy is intentionally gone:
+    // every browser read/write, auth, file, realtime, trash, admin, and public
+    // share now goes through /api/v1 in Elysia.
+    "/pb": (): Response => withSecurityHeaders(new Response("Not Found", { status: 404 })),
+    "/pb/*": (): Response => withSecurityHeaders(new Response("Not Found", { status: 404 })),
 
     // Serve built files in production, or index.html in development
     "/*": isProduction

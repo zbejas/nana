@@ -139,7 +139,7 @@ export function getPublicBoardUrl(shareToken: string) {
 }
 
 function publicFetch(path: string) {
-    return fetch(`/pb${path}`, {
+    return fetch(`/api/v1${path.replace(/^\/api/, '')}`, {
         headers: {
             Accept: 'application/json',
         },
@@ -284,11 +284,11 @@ export async function fetchPublicBoardShare(shareToken: string): Promise<PublicB
 }
 
 export function getPublicDocumentAttachmentUrl(shareToken: string, filename: string) {
-    return `/pb/api/public/documents/${encodeURIComponent(shareToken)}/files/${encodeURIComponent(filename)}`;
+    return `/api/v1/public/documents/${encodeURIComponent(shareToken)}/files/${encodeURIComponent(filename)}`;
 }
 
 export function getPublicFolderAttachmentUrl(shareToken: string, documentId: string, filename: string) {
-    return `/pb/api/public/folders/${encodeURIComponent(shareToken)}/files/${encodeURIComponent(documentId)}/${encodeURIComponent(filename)}`;
+    return `/api/v1/public/folders/${encodeURIComponent(shareToken)}/files/${encodeURIComponent(documentId)}/${encodeURIComponent(filename)}`;
 }
 
 function escapeRegExp(value: string) {
@@ -306,8 +306,12 @@ export function rewritePublicAttachmentUrls(
         const escapedFilename = escapeRegExp(filename);
         const escapedDocumentId = escapeRegExp(document.id);
         const patterns = [
+            // Legacy /pb content from notes saved before the Elysia cutover.
             new RegExp(`https?:\\/\\/[^\\s)"]+\\/pb\\/api\\/files\\/[^\\/]+\\/${escapedDocumentId}\\/${escapedFilename}(?:\\?[^\\s)"]*)?`, 'g'),
             new RegExp(`\\/pb\\/api\\/files\\/[^\\/]+\\/${escapedDocumentId}\\/${escapedFilename}(?:\\?[^\\s)"]*)?`, 'g'),
+            // Current same-origin file paths.
+            new RegExp(`https?:\\/\\/[^\\s)"]+\\/api\\/v1\\/files\\/[^\\/]+\\/${escapedDocumentId}\\/${escapedFilename}(?:\\?[^\\s)"]*)?`, 'g'),
+            new RegExp(`\\/api\\/v1\\/files\\/[^\\/]+\\/${escapedDocumentId}\\/${escapedFilename}(?:\\?[^\\s)"]*)?`, 'g'),
             new RegExp(`\\/api\\/files\\/[^\\/]+\\/${escapedDocumentId}\\/${escapedFilename}(?:\\?[^\\s)"]*)?`, 'g'),
         ];
 

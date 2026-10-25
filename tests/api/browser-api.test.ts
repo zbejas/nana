@@ -1,0 +1,299 @@
+import { beforeAll, describe, expect, test } from "bun:test";
+import { bunRequest, expectStatus, readJson } from "../helpers/client";
+import {
+    createAdmin,
+    createFolder,
+    createNoteWithAttachment,
+    createUser,
+    type TestUser,
+} from "../helpers/factories";
+import { authHeaders, BROWSER_API, TEST_PASSWORD, uniqueSuffix } from "../helpers/setup";
+
+/**
+ * Public browser facade: /api/v1/auth, /api/v1/records, /api/v1/files,
+ * /api/v1/trash, /api/v1/admin, and /api/v1/public. This is the replacement
+ * for the deleted /pb proxy, so it keeps PocketBase's record shape while
+ * Elysia owns authentication, allowlists, author injection, relation checks,
+ * and sanitization.
+ */
+
+let user: TestUser;
+let other: TestUser;
+let admin: TestUser;
+
+const jsonHeaders = (token: string) => authHeaders(token, true);
+
+function api(path: string): string {
+    return `${BROWSER_API}${path}`;
+}
+
+describe("browser auth facade", () => {
+    beforeAll(async () => {
+        user = await createUser("browser-user");
+        other = await createUser("browser-other");
+        admin = await createAdmin("browser-admin");
+    });
+
+    test("logs in, refreshes, returns the current user, and lists auth methods", async () => {
+        const login = await bunRequest(api("/auth/login"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identity: user.email, password: TEST_PASSWORD }),
+        });
+        await expectStatus(login, 200, "browser login");
+        const session = await readJson<{ token: string; record: { id: string } }>(login);
+        expect(session.token.length).toBeGreaterThan(10);
+        expect(session.record.id).toBe(user.id);
+
+        const refresh = await bunRequest(api("/auth/refresh"), {
+            method: "POST",
+            headers: authHeaders(session.token),
+        });
+        await expectStatus(refresh, 200, "browser refresh");
+
+        const me = await bunRequest(api("/me"), { headers: authHeaders(session.token) });
+        await expectStatus(me, 200, "browser me");
+        expect((await readJson<{ id: string }>(me)).id).toBe(user.id);
+
+        const methods = await bunRequest(api("/auth/methods"));
+        await expectStatus(methods, 200, "browser auth methods");
+        const methodsBody = await readJson<{ password?: { enabled?: boolean } }>(methods);
+        expect(methodsBody.password?.enabled).toBe(true);
+    });
+
+    test("rejects bad credentials and a missing token", async () => {
+        const bad = await bunRequest(api("/auth/login"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identity: user.email, password: "not-the-password" }),
+        });
+        await expectStatus(bad, 400, "bad login");
+
+        const noToken = await bunRequest(api("/me"));
+        await expectStatus(noToken, 401, "missing token");
+    });
+});
+
+describe("browser record facade", () => {
+    test("injects the caller as author and sanitizes note content", async () => {
+        const res = await bunRequest(api("/records/documents"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({
+                title: `Browser note ${uniqueSuffix()}`,
+                slug: `browser-note-${uniqueSuffix()}`,
+                content: "<script>alert(1)</script><p>Safe body</p>",
+                author: other.id,
+                word_count: 999,
+            }),
+        });
+        await expectStatus(res, 200, "browser create note");
+        const note = await readJson<{ id: string; author: string; content: string; word_count: number }>(res);
+
+        expect(note.author).toBe(user.id);
+        expect(note.content).not.toContain("<script");
+        expect(note.content).toContain("Safe body");
+        expect(note.word_count).not.toBe(999);
+    });
+
+    test("rejects a folder owned by another user", async () => {
+        const foreignFolder = await createFolder(other, { name: `Foreign ${uniqueSuffix()}` });
+
+        const res = await bunRequest(api("/records/documents"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({
+                title: `Foreign folder note ${uniqueSuffix()}`,
+                slug: `foreign-folder-${uniqueSuffix()}`,
+                folder: foreignFolder.id,
+            }),
+        });
+        await expectStatus(res, 404, "foreign folder rejected");
+    });
+
+    test("runs the board and task relation checks", async () => {
+        const folder = await createFolder(user, { name: `Browser folder ${uniqueSuffix()}` });
+        const foreignFolder = await createFolder(other, { name: `Foreign folder ${uniqueSuffix()}` });
+
+        const boardRes = await bunRequest(api("/records/boards"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({
+                name: `Browser board ${uniqueSuffix()}`,
+                author: other.id,
+                folder: folder.id,
+            }),
+        });
+        await expectStatus(boardRes, 200, "browser create board");
+        const board = await readJson<{ id: string; author: string; folder: string }>(boardRes);
+        expect(board.author).toBe(user.id);
+        expect(board.folder).toBe(folder.id);
+
+        const foreignBoard = await bunRequest(api("/records/boards"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ name: "Nope", folder: foreignFolder.id }),
+        });
+        await expectStatus(foreignBoard, 404, "foreign board folder rejected");
+
+        const taskRes = await bunRequest(api("/records/tasks"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({
+                title: `Browser task ${uniqueSuffix()}`,
+                status: "next",
+                board: board.id,
+                author: other.id,
+            }),
+        });
+        await expectStatus(taskRes, 200, "browser create task");
+        const task = await readJson<{ id: string; author: string; board: string }>(taskRes);
+        expect(task.author).toBe(user.id);
+        expect(task.board).toBe(board.id);
+
+        const foreignTask = await bunRequest(api("/records/tasks"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ title: "Nope", status: "next", board: "missingboard123" }),
+        });
+        await expectStatus(foreignTask, 404, "missing board rejected");
+    });
+
+    test("does not let a user promote themselves through the users collection", async () => {
+        const res = await bunRequest(api(`/records/users/${user.id}`), {
+            method: "PATCH",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ name: "Renamed", admin: true }),
+        });
+        await expectStatus(res, 200, "self update");
+        const record = await readJson<{ admin?: boolean; name: string }>(res);
+        expect(record.admin).not.toBe(true);
+        expect(record.name).toBe("Renamed");
+    });
+
+    test("moves a note to trash and restores it", async () => {
+        const noteRes = await bunRequest(api("/records/documents"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({
+                title: `Trash browser note ${uniqueSuffix()}`,
+                slug: `trash-browser-${uniqueSuffix()}`,
+            }),
+        });
+        await expectStatus(noteRes, 200, "create trash note");
+        const note = await readJson<{ id: string }>(noteRes);
+
+        const trash = await bunRequest(api("/trash/move-document"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ documentId: note.id }),
+        });
+        await expectStatus(trash, 200, "move to trash");
+        const trashBody = await readJson<{ trashDocumentId: string }>(trash);
+
+        const restore = await bunRequest(api("/trash/restore-document"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ trashDocumentId: trashBody.trashDocumentId }),
+        });
+        await expectStatus(restore, 200, "restore from trash");
+        const restored = await readJson<{ documentId: string }>(restore);
+        expect(restored.documentId).toBeTruthy();
+        // The trash route may reuse the original document or create a new one
+        // when the original id is no longer present; both are valid restores.
+        const readRestored = await bunRequest(api(`/records/documents/${restored.documentId}`), {
+            headers: authHeaders(user.token),
+        });
+        await expectStatus(readRestored, 200, "read restored note");
+    });
+
+    test("serves protected files through the facade", async () => {
+        const note = await createNoteWithAttachment(
+            user,
+            `browser-${uniqueSuffix()}.txt`,
+            new TextEncoder().encode("attachment through Elysia"),
+        );
+
+        const tokenRes = await bunRequest(api("/files/token"), {
+            method: "POST",
+            headers: authHeaders(user.token),
+        });
+        await expectStatus(tokenRes, 200, "file token");
+        const tokenBody = await readJson<{ token: string }>(tokenRes);
+        expect(tokenBody.token.length).toBeGreaterThan(10);
+
+        const collectionName = (note as { collectionName?: string }).collectionName;
+        const filename = (note.attachments as string[] | undefined)?.[0];
+        expect(collectionName).toBe("documents");
+        expect(filename).toBeTruthy();
+
+        const fileRes = await bunRequest(
+            api(`/files/${collectionName}/${note.id}/${encodeURIComponent(filename!)}?token=${encodeURIComponent(tokenBody.token)}`),
+        );
+        await expectStatus(fileRes, 200, "file bytes");
+        expect(await fileRes.text()).toBe("attachment through Elysia");
+    });
+});
+
+describe("browser admin and public facade", () => {
+    test("protects admin routes and settings records", async () => {
+        const userSettings = await bunRequest(api("/records/settings"), {
+            headers: authHeaders(user.token),
+        });
+        await expectStatus(userSettings, 403, "non-admin settings");
+
+        const adminSettings = await bunRequest(api("/records/settings"), {
+            headers: authHeaders(admin.token),
+        });
+        await expectStatus(adminSettings, 200, "admin settings");
+
+        const userAdminRoute = await bunRequest(api("/admin/attachments"), {
+            headers: authHeaders(user.token),
+        });
+        await expectStatus(userAdminRoute, 403, "non-admin admin route");
+
+        const adminRoute = await bunRequest(api("/admin/attachments"), {
+            headers: authHeaders(admin.token),
+        });
+        await expectStatus(adminRoute, 200, "admin route");
+    });
+
+    test("serves a public document share and rejects a private one", async () => {
+        const token = `share-${uniqueSuffix()}`;
+        const createRes = await bunRequest(api("/records/documents"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({
+                title: `Public browser note ${uniqueSuffix()}`,
+                slug: `public-browser-${uniqueSuffix()}`,
+                content: "Public body",
+                is_public: true,
+                public_share_token: token,
+            }),
+        });
+        await expectStatus(createRes, 200, "create public note");
+
+        const publicRes = await bunRequest(api(`/public/documents/${encodeURIComponent(token)}`));
+        await expectStatus(publicRes, 200, "public document");
+        const payload = await readJson<{ type: string; document: { content: string } }>(publicRes);
+        expect(payload.type).toBe("document");
+        expect(payload.document.content).toContain("Public body");
+
+        const privateToken = `private-${uniqueSuffix()}`;
+        const privateRes = await bunRequest(api("/records/documents"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({
+                title: `Private browser note ${uniqueSuffix()}`,
+                slug: `private-browser-${uniqueSuffix()}`,
+                is_private: true,
+                is_public: true,
+                public_share_token: privateToken,
+            }),
+        });
+        await expectStatus(privateRes, 200, "create private note");
+
+        const hidden = await bunRequest(api(`/public/documents/${encodeURIComponent(privateToken)}`));
+        await expectStatus(hidden, 404, "private public share");
+    });
+});

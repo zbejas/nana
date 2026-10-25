@@ -104,7 +104,7 @@ export function UsersTab() {
       // Send password email if requested
       if (userData.sendPasswordEmail) {
         try {
-          const response = await fetch('/pb/api/admin/smtp/send-password', {
+          const response = await fetch('/api/v1/admin/smtp/send-password', {
             method: 'POST',
             headers: buildHeaders(),
             body: JSON.stringify({
@@ -203,7 +203,7 @@ export function UsersTab() {
       // Send password email if requested and password was changed
       if (userData.password && userData.sendPasswordEmail) {
         try {
-          const response = await fetch('/pb/api/admin/smtp/send-password', {
+          const response = await fetch('/api/v1/admin/smtp/send-password', {
             method: 'POST',
             headers: buildHeaders(),
             body: JSON.stringify({
