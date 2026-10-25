@@ -510,6 +510,7 @@ Folder response includes `rootFolder`, `folders`, `documents`, and `entryDocumen
 
 - **`/api/v1` has two contracts.** The typed workspace routes return camelCase DTOs and `{ error }` failures; the browser facade returns PocketBase-shaped records and `{ code, message, data }` failures. Do not mix their paths or schemas.
 - **The browser never calls PocketBase.** `src/lib/pocketbase.ts` is a small client over `/api/v1`; `/pb` returns `404`. Server-side code uses `serverConfig.pocketbaseUrl` on loopback.
+- **Legacy file links are rewritten.** Existing Markdown may contain `/pb/api/files/...`; `src/lib/legacy-urls.ts` rewrites those to `/api/v1/files/...` in Markdown previews and public views. There is no compatibility `/pb` route.
 - **The browser facade is an allowlist, not a proxy.** Do not add system collections, schema, logs, backups, or superuser paths to `/api/v1/records`. New collections need an explicit entry in `src/api/rest/browser/records.ts`.
 - **Ownership is server-injected.** Browser `author` values are ignored on create and removed on update. Folder parents, board folders, task boards, and note links are checked before the upstream write.
 - **Document content is sanitized at the edge.** The facade calls `sanitizeHtml()` on create/update; PocketBase is still the storage and rules engine.
