@@ -4,9 +4,9 @@ import { subscribeToTasks } from '../../lib/tasks';
 import { useAuth } from '../../lib/auth';
 
 /**
- * Board index data. Boards and tasks both drive it: task changes move the
- * counts, board changes add, rename, archive, or remove a row. Realtime events
- * are debounced into one refresh.
+ * Timeline and folder board data. Boards and tasks both drive it: task changes
+ * move the counts, board changes add, rename, archive, or remove a row.
+ * Realtime events are debounced into one refresh.
  */
 export function useBoardSummaries(includeArchived = false) {
   const { user } = useAuth();

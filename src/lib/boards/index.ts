@@ -88,9 +88,9 @@ export async function listBoards(options: ListBoardsOptions = {}): Promise<Board
   const records = await pb.collection(COLLECTION).getFullList<Board>({
     filter: options.includeArchived ? '' : 'archived = false',
     sort: '-created',
-    // The sidebar, folder view, board index, and timeline can all read boards
-    // at the same time. Keep these small list requests out of the SDK's
-    // auto-cancellation pool so one surface cannot abort another.
+    // The sidebar, folder view, and timeline can all read boards at the same
+    // time. Keep these small list requests out of the SDK's auto-cancellation
+    // pool so one surface cannot abort another.
     requestKey: null,
   });
 
@@ -180,8 +180,8 @@ export async function deleteBoardPermanently(id: string): Promise<void> {
 }
 
 /**
- * Boards with task counts for the board index. Counts come from one task
- * query and include boards with no tasks.
+ * Boards with task counts for the timeline and folder views. Counts come from
+ * one task query and include boards with no tasks.
  */
 export async function listBoardSummaries(
   options: ListBoardsOptions = {}
