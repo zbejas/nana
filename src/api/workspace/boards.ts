@@ -190,6 +190,13 @@ export async function updateBoard(
     }
     if (patch.isPrivate !== undefined) {
         body.is_private = patch.isPrivate === true;
+        if (patch.isPrivate === true) {
+            // Public and private are mutually exclusive. Clear the token so a
+            // privacy change cannot leave a stale public link behind.
+            body.is_public = false;
+            body.public_share_token = "";
+            body.public_expires_at = "";
+        }
         changed = true;
     }
     if (patch.folderId !== undefined) {

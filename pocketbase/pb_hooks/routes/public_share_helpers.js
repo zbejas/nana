@@ -133,7 +133,7 @@ function collectBoardTasks(boardId) {
     "tasks",
     "board = {:boardId}",
     "board_order,created",
-    500,
+    0,
     0,
     { boardId: boardId }
   )

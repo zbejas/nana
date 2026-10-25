@@ -132,7 +132,7 @@ export function PublicBoardView({ board, tasks }: PublicBoardViewProps) {
 
                 <div className="mt-10 flex items-center gap-2 border-t border-line pt-5 text-[11.5px] text-ink-muted">
                     <LockClosedIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                    Shared read-only. Task notes stay private to the owner.
+                    Shared read-only. Linked notes are not exposed.
                 </div>
             </div>
         </main>

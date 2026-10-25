@@ -562,7 +562,13 @@ export function BoardPage() {
         isOpen={publicShareModal.isOpen}
         isSaving={publicShareModal.isSaving}
         onClose={publicShareModal.close}
-        onSave={publicShareModal.save}
+        onSave={async (options) => {
+          const updated = await publicShareModal.save(options);
+          if (updated && typeof updated === 'object' && 'is_public' in updated) {
+            setBoard(updated as Board);
+          }
+          return updated;
+        }}
       />
 
       {board && (
