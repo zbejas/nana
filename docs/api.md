@@ -199,7 +199,7 @@ The browser facade is the replacement for `/pb`. It is public-facing Elysia code
 | `POST` | `/api/v1/admin/users/:id/request-email-change` | admin | Send an admin-initiated email change. |
 | `GET` | `/api/v1/public/documents/:token` | public | Public document payload. |
 | `GET` | `/api/v1/public/documents/:token/files/:filename` | public | Public attachment. |
-| `GET` | `/api/v1/public/folders/:token` | public | Public folder tree and documents. |
+| `GET` | `/api/v1/public/folders/:token` | public | Public folder tree, documents, and boards. |
 | `GET` | `/api/v1/public/folders/:token/files/:documentId/:filename` | public | Public folder attachment. |
 | `GET` | `/api/v1/public/boards/:token` | public | Public board and tasks. |
 
@@ -367,7 +367,7 @@ PocketBase listens only on `127.0.0.1:8090`. The paths below are shown as Pocket
 | `/api/check-users` | GET | `{ hasUsers, totalUsers }`; drives onboarding vs sign-in. |
 | `/api/public/documents/:shareToken` | GET | Public document payload. Validates `is_public`, `is_private`, and expiry. |
 | `/api/public/documents/:shareToken/files/:filename` | GET | Document attachment when `share_attachments` is true. |
-| `/api/public/folders/:shareToken` | GET | Folder tree plus descendant folders/documents. Private subtrees and private documents are skipped. |
+| `/api/public/folders/:shareToken` | GET | Folder tree plus descendant folders, documents, and active boards with their tasks. Private subtrees, private documents, and private/archived boards are skipped. |
 | `/api/public/folders/:shareToken/files/:documentId/:filename` | GET | Attachment for a document in a shared folder. |
 | `/api/public/boards/:shareToken` | GET | Board metadata plus tasks in board order. Archived, private, expired, and non-public boards return `404`. Linked task notes are omitted. |
 
@@ -502,7 +502,7 @@ Board response:
 }
 ```
 
-Folder response includes `rootFolder`, `folders`, `documents`, and `entryDocumentId`. Board tasks do not include `author`, `board`, or the linked `document`; the linked note keeps its own privacy and share state. Expired shares are disabled on read and swept by a 15-minute cron.
+Folder response includes `rootFolder`, `folders`, `documents`, `boards`, and `entryDocumentId`. Each folder board carries its own `tasks`; task fields match a standalone board share and omit `author`, `board`, and the linked `document`. The linked note keeps its own privacy and share state. Expired shares are disabled on read and swept by a 15-minute cron.
 
 ## Gotchas & invariants
 

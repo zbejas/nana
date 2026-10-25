@@ -300,7 +300,7 @@ Behavior:
 
 - Tokens are generated client-side with `crypto.getRandomValues` (20 bytes → 40 hex chars).
 - `ensureActivePublicShare()` rejects missing, private, and expired shares; expired shares are disabled on read.
-- Folder shares collect descendant folders and documents, skipping private subtrees/documents.
+- Folder shares collect descendant folders, documents, and active boards with their tasks, skipping private subtrees/documents/boards and archived boards.
 - Board shares return the board plus its tasks; archived boards, private boards, and boards without `is_public` return `404`.
 - Public board tasks omit `author`, `board`, and the linked `document`; a task’s note keeps its own privacy and share state.
 - A cron runs every 15 minutes to clear expired shares.

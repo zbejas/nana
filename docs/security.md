@@ -242,7 +242,7 @@ Public sharing is separate from collection rules and from the AI private lock:
 - `public_share_token` is a unique 20-byte random hex value.
 - `ensureActivePublicShare()` requires `is_public`, rejects `is_private`, and enforces `public_expires_at`.
 - Expired shares are disabled on read and cleaned by a 15-minute cron.
-- Folder shares skip private subtrees and private documents.
+- Folder shares skip private subtrees, private documents, and private or archived boards.
 - Board shares require `is_public`, reject `is_private` and `archived`, and return the board’s tasks without `author`, `board`, or the linked `document`.
 - Attachments require `share_attachments` and membership in the shared document/folder. Boards have no attachments and no attachment route.
 - Share tokens are not user auth tokens; never use them to authorize normal API access.

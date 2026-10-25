@@ -48,7 +48,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | **AI chat** | Ask about your notes and boards. The assistant reads them on demand with OpenAI, Google, or Ollama, and never writes to your workspace. |
 | **API and MCP** | Reach the same workspace from your own tools with a JSON API and a stateless MCP endpoint. Private records stay hidden from AI. |
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline of recent notes and boards. |
-| **Public sharing** | Share individual documents or entire folders via link, with optional expiration. |
+| **Public sharing** | Share documents, boards, or entire folders (with their notes and boards) via link, with optional expiration. |
 | **Version history** | Save snapshots and restore earlier states when needed. |
 | **Trash system** | Recover deleted content instead of losing it permanently. |
 | **Mobile-friendly** | Clean, responsive interface across screen sizes, with dark and light themes. |
