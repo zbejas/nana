@@ -141,15 +141,17 @@ beforeAll(async () => {
 });
 
 describe("public OpenAPI docs", () => {
-    test("GET /docs serves the Swagger UI page", async () => {
+    test("GET /docs serves the self-hosted API reference page", async () => {
         const res = await bunRequest("/docs");
         await expectStatus(res, 200, "docs page");
         expect(res.headers.get("Content-Type")).toContain("text/html");
 
         const html = await res.text();
-        expect(html).toContain("swagger-ui");
+        // The repository is migrating from Swagger UI to Scalar. Accept either
+        // provider while both configurations can be checked out.
+        expect(html).toMatch(/swagger-ui|api-reference/i);
         expect(html).toContain("docs/json");
-        expect(html).toContain("/docs/swagger-ui-bundle.js");
+        expect(html).toMatch(/\/docs\/(scalar|swagger-ui-bundle)\.js/);
     });
 
     test("GET /docs/json publishes the REST paths", async () => {
@@ -170,16 +172,26 @@ describe("public OpenAPI docs", () => {
         );
     });
 
-    test("GET /docs serves the self-hosted Swagger assets", async () => {
-        const bundle = await bunRequest("/docs/swagger-ui-bundle.js");
-        await expectStatus(bundle, 200, "swagger bundle");
+    test("GET /docs serves the self-hosted API reference assets", async () => {
+        const html = await (await bunRequest("/docs")).text();
+        const usesScalar = html.includes("/docs/scalar.js");
+
+        const bundlePath = usesScalar ? "/docs/scalar.js" : "/docs/swagger-ui-bundle.js";
+        const bundle = await bunRequest(bundlePath);
+        await expectStatus(bundle, 200, "docs bundle");
         expect(bundle.headers.get("Content-Type")).toContain("application/javascript");
         expect((await bundle.text()).length).toBeGreaterThan(1_000);
 
-        const css = await bunRequest("/docs/swagger-ui.css");
-        await expectStatus(css, 200, "swagger styles");
-        expect(css.headers.get("Content-Type")).toContain("text/css");
-        expect(await css.text()).toContain("swagger-ui");
+        if (usesScalar) {
+            const font = await bunRequest("/docs/geist.woff2");
+            await expectStatus(font, 200, "docs font");
+            expect(font.headers.get("Content-Type")).toContain("font/woff2");
+        } else {
+            const css = await bunRequest("/docs/swagger-ui.css");
+            await expectStatus(css, 200, "swagger styles");
+            expect(css.headers.get("Content-Type")).toContain("text/css");
+            expect(await css.text()).toContain("swagger-ui");
+        }
     });
 });
 
