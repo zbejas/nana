@@ -1,5 +1,6 @@
 import MDEditor from '@uiw/react-markdown-preview';
 import { rehypeSanitizePlugin } from '../lib/sanitize';
+import { rewriteLegacyFileUrl } from '../lib/legacy-urls';
 import { useTheme } from '../lib/theme';
 
 interface MarkdownPreviewProps {
@@ -21,6 +22,8 @@ export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProp
   const previewTagFallbacks = {
     iso: ({ children }: any) => <span>{children}</span>,
     docname: ({ children }: any) => <span>{children}</span>,
+    img: ({ src, alt, ...props }: any) => <img src={rewriteLegacyFileUrl(src)} alt={alt} {...props} />,
+    a: ({ href, children, ...props }: any) => <a href={rewriteLegacyFileUrl(href)} {...props}>{children}</a>,
   } as any;
 
   return (

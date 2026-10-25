@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { rehypeSanitizePlugin } from '../../lib/sanitize';
+import { rewriteLegacyFileUrl } from '../../lib/legacy-urls';
 import type { ViewMode } from './EditorHeader';
 
 interface EditorContentProps {
@@ -20,6 +21,8 @@ export function EditorContent({ content, onContentChange, readOnly = false, view
   const previewTagFallbacks = {
     iso: ({ children }: any) => <span>{children}</span>,
     docname: ({ children }: any) => <span>{children}</span>,
+    img: ({ src, alt, ...props }: any) => <img src={rewriteLegacyFileUrl(src)} alt={alt} {...props} />,
+    a: ({ href, children, ...props }: any) => <a href={rewriteLegacyFileUrl(href)} {...props}>{children}</a>,
   } as any;
 
   useEffect(() => {
