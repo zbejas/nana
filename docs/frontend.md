@@ -2,7 +2,7 @@
 
 ## Overview
 
-The frontend is a React 19 SPA built with Bun, styled with TailwindCSS v4 and the Signal & Paper tokens, and routed with React Router v7. Jotai owns shared UI and document state; PocketBase is accessed through the JS SDK pointed at `/pb`. Board task state is route-local, not global.
+The frontend is a React 19 SPA built with Bun, styled with TailwindCSS v4 and the Graphite tokens, and routed with React Router v7. Jotai owns shared UI and document state; PocketBase is accessed through the JS SDK pointed at `/pb`. Board task state is route-local, not global.
 
 The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth is in [`../PRODUCT.md`](../PRODUCT.md).
 
@@ -14,9 +14,9 @@ The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth
 | `src/frontend.tsx` | Creates the React root, wraps the app in Jotai `Provider` and `AuthProvider`, registers the service worker. |
 | `src/App.tsx` | Router, protected routes, layout, sidebar, mobile navigation, lazy pages, `AddToBoardHost`. |
 | `src/lib/auth.tsx` | `AuthProvider` / `useAuth()`: session validation, sign-in, sign-up, OAuth, logout. |
-| `src/index.css` | Tailwind entry, Signal & Paper tokens, self-hosted fonts, global styles, motion, Markdown overrides. |
+| `src/index.css` | Tailwind entry, Graphite tokens, self-hosted fonts, global styles, motion, Markdown overrides. |
 | `src/lib/theme.ts` | Theme preference (`system`/`dark`/`light`), resolution, `data-theme`, theme-color meta. |
-| `src/pages/BoardsPage.tsx` | Board index ledger. |
+| `src/pages/BoardsPage.tsx` | Board index and board cards. |
 | `src/pages/BoardPage.tsx` | Board detail: header actions, search, kanban columns, dialogs. |
 | `src/pages/BoardArchivePage.tsx` | Archived boards, restore, permanent delete. |
 | `src/pages/ChatPage.tsx` | Chat empty state, messages, tool activity, composer, history. |
@@ -29,7 +29,7 @@ The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth
 | `src/components/board/TaskDialog.tsx` | Create/edit task, column/priority select, delete confirmation. |
 | `src/components/board/TaskCard.tsx` | Ledger task row: title, excerpt, priority code, due date, linked note, labels. |
 | `src/components/board/board-config.ts` | Column labels/hints and priority labels/codes. |
-| `src/components/ui/` | Shared primitives: Button, Field, Card, Dialog, Sheet, Menu, ConfirmDialog, EmptyState. Toasts live in `src/components/Toast.tsx`. |
+| `src/components/ui/` | Shared primitives: PageShell, PageHeader, Button, Field, Card, Dialog, Sheet, Menu, ConfirmDialog, EmptyState. Toasts live in `src/components/Toast.tsx`. |
 | `src/state/atoms.ts` | UI, document, loading, editor, realtime, and add-to-board request atoms. |
 
 ## How it works
@@ -45,7 +45,7 @@ The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth
 | `/public/document/:shareToken` | Public document view | Public |
 | `/public/folder/:shareToken` | Public folder view | Public |
 | `/timeline` | Timeline | Protected |
-| `/board` | Board index ledger | Protected |
+| `/board` | Board index | Protected |
 | `/board/archive` | Archived boards | Protected |
 | `/board/:boardId` | Board kanban | Protected |
 | `/folders`, `/folders/:folderId` | Folder view | Protected |
@@ -101,11 +101,11 @@ Initial load order is recent documents, root documents, folders + trash folders,
 
 ### Board index
 
-`/board` is a ledger, not a grid of cards.
+`/board` is a card index, not a ledger.
 
 - `useBoardSummaries()` loads `listBoardSummaries()`: one boards query plus one task query, then sums open/done counts per board.
-- Active boards only, newest first. The header line shows `NN boards · NN open · NN done` in mono tabular type.
-- Desktop rows use a four-column ledger: Board, Progress, Open, Updated. Progress is a 3px rule with a signal fill and a `done/total` mono label. Mobile stacks the same data.
+- Active boards only, newest first. Summary chips read `NN board(s)`, `NN open`, and `NN done`.
+- Cards sit on `md:grid-cols-2` / `2xl:grid-cols-3`. Each card carries an index, last updated, name, two-line description, a signal progress bar, done/total, open/done chips, and a circled arrow.
 - A board with no tasks shows `No tasks`; a missing description shows `No description`.
 - The page actions are `Archived` (to `/board/archive`) and `New board` (opens `BoardDialog`).
 - Empty state: `No boards yet`, with a `Create board` action.
@@ -118,9 +118,9 @@ Initial load order is recent documents, root documents, folders + trash folders,
 - `getBoard(boardId)` loads the board; a `404` renders “That board is not here”.
 - `useBoardState(activeBoardId)` only receives an id when the board is loaded and not archived. An archived board therefore loads no tasks and renders a restore state.
 - Header actions for an active board: `Import note`, `New task`, and an edit icon that opens `BoardDialog`.
-- Columns are fixed: `backlog`, `next`, `progress`, `done`, indexed `01`–`04`, labelled Backlog, Next up, In progress, Done. The progress column carries a signal top rule even when not a drop target.
-- Desktop is a four-column grid; mobile is a horizontal snap row of `w-[min(86vw,320px)]` columns.
-- Task rows are hairline-separated ledger entries, not floating cards. They show title, a plain-text excerpt, a `P0`–`P3` priority code, due date (danger when overdue and not done), a linked-note title, and up to two labels. Done rows are muted and struck through.
+- Columns are fixed: `backlog`, `next`, `progress`, `done`, labelled Backlog, Next up, In progress, Done. Each lane has a status dot; only In progress is signal-coloured.
+- `xl` is a four-column grid. Below that, lanes are a horizontal snap row (`w-[min(86vw,340px)]`); mouse users scroll, touch users swipe.
+- Task cards are rounded `surface` panels inside a `surface-sunken` lane. They show title, a plain-text excerpt, a `P0`–`P3` priority chip, due date (danger when overdue and not done), a linked-note title, and up to two label chips. Done titles are muted and struck through.
 - Dragging changes `status` and reindexes `board_order`; the UI updates optimistically and reloads on failure. Dragging is paused while the search filter is active, because a filtered index does not match stored order.
 - HTML5 drag-and-drop is pointer-only. On touch, the task dialog's column select is the movement path.
 - Search filters title, description, and labels locally.
@@ -134,7 +134,7 @@ Initial load order is recent documents, root documents, folders + trash folders,
 
 `/board/archive` lists only `archived = true` boards.
 
-- Each row shows name, description, task count, and archived date.
+- Each card shows name, description, task count, archived date, Restore, and Delete forever.
 - `Restore` clears `archived` and removes the row locally.
 - `Delete forever` opens a danger `ConfirmDialog` that states the board and its tasks are removed permanently and the source notes stay in the library.
 - `deleteBoardPermanently()` relies on the PocketBase delete rule and the `tasks.board` cascade. There is no client-side task deletion loop.
@@ -157,12 +157,12 @@ The board detail header uses a different flow: `ImportNoteDialog` imports into t
 
 `/chat` and `/chat/:conversationId` render the assistant.
 
-- The empty state is `Ask your notes.`, with a short explanation and prompt rows. There is no document picker and no attachment control.
-- Assistant messages are document text in a 68ch column, with Markdown rendered through `MarkdownPreview` (sanitized). User messages are right-aligned in a bordered `surface-sunken` block.
-- Tool activity is a quiet mono uppercase row above the answer: “Searched notes”, “Read a note”, “Read a board”, “Checked boards”, or “Checked the workspace” for unknown names. While a tool runs it reads “Looking through your workspace…” with a signal hairline.
+- The route uses the shared `PageHeader`; the conversation body is a 920px reading column. The empty state is `Ask your notes.`, with a short explanation and four prompt cards in a 2×2 grid. There is no document picker and no attachment control.
+- Assistant messages are document text in a 68ch column, with Markdown rendered through `MarkdownPreview` (sanitized). User messages are right-aligned in a bordered `surface-raised` block.
+- Tool activity is one quiet pill above the answer: “Searched notes”, “Read a note”, “Read a board”, “Checked boards”, or “Checked the workspace” for unknown names. While a tool runs it reads “Looking through your workspace…” with a pulsing signal dot.
 - The client keeps a local `running` status and call id while streaming; the server persists only terminal `{ name, status }`, and the history view shows only names/statuses.
 - Reasoning is a collapsible details block; an empty streaming answer shows “Thinking…”.
-- The composer is a bordered shell with `Enter to send · Shift+Enter`; the placeholder is `Ask about your notes or board...`.
+- The composer is a 12px bordered shell with `Enter to send · Shift+Enter for a new line`; the placeholder is `Ask about your notes or board...`.
 - Conversation history is a right-side panel (collapsible desktop, overlay mobile) with new-chat and delete actions.
 - A module-level `streamStore` survives navigation so a reply can finish while the page is unmounted; re-entering the conversation rehydrates from it.
 - The empty-response fallback is `CHAT_EMPTY_RESPONSE_FALLBACK` from `src/api/chat/types.ts`.
@@ -174,7 +174,7 @@ The board detail header uses a different flow: `ImportNoteDialog` imports into t
 - `published: true` triggers a PocketBase version snapshot of the previous content, then resets the flag.
 - Attachments are protected files; the client obtains a short-lived file token for rendering.
 - Notes over 5 MB warn; over the 100 MB database limit the warning becomes an error. Thresholds live in `ContentSizeWarning.tsx`.
-- Sidebar: desktop docked at `>=1024px`; mobile overlay plus a bottom navbar. Folder trees are in `src/components/sidebar/`; folder contents in `src/components/folder-view/`; drag-and-drop in `src/components/file-folder-handling/`.
+- Sidebar: full sidebar docked at `>=1024px`; 768–1023px uses the 64px rail with the full sidebar as an overlay; below 768px the sidebar is an overlay plus a bottom navbar. Folder trees are in `src/components/sidebar/`; folder contents in `src/components/folder-view/`; drag-and-drop in `src/components/file-folder-handling/`.
 - Settings: `/settings/account`, `/settings/preferences`, `/settings/admin/general|people|email|signin|ai`, `/settings/about`. The URL owns the tab. AI covers providers, models, generation parameters, and prompts; there is no embedding or search-index section.
 - Public pages fetch through `/pb/api/public/...` and skip authenticated app data; `AppContent` disables `useDocumentData()` for `/public/`.
 - PWA: the manifest and `/sw.js` are served by `src/index.ts`; `InstallBanner` uses `useInstallPrompt()`; the service worker is intentionally minimal.
@@ -182,14 +182,14 @@ The board detail header uses a different flow: `ImportNoteDialog` imports into t
 ### Styling and UI conventions
 
 - TailwindCSS v4 utilities over semantic tokens from `src/index.css`. The canonical token table, type scale, and component contracts are in [`../DESIGN.md`](../DESIGN.md).
-- Use `bg-surface`, `border-line`, `text-ink`, `text-ink-secondary`, `text-ink-muted`, `bg-signal`, `text-signal`, `bg-signal-soft`, `text-warning`, `text-success`, `text-danger`, and the `rounded-control` / `rounded-panel` / `rounded-sheet` radii.
+- Use `bg-surface`, `border-line`, `text-ink`, `text-ink-secondary`, `text-ink-muted`, `bg-signal-bright`, `text-signal`, `bg-signal-soft`, `text-warning`, `text-success`, `text-danger`, and the `rounded-control` / `rounded-panel` / `rounded-sheet` radii.
 - Do not use raw `gray`/`stone`/`blue` families, `dark:`/`light:` variants, gradients, grain, glass blur, or serif faces.
-- Type: Schibsted Grotesk for display and UI, JetBrains Mono for eyebrows, metadata, counts, and code. Fonts are self-hosted from `src/assets/fonts/`; CSP `font-src 'self'`.
-- Page chrome: `<PageHeader>` renders a display title, optional description, and actions. The `eyebrow` prop is accepted for compatibility but not rendered.
+- Type: Geist for every interface role; Geist Mono only for code, ids, and URLs inside prose. UI counts and dates use Geist with `tabular-nums`, not mono. Labels are sentence case. Fonts are self-hosted from `src/assets/fonts/`; CSP `font-src 'self'`.
+- Page chrome: `<PageShell>` is the one route frame (centered max 1280px, 20/32/48px gutters; 820px reading, 1600px wide). `<PageHeader>` renders a 28/34px title, optional description and meta strip, optional back link, and right-aligned actions; the `eyebrow` prop is accepted for compatibility but not rendered. Chat keeps its body to an 800px reading column; Settings bounds its working area at 1100px. Route content is full bleed beside the docked sidebar; do not wrap a page in an outer card or inset frame.
 - Cards: `<Card>` + `<SectionHeading>`. Inputs: `<Field>` with `<Input>`/`<Textarea>`/`<Select>`. Booleans: `<Switch>`/`<Checkbox>`. Segmented choices: `<SegmentedControl>`.
-- Buttons: `<Button variant="primary|secondary|ghost|danger|link">`; icon-only actions use `<IconButton label="…">`.
+- Buttons: `<Button variant="primary|secondary|ghost|danger|link">`; icon-only actions use `<IconButton label="…">`. Primary buttons fill with `signal-bright`, not `signal`.
 - Every modal is a `Dialog` (or `Sheet` on touch). Confirmation uses `ConfirmDialog` with `tone="danger"`. Do not add another fixed overlay.
-- `EmptyState` is an editorial hairline block; its `icon` prop is accepted but intentionally not rendered.
+- `EmptyState` is a centred 10px `surface` panel with an optional neutral icon tile; `compact` drops the panel chrome and left-aligns the copy.
 - Toasts: `useToasts()` + `<ToastHost>`. Icons: `@heroicons/react`.
 - Theme: read tokens in CSS; use `useTheme()` only when a component needs the resolved value. Respect reduced motion.
 - Check desktop and mobile; many components have separate paths.
@@ -235,7 +235,7 @@ Performance:
 - **Archived boards are absent from the add-to-board picker.** `AddToBoardDialog` filters `!board.archived`; a stale request cannot target one.
 - **Chat has no attachments.** There is no document picker, no `documentIds`, and no source chips. Adding one requires a new retrieval design, not a UI-only change.
 - **Tool activity is not a citation list.** It shows names and statuses only; the answer must cite titles in its own text.
-- **`PageHeader` and `EmptyState` accept props they do not render.** `PageHeader.eyebrow` and `EmptyState.icon` are compatibility props; adding an eyebrow back is a design change, not a styling tweak.
+- **`PageHeader` accepts an eyebrow it does not render.** The prop is kept for compatibility; adding an eyebrow back is a design change, not a styling tweak. `EmptyState.icon` is rendered as a neutral tile when not compact.
 - **Mobile drag is not available.** The task dialog's column select is the supported touch path.
 - **The 20-second initial-load timeout is deliberate.** It unblocks a slow PocketBase; removing it can leave the shell on a spinner.
 
@@ -246,4 +246,4 @@ Performance:
 - [`pocketbase.md`](pocketbase.md) — schema, hooks, and rules behind the UI.
 - [`ai.md`](ai.md) — chat tools, providers, and persistence.
 - [`development.md`](development.md) — build and verification commands.
-- [`../DESIGN.md`](../DESIGN.md) — Signal & Paper tokens, type, components, motion.
+- [`../DESIGN.md`](../DESIGN.md) — Graphite tokens, type, components, motion.

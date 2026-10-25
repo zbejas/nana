@@ -1,4 +1,4 @@
-import { BookmarkIcon, EyeIcon, PencilSquareIcon, ChevronUpIcon, XMarkIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon, EyeIcon, PencilSquareIcon, XMarkIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
 import { EditorContextMenu } from './EditorContextMenu';
 import { IconButton, SegmentedControl } from '../ui';
 
@@ -59,15 +59,17 @@ export function EditorHeader({
             aria-label="Document title"
             autoFocus={isNewDocument}
             tabIndex={1}
-            className="min-w-0 flex-1 border-none bg-transparent font-display text-lg leading-tight tracking-[-0.01em] text-ink outline-none placeholder:text-ink-muted sm:text-2xl"
+            className="min-w-0 flex-1 rounded-[4px] border-none bg-transparent px-1 -mx-1 text-[17px] font-semibold leading-tight tracking-[-0.025em] text-ink placeholder:text-ink-muted focus-visible:bg-surface-raised sm:text-[22px]"
           />
           {autoSaving ? (
-            <span className="hidden shrink-0 items-center gap-1.5 text-[11px] text-ink-muted sm:flex">
+            <span className="hidden shrink-0 items-center gap-1.5 text-[11.5px] text-ink-muted sm:flex">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal" />
               Saving
             </span>
           ) : hasUnsavedChanges ? (
-            <span className="hidden shrink-0 text-[11px] text-warning sm:block">Unsaved</span>
+            <span className="hidden shrink-0 text-[11.5px] font-medium text-warning sm:block">
+              Unsaved
+            </span>
           ) : null}
         </div>
 
@@ -75,7 +77,8 @@ export function EditorHeader({
           <span className="md:hidden">
             <IconButton
               label={viewMode === 'preview' ? 'Switch to write view' : 'Switch to read view'}
-              size="sm"
+              size="md"
+              className="h-11 w-11 sm:h-8 sm:w-8"
               onClick={() => onViewModeChange(viewMode === 'preview' ? 'text' : 'preview')}
             >
               {viewMode === 'preview' ? <PencilSquareIcon /> : <EyeIcon />}
@@ -96,10 +99,10 @@ export function EditorHeader({
           <span className="hidden sm:inline-flex">
             <IconButton
               label={isNewDocument ? 'Save the note before publishing a version' : 'Save this version'}
-              size="sm"
+              size="md"
+              className="h-11 w-11 sm:h-8 sm:w-8"
               onClick={onPublish}
               disabled={readOnly || publishing || isNewDocument}
-              className={publishing ? 'text-signal' : undefined}
             >
               <BookmarkIcon />
             </IconButton>
@@ -110,20 +113,16 @@ export function EditorHeader({
               onShare={onShare}
               onExport={onExport}
               onDelete={onDelete}
+              onHideHeader={onToggleHeader}
               disabled={readOnly}
               isNewDocument={isNewDocument}
             />
           )}
 
-          {onToggleHeader && (
-            <IconButton label="Hide header" size="sm" onClick={onToggleHeader} className="md:hidden">
-              <ChevronUpIcon />
-            </IconButton>
-          )}
-
           <IconButton
             label={autoSaving ? 'Saving document' : 'Close editor'}
-            size="sm"
+            size="md"
+            className="h-11 w-11 sm:h-8 sm:w-8"
             onClick={onCancel}
             disabled={publishing || autoSaving}
           >

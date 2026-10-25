@@ -4,7 +4,7 @@
 routerAdd("POST", "/api/admin/smtp/send-password", (c) => {
   // Load email template helper
   const { generateSendPasswordContent } = require(`${__hooks}/templates/send_password_template.js`)
-  const { requireAdmin, parseRequestBody, getSiteUrl, getSenderInfo } = require(`${__hooks}/utils.js`)
+  const { requireAdmin, parseRequestBody, getSiteUrl, getSenderInfo, sendError } = require(`${__hooks}/utils.js`)
 
   try {
     // Admin check
@@ -67,7 +67,6 @@ routerAdd("POST", "/api/admin/smtp/send-password", (c) => {
 
     return c.json(200, { success: true, message: "Password email sent successfully" })
   } catch (err) {
-    console.error("Failed to send password email:", err)
-    return c.json(500, { error: "Failed to send password email: " + String(err) })
+    return sendError(c, err, "Failed to send password email")
   }
 }, $apis.requireAuth())

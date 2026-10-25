@@ -53,7 +53,7 @@ function RenameInput({ initialName, depth, onSubmit, onCancel }: {
       className="flex items-center gap-1.5 rounded-[6px] bg-surface-raised py-1 pr-2"
       style={{ paddingLeft: `${depth * INDENT_PX + INDENT_PX + 22}px` }}
     >
-      <FolderIcon className="h-3.5 w-3.5 shrink-0 text-warning" />
+      <FolderIcon className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
       <input
         ref={inputRef}
         type="text"
@@ -200,7 +200,7 @@ export function FolderTree({
                       <ChevronRightIcon className={`h-3 w-3 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`} />
                     ) : null}
                   </span>
-                  <FolderIcon className={`h-3.5 w-3.5 shrink-0 ${isExpanded ? 'text-signal' : 'text-warning/80'}`} />
+                  <FolderIcon className={`h-3.5 w-3.5 shrink-0 ${isExpanded ? 'text-signal' : 'text-ink-muted'}`} />
                   <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-ink-secondary group-hover:text-ink">
                     {folder.name}
                   </span>

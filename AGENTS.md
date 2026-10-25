@@ -15,11 +15,11 @@ Nana ("Not Another Notes App") is a self-hosted document workspace: a Bun server
 | [`docs/pocketbase.md`](docs/pocketbase.md) | Hooks, migrations, collections, settings, guards, trash, sharing | Changing schema or backend behavior |
 | [`docs/ai.md`](docs/ai.md) | Chat, providers, read tools, persistence, failures | Touching AI features |
 | [`docs/security.md`](docs/security.md) | Auth layers, proxy, CSP, rate limits, sanitization, secrets | Changing auth, access, or exposure |
-| [`docs/testing.md`](docs/testing.md) | Docker test stack, test layout, helpers, conventions | Adding or fixing tests |
+| [`docs/testing.md`](docs/testing.md) | Unit and Docker integration layers, helpers, conventions | Adding or fixing tests |
 | [`docs/deployment.md`](docs/deployment.md) | Build, Docker, compose, releases, operations | Building, shipping, or debugging deploys |
 | [`docs/development.md`](docs/development.md) | Local setup, workflow, sharp edges, definition of done | Beginning implementation |
 | [`PRODUCT.md`](PRODUCT.md) | Audience, product truth, principles, surfaces | Deciding what belongs in the product |
-| [`DESIGN.md`](DESIGN.md) | Signal & Paper tokens, type, components, motion, voice | Building or reviewing UI |
+| [`DESIGN.md`](DESIGN.md) | Graphite tokens, type, components, motion, voice | Building or reviewing UI |
 
 The user-facing install and feature guide is [`README.md`](README.md).
 
@@ -42,7 +42,7 @@ pocketbase/
   pb_hooks/             PocketBase JSVM hooks, routes, guards, mailers, cron
   pb_migrations/        Sequential schema/data migrations
   pb_data/              Runtime data (gitignored except generated types.d.ts)
-tests/                  Integration tests (Bun test, real HTTP, Docker only)
+tests/                  Unit tests + integration tests (Bun test, real HTTP, Docker)
 docker/                 Dockerfile, entrypoints, dev/test compose files
 docs/                   Engineering knowledge base (this map)
 ```
@@ -58,7 +58,10 @@ docs/                   Engineering knowledge base (this map)
 | Production server | `NODE_ENV=production bun src/index.ts` | Requires `dist/index.html` and a running PocketBase. |
 | Production container | `docker compose up -d` | Uses `ghcr.io/zbejas/nana:latest`; mounts `./pocketbase/pb_data`. |
 | Build production image | `docker build -f docker/Dockerfile --target production .` | Multi-stage build. |
-| Integration tests | `docker compose -f docker/compose.test.yml up --build --abort-on-container-exit --exit-code-from nana-test` | Fresh PB database, runs `bun test`, exits with the test status. |
+| Integration tests | `bun run test:docker` | Fresh PB database, unit phase + three integration phases, exits with the test status. |
+| Integration against a running stack | `bun run test:integration` | Expects Bun on `:3000` and PocketBase on `:8090`; uses `tests/preload.ts`. |
+| Unit tests | `bun run test:unit` | Pure modules only; no services. |
+| Full test gate | `bun run test` | Unit tests, then the Docker suite. |
 | Follow dev logs | `docker compose -f docker/compose.dev.yml logs -f nana` | PocketBase and Bun logs are prefixed. |
 
 There is no separate lint, format, or typecheck script. `tsconfig.json` is strict; `bun run build` must succeed before shipping.
@@ -95,9 +98,9 @@ Bun :3000 ── src/index.ts
 12. **Migrations are append-only**, numbered from `0000020`, with a safe `down()` and idempotent guards. Never rename existing migration files.
 13. **Preserve the streaming paths**: SSE chat with tool streaming, realtime PB proxy, export caching. There is no auto-embed or background indexer.
 14. **No secrets in the repo.** Use environment variables and the generated credentials file under `pb_data/`.
-15. **Verify the change.** Run the Docker integration suite for behavior changes; check desktop and mobile for UI changes; build before shipping.
+15. **Verify the change.** Run `bun run test:unit` for pure logic, the Docker suite (`bun run test:docker`) for behavior changes, check desktop and mobile for UI changes, and build before shipping.
 16. **Use the shared UI primitives.** Buttons, fields, cards, dialogs, sheets, menus, toasts, and feedback live in `src/components/ui/`. Do not add a bespoke modal overlay, button style, or input. Every modal is a `Dialog` (or `Sheet` on touch) so focus, Escape, scroll lock, and stacking stay consistent.
-17. **Use semantic tokens, not raw colours.** The Signal & Paper tokens are defined in `src/index.css` and documented in [`DESIGN.md`](DESIGN.md). Use `bg-surface`, `border-line`, `text-ink`, `text-ink-secondary`, `text-ink-muted`, `bg-signal-soft`, `text-signal`, `text-warning`, `text-success`, `text-danger`, etc. No `gray`/`stone`/`blue` families, no `dark:`/`light:` variants, no gradients, grain, glass, or serif faces.
+17. **Use semantic tokens, not raw colours.** The Graphite tokens are defined in `src/index.css` and documented in [`DESIGN.md`](DESIGN.md). Use `bg-surface`, `border-line`, `text-ink`, `text-ink-secondary`, `text-ink-muted`, `bg-signal-bright`, `bg-signal-soft`, `text-signal`, `text-warning`, `text-success`, `text-danger`, etc. No `gray`/`stone`/`blue` families, no `dark:`/`light:` variants, no gradients, grain, glass, or serif faces. Use one family (`Geist`) for interface text; reserve `Geist Mono` for code and identifiers.
 18. **Tasks are separate from documents.** Tasks belong to an author-scoped `boards` record through the required `board` relation; a task may reference one document. Notes and tasks do not cascade into each other. Do not turn notes into tasks by overloading `documents`.
 19. **Boards archive before delete.** Permanent delete is allowed only for archived boards, and PocketBase cascades that board's tasks. Never add a client-side task-deletion loop or loosen the delete rule.
 20. **AI tools are read-only and user-scoped.** `src/api/chat/tools/` uses the caller's token, never the superuser, and every read is author-scoped by filter or an explicit author check. Tool names/statuses are the only persisted activity; do not add write tools without a separate authorization design.
@@ -107,7 +110,7 @@ Bun :3000 ── src/index.ts
 1. **Recon** — inspect the relevant code and current git state. Do not assume old notes are current.
 2. **Plan** — for multi-file work, write a short todo list and identify cross-cutting changes (migration → hook → proxy/API → atoms/hooks → components → tests).
 3. **Implement** — follow existing patterns, keep the change scoped, and avoid unrelated refactors.
-4. **Verify** — run the test suite for behavior changes, build with `bun run build`, and check UI on desktop and mobile.
+4. **Verify** — run `bun run test:unit` and the Docker suite (`bun run test:docker`), build with `bun run build`, and check UI on desktop and mobile.
 5. **Report** — list changed files, what was verified, and any remaining risk or follow-up.
 
 For larger tasks, delegate research or isolated implementation slices to subagents and review their output.
@@ -116,6 +119,6 @@ For larger tasks, delegate research or isolated implementation slices to subagen
 
 - The behavior is implemented and matches the existing architecture.
 - Relevant docs in `docs/` (and `README.md` for user-facing changes) are updated.
-- Integration tests are added or updated for API, hook, guard, migration, trash, or share changes.
-- `bun run build` succeeds; the Docker test suite passes when behavior changed.
+- Integration tests are added or updated for API, hook, guard, migration, trash, or share changes; pure logic gets a unit test in `tests/unit/`.
+- `bun run build` succeeds; `bun run test:docker` passes when behavior changed.
 - No generated files, runtime data, secrets, or unrelated changes are included.

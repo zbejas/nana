@@ -2,7 +2,7 @@
 
 // Admin endpoint to get attachment settings
 routerAdd("GET", "/api/admin/attachments", (c) => {
-	const { requireAdmin } = require(`${__hooks}/utils.js`)
+	const { requireAdmin, sendError } = require(`${__hooks}/utils.js`)
 
 	try {
 		requireAdmin(c)
@@ -27,7 +27,6 @@ routerAdd("GET", "/api/admin/attachments", (c) => {
 			},
 		})
 	} catch (err) {
-		console.error("Failed to load attachment settings:", err)
-		return c.json(500, { error: "Failed to load attachment settings: " + String(err) })
+		return sendError(c, err, "Failed to load attachment settings")
 	}
 }, $apis.requireAuth())

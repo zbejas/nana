@@ -1,283 +1,206 @@
-import { describe, test, expect, beforeAll } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
+import { expectStatus, pbList, pbRequest, readJson } from "../../helpers/client";
 import {
-    PB_API,
-    authenticateSuperuser,
-    authenticateUser,
-    createTestUser,
-} from "../../helpers/setup";
+    createBoard,
+    createTask,
+    createUser,
+    type TestUser,
+} from "../../helpers/factories";
 
 describe("Board collection rules", () => {
-    let superuserToken: string;
-    let ownerToken: string;
-    let ownerId: string;
-    let otherToken: string;
-    let otherId: string;
+    let owner: TestUser;
+    let other: TestUser;
     let ownerBoardId: string;
     let otherBoardId: string;
 
     beforeAll(async () => {
-        superuserToken = await authenticateSuperuser();
+        owner = await createUser("board-owner");
+        other = await createUser("board-other");
 
-        const stamp = Date.now();
-        const owner = await createTestUser(superuserToken, {
-            email: `boards-owner-${stamp}@test.local`,
-            password: "testPassword123!",
-            name: "Board Owner",
-        });
-        const other = await createTestUser(superuserToken, {
-            email: `boards-other-${stamp}@test.local`,
-            password: "testPassword123!",
-            name: "Board Other",
-        });
-
-        const ownerAuth = await authenticateUser(owner.email, "testPassword123!");
-        ownerToken = ownerAuth.token;
-        ownerId = ownerAuth.record.id;
-        const otherAuth = await authenticateUser(other.email, "testPassword123!");
-        otherToken = otherAuth.token;
-        otherId = otherAuth.record.id;
-
-        const ownerBoard = await createBoardRecord(
-            { name: "Owner board", author: ownerId },
-            ownerToken,
-        );
-        ownerBoardId = ownerBoard.id;
-
-        const otherBoard = await createBoardRecord(
-            { name: "Other board", author: otherId },
-            otherToken,
-        );
-        otherBoardId = otherBoard.id;
+        ownerBoardId = (await createBoard(owner, { name: "Owner board" })).id;
+        otherBoardId = (await createBoard(other, { name: "Other board" })).id;
     });
 
-    async function createBoard(body: Record<string, unknown>, token = ownerToken) {
-        return fetch(`${PB_API}/collections/boards/records`, {
+    function createBoardAs(user: TestUser, body: Record<string, unknown>) {
+        return pbRequest("/collections/boards/records", {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: token },
+            headers: { Authorization: user.token, "Content-Type": "application/json" },
             body: JSON.stringify(body),
         });
     }
 
-    async function createBoardRecord(
-        body: Record<string, unknown>,
-        token = ownerToken,
-    ): Promise<{ id: string }> {
-        const res = await createBoard(body, token);
-        if (!res.ok) {
-            throw new Error(`Failed to create board (${res.status}): ${await res.text()}`);
-        }
-        return res.json();
-    }
-
-    async function createTaskRecord(
-        body: Record<string, unknown>,
-        token = ownerToken,
-    ): Promise<{ id: string }> {
-        const res = await fetch(`${PB_API}/collections/tasks/records`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: token },
+    function patchBoard(id: string, body: Record<string, unknown>, token = owner.token) {
+        return pbRequest(`/collections/boards/records/${id}`, {
+            method: "PATCH",
+            headers: { Authorization: token, "Content-Type": "application/json" },
             body: JSON.stringify(body),
         });
-        if (!res.ok) {
-            throw new Error(`Failed to create task (${res.status}): ${await res.text()}`);
-        }
-        return res.json();
     }
 
-    async function setArchived(id: string, archived: boolean, token = ownerToken) {
-        return fetch(`${PB_API}/collections/boards/records/${id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json", Authorization: token },
-            body: JSON.stringify({ archived }),
-        });
-    }
+    describe("creation and listing", () => {
+        test("lists only the signed-in author's boards", async () => {
+            const res = await pbList<{ id: string }>(owner.token, "boards");
+            const ids = res.items.map((board) => board.id);
 
-    test("lists only the signed-in author's boards", async () => {
-        const res = await fetch(`${PB_API}/collections/boards/records`, {
-            headers: { Authorization: ownerToken },
+            expect(ids).toContain(ownerBoardId);
+            expect(ids).not.toContain(otherBoardId);
         });
-        expect(res.ok).toBe(true);
-        const data = await res.json();
-        const ids = data.items.map((board: { id: string }) => board.id);
-        expect(ids).toContain(ownerBoardId);
-        expect(ids).not.toContain(otherBoardId);
+
+        test("creates a board for its own author", async () => {
+            const res = await createBoardAs(owner, {
+                name: "Release board",
+                description: "Ship the thing",
+                author: owner.id,
+            });
+
+            await expectStatus(res, 200, "create board");
+            const board = await readJson<Record<string, unknown>>(res);
+            expect(board.name).toBe("Release board");
+            expect(board.description).toBe("Ship the thing");
+            expect(board.archived).toBe(false);
+            expect(board.author).toBe(owner.id);
+        });
+
+        test("rejects a board created under another author", async () => {
+            const res = await createBoardAs(owner, {
+                name: "Injected board",
+                author: other.id,
+            });
+            await expectStatus(res, 400, "cross-author board create");
+        });
+
+        test("rejects a board without a name", async () => {
+            const res = await createBoardAs(owner, { author: owner.id });
+            await expectStatus(res, 400, "nameless board create");
+        });
+
+        test("blocks another user from listing the owner's boards", async () => {
+            const res = await pbList<{ id: string }>(other.token, "boards");
+            const ids = res.items.map((board) => board.id);
+
+            expect(ids).toContain(otherBoardId);
+            expect(ids).not.toContain(ownerBoardId);
+        });
     });
 
-    test("creates a board for its own author", async () => {
-        const res = await createBoard({
-            name: "Release board",
-            description: "Ship the thing",
-            author: ownerId,
+    describe("updates and archiving", () => {
+        test("owner can update a board", async () => {
+            const res = await patchBoard(ownerBoardId, {
+                name: "Renamed board",
+                description: "Updated",
+            });
+
+            await expectStatus(res, 200, "update board");
+            const board = await readJson<{ name: string; description: string }>(res);
+            expect(board.name).toBe("Renamed board");
+            expect(board.description).toBe("Updated");
         });
-        expect(res.ok).toBe(true);
-        const board = await res.json();
-        expect(board.name).toBe("Release board");
-        expect(board.description).toBe("Ship the thing");
-        expect(board.archived).toBe(false);
-        expect(board.author).toBe(ownerId);
+
+        test("owner can archive and restore a board", async () => {
+            const created = await createBoard(owner, { name: "Seasonal board" });
+
+            const archiveRes = await patchBoard(created.id, { archived: true });
+            await expectStatus(archiveRes, 200, "archive board");
+            expect((await readJson<{ archived: boolean }>(archiveRes)).archived).toBe(true);
+
+            const restoreRes = await patchBoard(created.id, { archived: false });
+            await expectStatus(restoreRes, 200, "restore board");
+            expect((await readJson<{ archived: boolean }>(restoreRes)).archived).toBe(false);
+        });
+
+        test("blocks another user from viewing, updating, or deleting a board", async () => {
+            const viewRes = await pbRequest(`/collections/boards/records/${ownerBoardId}`, {
+                headers: { Authorization: other.token },
+            });
+            await expectStatus(viewRes, 404, "cross-author board view");
+
+            const updateRes = await patchBoard(ownerBoardId, { name: "Hijacked" }, other.token);
+            await expectStatus(updateRes, 404, "cross-author board update");
+
+            const deleteRes = await pbRequest(`/collections/boards/records/${ownerBoardId}`, {
+                method: "DELETE",
+                headers: { Authorization: other.token },
+            });
+            await expectStatus(deleteRes, 404, "cross-author board delete");
+        });
     });
 
-    test("rejects a board created under another author", async () => {
-        const res = await createBoard({
-            name: "Injected board",
-            author: otherId,
+    describe("permanent delete", () => {
+        test("rejects deleting a board that is not archived", async () => {
+            const created = await createBoard(owner, { name: "Still active" });
+
+            const res = await pbRequest(`/collections/boards/records/${created.id}`, {
+                method: "DELETE",
+                headers: { Authorization: owner.token },
+            });
+            expect([400, 403, 404]).toContain(res.status);
         });
-        expect(res.status).toBe(400);
-    });
 
-    test("owner can update a board", async () => {
-        const res = await fetch(`${PB_API}/collections/boards/records/${ownerBoardId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json", Authorization: ownerToken },
-            body: JSON.stringify({ name: "Renamed board", description: "Updated" }),
-        });
-        expect(res.ok).toBe(true);
-        const board = await res.json();
-        expect(board.name).toBe("Renamed board");
-        expect(board.description).toBe("Updated");
-    });
+        test("deleting an archived board cascades its tasks and leaves neighbours intact", async () => {
+            const doomed = await createBoard(owner, { name: "Doomed board" });
+            const keep = await createBoard(owner, { name: "Keep board" });
 
-    test("owner can archive and restore a board", async () => {
-        const created = await createBoardRecord(
-            { name: "Seasonal board", author: ownerId },
-            ownerToken,
-        );
-
-        const archiveRes = await setArchived(created.id, true);
-        expect(archiveRes.ok).toBe(true);
-        expect((await archiveRes.json()).archived).toBe(true);
-
-        const restoreRes = await setArchived(created.id, false);
-        expect(restoreRes.ok).toBe(true);
-        expect((await restoreRes.json()).archived).toBe(false);
-    });
-
-    test("blocks another user from listing the owner's boards", async () => {
-        const res = await fetch(`${PB_API}/collections/boards/records`, {
-            headers: { Authorization: otherToken },
-        });
-        expect(res.ok).toBe(true);
-        const data = await res.json();
-        const ids = data.items.map((board: { id: string }) => board.id);
-        expect(ids).toContain(otherBoardId);
-        expect(ids).not.toContain(ownerBoardId);
-    });
-
-    test("blocks another user from viewing, updating, or deleting a board", async () => {
-        const viewRes = await fetch(`${PB_API}/collections/boards/records/${ownerBoardId}`, {
-            headers: { Authorization: otherToken },
-        });
-        expect(viewRes.status).toBe(404);
-
-        const updateRes = await fetch(`${PB_API}/collections/boards/records/${ownerBoardId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json", Authorization: otherToken },
-            body: JSON.stringify({ name: "Hijacked" }),
-        });
-        expect(updateRes.status).toBe(404);
-
-        const deleteRes = await fetch(`${PB_API}/collections/boards/records/${ownerBoardId}`, {
-            method: "DELETE",
-            headers: { Authorization: otherToken },
-        });
-        expect(deleteRes.status).toBe(404);
-    });
-
-    test("rejects deleting a board that is not archived", async () => {
-        const created = await createBoardRecord(
-            { name: "Still active", author: ownerId },
-            ownerToken,
-        );
-
-        const res = await fetch(`${PB_API}/collections/boards/records/${created.id}`, {
-            method: "DELETE",
-            headers: { Authorization: ownerToken },
-        });
-        expect(res.ok).toBe(false);
-        expect([403, 404]).toContain(res.status);
-    });
-
-    test("deleting an archived board cascades its tasks and leaves others intact", async () => {
-        const doomed = await createBoardRecord(
-            { name: "Doomed board", author: ownerId },
-            ownerToken,
-        );
-        const keep = await createBoardRecord(
-            { name: "Keep board", author: ownerId },
-            ownerToken,
-        );
-
-        const doomedTaskA = await createTaskRecord(
-            {
+            const doomedA = await createTask(owner, doomed.id, {
                 title: "Doomed A",
                 status: "backlog",
-                author: ownerId,
-                board: doomed.id,
-            },
-            ownerToken,
-        );
-        const doomedTaskB = await createTaskRecord(
-            {
+            });
+            const doomedB = await createTask(owner, doomed.id, {
                 title: "Doomed B",
                 status: "progress",
-                author: ownerId,
-                board: doomed.id,
-            },
-            ownerToken,
-        );
-        const keptTask = await createTaskRecord(
-            {
+            });
+            const kept = await createTask(owner, keep.id, {
                 title: "Kept",
                 status: "backlog",
-                author: ownerId,
-                board: keep.id,
-            },
-            ownerToken,
-        );
-        const otherTask = await createTaskRecord(
-            {
+            });
+            const otherTask = await createTask(other, otherBoardId, {
                 title: "Other user's task",
                 status: "backlog",
-                author: otherId,
-                board: otherBoardId,
-            },
-            otherToken,
-        );
-
-        const archiveRes = await setArchived(doomed.id, true);
-        expect(archiveRes.ok).toBe(true);
-
-        const deleteRes = await fetch(`${PB_API}/collections/boards/records/${doomed.id}`, {
-            method: "DELETE",
-            headers: { Authorization: ownerToken },
-        });
-        expect(deleteRes.ok).toBe(true);
-
-        for (const taskId of [doomedTaskA.id, doomedTaskB.id]) {
-            const taskRes = await fetch(`${PB_API}/collections/tasks/records/${taskId}`, {
-                headers: { Authorization: superuserToken },
             });
-            expect(taskRes.status).toBe(404);
-        }
 
-        const keepBoardRes = await fetch(`${PB_API}/collections/boards/records/${keep.id}`, {
-            headers: { Authorization: ownerToken },
-        });
-        expect(keepBoardRes.ok).toBe(true);
+            const archiveRes = await patchBoard(doomed.id, { archived: true });
+            await expectStatus(archiveRes, 200, "archive doomed board");
 
-        const keptTaskRes = await fetch(`${PB_API}/collections/tasks/records/${keptTask.id}`, {
-            headers: { Authorization: ownerToken },
-        });
-        expect(keptTaskRes.ok).toBe(true);
+            const deleteRes = await pbRequest(`/collections/boards/records/${doomed.id}`, {
+                method: "DELETE",
+                headers: { Authorization: owner.token },
+            });
+            await expectStatus(deleteRes, 204, "delete archived board");
 
-        const otherBoardRes = await fetch(`${PB_API}/collections/boards/records/${otherBoardId}`, {
-            headers: { Authorization: otherToken },
-        });
-        expect(otherBoardRes.ok).toBe(true);
+            for (const taskId of [doomedA.id, doomedB.id]) {
+                const res = await pbRequest(`/collections/tasks/records/${taskId}`, {
+                    headers: { Authorization: owner.token },
+                });
+                await expectStatus(res, 404, "cascaded task");
+            }
 
-        const otherTaskRes = await fetch(`${PB_API}/collections/tasks/records/${otherTask.id}`, {
-            headers: { Authorization: otherToken },
+            await expectStatus(
+                await pbRequest(`/collections/boards/records/${keep.id}`, {
+                    headers: { Authorization: owner.token },
+                }),
+                200,
+                "kept board",
+            );
+            await expectStatus(
+                await pbRequest(`/collections/tasks/records/${kept.id}`, {
+                    headers: { Authorization: owner.token },
+                }),
+                200,
+                "kept task",
+            );
+            await expectStatus(
+                await pbRequest(`/collections/boards/records/${otherBoardId}`, {
+                    headers: { Authorization: other.token },
+                }),
+                200,
+                "other board",
+            );
+            await expectStatus(
+                await pbRequest(`/collections/tasks/records/${otherTask.id}`, {
+                    headers: { Authorization: other.token },
+                }),
+                200,
+                "other task",
+            );
         });
-        expect(otherTaskRes.ok).toBe(true);
     });
 });

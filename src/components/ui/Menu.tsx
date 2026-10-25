@@ -93,7 +93,7 @@ export function MenuItem({ label, icon, hint, onClick, disabled, tone = 'default
     >
       {icon}
       <span className="flex-1 truncate">{label}</span>
-      {hint && <span className="text-[11px] text-ink-muted">{hint}</span>}
+      {hint && <span className="text-[11.5px] text-ink-muted">{hint}</span>}
     </button>
   );
 }
@@ -103,5 +103,5 @@ export function MenuSeparator() {
 }
 
 export function MenuLabel({ children }: { children: ReactNode }) {
-  return <p className="px-3 pb-1 pt-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-muted">{children}</p>;
+  return <p className="px-3 pb-1 pt-1.5 text-[11px] font-semibold text-ink-muted">{children}</p>;
 }

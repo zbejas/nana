@@ -21,17 +21,11 @@ onModelUpdate((e) => {
   
   const versionNumber = versions.length > 0 ? versions[0].get("version_number") + 1 : 1
   
-  // Create version from OLD content (before update) with formatted timestamp
+  // Create version from OLD content (before update) with a stable timestamp
   const now = new Date()
   const createdAt = now.toISOString()
-  const formattedDate = now.toLocaleString('en-GB', { 
-    year: 'numeric', 
-    month: 'numeric', 
-    day: 'numeric', 
-    hour: '2-digit', 
-    minute: '2-digit',
-    hour12: false 
-  }).replace(/\//g, '.')
+  const pad = (value) => String(value).padStart(2, "0")
+  const formattedDate = `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`
   const collection = $app.findCollectionByNameOrId("document_versions")
   const version = new Record(collection)
   version.set("document", e.model.id)

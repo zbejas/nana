@@ -1,7 +1,18 @@
 import { streamText, generateText, stepCountIs } from "ai";
 import { verifyAuth, AuthError } from "../auth";
 import { getAIModel } from "./providers";
-import { fetchAIConfig, createConversation, appendMessage, getConversationMessages, listConversations, getConversation, deleteConversation, updateConversationTitle, trimLastExchange } from "./pocketbase";
+import {
+    fetchAIConfig,
+    createConversation,
+    appendMessage,
+    getConversationMessages,
+    listConversations,
+    getConversation,
+    deleteConversation,
+    updateConversationTitle,
+    trimLastExchange,
+    PocketBaseRequestError,
+} from "./pocketbase";
 import { createChatTools } from "./tools";
 import type { ChatSendRequest, ChatMessage, ChatToolActivity } from "./types";
 import { CHAT_EMPTY_RESPONSE_FALLBACK } from "./types";
@@ -125,6 +136,13 @@ export async function handleChat(req: Request): Promise<Response> {
         return jsonError("Not found", 404);
     } catch (err) {
         log.error("Chat API error", err);
+
+        if (err instanceof PocketBaseRequestError) {
+            if (err.status === 401) return jsonError("Unauthorized", 401);
+            if (err.status === 403 || err.status === 404) return jsonError("Not found", 404);
+            if (err.status === 400 || err.status === 422) return jsonError("Invalid request", 400);
+        }
+
         const message = err instanceof Error ? err.message : "Internal server error";
         return jsonError(message, 500);
     }

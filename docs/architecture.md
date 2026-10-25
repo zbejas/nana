@@ -22,13 +22,13 @@ The system is one deployable with two processes: **Bun** serves the SPA and `/ap
 | `src/components/board/` | Board state, summaries, task rows/dialog, board dialog, add-to-board host/picker, note import. |
 | `src/lib/documents/` | Document and attachment CRUD, export helpers, public sharing. |
 | `src/lib/config.ts` | `serverConfig` / `clientConfig`; the only environment-variable reader. |
-| `src/index.css` | Signal & Paper tokens, self-hosted typefaces, global styles, motion, Markdown overrides. |
-| `src/assets/fonts/` | Self-hosted Schibsted Grotesk and JetBrains Mono files plus OFL licences. |
+| `src/index.css` | Graphite tokens, self-hosted typefaces, global styles, motion, Markdown overrides. |
+| `src/assets/fonts/` | Self-hosted Geist and Geist Mono files plus the OFL licence. |
 | `src/state/` | Jotai atoms and data, realtime, and lazy-loading hooks. |
 | `pocketbase/pb_hooks/` | JSVM hooks, custom routes, guards, mailers, cron, bootstrap. |
 | `pocketbase/pb_migrations/` | Append-only schema and data migrations. |
 | `docker/` | Dockerfile stages, production/dev entrypoint, test entrypoint and compose files. |
-| `tests/` | Integration tests against a real PocketBase and Bun server. |
+| `tests/` | Unit tests plus integration tests against a real PocketBase and Bun server. |
 | `docs/` | This knowledge base. |
 
 ## How it works
@@ -116,7 +116,7 @@ There is no embedding service, vector store, or background indexer in the topolo
 | --- | --- | --- |
 | Development | `docker compose -f docker/compose.dev.yml up --build`, or `bun run dev` with a local PocketBase | Bun HMR; CSP allows `ws:`/`wss:` for development. |
 | Production | `NODE_ENV=production bun src/index.ts` after `bun run build`, or the production image | Requires `dist/index.html`; strict CSP. |
-| Test | `docker compose -f docker/compose.test.yml up --build ...` | Ephemeral PocketBase and Bun; runs the integration suite. |
+| Test | `bun run test:docker` | Ephemeral PocketBase and Bun; runs the unit phase and the integration phases. |
 
 Production detection is deliberate: Bun treats the app as production only when `NODE_ENV=production` **and** `dist/index.html` exists. Without the build, it serves the development SPA.
 

@@ -95,7 +95,7 @@ export function AuthForm() {
   if (user) {
     return (
       <div className="rounded-panel border border-line bg-surface p-6">
-        <h2 className="font-display text-2xl font-semibold tracking-[-0.02em] text-ink">You are signed in</h2>
+        <h2 className="text-2xl font-semibold tracking-[-0.02em] text-ink">You are signed in</h2>
         <p className="mt-1 text-sm text-ink-secondary">{user.email}</p>
         <Button variant="secondary" className="mt-5 w-full" onClick={signOut}>
           Sign out
@@ -108,12 +108,12 @@ export function AuthForm() {
   const showPasswordForm = passwordEnabled || mode === 'reset';
 
   return (
-    <div className="rounded-panel border border-line bg-surface p-5 sm:p-6">
-      <div className="mb-5">
-        <h2 className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] text-ink">
+    <div className="rounded-panel border border-line bg-surface p-6 sm:p-7">
+      <div className="mb-6">
+        <h2 className="text-[24px] font-semibold leading-tight tracking-[-0.025em] text-ink">
           {mode === 'signin' ? 'Welcome back' : 'Reset your password'}
         </h2>
-        <p className="mt-1.5 text-sm text-ink-secondary">
+        <p className="mt-2 text-[13.5px] leading-relaxed text-ink-secondary">
           {mode === 'signin'
             ? 'Sign in to your notes, boards, and chat.'
             : 'Enter your email and we will send a reset link if the account exists.'}
@@ -142,7 +142,7 @@ export function AuthForm() {
               loading={oauthLoading === provider.name}
               disabled={loading || (oauthLoading !== null && oauthLoading !== provider.name)}
               icon={
-                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-line bg-surface-sunken text-[10px] font-semibold uppercase text-ink-secondary">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-line bg-surface-sunken text-[11px] font-semibold uppercase text-ink-secondary">
                   {provider.displayName.charAt(0)}
                 </span>
               }
@@ -154,7 +154,7 @@ export function AuthForm() {
           {showPasswordForm && (
             <div className="flex items-center gap-3 py-1">
               <span className="h-px flex-1 bg-line" />
-              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-muted">or use email</span>
+              <span className="text-[11.5px] font-medium text-ink-muted">or use email</span>
               <span className="h-px flex-1 bg-line" />
             </div>
           )}

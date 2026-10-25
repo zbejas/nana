@@ -1,556 +1,348 @@
-import { describe, test, expect, beforeAll } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import {
-    PB_API,
-    BASE_URL,
-    authenticateSuperuser,
-    authenticateUser,
-    createTestUser,
-    signupUser,
-} from "../../helpers/setup";
+    expectJsonError,
+    expectStatus,
+    pbFindFirst,
+    pbList,
+    pbRecordExists,
+    pbRequest,
+    readJson,
+} from "../../helpers/client";
+import {
+    createFolder,
+    createNote,
+    createNoteWithAttachment,
+    createUser,
+    getSuperuserToken,
+    publishNote,
+    type TestUser,
+} from "../../helpers/factories";
 
-const TRASH_API = `${PB_API}/trash`;
+const TRASH_API = "/trash";
 
-describe("Trash Routes", () => {
+describe("Trash routes", () => {
+    let user: TestUser;
+    let other: TestUser;
     let superuserToken: string;
-    let userToken: string;
-    let userId: string;
-
-    let userBToken: string;
-    let userBId: string;
-
-    let docCounter = 0;
-    let folderCounter = 0;
 
     beforeAll(async () => {
-        superuserToken = await authenticateSuperuser();
-
-        // Create primary test user
-        const listRes = await fetch(
-            `${PB_API}/collections/users/records?filter=(email='trash-route-test@test.local')`,
-            { headers: { Authorization: superuserToken } },
-        );
-        const listData = await listRes.json();
-        if (listData.items.length === 0) {
-            const checkRes = await fetch(`${PB_API}/collections/users/records?perPage=1`, {
-                headers: { Authorization: superuserToken },
-            });
-            const checkData = await checkRes.json();
-            if (checkData.items.length === 0) {
-                await signupUser({ email: "first@test.local", password: "testPassword123!" });
-            }
-            await createTestUser(superuserToken, {
-                email: "trash-route-test@test.local",
-                password: "testPassword123!",
-                name: "Trash Route Test User",
-            });
-        }
-
-        const authA = await authenticateUser("trash-route-test@test.local", "testPassword123!");
-        userToken = authA.token;
-        userId = authA.record.id;
-
-        // Create secondary test user for ownership tests
-        const listResB = await fetch(
-            `${PB_API}/collections/users/records?filter=(email='trash-route-other@test.local')`,
-            { headers: { Authorization: superuserToken } },
-        );
-        const listDataB = await listResB.json();
-        if (listDataB.items.length === 0) {
-            await createTestUser(superuserToken, {
-                email: "trash-route-other@test.local",
-                password: "testPassword123!",
-                name: "Trash Route Other User",
-            });
-        }
-
-        const authB = await authenticateUser("trash-route-other@test.local", "testPassword123!");
-        userBToken = authB.token;
-        userBId = authB.record.id;
+        user = await createUser("trash-routes");
+        other = await createUser("trash-routes-other");
+        superuserToken = await getSuperuserToken();
     });
 
-    // --- Helpers ---
-
-    async function createDocument(
-        title: string,
-        content: string,
-        opts?: { folder?: string; token?: string; authorId?: string },
-    ): Promise<any> {
-        docCounter++;
-        const slug = `trash-test-doc-${Date.now()}-${docCounter}`;
-        const body: any = {
-            title,
-            slug,
-            content,
-            author: opts?.authorId ?? userId,
-        };
-        if (opts?.folder) body.folder = opts.folder;
-
-        const res = await fetch(`${PB_API}/collections/documents/records`, {
+    function post(path: string, body: unknown, token = user.token) {
+        return pbRequest(`${TRASH_API}${path}`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: opts?.token ?? userToken,
-            },
+            headers: { Authorization: token, "Content-Type": "application/json" },
             body: JSON.stringify(body),
         });
-        expect(res.ok).toBe(true);
-        return res.json();
     }
 
-    async function publishDocument(docId: string): Promise<any> {
-        const res = await fetch(`${PB_API}/collections/documents/records/${docId}`, {
-            method: "PATCH",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: userToken,
-            },
-            body: JSON.stringify({ published: true }),
-        });
-        expect(res.ok).toBe(true);
-        return res.json();
+    async function moveDocument(documentId: string, token = user.token): Promise<string> {
+        const res = await post("/move-document", { documentId }, token);
+        await expectStatus(res, 200, "move document to trash");
+        return (await readJson<{ trashDocumentId: string }>(res)).trashDocumentId;
     }
 
-    async function createFolder(name: string, parentId?: string): Promise<any> {
-        folderCounter++;
-        const body: any = { name, author: userId };
-        if (parentId) body.parent = parentId;
-
-        const res = await fetch(`${PB_API}/collections/folders/records`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: userToken,
-            },
-            body: JSON.stringify(body),
-        });
-        expect(res.ok).toBe(true);
-        return res.json();
+    async function moveFolder(folderId: string, token = user.token): Promise<string> {
+        const res = await post("/move-folder", { folderId }, token);
+        await expectStatus(res, 200, "move folder to trash");
+        return (await readJson<{ trashFolderId: string }>(res)).trashFolderId;
     }
 
-    async function recordExists(collection: string, id: string): Promise<boolean> {
-        const res = await fetch(`${PB_API}/collections/${collection}/records/${id}`, {
-            headers: { Authorization: superuserToken },
-        });
-        return res.ok;
-    }
-
-    async function getTrashDocByOriginalId(originalDocId: string): Promise<any | null> {
-        const res = await fetch(
-            `${PB_API}/collections/trash_documents/records?filter=(original_document_id='${originalDocId}')`,
-            { headers: { Authorization: superuserToken } },
+    async function trashDocumentByOriginalId(originalId: string) {
+        return pbFindFirst<{ id: string; folder?: string }>(
+            superuserToken,
+            "trash_documents",
+            `original_document_id='${originalId}'`,
         );
-        if (!res.ok) return null;
-        const data = await res.json();
-        return data.items.length > 0 ? data.items[0] : null;
     }
 
-    async function getTrashFolderByOriginalId(originalFolderId: string): Promise<any | null> {
-        const res = await fetch(
-            `${PB_API}/collections/trash_folders/records?filter=(original_folder_id='${originalFolderId}')`,
-            { headers: { Authorization: superuserToken } },
-        );
-        if (!res.ok) return null;
-        const data = await res.json();
-        return data.items.length > 0 ? data.items[0] : null;
+    async function versionsOf(documentId: string, collection = "document_versions", field = "document") {
+        const page = await pbList<{ id: string; content: string }>(superuserToken, collection, {
+            filter: `${field}='${documentId}'`,
+        });
+        return page.items;
     }
 
-    async function getVersions(docId: string, collection = "document_versions"): Promise<any[]> {
-        const filterField = collection === "trash_document_versions" ? "trash_document" : "document";
-        const res = await fetch(
-            `${PB_API}/collections/${collection}/records?filter=(${filterField}='${docId}')`,
-            { headers: { Authorization: superuserToken } },
-        );
-        if (!res.ok) return [];
-        const data = await res.json();
-        return data.items;
-    }
+    describe("document lifecycle", () => {
+        test("move removes the original and creates a trash record", async () => {
+            const note = await createNote(user, { title: "Trash me", content: "Some content" });
+            const trashId = await moveDocument(note.id);
 
-    // --- Document Trash Lifecycle ---
-
-    describe("Document trash lifecycle", () => {
-        test("move document to trash — original deleted, trash record created", async () => {
-            const doc = await createDocument("Trash Me", "Some content to trash");
-
-            const res = await fetch(`${TRASH_API}/move-document`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ documentId: doc.id }),
-            });
-
-            expect(res.status).toBe(200);
-            const data = await res.json();
-            expect(data.trashDocumentId).toBeTruthy();
-
-            // Original should be gone
-            expect(await recordExists("documents", doc.id)).toBe(false);
-
-            // Trash record should exist
-            expect(await recordExists("trash_documents", data.trashDocumentId)).toBe(true);
+            expect(await pbRecordExists(superuserToken, "documents", note.id)).toBe(false);
+            expect(await pbRecordExists(superuserToken, "trash_documents", trashId)).toBe(true);
         });
 
-        test("restore document from trash — document restored, trash record deleted", async () => {
-            const doc = await createDocument("Restore Me", "Content to restore");
+        test("restore recreates the document and removes the trash record", async () => {
+            const note = await createNote(user, { title: "Restore me", content: "Content" });
+            const trashId = await moveDocument(note.id);
 
-            // Move to trash
-            const moveRes = await fetch(`${TRASH_API}/move-document`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ documentId: doc.id }),
-            });
-            const moveData = await moveRes.json();
+            const restoreRes = await post("/restore-document", { trashDocumentId: trashId });
+            await expectStatus(restoreRes, 200, "restore document");
+            const restored = await readJson<{ documentId: string; folderId: string | null }>(restoreRes);
 
-            // Restore
-            const restoreRes = await fetch(`${TRASH_API}/restore-document`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ trashDocumentId: moveData.trashDocumentId }),
-            });
-
-            expect(restoreRes.status).toBe(200);
-            const restoreData = await restoreRes.json();
-            expect(restoreData.documentId).toBeTruthy();
-
-            // Document should exist again
-            expect(await recordExists("documents", restoreData.documentId)).toBe(true);
-
-            // Trash record should be gone
-            expect(await recordExists("trash_documents", moveData.trashDocumentId)).toBe(false);
+            expect(await pbRecordExists(superuserToken, "documents", restored.documentId)).toBe(true);
+            expect(await pbRecordExists(superuserToken, "trash_documents", trashId)).toBe(false);
+            expect(restored.folderId).toBeNull();
         });
 
-        test("permanent delete — both trash and original are gone", async () => {
-            const doc = await createDocument("Delete Forever", "Permanent delete content");
+        test("permanent delete removes both copies", async () => {
+            const note = await createNote(user, { title: "Delete forever", content: "Gone" });
+            const trashId = await moveDocument(note.id);
 
-            // Move to trash
-            const moveRes = await fetch(`${TRASH_API}/move-document`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ documentId: doc.id }),
+            const deleteRes = await post("/permanent-delete-document", {
+                trashDocumentId: trashId,
             });
-            const moveData = await moveRes.json();
+            await expectStatus(deleteRes, 200, "permanently delete document");
+            expect((await readJson<{ success: boolean }>(deleteRes)).success).toBe(true);
 
-            // Permanent delete
-            const deleteRes = await fetch(`${TRASH_API}/permanent-delete-document`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ trashDocumentId: moveData.trashDocumentId }),
-            });
+            expect(await pbRecordExists(superuserToken, "documents", note.id)).toBe(false);
+            expect(await pbRecordExists(superuserToken, "trash_documents", trashId)).toBe(false);
+        });
 
-            expect(deleteRes.status).toBe(200);
-            const deleteData = await deleteRes.json();
-            expect(deleteData.success).toBe(true);
+        test("restoring a document with a deleted folder restores it at the root", async () => {
+            const folder = await createFolder(user, { name: "Temporary folder" });
+            const note = await createNote(user, { title: "Orphan", folder: folder.id });
+            const trashId = await moveDocument(note.id);
 
-            // Both should be gone
-            expect(await recordExists("documents", doc.id)).toBe(false);
-            expect(await recordExists("trash_documents", moveData.trashDocumentId)).toBe(false);
+            // Move the (already emptied) folder to trash, then permanently delete it.
+            const trashFolderId = await moveFolder(folder.id);
+            await expectStatus(
+                await post("/permanent-delete-folder", { trashFolderId }),
+                200,
+                "delete folder",
+            );
+
+            const restoreRes = await post("/restore-document", { trashDocumentId: trashId });
+            await expectStatus(restoreRes, 200, "restore orphan");
+            const restored = await readJson<{ folderId: string | null }>(restoreRes);
+            expect(restored.folderId).toBeNull();
         });
     });
 
-    // --- Document Version Preservation ---
+    describe("version preservation", () => {
+        test("versions move to trash and come back with the document", async () => {
+            const note = await createNote(user, { title: "Versioned", content: "Version 1" });
+            await publishNote(user, note.id, "Version 2");
 
-    describe("Document version preservation", () => {
-        test("versions move to trash and restore back with document", async () => {
-            const doc = await createDocument("Versioned Doc", "Version 1 content");
+            expect(await versionsOf(note.id)).toHaveLength(1);
 
-            // Publish to create a version
-            await publishDocument(doc.id);
+            const trashId = await moveDocument(note.id);
+            expect(await versionsOf(note.id)).toEqual([]);
+            expect(await versionsOf(trashId, "trash_document_versions", "trash_document")).toHaveLength(1);
 
-            // Verify version exists
-            const versionsBeforeTrash = await getVersions(doc.id, "document_versions");
-            expect(versionsBeforeTrash.length).toBeGreaterThanOrEqual(1);
+            const restoreRes = await post("/restore-document", { trashDocumentId: trashId });
+            const { documentId } = await readJson<{ documentId: string }>(restoreRes);
 
-            // Move to trash
-            const moveRes = await fetch(`${TRASH_API}/move-document`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ documentId: doc.id }),
-            });
-            expect(moveRes.status).toBe(200);
-            const moveData = await moveRes.json();
+            expect(await versionsOf(documentId)).toHaveLength(1);
+            expect(await versionsOf(trashId, "trash_document_versions", "trash_document")).toEqual([]);
+        });
 
-            // Original versions should be gone
-            const versionsAfterTrash = await getVersions(doc.id, "document_versions");
-            expect(versionsAfterTrash.length).toBe(0);
+        test("permanent delete removes trash versions", async () => {
+            const note = await createNote(user, { title: "Version delete", content: "v1" });
+            await publishNote(user, note.id, "v2");
+            const trashId = await moveDocument(note.id);
 
-            // Trash versions should exist
-            const trashVersions = await getVersions(moveData.trashDocumentId, "trash_document_versions");
-            expect(trashVersions.length).toBeGreaterThanOrEqual(1);
-
-            // Restore
-            const restoreRes = await fetch(`${TRASH_API}/restore-document`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ trashDocumentId: moveData.trashDocumentId }),
-            });
-            expect(restoreRes.status).toBe(200);
-            const restoreData = await restoreRes.json();
-
-            // Restored document should have versions again
-            const restoredVersions = await getVersions(restoreData.documentId, "document_versions");
-            expect(restoredVersions.length).toBeGreaterThanOrEqual(1);
-
-            // Trash versions should be gone
-            const trashVersionsAfter = await getVersions(moveData.trashDocumentId, "trash_document_versions");
-            expect(trashVersionsAfter.length).toBe(0);
+            expect(await versionsOf(trashId, "trash_document_versions", "trash_document")).toHaveLength(1);
+            await expectStatus(
+                await post("/permanent-delete-document", { trashDocumentId: trashId }),
+                200,
+                "delete versioned note",
+            );
+            expect(await versionsOf(trashId, "trash_document_versions", "trash_document")).toEqual([]);
         });
     });
 
-    // --- Folder Trash Lifecycle ---
+    describe("attachments", () => {
+        test("attachment bytes survive a trash round trip", async () => {
+            const body = new TextEncoder().encode("attachment survives");
+            const note = await createNoteWithAttachment(user, "survivor.txt", body);
+            const storedName = (note.attachments as string[])[0]!;
 
-    describe("Folder trash lifecycle", () => {
-        test("move folder with documents to trash — folder and docs removed from originals", async () => {
-            const folder = await createFolder(`TrashFolder-${Date.now()}`);
-            const doc1 = await createDocument("Folder Doc 1", "Content 1", { folder: folder.id });
-            const doc2 = await createDocument("Folder Doc 2", "Content 2", { folder: folder.id });
-
-            const res = await fetch(`${TRASH_API}/move-folder`, {
+            const fileTokenRes = await pbRequest("/files/token", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ folderId: folder.id }),
+                headers: { Authorization: user.token },
             });
+            await expectStatus(fileTokenRes, 200, "file token");
+            const { token: fileToken } = await readJson<{ token: string }>(fileTokenRes);
 
-            expect(res.status).toBe(200);
-            const data = await res.json();
-            expect(data.trashFolderId).toBeTruthy();
-            expect(data.movedDocumentIds).toBeArray();
-            expect(data.movedDocumentIds.length).toBe(2);
+            const originalRes = await pbRequest(
+                `/files/documents/${note.id}/${encodeURIComponent(storedName)}?token=${encodeURIComponent(fileToken)}`,
+            );
+            await expectStatus(originalRes, 200, "read original attachment");
 
-            // Originals should be gone
-            expect(await recordExists("folders", folder.id)).toBe(false);
-            expect(await recordExists("documents", doc1.id)).toBe(false);
-            expect(await recordExists("documents", doc2.id)).toBe(false);
+            const trashId = await moveDocument(note.id);
+            const restoreRes = await post("/restore-document", { trashDocumentId: trashId });
+            const { documentId } = await readJson<{ documentId: string }>(restoreRes);
 
-            // Trash records should exist
-            expect(await recordExists("trash_folders", data.trashFolderId)).toBe(true);
-            const trashDoc1 = await getTrashDocByOriginalId(doc1.id);
-            expect(trashDoc1).not.toBeNull();
-            const trashDoc2 = await getTrashDocByOriginalId(doc2.id);
-            expect(trashDoc2).not.toBeNull();
-        });
+            const restoredRecord = await readJson<{ attachments: string[] }>(
+                await pbRequest(`/collections/documents/records/${documentId}`, {
+                    headers: { Authorization: user.token },
+                }),
+            );
+            expect(restoredRecord.attachments).toHaveLength(1);
 
-        test("restore folder — folder and documents restored", async () => {
-            const folder = await createFolder(`RestoreFolder-${Date.now()}`);
-            const doc = await createDocument("Restore Folder Doc", "Folder content", {
-                folder: folder.id,
-            });
-
-            // Move to trash
-            const moveRes = await fetch(`${TRASH_API}/move-folder`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ folderId: folder.id }),
-            });
-            const moveData = await moveRes.json();
-
-            // Restore
-            const restoreRes = await fetch(`${TRASH_API}/restore-folder`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ trashFolderId: moveData.trashFolderId }),
-            });
-
-            expect(restoreRes.status).toBe(200);
-            const restoreData = await restoreRes.json();
-            expect(restoreData.success).toBe(true);
-            expect(restoreData.restoredDocumentIds).toBeArray();
-            expect(restoreData.restoredDocumentIds.length).toBe(1);
-
-            // Trash records should be gone
-            expect(await recordExists("trash_folders", moveData.trashFolderId)).toBe(false);
-
-            // A document should be restored (may have a new ID)
-            const restoredDocId = restoreData.restoredDocumentIds[0];
-            expect(await recordExists("documents", restoredDocId)).toBe(true);
-        });
-
-        test("permanent delete folder — everything is gone", async () => {
-            const folder = await createFolder(`PermDeleteFolder-${Date.now()}`);
-            const doc = await createDocument("PermDelete Folder Doc", "Gone forever", {
-                folder: folder.id,
-            });
-
-            // Move to trash
-            const moveRes = await fetch(`${TRASH_API}/move-folder`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ folderId: folder.id }),
-            });
-            const moveData = await moveRes.json();
-
-            // Permanent delete
-            const deleteRes = await fetch(`${TRASH_API}/permanent-delete-folder`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ trashFolderId: moveData.trashFolderId }),
-            });
-
-            expect(deleteRes.status).toBe(200);
-            const deleteData = await deleteRes.json();
-            expect(deleteData.success).toBe(true);
-
-            // All trash records should be gone
-            expect(await recordExists("trash_folders", moveData.trashFolderId)).toBe(false);
-            const trashDoc = await getTrashDocByOriginalId(doc.id);
-            expect(trashDoc).toBeNull();
-
-            // Originals should also be gone
-            expect(await recordExists("documents", doc.id)).toBe(false);
-            expect(await recordExists("folders", folder.id)).toBe(false);
+            const restoredRes = await pbRequest(
+                `/files/documents/${documentId}/${encodeURIComponent(restoredRecord.attachments[0]!)}?token=${encodeURIComponent(fileToken)}`,
+            );
+            await expectStatus(restoredRes, 200, "read restored attachment");
+            expect(await restoredRes.text()).toBe("attachment survives");
         });
     });
 
-    // --- Nested Folder Handling ---
+    describe("folder lifecycle", () => {
+        test("moving a folder trashes its documents", async () => {
+            const folder = await createFolder(user, { name: "Trash folder" });
+            const first = await createNote(user, { folder: folder.id });
+            const second = await createNote(user, { folder: folder.id });
 
-    describe("Nested folder handling", () => {
-        test("move parent folder trashes entire tree including nested docs", async () => {
-            const parent = await createFolder(`NestedParent-${Date.now()}`);
-            const child = await createFolder(`NestedChild-${Date.now()}`, parent.id);
-            const docInChild = await createDocument("Nested Doc", "Deep content", {
-                folder: child.id,
-            });
+            const res = await post("/move-folder", { folderId: folder.id });
+            await expectStatus(res, 200, "move folder");
+            const data = await readJson<{ trashFolderId: string; movedDocumentIds: string[] }>(res);
 
-            const res = await fetch(`${TRASH_API}/move-folder`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({ folderId: parent.id }),
-            });
+            expect(data.movedDocumentIds).toHaveLength(2);
+            expect(data.movedDocumentIds).toEqual(expect.arrayContaining([first.id, second.id]));
+            expect(await pbRecordExists(superuserToken, "folders", folder.id)).toBe(false);
+            expect(await pbRecordExists(superuserToken, "documents", first.id)).toBe(false);
+            expect(await pbRecordExists(superuserToken, "documents", second.id)).toBe(false);
+            expect(await trashDocumentByOriginalId(first.id)).not.toBeNull();
+            expect(await trashDocumentByOriginalId(second.id)).not.toBeNull();
+        });
 
-            expect(res.status).toBe(200);
-            const data = await res.json();
-            expect(data.trashFolderId).toBeTruthy();
-            expect(data.movedDocumentIds).toContain(docInChild.id);
+        test("restoring a folder recreates the folder and its documents", async () => {
+            const folder = await createFolder(user, { name: "Restore folder" });
+            const note = await createNote(user, { folder: folder.id });
+            const trashFolderId = await moveFolder(folder.id);
 
-            // All originals should be gone
-            expect(await recordExists("folders", parent.id)).toBe(false);
-            expect(await recordExists("folders", child.id)).toBe(false);
-            expect(await recordExists("documents", docInChild.id)).toBe(false);
+            const restoreRes = await post("/restore-folder", { trashFolderId });
+            await expectStatus(restoreRes, 200, "restore folder");
+            const data = await readJson<{ success: boolean; restoredDocumentIds: string[] }>(restoreRes);
 
-            // Trash records should exist
-            expect(await recordExists("trash_folders", data.trashFolderId)).toBe(true);
-            const trashChild = await getTrashFolderByOriginalId(child.id);
-            expect(trashChild).not.toBeNull();
-            const trashDoc = await getTrashDocByOriginalId(docInChild.id);
-            expect(trashDoc).not.toBeNull();
+            expect(data.success).toBe(true);
+            expect(data.restoredDocumentIds).toHaveLength(1);
+            expect(await pbRecordExists(superuserToken, "documents", data.restoredDocumentIds[0]!)).toBe(true);
+            expect(await pbRecordExists(superuserToken, "trash_folders", trashFolderId)).toBe(false);
+
+            const folders = await pbList<{ id: string; name: string }>(user.token, "folders");
+            expect(folders.items.some((item) => item.name === "Restore folder")).toBe(true);
+
+            // The restored document is inside the restored folder.
+            const restoredDoc = await pbRequest(
+                `/collections/documents/records/${data.restoredDocumentIds[0]!}`,
+                { headers: { Authorization: user.token } },
+            );
+            const doc = await readJson<{ folder: string }>(restoredDoc);
+            expect(folders.items.map((item) => item.id)).toContain(doc.folder);
+            expect(await trashDocumentByOriginalId(note.id)).toBeNull();
+        });
+
+        test("moving a parent trashes the whole nested tree", async () => {
+            const parent = await createFolder(user, { name: "Nested parent" });
+            const child = await createFolder(user, { name: "Nested child", parent: parent.id });
+            const note = await createNote(user, { folder: child.id });
+
+            const res = await post("/move-folder", { folderId: parent.id });
+            const data = await readJson<{ movedDocumentIds: string[] }>(res);
+
+            expect(data.movedDocumentIds).toContain(note.id);
+            expect(await pbRecordExists(superuserToken, "folders", parent.id)).toBe(false);
+            expect(await pbRecordExists(superuserToken, "folders", child.id)).toBe(false);
+            expect(
+                await pbFindFirst(superuserToken, "trash_folders", `original_folder_id='${child.id}'`),
+            ).not.toBeNull();
+        });
+
+        test("permanent delete removes the tree and its documents", async () => {
+            const folder = await createFolder(user, { name: "Delete folder" });
+            const child = await createFolder(user, { name: "Delete child", parent: folder.id });
+            const note = await createNote(user, { folder: child.id });
+            const trashFolderId = await moveFolder(folder.id);
+
+            const deleteRes = await post("/permanent-delete-folder", { trashFolderId });
+            await expectStatus(deleteRes, 200, "permanent delete folder");
+            expect((await readJson<{ success: boolean }>(deleteRes)).success).toBe(true);
+
+            expect(await pbRecordExists(superuserToken, "trash_folders", trashFolderId)).toBe(false);
+            expect(await trashDocumentByOriginalId(note.id)).toBeNull();
+            expect(await pbRecordExists(superuserToken, "documents", note.id)).toBe(false);
+            expect(await pbRecordExists(superuserToken, "folders", folder.id)).toBe(false);
+        });
+
+        test("moving an empty folder succeeds", async () => {
+            const folder = await createFolder(user, { name: "Empty folder" });
+            const trashFolderId = await moveFolder(folder.id);
+            expect(await pbRecordExists(superuserToken, "trash_folders", trashFolderId)).toBe(true);
         });
     });
 
-    // --- Auth / Ownership Enforcement ---
-
-    describe("Auth and ownership enforcement", () => {
+    describe("auth and ownership", () => {
         test("cannot trash another user's document", async () => {
-            // Create document as user A
-            const doc = await createDocument("User A Doc", "Owned by A");
+            const note = await createNote(user, { title: "User A note" });
+            const res = await post("/move-document", { documentId: note.id }, other.token);
 
-            // Try to trash it as user B
-            const res = await fetch(`${TRASH_API}/move-document`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userBToken,
-                },
-                body: JSON.stringify({ documentId: doc.id }),
-            });
-
-            // Should fail (assertOwned check)
-            expect(res.status).toBe(400);
-            const data = await res.json();
-            expect(data.error).toBeTruthy();
-
-            // Document should still exist
-            expect(await recordExists("documents", doc.id)).toBe(true);
+            await expectJsonError(res, 400);
+            expect(await pbRecordExists(superuserToken, "documents", note.id)).toBe(true);
         });
 
-        test("unauthenticated request returns 401", async () => {
-            const res = await fetch(`${TRASH_API}/move-document`, {
+        test("cannot restore or permanently delete another user's trash", async () => {
+            const note = await createNote(user, { title: "Owner only" });
+            const trashId = await moveDocument(note.id);
+
+            await expectJsonError(
+                await post("/restore-document", { trashDocumentId: trashId }, other.token),
+                400,
+            );
+            await expectJsonError(
+                await post("/permanent-delete-document", { trashDocumentId: trashId }, other.token),
+                400,
+            );
+            expect(await pbRecordExists(superuserToken, "trash_documents", trashId)).toBe(true);
+        });
+
+        test("cannot move another user's folder", async () => {
+            const folder = await createFolder(user, { name: "Private folder" });
+            const res = await post("/move-folder", { folderId: folder.id }, other.token);
+
+            await expectJsonError(res, 400);
+            expect(await pbRecordExists(superuserToken, "folders", folder.id)).toBe(true);
+        });
+
+        test("unauthenticated requests are rejected", async () => {
+            const res = await pbRequest(`${TRASH_API}/move-document`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ documentId: "fake-id" }),
+                body: JSON.stringify({ documentId: "anything" }),
             });
-
-            expect(res.status).toBe(401);
+            await expectStatus(res, 401, "unauthenticated trash request");
         });
 
-        test("missing documentId returns error", async () => {
-            const res = await fetch(`${TRASH_API}/move-document`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({}),
-            });
+        test("missing ids and invalid JSON are rejected", async () => {
+            await expectJsonError(await post("/move-document", {}), 400);
+            await expectJsonError(await post("/restore-document", {}), 400);
+            await expectJsonError(await post("/move-folder", {}), 400);
+            await expectJsonError(await post("/restore-folder", {}), 400);
+            await expectJsonError(await post("/permanent-delete-document", {}), 400);
+            await expectJsonError(await post("/permanent-delete-folder", {}), 400);
 
-            expect(res.status).toBe(400);
-            const data = await res.json();
-            expect(data.error).toBeTruthy();
+            const invalidJson = await pbRequest(`${TRASH_API}/move-document`, {
+                method: "POST",
+                headers: { Authorization: user.token, "Content-Type": "application/json" },
+                body: "{not-json",
+            });
+            await expectJsonError(invalidJson, 400);
         });
 
-        test("missing trashDocumentId on restore returns error", async () => {
-            const res = await fetch(`${TRASH_API}/restore-document`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({}),
-            });
-
-            expect(res.status).toBe(400);
-            const data = await res.json();
-            expect(data.error).toBeTruthy();
-        });
-
-        test("missing folderId on move-folder returns error", async () => {
-            const res = await fetch(`${TRASH_API}/move-folder`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: userToken,
-                },
-                body: JSON.stringify({}),
-            });
-
-            expect(res.status).toBe(400);
-            const data = await res.json();
-            expect(data.error).toBeTruthy();
+        test("unknown ids are rejected without leaking records", async () => {
+            await expectJsonError(
+                await post("/restore-document", { trashDocumentId: "nonexistent123456" }),
+                400,
+            );
+            await expectJsonError(
+                await post("/permanent-delete-folder", { trashFolderId: "nonexistent123456" }),
+                400,
+            );
         });
     });
 });

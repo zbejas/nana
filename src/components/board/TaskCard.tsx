@@ -77,15 +77,15 @@ export function TaskCard({
       tabIndex={0}
       aria-label={`Open task ${task.title}`}
       className={cn(
-        'group w-full border-b border-line px-2 py-2.5 text-left transition-colors duration-150 hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-signal',
+        'group w-full rounded-[7px] border border-line bg-surface px-3.5 py-3 text-left transition-colors duration-150 hover:border-line-strong hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal',
         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         isDragging && 'opacity-40'
       )}
     >
       <h3
         className={cn(
-          'min-w-0 truncate text-[14px] font-medium leading-snug text-ink',
-          isDone && 'text-ink-muted line-through'
+          'min-w-0 truncate text-[13.5px] font-medium leading-snug tracking-[-0.005em] text-ink',
+          isDone && 'text-ink-muted line-through decoration-ink-muted/50'
         )}
       >
         {task.title || 'Untitled task'}
@@ -94,8 +94,8 @@ export function TaskCard({
       {excerpt && (
         <p
           className={cn(
-            'mt-1 truncate text-[12px] leading-relaxed text-ink-muted',
-            isDone && 'text-ink-muted/80'
+            'mt-1 line-clamp-2 text-[12px] leading-relaxed text-ink-muted',
+            isDone && 'text-ink-muted'
           )}
         >
           {excerpt}
@@ -103,9 +103,12 @@ export function TaskCard({
       )}
 
       {hasMeta && (
-        <div className="mt-1.5 flex min-w-0 items-center gap-x-2.5 gap-y-1 overflow-hidden font-mono text-[10px] uppercase tracking-[0.06em] text-ink-muted">
+        <div className="mt-2.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-[11.5px] text-ink-muted">
           {task.priority && (
-            <span className="shrink-0 tabular-nums" title={PRIORITY_LABELS[task.priority]}>
+            <span
+              className="shrink-0 rounded-[4px] bg-surface-sunken px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-ink-secondary"
+              title={PRIORITY_LABELS[task.priority]}
+            >
               {PRIORITY_CODES[task.priority]}
             </span>
           )}
@@ -126,11 +129,11 @@ export function TaskCard({
               title={`From note: ${linkedTitle}`}
             >
               <DocumentTextIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
-              <span className="max-w-[8rem] truncate normal-case tracking-normal">{linkedTitle}</span>
+              <span className="max-w-[8rem] truncate">{linkedTitle}</span>
             </span>
           )}
           {task.labels.slice(0, 2).map((label) => (
-            <span key={label} className="max-w-[6rem] shrink-0 truncate normal-case tracking-normal">
+            <span key={label} className="max-w-[6rem] shrink-0 truncate rounded-[4px] bg-surface-sunken px-1.5 py-0.5">
               {label}
             </span>
           ))}

@@ -23,7 +23,7 @@ export function Badge({ children, tone = 'neutral', className, dot }: BadgeProps
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-5',
+        'inline-flex items-center gap-1.5 rounded-[5px] border px-1.5 py-0.5 text-[11.5px] font-medium leading-5',
         tones[tone],
         className
       )}
@@ -58,36 +58,54 @@ interface EmptyStateProps {
 }
 
 /**
- * A quiet editorial block rather than an empty panel: full width, left aligned,
- * bounded by hairlines. The icon prop is accepted for compatibility and
- * intentionally not rendered.
+ * A quiet panel rather than an empty table row: an optional neutral icon, a
+ * title, and one next step. Compact drops the panel chrome for dialogs and
+ * inline contexts.
  */
-export function EmptyState({ eyebrow, title, description, action, className, compact }: EmptyStateProps) {
+export function EmptyState({ icon, title, description, action, className, compact }: EmptyStateProps) {
   return (
     <div
       className={cn(
-        'w-full border-y border-line text-left',
-        compact ? 'px-1 py-[18px]' : 'px-2 py-7',
+        'w-full',
+        compact
+          ? 'px-0 py-4'
+          : 'rounded-panel border border-line bg-surface px-6 py-10 text-center sm:px-8',
         className
       )}
     >
-      {eyebrow && (
-        <p className="font-mono text-[10px] font-medium uppercase leading-4 tracking-[0.08em] text-ink-muted">
-          {eyebrow}
-        </p>
+      {icon && !compact && (
+        <span className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-[8px] border border-line bg-surface-sunken text-ink-muted [&>svg]:h-5 [&>svg]:w-5">
+          {icon}
+        </span>
       )}
       <h3
         className={cn(
-          'font-display text-[18px] font-semibold leading-tight tracking-[-0.02em] text-ink',
-          eyebrow && 'mt-2'
+          'text-[17px] font-semibold leading-snug tracking-[-0.015em] text-ink',
+          compact && 'text-[16px]'
         )}
       >
         {title}
       </h3>
       {description && (
-        <p className="mt-1.5 max-w-[60ch] text-[13px] leading-relaxed text-ink-secondary">{description}</p>
+        <p
+          className={cn(
+            'mt-1.5 max-w-[56ch] text-[13.5px] leading-relaxed text-ink-secondary',
+            !compact && 'mx-auto'
+          )}
+        >
+          {description}
+        </p>
       )}
-      {action && <div className="mt-4 flex flex-wrap items-center gap-2">{action}</div>}
+      {action && (
+        <div
+          className={cn(
+            'mt-5 flex flex-wrap items-center gap-2',
+            !compact && 'justify-center'
+          )}
+        >
+          {action}
+        </div>
+      )}
     </div>
   );
 }

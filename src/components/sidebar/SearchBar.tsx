@@ -52,7 +52,7 @@ export function SearchBar({ onDocumentClick, onContextMenu }: SearchBarProps) {
     <div ref={searchRef} className="relative px-3">
       <div className="relative">
         <MagnifyingGlassIcon
-          className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted"
+          className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted"
           aria-hidden="true"
         />
         <input
@@ -62,7 +62,7 @@ export function SearchBar({ onDocumentClick, onContextMenu }: SearchBarProps) {
           onFocus={() => searchQuery.trim().length > 0 && setShowResults(true)}
           placeholder="Search notes"
           aria-label="Search documents"
-          className="h-9 w-full rounded-control border border-line-strong bg-surface-sunken pl-8 pr-3 text-[13px] text-ink outline-none transition-colors placeholder:text-ink-muted/80 focus:border-signal focus:ring-2 focus:ring-signal/20"
+          className="h-[34px] w-full rounded-control border border-line bg-surface pl-8 pr-3 text-[13px] text-ink outline-none transition-colors placeholder:text-ink-muted hover:border-line-strong focus:border-signal/70 focus:ring-4 focus:ring-signal/10"
         />
       </div>
 
@@ -90,11 +90,11 @@ export function SearchBar({ onDocumentClick, onContextMenu }: SearchBarProps) {
                 >
                   <p className="truncate text-[13px] text-ink">{highlightText(doc.title || 'Untitled', searchQuery)}</p>
                   <div className="mt-0.5 flex items-center justify-between gap-2">
-                    <p className="text-[11px] text-ink-muted">
+                    <p className="text-[11.5px] text-ink-muted">
                       {new Date(doc.updated).toLocaleDateString()}
                     </p>
                     {doc.tags?.length > 0 && (
-                      <p className="truncate text-[11px] text-ink-muted">
+                      <p className="truncate text-[11.5px] text-ink-muted">
                         {doc.tags.slice(0, 2).map((tag, index) => (
                           <span key={index}>
                             {index > 0 && ' · '}

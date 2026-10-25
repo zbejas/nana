@@ -10,6 +10,17 @@ const POCKETBASE_URL = serverConfig.pocketbaseUrl;
 const ALLOWED_TOOLS = new Set<string>(CHAT_TOOL_NAMES);
 const ALLOWED_TOOL_STATUSES = new Set(["success", "error"]);
 
+/** PocketBase REST failure with the upstream status preserved for handlers. */
+export class PocketBaseRequestError extends Error {
+    status: number;
+
+    constructor(status: number, message: string) {
+        super(message);
+        this.name = "PocketBaseRequestError";
+        this.status = status;
+    }
+}
+
 /**
  * Generic PocketBase REST fetch helper.
  * Throws on non-OK responses with the error body.
@@ -26,7 +37,10 @@ async function pbFetch<T>(path: string, authHeader: string, options?: RequestIni
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`PocketBase ${options?.method || "GET"} ${path} failed (${response.status}): ${errorText}`);
+        throw new PocketBaseRequestError(
+            response.status,
+            `PocketBase ${options?.method || "GET"} ${path} failed (${response.status}): ${errorText}`,
+        );
     }
 
     // DELETE returns 204 with no body
@@ -58,7 +72,7 @@ export async function fetchAIConfig(): Promise<AIConfig> {
         return item.value;
     } catch (err) {
         // If 401/403, invalidate cached token and retry once
-        if (err instanceof Error && (err.message.includes("401") || err.message.includes("403"))) {
+        if (err instanceof PocketBaseRequestError && (err.status === 401 || err.status === 403)) {
             invalidateSuperuserToken();
             const freshToken = await getSuperuserToken();
             const result = await pbFetch<PBListResponse<{ id: string; key: string; value: AIConfig }>>(

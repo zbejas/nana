@@ -56,7 +56,7 @@ export function PublicDocumentView({
                                     <span className="flex items-center gap-2">
                                         <PaperClipIcon className="h-4 w-4 text-warning" />
                                         Attachments
-                                        <span className="text-[11px] font-normal text-ink-muted">({attachments.length})</span>
+                                        <span className="text-[11.5px] font-normal text-ink-muted">({attachments.length})</span>
                                     </span>
                                     <ChevronRightIcon className={`h-4 w-4 text-ink-muted public-chevron-rotate ${attachmentsExpanded ? 'rotate-90' : ''}`} />
                                 </button>
@@ -72,7 +72,7 @@ export function PublicDocumentView({
                                 <div className="mb-3 flex items-center gap-2 text-sm font-medium text-ink">
                                     <PaperClipIcon className="h-4 w-4 text-warning" />
                                     Attachments
-                                    <span className="text-[11px] font-normal text-ink-muted">({attachments.length})</span>
+                                    <span className="text-[11.5px] font-normal text-ink-muted">({attachments.length})</span>
                                 </div>
                                 <PublicAttachmentList attachments={attachments} getAttachmentUrl={getAttachmentUrl} />
                             </>

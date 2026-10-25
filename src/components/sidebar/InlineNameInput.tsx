@@ -51,7 +51,7 @@ export function InlineNameInput({
       style={{ paddingLeft: `${indent + 20}px` }}
     >
       {icon === 'folder' ? (
-        <FolderIcon className="h-3.5 w-3.5 shrink-0 text-warning" />
+        <FolderIcon className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
       ) : (
         <DocumentTextIcon className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
       )}

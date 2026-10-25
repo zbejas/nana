@@ -79,8 +79,7 @@ export function PublicDocumentPage() {
             <div className="flex min-h-screen items-center justify-center px-4 py-10">
                 <div className="w-full max-w-md rounded-panel border border-line bg-surface p-6 text-center sm:p-8">
                     <img src={logo} alt="Nana" className="mx-auto h-16 w-16" />
-                    <p className="eyebrow mt-5">Public note</p>
-                    <h1 className="mt-2 font-display text-2xl text-ink">This link is not available</h1>
+                    <h1 className="mt-5 text-2xl text-ink">This link is not available</h1>
                     <p className="mt-3 text-sm leading-relaxed text-ink-secondary">
                         {error ?? 'The owner may have stopped sharing this note, or the link has expired.'}
                     </p>
@@ -94,12 +93,12 @@ export function PublicDocumentPage() {
 
     const topBarRight = (
         <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-ink-muted">
+            <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-muted">
                 <ClockIcon className="h-3.5 w-3.5" />
                 {data.document.reading_time || 0} min
             </span>
             {data.document.updated && (
-                <span className="hidden text-[11px] text-ink-muted sm:inline">
+                <span className="hidden text-[11.5px] text-ink-muted sm:inline">
                     Updated {new Date(data.document.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                 </span>
             )}
@@ -126,7 +125,7 @@ export function PublicDocumentPage() {
                 />
             </div>
 
-            <footer className="px-4 pb-6 pt-4 text-center text-[11px] text-ink-muted">
+            <footer className="px-4 pb-6 pt-4 text-center text-[11.5px] text-ink-muted">
                 Published with{' '}
                 <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-signal hover:text-signal-strong">
                     Nana

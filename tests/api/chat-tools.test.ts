@@ -1,43 +1,40 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import {
-    PB_API,
-    authenticateSuperuser,
-    authenticateUser,
-    createTestUser,
-} from "../helpers/setup";
-import { listNotes, readNote } from "../../src/api/chat/tools/notes";
 import { listBoards, readBoard } from "../../src/api/chat/tools/boards";
 import type { ToolContext } from "../../src/api/chat/tools/http";
+import { listNotes, readNote } from "../../src/api/chat/tools/notes";
+import {
+    createBoard,
+    createNote,
+    createTask,
+    createUser,
+    type TestRecord,
+    type TestUser,
+} from "../helpers/factories";
 
-const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-const password = "testPassword123!";
+let owner: TestUser;
+let other: TestUser;
+let ownerContext: ToolContext;
+let otherContext: ToolContext;
 
-let superuserToken: string;
-let userA: { id: string; token: string };
-let userB: { id: string; token: string };
-let contextA: ToolContext;
-let contextB: ToolContext;
-let noteField = "document";
-
-const notes = {
-    alpha: "",
-    beta: "",
-    gamma: "",
-    secret: "",
+const notes: Record<"alpha" | "beta" | "gamma" | "secret", TestRecord> = {
+    alpha: { id: "" },
+    beta: { id: "" },
+    gamma: { id: "" },
+    secret: { id: "" },
 };
 
-const boards = {
-    roadmap: "",
-    archived: "",
-    private: "",
+const boards: Record<"roadmap" | "archived" | "private", TestRecord> = {
+    roadmap: { id: "" },
+    archived: { id: "" },
+    private: { id: "" },
 };
 
-const taskIds = {
-    backlog: "",
-    next: "",
-    progress: "",
-    done1: "",
-    done2: "",
+const tasks: Record<"backlog" | "next" | "progress" | "done1" | "done2", TestRecord> = {
+    backlog: { id: "" },
+    next: { id: "" },
+    progress: { id: "" },
+    done1: { id: "" },
+    done2: { id: "" },
 };
 
 const noteContent = [
@@ -48,174 +45,93 @@ const noteContent = [
     "Line five",
 ].join("\n");
 
-async function pbCreate(token: string, collection: string, body: Record<string, unknown>): Promise<any> {
-    const res = await fetch(`${PB_API}/collections/${collection}/records`, {
-        method: "POST",
-        headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-        throw new Error(`Failed to create ${collection} (${res.status}): ${text}`);
-    }
-    return JSON.parse(text);
-}
-
-async function createNote(token: string, userId: string, title: string, content: string, tags: string[] = []): Promise<string> {
-    const record = await pbCreate(token, "documents", {
-        title,
-        slug: `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${suffix}-${Math.random().toString(36).slice(2, 6)}`,
-        content,
-        tags,
-        author: userId,
-    });
-    return record.id;
-}
-
-async function createBoard(token: string, userId: string, name: string, archived = false): Promise<string> {
-    const record = await pbCreate(token, "boards", {
-        name,
-        description: `${name} description`,
-        archived,
-        author: userId,
-    });
-    return record.id;
-}
-
-async function createTask(
-    token: string,
-    userId: string,
-    boardId: string,
-    data: {
-        title: string;
-        status: "backlog" | "next" | "progress" | "done";
-        boardOrder: number;
-        description?: string;
-        noteId?: string;
-        labels?: string[];
-        priority?: string;
-        dueDate?: string;
-    },
-): Promise<string> {
-    const base: Record<string, unknown> = {
-        title: data.title,
-        description: data.description ?? "",
-        status: data.status,
-        board_order: data.boardOrder,
-        labels: data.labels ?? [],
-        ...(data.priority ? { priority: data.priority } : {}),
-        ...(data.dueDate ? { due_date: data.dueDate } : {}),
-        board: boardId,
-        author: userId,
-        ...(data.noteId ? { [noteField]: data.noteId } : {}),
-    };
-
-    const record = await pbCreate(token, "tasks", base);
-    return record.id;
-}
-
-async function resolveTaskNoteField(): Promise<void> {
-    const res = await fetch(`${PB_API}/collections/tasks`, {
-        headers: { Authorization: superuserToken },
-    });
-    if (!res.ok) {
-        throw new Error(`Failed to inspect tasks collection (${res.status})`);
-    }
-    const collection = (await res.json()) as { fields?: Array<{ name?: string }> };
-    const names = new Set((collection.fields ?? []).map((field) => field.name));
-    noteField = names.has("note") ? "note" : "document";
-}
-
 beforeAll(async () => {
-    superuserToken = await authenticateSuperuser();
-    await resolveTaskNoteField();
+    owner = await createUser("chat-tools-owner");
+    other = await createUser("chat-tools-other");
+    ownerContext = { authHeader: owner.token, userId: owner.id };
+    otherContext = { authHeader: other.token, userId: other.id };
 
-    const emailA = `chat-tools-a-${suffix}@test.local`;
-    const emailB = `chat-tools-b-${suffix}@test.local`;
-
-    const createdA = await createTestUser(superuserToken, {
-        email: emailA,
-        password,
-        name: "Chat Tools A",
+    notes.alpha = await createNote(owner, {
+        title: "Alpha Planning",
+        content: noteContent,
+        tags: ["work", "urgent"],
     });
-    const createdB = await createTestUser(superuserToken, {
-        email: emailB,
-        password,
-        name: "Chat Tools B",
+    notes.beta = await createNote(owner, {
+        title: "Beta Notes",
+        content: "Beta body",
+        tags: ["work"],
+    });
+    notes.gamma = await createNote(owner, {
+        title: "Gamma Log",
+        content: "Gamma body",
+    });
+    notes.secret = await createNote(other, {
+        title: "Secret Note",
+        content: "User B only",
+        tags: ["private"],
     });
 
-    const authA = await authenticateUser(emailA, password);
-    const authB = await authenticateUser(emailB, password);
-    userA = { id: createdA.id, token: authA.token };
-    userB = { id: createdB.id, token: authB.token };
-    contextA = { authHeader: userA.token, userId: userA.id };
-    contextB = { authHeader: userB.token, userId: userB.id };
+    boards.roadmap = await createBoard(owner, { name: "Roadmap", description: "The plan" });
+    boards.archived = await createBoard(owner, {
+        name: "Old Roadmap",
+        description: "Done and dusted",
+        archived: true,
+    });
+    boards.private = await createBoard(other, { name: "Private Board" });
 
-    notes.alpha = await createNote(userA.token, userA.id, "Alpha Planning", noteContent, ["work", "urgent"]);
-    notes.beta = await createNote(userA.token, userA.id, "Beta Notes", "Beta body", ["work"]);
-    notes.gamma = await createNote(userA.token, userA.id, "Gamma Log", "Gamma body");
-    notes.secret = await createNote(userB.token, userB.id, "Secret Note", "User B only", ["private"]);
-
-    boards.roadmap = await createBoard(userA.token, userA.id, "Roadmap");
-    boards.archived = await createBoard(userA.token, userA.id, "Old Roadmap", true);
-    boards.private = await createBoard(userB.token, userB.id, "Private Board");
-
-    taskIds.backlog = await createTask(userA.token, userA.id, boards.roadmap, {
+    tasks.backlog = await createTask(owner, boards.roadmap.id, {
         title: "Backlog item",
         status: "backlog",
-        boardOrder: 1,
+        board_order: 1,
     });
-    taskIds.next = await createTask(userA.token, userA.id, boards.roadmap, {
+    tasks.next = await createTask(owner, boards.roadmap.id, {
         title: "Next item",
         status: "next",
-        boardOrder: 1,
+        board_order: 1,
         priority: "high",
         labels: ["work"],
-        dueDate: "2026-11-01 12:00:00.000Z",
-        noteId: notes.alpha,
+        due_date: "2026-11-01 12:00:00.000Z",
+        document: notes.alpha.id,
     });
-    taskIds.progress = await createTask(userA.token, userA.id, boards.roadmap, {
+    tasks.progress = await createTask(owner, boards.roadmap.id, {
         title: "Progress item",
         status: "progress",
-        boardOrder: 1,
+        board_order: 1,
     });
-    taskIds.done1 = await createTask(userA.token, userA.id, boards.roadmap, {
+    tasks.done1 = await createTask(owner, boards.roadmap.id, {
         title: "Shipped release",
         status: "done",
-        boardOrder: 1,
+        board_order: 1,
         description: "## Ship the **release**\n\n<p>Build &amp; test the <strong>landing page</strong>.</p>",
     });
-    taskIds.done2 = await createTask(userA.token, userA.id, boards.roadmap, {
+    tasks.done2 = await createTask(owner, boards.roadmap.id, {
         title: "Second done item",
         status: "done",
-        boardOrder: 2,
+        board_order: 2,
     });
 
-    await createTask(userB.token, userB.id, boards.private, {
+    await createTask(other, boards.private.id, {
         title: "User B task",
         status: "progress",
-        boardOrder: 1,
+        board_order: 1,
     });
 });
 
 describe("list_notes", () => {
     test("returns only the caller's notes with metadata and no body", async () => {
-        const result = await listNotes(contextA, {});
+        const result = await listNotes(ownerContext, {});
         expect(result.ok).toBe(true);
         if (!result.ok) return;
 
-        expect(result.notes.length).toBe(3);
-        expect(result.notes.map((note) => note.id)).not.toContain(notes.secret);
+        expect(result.notes).toHaveLength(3);
+        expect(result.notes.map((note) => note.id)).not.toContain(notes.secret.id);
         expect(result.notes[0]).toHaveProperty("wordCount");
         expect(result.notes[0]).toHaveProperty("readingTime");
         expect(result.notes[0]).not.toHaveProperty("content");
     });
 
     test("pages and sorts metadata", async () => {
-        const first = await listNotes(contextA, { perPage: 2, page: 1, sort: "title" });
+        const first = await listNotes(ownerContext, { perPage: 2, page: 1, sort: "title" });
         expect(first.ok).toBe(true);
         if (!first.ok) return;
         expect(first.notes.map((note) => note.title)).toEqual(["Alpha Planning", "Beta Notes"]);
@@ -223,7 +139,7 @@ describe("list_notes", () => {
         expect(first.totalPages).toBe(2);
         expect(first.hasMore).toBe(true);
 
-        const second = await listNotes(contextA, { perPage: 2, page: 2, sort: "title" });
+        const second = await listNotes(ownerContext, { perPage: 2, page: 2, sort: "title" });
         expect(second.ok).toBe(true);
         if (!second.ok) return;
         expect(second.notes.map((note) => note.title)).toEqual(["Gamma Log"]);
@@ -231,20 +147,29 @@ describe("list_notes", () => {
     });
 
     test("filters by tag and survives filter-string injection", async () => {
-        const tagged = await listNotes(contextA, { tag: "urgent" });
+        const tagged = await listNotes(ownerContext, { tag: "urgent" });
         expect(tagged.ok).toBe(true);
         if (!tagged.ok) return;
-        expect(tagged.notes.map((note) => note.id)).toEqual([notes.alpha]);
+        expect(tagged.notes.map((note) => note.id)).toEqual([notes.alpha.id]);
 
-        const injected = await listNotes(contextA, { query: '"; author != "' });
+        const injected = await listNotes(ownerContext, { query: '"; author != "' });
         expect(injected.ok).toBe(true);
         if (!injected.ok) return;
         expect(injected.notes).toEqual([]);
     });
 
+    test("searches titles without returning bodies", async () => {
+        const result = await listNotes(ownerContext, { query: "Beta" });
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        expect(result.notes.map((note) => note.title)).toEqual(["Beta Notes"]);
+        expect(result.notes[0]).not.toHaveProperty("content");
+    });
+
     test("does not leak notes for an invalid token", async () => {
         const result = await listNotes(
-            { authHeader: "invalid-token-value", userId: userA.id },
+            { authHeader: "invalid-token-value", userId: owner.id },
             {},
         );
         // PocketBase treats an invalid token as a guest and applies listRule,
@@ -256,17 +181,21 @@ describe("list_notes", () => {
     });
 
     test("returns unauthorized when the auth header is missing", async () => {
-        const result = await listNotes(
-            { authHeader: "", userId: userA.id },
-            {},
-        );
+        const result = await listNotes({ authHeader: "", userId: owner.id }, {});
         expect(result.ok).toBe(false);
         if (result.ok) return;
         expect(result.code).toBe("unauthorized");
     });
 
     test("rejects malformed folder ids", async () => {
-        const result = await listNotes(contextA, { folderId: 'bad"id' });
+        const result = await listNotes(ownerContext, { folderId: 'bad"id' });
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.code).toBe("invalid_input");
+    });
+
+    test("rejects invalid paging input", async () => {
+        const result = await listNotes(ownerContext, { page: 0, perPage: 500 });
         expect(result.ok).toBe(false);
         if (result.ok) return;
         expect(result.code).toBe("invalid_input");
@@ -275,7 +204,7 @@ describe("list_notes", () => {
 
 describe("read_note", () => {
     test("pages by line and reports continuation", async () => {
-        const result = await readNote(contextA, { noteId: notes.alpha, offset: 2, limit: 2 });
+        const result = await readNote(ownerContext, { noteId: notes.alpha.id, offset: 2, limit: 2 });
         expect(result.ok).toBe(true);
         if (!result.ok) return;
 
@@ -287,7 +216,7 @@ describe("read_note", () => {
     });
 
     test("clips long lines and reports truncation", async () => {
-        const result = await readNote(contextA, { noteId: notes.alpha, offset: 4, limit: 1 });
+        const result = await readNote(ownerContext, { noteId: notes.alpha.id, offset: 4, limit: 1 });
         expect(result.ok).toBe(true);
         if (!result.ok) return;
 
@@ -299,7 +228,7 @@ describe("read_note", () => {
     });
 
     test("returns the tail without claiming more", async () => {
-        const result = await readNote(contextA, { noteId: notes.alpha, offset: 5, limit: 10 });
+        const result = await readNote(ownerContext, { noteId: notes.alpha.id, offset: 5, limit: 10 });
         expect(result.ok).toBe(true);
         if (!result.ok) return;
 
@@ -309,24 +238,36 @@ describe("read_note", () => {
     });
 
     test("hides another user's note behind a generic not_found", async () => {
-        const result = await readNote(contextA, { noteId: notes.secret });
+        const result = await readNote(ownerContext, { noteId: notes.secret.id });
         expect(result.ok).toBe(false);
         if (result.ok) return;
         expect(result.code).toBe("not_found");
+    });
+
+    test("rejects malformed ids and out-of-range windows", async () => {
+        const malformed = await readNote(ownerContext, { noteId: 'bad"id' });
+        expect(malformed.ok).toBe(false);
+        if (malformed.ok) return;
+        expect(malformed.code).toBe("invalid_input");
+
+        const oversized = await readNote(ownerContext, { noteId: notes.alpha.id, limit: 601 });
+        expect(oversized.ok).toBe(false);
+        if (oversized.ok) return;
+        expect(oversized.code).toBe("invalid_input");
     });
 });
 
 describe("list_boards", () => {
     test("returns active boards with exact task and column counts", async () => {
-        const result = await listBoards(contextA, {});
+        const result = await listBoards(ownerContext, {});
         expect(result.ok).toBe(true);
         if (!result.ok) return;
 
-        expect(result.boards.map((board) => board.id)).toContain(boards.roadmap);
-        expect(result.boards.map((board) => board.id)).not.toContain(boards.archived);
+        expect(result.boards.map((board) => board.id)).toContain(boards.roadmap.id);
+        expect(result.boards.map((board) => board.id)).not.toContain(boards.archived.id);
         expect(result.totalBoards).toBe(result.boards.length);
 
-        const roadmap = result.boards.find((board) => board.id === boards.roadmap);
+        const roadmap = result.boards.find((board) => board.id === boards.roadmap.id);
         expect(roadmap?.taskCounts).toEqual({
             open: 3,
             done: 2,
@@ -336,25 +277,48 @@ describe("list_boards", () => {
     });
 
     test("can include archived boards on request", async () => {
-        const result = await listBoards(contextA, { includeArchived: true });
+        const result = await listBoards(ownerContext, { includeArchived: true });
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.boards.map((board) => board.id)).toContain(boards.archived);
-        expect(result.boards.find((board) => board.id === boards.archived)?.archived).toBe(true);
+        expect(result.boards.map((board) => board.id)).toContain(boards.archived.id);
+        expect(result.boards.find((board) => board.id === boards.archived.id)?.archived).toBe(true);
     });
 
     test("never lists another user's boards", async () => {
-        const resultB = await listBoards(contextB, { includeArchived: true });
-        expect(resultB.ok).toBe(true);
-        if (!resultB.ok) return;
-        expect(resultB.boards.map((board) => board.id)).toContain(boards.private);
-        expect(resultB.boards.map((board) => board.id)).not.toContain(boards.roadmap);
+        const result = await listBoards(otherContext, { includeArchived: true });
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.boards.map((board) => board.id)).toContain(boards.private.id);
+        expect(result.boards.map((board) => board.id)).not.toContain(boards.roadmap.id);
+    });
+
+    test("pages boards and reports totals", async () => {
+        const result = await listBoards(ownerContext, { perPage: 1, page: 1, includeArchived: true });
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        expect(result.boards).toHaveLength(1);
+        expect(result.totalBoards).toBe(2);
+        expect(result.totalPages).toBe(2);
+        expect(result.hasMore).toBe(true);
+    });
+
+    test("returns unauthorized without a token", async () => {
+        const result = await listBoards({ authHeader: "", userId: owner.id }, {});
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.code).toBe("unauthorized");
     });
 });
 
 describe("read_board", () => {
     test("reads a column with paging", async () => {
-        const first = await readBoard(contextA, { boardId: boards.roadmap, column: "done", perPage: 1, page: 1 });
+        const first = await readBoard(ownerContext, {
+            boardId: boards.roadmap.id,
+            column: "done",
+            perPage: 1,
+            page: 1,
+        });
         expect(first.ok).toBe(true);
         if (!first.ok) return;
 
@@ -363,59 +327,99 @@ describe("read_board", () => {
         expect(first.totalPages).toBe(2);
         expect(first.hasMore).toBe(true);
         expect(first.tasks).toHaveLength(1);
-        expect(first.tasks[0]?.id).toBe(taskIds.done1);
+        expect(first.tasks[0]?.id).toBe(tasks.done1.id);
         expect(first.tasks[0]?.boardOrder).toBe(1);
 
-        const second = await readBoard(contextA, { boardId: boards.roadmap, column: "done", perPage: 1, page: 2 });
+        const second = await readBoard(ownerContext, {
+            boardId: boards.roadmap.id,
+            column: "done",
+            perPage: 1,
+            page: 2,
+        });
         expect(second.ok).toBe(true);
         if (!second.ok) return;
-        expect(second.tasks[0]?.id).toBe(taskIds.done2);
+        expect(second.tasks[0]?.id).toBe(tasks.done2.id);
         expect(second.tasks[0]?.boardOrder).toBe(2);
         expect(second.hasMore).toBe(false);
     });
 
     test("returns task summaries with note ids and sanitized excerpts", async () => {
-        const result = await readBoard(contextA, { boardId: boards.roadmap, column: "backlog" });
+        const result = await readBoard(ownerContext, {
+            boardId: boards.roadmap.id,
+            column: "backlog",
+        });
         expect(result.ok).toBe(true);
         if (!result.ok) return;
 
         const backlog = result.tasks[0];
-        expect(backlog?.id).toBe(taskIds.backlog);
+        expect(backlog?.id).toBe(tasks.backlog.id);
         expect(backlog).toHaveProperty("dueDate");
         expect(backlog).toHaveProperty("labels");
 
-        const done = await readBoard(contextA, { boardId: boards.roadmap, column: "done" });
+        const done = await readBoard(ownerContext, {
+            boardId: boards.roadmap.id,
+            column: "done",
+        });
         expect(done.ok).toBe(true);
         if (!done.ok) return;
-        const shipped = done.tasks.find((task) => task.id === taskIds.done1);
+        const shipped = done.tasks.find((task) => task.id === tasks.done1.id);
         expect(shipped?.descriptionExcerpt).toContain("Ship the release");
         expect(shipped?.descriptionExcerpt).toContain("Build & test");
         expect(shipped?.descriptionExcerpt).not.toContain("<p>");
         expect(shipped?.descriptionExcerpt).not.toContain("**");
-        expect((shipped?.descriptionExcerpt.length ?? 0)).toBeLessThanOrEqual(400);
+        expect(shipped?.descriptionExcerpt.length ?? 0).toBeLessThanOrEqual(400);
 
-        const next = await readBoard(contextA, { boardId: boards.roadmap, column: "next" });
+        const next = await readBoard(ownerContext, {
+            boardId: boards.roadmap.id,
+            column: "next",
+        });
         expect(next.ok).toBe(true);
         if (!next.ok) return;
-        expect(next.tasks[0]?.noteId).toBe(notes.alpha);
+        expect(next.tasks[0]?.noteId).toBe(notes.alpha.id);
+        expect(next.tasks[0]?.dueDate).toBe("2026-11-01 12:00:00.000Z");
+        expect(next.tasks[0]?.labels).toEqual(["work"]);
+    });
+
+    test("reads the whole board ordered by column", async () => {
+        const result = await readBoard(ownerContext, { boardId: boards.roadmap.id, perPage: 50 });
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        expect(result.column).toBeNull();
+        expect(result.tasks).toHaveLength(5);
+        expect(result.tasks.map((task) => task.status)).toEqual([
+            "backlog",
+            "done",
+            "done",
+            "next",
+            "progress",
+        ]);
     });
 
     test("hides another user's board and archived boards", async () => {
-        const other = await readBoard(contextA, { boardId: boards.private });
-        expect(other.ok).toBe(false);
-        if (other.ok) return;
-        expect(other.code).toBe("not_found");
+        const otherBoard = await readBoard(ownerContext, { boardId: boards.private.id });
+        expect(otherBoard.ok).toBe(false);
+        if (otherBoard.ok) return;
+        expect(otherBoard.code).toBe("not_found");
 
-        const archived = await readBoard(contextA, { boardId: boards.archived });
+        const archived = await readBoard(ownerContext, { boardId: boards.archived.id });
         expect(archived.ok).toBe(false);
         if (archived.ok) return;
         expect(archived.code).toBe("not_found");
     });
 
-    test("rejects malformed board ids", async () => {
-        const result = await readBoard(contextA, { boardId: 'bad"id' });
-        expect(result.ok).toBe(false);
-        if (result.ok) return;
-        expect(result.code).toBe("invalid_input");
+    test("rejects malformed board ids and columns", async () => {
+        const malformed = await readBoard(ownerContext, { boardId: 'bad"id' });
+        expect(malformed.ok).toBe(false);
+        if (malformed.ok) return;
+        expect(malformed.code).toBe("invalid_input");
+
+        const badColumn = await readBoard(ownerContext, {
+            boardId: boards.roadmap.id,
+            column: "archived",
+        });
+        expect(badColumn.ok).toBe(false);
+        if (badColumn.ok) return;
+        expect(badColumn.code).toBe("invalid_input");
     });
 });

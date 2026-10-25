@@ -1,7 +1,7 @@
 import { cn } from './cn';
 
 const sizes = {
-  sm: 'h-8 w-8 text-[11px]',
+  sm: 'h-8 w-8 text-[11.5px]',
   md: 'h-10 w-10 text-sm',
   lg: 'h-16 w-16 text-xl',
   xl: 'h-20 w-20 text-2xl',

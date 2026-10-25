@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EllipsisVerticalIcon, ShareIcon, ArrowDownTrayIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { EllipsisVerticalIcon, ShareIcon, ArrowDownTrayIcon, TrashIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import { IconButton, MenuItem, MenuSeparator, MenuSurface } from '../ui';
 
 interface EditorContextMenuProps {
   onShare: () => void;
   onExport: () => void;
   onDelete: () => void;
+  onHideHeader?: () => void;
   disabled?: boolean;
   isNewDocument?: boolean;
 }
 
-export function EditorContextMenu({ onShare, onExport, onDelete, disabled, isNewDocument }: EditorContextMenuProps) {
+export function EditorContextMenu({ onShare, onExport, onDelete, onHideHeader, disabled, isNewDocument }: EditorContextMenuProps) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState({ top: 0, right: 0 });
@@ -40,7 +41,8 @@ export function EditorContextMenu({ onShare, onExport, onDelete, disabled, isNew
       <IconButton
         ref={buttonRef}
         label="More actions"
-        size="sm"
+        size="md"
+        className="h-11 w-11 sm:h-8 sm:w-8"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="menu"
@@ -67,6 +69,19 @@ export function EditorContextMenu({ onShare, onExport, onDelete, disabled, isNew
           disabled={isNewDocument}
           onClick={() => handleItem(onExport)}
         />
+        {onHideHeader && (
+          <>
+            <MenuSeparator />
+            <MenuItem
+              icon={<ChevronUpIcon />}
+              label="Hide header"
+              onClick={() => {
+                setOpen(false);
+                onHideHeader();
+              }}
+            />
+          </>
+        )}
         <MenuSeparator />
         <MenuItem
           icon={<TrashIcon />}

@@ -34,8 +34,8 @@ const THEME_OPTIONS: Array<{
   icon: typeof SunIcon;
 }> = [
   { value: 'system', label: 'System', description: 'Follow your device', icon: ComputerDesktopIcon },
-  { value: 'dark', label: 'Night', description: 'Charcoal and signal', icon: MoonIcon },
-  { value: 'light', label: 'Day', description: 'Bone and daylight', icon: SunIcon },
+  { value: 'dark', label: 'Night', description: 'Graphite and ember', icon: MoonIcon },
+  { value: 'light', label: 'Day', description: 'Paper and daylight', icon: SunIcon },
 ];
 
 const AUTOSAVE_PRESETS = [
@@ -57,43 +57,43 @@ function ThemePreview({ theme }: { theme: ThemePreference }) {
   if (isSystem) {
     return (
       <span
-        className="relative block h-16 w-full overflow-hidden rounded-[6px] border border-line"
-        style={{ background: '#141518' }}
+        className="relative block h-16 w-full overflow-hidden rounded-[8px] border border-line"
+        style={{ background: '#0c0c0d' }}
         aria-hidden="true"
       >
-        <span className="absolute inset-y-0 right-0 w-1/2 bg-[#f4f1e9]" />
+        <span className="absolute inset-y-0 right-0 w-1/2 bg-[#faf9f7]" />
         <span className="absolute left-2 top-2 flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#7483ff' }} />
-          <span className="h-1 w-4 rounded-full" style={{ background: '#ecedef' }} />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#ff7048' }} />
+          <span className="h-1 w-4 rounded-full" style={{ background: '#f5f5f4' }} />
         </span>
         <span className="absolute right-2 top-2 flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#2b3fd1' }} />
-          <span className="h-1 w-4 rounded-full" style={{ background: '#1a1b1e' }} />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#b7431e' }} />
+          <span className="h-1 w-4 rounded-full" style={{ background: '#1a1a18' }} />
         </span>
-        <span className="absolute bottom-2 left-2 h-1.5 w-6 rounded-full" style={{ background: '#7483ff' }} />
-        <span className="absolute bottom-2 right-2 h-1.5 w-6 rounded-full" style={{ background: '#2b3fd1' }} />
+        <span className="absolute bottom-2 left-2 h-1.5 w-6 rounded-full" style={{ background: '#ff7048' }} />
+        <span className="absolute bottom-2 right-2 h-1.5 w-6 rounded-full" style={{ background: '#b7431e' }} />
       </span>
     );
   }
 
   return (
     <span
-      className="relative block h-16 w-full overflow-hidden rounded-[6px] border border-line"
-      style={{ background: dark ? '#141518' : '#f4f1e9' }}
+      className="relative block h-16 w-full overflow-hidden rounded-[8px] border border-line"
+      style={{ background: dark ? '#0c0c0d' : '#faf9f7' }}
       aria-hidden="true"
     >
       <span className="absolute inset-x-2 top-2 flex items-center gap-1">
-        <span className="h-1.5 w-1.5 rounded-full" style={{ background: dark ? '#7483ff' : '#2b3fd1' }} />
-        <span className="h-1 w-6 rounded-full" style={{ background: dark ? '#ecedef' : '#1a1b1e', opacity: 0.8 }} />
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: dark ? '#ff7048' : '#b7431e' }} />
+        <span className="h-1 w-6 rounded-full" style={{ background: dark ? '#f5f5f4' : '#1a1a18', opacity: 0.8 }} />
       </span>
       <span
-        className="absolute left-2 right-2 top-6 h-6 rounded-[3px]"
+        className="absolute left-2 right-2 top-6 h-6 rounded-[5px]"
         style={{
-          background: dark ? '#1b1d21' : '#fbfaf6',
-          border: `1px solid ${dark ? 'rgba(236,237,239,0.12)' : 'rgba(26,27,30,0.12)'}`,
+          background: dark ? '#131315' : '#ffffff',
+          border: `1px solid ${dark ? 'rgba(255,255,255,0.07)' : 'rgba(26,26,24,0.08)'}`,
         }}
       />
-      <span className="absolute bottom-2 left-2 h-1.5 w-8 rounded-full" style={{ background: dark ? '#7483ff' : '#2b3fd1' }} />
+      <span className="absolute bottom-2 left-2 h-1.5 w-8 rounded-full" style={{ background: dark ? '#ff7048' : '#b7431e' }} />
     </span>
   );
 }
@@ -144,7 +144,7 @@ export function PreferencesTab() {
         <SectionHeading
           eyebrow="Appearance"
           title="Choose your light"
-          description="Nana has a charcoal night mode and a bone paper mode. Both use the same signal accent."
+          description="Nana has a graphite night mode and a paper daylight mode. Both share the same ember accent."
         />
         <div role="radiogroup" aria-label="Appearance" className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {THEME_OPTIONS.map((option) => {
@@ -159,16 +159,16 @@ export function PreferencesTab() {
                 onClick={() => handleThemeChange(option.value)}
                 className={`rounded-control border p-2.5 text-left transition-colors ${
                   active
-                    ? 'border-signal/50 bg-signal-soft'
+                    ? 'border-line-strong bg-surface'
                     : 'border-line bg-surface-sunken/40 hover:border-line-strong hover:bg-surface-sunken'
                 }`}
               >
                 <ThemePreview theme={option.value} />
                 <span className="mt-2.5 flex items-center gap-2">
-                  <Icon className={`h-4 w-4 ${active ? 'text-signal' : 'text-ink-muted'}`} />
+                  <Icon className={`h-4 w-4 ${active ? 'text-ink' : 'text-ink-muted'}`} />
                   <span className="flex-1">
                     <span className="block text-[13px] font-medium text-ink">{option.label}</span>
-                    <span className="block text-[11px] text-ink-muted">{option.description}</span>
+                    <span className="block text-[11.5px] text-ink-muted">{option.description}</span>
                   </span>
                   {active && <CheckIcon className="h-4 w-4 text-signal" />}
                 </span>

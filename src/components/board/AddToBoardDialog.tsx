@@ -162,13 +162,13 @@ export function AddToBoardDialog({ request, onClose }: AddToBoardDialogProps) {
                         {board.description || 'No description'}
                       </span>
                     </span>
-                    <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] tabular-nums text-ink-muted">
+                    <span className="shrink-0 text-[11.5px] tabular-nums text-ink-muted">
                       {padCount(board.openCount)} open · {padCount(board.total)} total
                     </span>
                     {busy ? (
                       <Spinner className="h-4 w-4 shrink-0" />
                     ) : alreadyThere ? (
-                      <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted">
+                      <span className="shrink-0 rounded-full bg-surface-sunken px-2 py-0.5 text-[11.5px] font-medium text-ink-muted">
                         Already here
                       </span>
                     ) : (

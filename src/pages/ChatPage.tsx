@@ -11,10 +11,14 @@ import {
   ArrowPathIcon,
   CheckIcon,
   ArrowRightIcon,
+  SparklesIcon,
+  DocumentTextIcon,
+  ViewColumnsIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import { pb } from '../lib/pocketbase';
 import { MarkdownPreview } from '../components/MarkdownPreview';
-import { IconButton } from '../components/ui';
+import { Button, IconButton, PageHeader, PageShell } from '../components/ui';
 import { getRecentChatId, setLastChat, clearLastChat } from '../lib/settings';
 import { useToasts } from '../state/hooks';
 import type { ChatToolActivity } from '../api/chat/types';
@@ -750,7 +754,7 @@ export function ChatPage() {
 
   // Composer — one shell for the empty state and the message list.
   const inputBar = (
-    <div className="mx-auto w-full max-w-[720px]">
+    <div className="w-full max-w-[800px]">
       {error && (
         <div
           role="alert"
@@ -759,7 +763,7 @@ export function ChatPage() {
           {error}
         </div>
       )}
-      <div className="overflow-hidden rounded-panel border border-line-strong bg-surface transition-colors focus-within:border-signal focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-signal">
+      <div className="overflow-hidden rounded-panel border border-line bg-surface p-1.5 transition-colors focus-within:border-signal/50 focus-within:ring-4 focus-within:ring-signal/10">
         <label htmlFor="chat-composer" className="sr-only">
           Message the assistant
         </label>
@@ -771,21 +775,21 @@ export function ChatPage() {
           onKeyDown={handleKeyDown}
           placeholder="Ask about your notes or board..."
           rows={1}
-          className="max-h-48 w-full resize-none overflow-y-auto scrollbar-autohide bg-transparent px-4 pb-2 pt-3 text-[15px] leading-relaxed text-ink placeholder:text-ink-muted focus:outline-none"
-          style={{ minHeight: '3rem' }}
+          className="max-h-48 w-full resize-none overflow-y-auto scrollbar-autohide bg-transparent px-3 pb-1 pt-2.5 text-[14px] leading-relaxed text-ink placeholder:text-ink-muted focus:outline-none"
+          style={{ minHeight: '2.75rem' }}
         />
-        <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-2">
-          <span className="hidden select-none font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted md:block">
-            Enter to send · Shift+Enter
+        <div className="flex items-center justify-between gap-3 px-1.5 pb-1">
+          <span className="hidden select-none text-[11.5px] text-ink-muted md:block">
+            Enter to send · Shift+Enter for a new line
           </span>
           <button
             type="button"
             onClick={sendMessage}
             disabled={isStreaming || !input.trim()}
             aria-label="Send message"
-            className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-signal text-on-signal transition-colors hover:bg-signal-strong disabled:cursor-not-allowed disabled:opacity-40"
+            className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-control bg-signal-bright text-on-signal sm:h-9 sm:w-9 transition-colors hover:bg-signal-bright-strong disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <PaperAirplaneIcon className="h-4 w-4" aria-hidden="true" />
+            <PaperAirplaneIcon className="h-[1.1rem] w-[1.1rem]" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -794,71 +798,79 @@ export function ChatPage() {
 
   return (
     <div
-      className="flex h-full overflow-hidden bg-canvas px-4 pb-0 pt-5 sm:px-6 sm:pt-6"
+      className="relative flex h-full overflow-hidden bg-canvas"
       style={isMobile && chatHeight ? { height: chatHeight } : undefined}
     >
-      {/* ── Main chat area ──────────────────────────────────────── */}
-      <div className="desktop-page-content-enter flex-1 min-w-0 flex flex-col h-full">
-        {/* Header */}
-        <header className="mx-auto mb-5 flex w-full max-w-[720px] shrink-0 items-start justify-between gap-4 border-b border-line pb-4">
-          <div className="min-w-0">
-            <p className="truncate font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-muted">
-              Assistant · {activeModel || 'Ready'}
-            </p>
-            <h1 className="mt-1 truncate text-[24px] font-semibold leading-tight tracking-[-0.02em] text-ink">
-              Chat
-            </h1>
-            <p className="mt-1 max-w-[64ch] truncate text-[13px] leading-relaxed text-ink-secondary">
-              {isNewChat ? 'Ask your notes or the board.' : conversationTitle}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <IconButton label="New chat" onClick={startNewChat}>
-              <PlusIcon />
-            </IconButton>
-            <IconButton
-              label="Chat history"
-              onClick={() => setShowSidebar(prev => !prev)}
-              className={showSidebar ? 'bg-signal-soft text-signal' : undefined}
-            >
-              <ChatBubbleLeftRightIcon />
-            </IconButton>
-          </div>
-        </header>
+      <PageShell scroll="content" className="flex-1" contentClassName="desktop-page-content-enter">
+        <PageHeader
+          title={isNewChat ? 'Chat' : conversationTitle}
+          description={isNewChat ? 'Ask your notes or the board.' : 'Grounded in your workspace.'}
+          meta={
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+              {activeModel || 'Assistant'}
+            </span>
+          }
+          actions={
+            <>
+              <Button variant="secondary" icon={<PlusIcon />} onClick={startNewChat}>
+                New chat
+              </Button>
+              <IconButton
+                label="Chat history"
+                onClick={() => setShowSidebar(prev => !prev)}
+                className={showSidebar ? 'bg-signal-soft text-signal' : 'bg-surface hover:bg-surface-raised'}
+              >
+                <ChatBubbleLeftRightIcon />
+              </IconButton>
+            </>
+          }
+        />
 
+        <div className="flex min-h-0 w-full max-w-[800px] flex-1 flex-col">
         {/* Messages area + input */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {isNewChat && !hasMessages ? (
           // ── Empty state: top-aligned reading column ──────────────────
-          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-autohide">
-            <div className="mx-auto w-full max-w-[720px] pb-8 pt-2 sm:pt-6">
-              <h2 className="text-[28px] font-semibold leading-tight tracking-[-0.02em] text-ink">
-                Ask your notes.
-              </h2>
-              <p className="mt-2 max-w-[52ch] text-[14px] leading-relaxed text-ink-secondary">
-                I can list and read notes and boards, then answer from what I find.
-              </p>
-              <div className="mt-7 w-full max-w-[520px] border-t border-line">
+          <div className="flex flex-1 min-h-0 flex-col">
+            <div className="flex-1 overflow-y-auto scrollbar-autohide">
+              <div className="flex min-h-full flex-col">
+              <div className="my-auto w-full max-w-[800px] pb-4 pt-3 sm:pb-6 sm:pt-8">
+                <h2 className="text-[26px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[30px]">
+                  Ask your notes.
+                </h2>
+                <p className="mt-2.5 max-w-[52ch] text-[14px] leading-relaxed text-ink-secondary">
+                  Nana can list and read notes and boards, then answer from what it finds.
+                </p>
+                <div className="mt-6 grid w-full gap-2.5 sm:mt-8 sm:grid-cols-2">
                 {[
-                  'What changed in my notes this week?',
-                  'Summarise the board.',
-                  'Find the note about …',
-                ].map((prompt) => (
+                  { icon: SparklesIcon, prompt: 'What changed in my notes this week?' },
+                  { icon: ViewColumnsIcon, prompt: 'Summarise the board.' },
+                  { icon: MagnifyingGlassIcon, prompt: 'Find the note about …' },
+                  { icon: DocumentTextIcon, prompt: 'What should I work on next?' },
+                ].map(({ icon: Icon, prompt }) => (
                   <button
                     key={prompt}
                     type="button"
                     onClick={() => { setInput(prompt); inputRef.current?.focus(); }}
-                    className="group flex w-full items-center justify-between gap-4 border-b border-line py-3 pr-3 text-left text-[14px] leading-snug text-ink-secondary transition-colors hover:bg-surface-sunken hover:text-ink"
+                    className="group flex min-h-[4rem] items-start gap-3 rounded-panel border border-line bg-surface p-3 text-left transition-colors hover:border-line-strong hover:bg-surface-raised sm:min-h-[5.25rem] sm:p-4"
                   >
-                    <span className="truncate">{prompt}</span>
-                    <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-ink-muted transition-colors group-hover:text-signal" aria-hidden="true" />
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] border border-line bg-surface-sunken text-ink-muted">
+                      <Icon className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1 pt-0.5 text-[13px] font-medium leading-snug text-ink-secondary group-hover:text-ink">
+                      {prompt}
+                    </span>
+                    <ArrowRightIcon className="mt-1 h-3.5 w-3.5 shrink-0 text-ink-muted transition-colors group-hover:text-ink" aria-hidden="true" />
                   </button>
                 ))}
+                </div>
               </div>
-              <div className="mt-8">
-                {inputBar}
               </div>
             </div>
+            <footer className="shrink-0 px-1 pt-3 sm:px-2 md:pb-4">
+              {inputBar}
+            </footer>
           </div>
         ) : (
           // ── Message list + bottom input ────────────────────────────
@@ -869,35 +881,47 @@ export function ChatPage() {
                 onScroll={handleMessagesScroll}
                 className="absolute inset-0 overflow-y-auto scrollbar-autohide px-1 py-4 sm:px-2"
               >
-                <div className="mx-auto w-full max-w-[720px]">
+                <div className="w-full max-w-[800px]">
                   {messages.map((msg, i) => (
                     <div
                       key={i}
                       className={msg.role === 'user'
-                        ? 'mb-6 flex flex-col items-end'
-                        : 'mb-8 w-full max-w-[68ch]'}
+                        ? 'mb-7 flex flex-col items-end'
+                        : 'mb-9 w-full max-w-[68ch]'}
                     >
                       {msg.role === 'user' ? (
                         <>
-                          <p className="mb-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-muted">
+                          <p className="mb-1.5 text-[11.5px] font-medium text-ink-muted">
                             You
                           </p>
-                          <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-control border border-line bg-surface-sunken px-4 py-2.5 text-[15px] leading-[1.6] text-ink sm:max-w-[75%]">
+                          <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-[10px] rounded-br-[3px] bg-surface-raised px-4 py-3 text-[14px] leading-[1.6] text-ink sm:max-w-[75%]">
                             {msg.content}
                           </div>
                         </>
                       ) : (
                         <>
+                          <div className="mb-2.5 flex items-center gap-2">
+                            <span className="flex h-5 w-5 items-center justify-center rounded-[5px] border border-line bg-surface-sunken text-[10px] font-semibold text-ink-secondary">
+                              N
+                            </span>
+                            <span className="text-[11.5px] font-medium text-ink-secondary">Nana</span>
+                          </div>
+
                           {msg.tools && msg.tools.length > 0 && (
                             <div className="mb-3" role="status" aria-live="polite" aria-atomic="true">
-                              <p className="flex h-7 items-center font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted">
+                              <p className="inline-flex min-h-7 items-center gap-2 rounded-[5px] border border-line bg-surface px-2.5 py-1 text-[11.5px] font-medium text-ink-secondary">
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${
+                                    msg.streaming && msg.tools.some((tool) => tool.status === 'running')
+                                      ? 'animate-pulse bg-signal'
+                                      : 'bg-success'
+                                  }`}
+                                  aria-hidden="true"
+                                />
                                 {msg.streaming && msg.tools.some((tool) => tool.status === 'running')
                                   ? 'Looking through your workspace…'
                                   : summarizeToolActivityLabels(msg.tools)}
                               </p>
-                              {msg.streaming && msg.tools.some((tool) => tool.status === 'running') && (
-                                <div className="h-px w-full bg-signal" aria-hidden="true" />
-                              )}
                             </div>
                           )}
 
@@ -906,7 +930,7 @@ export function ChatPage() {
                               className="group mb-3"
                               open={msg.streaming && !msg.content}
                             >
-                              <summary className="flex h-7 cursor-pointer select-none items-center gap-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-muted transition-colors hover:text-ink [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+                              <summary className="flex h-7 cursor-pointer select-none items-center gap-1.5 text-[11.5px] font-medium text-ink-muted transition-colors hover:text-ink [&::-webkit-details-marker]:hidden [&::marker]:hidden">
                                 <ChevronDownIcon
                                   className="h-3 w-3 shrink-0 transition-transform group-open:rotate-180"
                                   aria-hidden="true"
@@ -916,17 +940,17 @@ export function ChatPage() {
                               <div className="mt-1 max-h-80 overflow-y-auto border-l border-line pl-3 text-[13px] leading-relaxed text-ink-muted scrollbar-autohide">
                                 <MarkdownPreview
                                   content={msg.reasoning}
-                                  className="chat-markdown !text-[13px] !leading-relaxed text-ink-muted [&_p]:my-1 [&_pre]:my-1.5 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-[13px] [&_h2]:text-[13px] [&_h3]:text-[13px] [&_code]:text-[11px]"
+                                  className="chat-markdown !text-[13px] !leading-relaxed text-ink-muted [&_p]:my-1 [&_pre]:my-1.5 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-[13px] [&_h2]:text-[13px] [&_h3]:text-[13px] [&_code]:text-[11.5px]"
                                 />
                               </div>
                             </details>
                           )}
 
                           {msg.content ? (
-                            <div className="break-words text-[15px] leading-[1.7] text-ink">
+                            <div className="chat-answer break-words text-[14.5px] leading-[1.75] text-ink">
                               <MarkdownPreview
                                 content={msg.content}
-                                className="chat-markdown !text-[15px] !leading-[1.7] [&_p]:my-1 [&_pre]:my-2 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_code]:text-xs"
+                                className="chat-markdown !text-[14.5px] !leading-[1.75] [&_p]:my-1 [&_pre]:my-2 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_code]:text-xs"
                               />
                               {msg.streaming && (
                                 <span
@@ -936,7 +960,8 @@ export function ChatPage() {
                               )}
                             </div>
                           ) : !msg.reasoning && msg.streaming && !(msg.tools && msg.tools.length > 0) ? (
-                            <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted">
+                            <p className="inline-flex items-center gap-2 text-[11.5px] font-medium text-ink-muted">
+                              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal" aria-hidden="true" />
                               Thinking…
                             </p>
                           ) : null}
@@ -983,7 +1008,7 @@ export function ChatPage() {
                 <button
                   type="button"
                   onClick={scrollToBottom}
-                  className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
+                  className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-[6px] border border-line bg-surface px-3 py-1.5 text-[11.5px] font-medium text-ink-secondary transition-colors hover:border-line-strong hover:text-ink"
                   title="Scroll to bottom"
                   aria-label="Scroll to bottom"
                 >
@@ -998,7 +1023,8 @@ export function ChatPage() {
           </>
         )}
         </div>
-      </div>
+        </div>
+      </PageShell>
 
       {/* ── Right history scrim (mobile only) ────────────────────── */}
       {isMobile && showSidebar && (
@@ -1014,23 +1040,27 @@ export function ChatPage() {
         className={`
           ${isMobile
             ? `fixed bottom-0 right-0 top-0 z-50 w-72 border-l border-line bg-canvas-deep transition-transform duration-200 ease-out ${showSidebar ? 'translate-x-0' : 'translate-x-full'}`
-            : `relative shrink-0 transition-[width,opacity] duration-200 ease-out overflow-hidden ${showSidebar ? 'w-64 opacity-100' : 'w-0 opacity-0'}`
+            : `relative shrink-0 transition-[width,opacity,margin] duration-200 ease-out overflow-hidden ${showSidebar ? 'my-6 mr-4 w-64 opacity-100 lg:my-9' : 'w-0 opacity-0'}`
           }
-          flex flex-col ml-3
+          flex flex-col
         `}
       >
         {/* Inner container — carries the visual chrome on desktop */}
-        <div className={`flex flex-col h-full ${!isMobile ? 'overflow-hidden rounded-panel border border-line bg-surface' : ''}`}>
+        <div className={`flex min-h-0 flex-1 flex-col ${!isMobile ? 'overflow-hidden rounded-panel border border-line bg-surface' : ''}`}>
           {/* Panel header */}
-          <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-            <button
-              type="button"
-              onClick={startNewChat}
-              className="flex h-8 flex-1 items-center gap-2 rounded-control px-2 text-[13px] font-medium text-signal transition-colors hover:bg-signal-soft"
-            >
-              <PlusIcon className="h-4 w-4" aria-hidden="true" />
-              New chat
-            </button>
+          <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2.5">
+            {isMobile ? (
+              <button
+                type="button"
+                onClick={startNewChat}
+                className="flex h-8 flex-1 items-center gap-2 rounded-control bg-signal-bright px-2.5 text-[12px] font-medium text-on-signal transition-colors hover:bg-signal-bright-strong"
+              >
+                <PlusIcon className="h-4 w-4" aria-hidden="true" />
+                New chat
+              </button>
+            ) : (
+              <span className="text-[11.5px] font-medium text-ink-muted">Conversations</span>
+            )}
             <IconButton label="Close history" size="sm" onClick={() => setShowSidebar(false)}>
               <XMarkIcon />
             </IconButton>
@@ -1050,9 +1080,6 @@ export function ChatPage() {
                     isActive ? 'bg-signal-soft' : 'hover:bg-surface-sunken'
                   }`}
                 >
-                  {isActive && (
-                    <span className="absolute inset-y-0 left-0 w-0.5 bg-signal" aria-hidden="true" />
-                  )}
                   <button
                     type="button"
                     onClick={() => {

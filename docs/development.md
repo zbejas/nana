@@ -14,8 +14,11 @@ Nana is developed against a real PocketBase and a real Bun server. Use the Docke
 | `bunfig.toml` | Bun/Tailwind plugin configuration. |
 | `build.ts` | Production bundle. |
 | `docker/compose.dev.yml` | Recommended local stack. |
-| `docker/compose.test.yml` | Integration suite. |
-| `tests/helpers/setup.ts` | Auth and HTTP helpers for integration tests. |
+| `docker/compose.test.yml` | Isolated Docker test stack. |
+| `tests/unit/` | Pure-function unit tests. |
+| `tests/helpers/setup.ts` | Auth and HTTP environment for integration tests. |
+| `tests/helpers/client.ts` | Status-asserting HTTP and PocketBase collection helpers. |
+| `tests/helpers/factories.ts` | Isolated users and records for integration tests. |
 
 ## How it works
 
@@ -68,18 +71,25 @@ NODE_ENV=production bun src/index.ts
 | Change | Minimum verification |
 | --- | --- |
 | Docs/comments only | Relative-link and path check; no build needed. |
+| Pure logic / helper | `bun run test:unit` and `bun run build`. |
 | TS/JS code | `bun run build`; run the affected tests. |
-| Behavior change | Full Docker integration suite. |
-| PocketBase hook/migration/guard/route | Full Docker integration suite + updated tests. |
+| Behavior change | Full Docker suite (`bun run test:docker`). |
+| PocketBase hook/migration/guard/route | Full Docker suite + updated tests. |
 | Board or task behavior | Board/task guard tests and the board pages on desktop and mobile. |
 | Chat or tool behavior | `tests/api/chat-tools.test.ts` plus the chat API tests. |
 | UI | Build, run the dev stack, check desktop and mobile in both themes. |
 | Docker/build/release | Build the image and run the production target if possible. |
 
+Unit tests:
+
+```bash
+bun run test:unit
+```
+
 Integration suite:
 
 ```bash
-docker compose -f docker/compose.test.yml up --build --abort-on-container-exit --exit-code-from nana-test
+bun run test:docker
 ```
 
 The suite is the gate for behavior changes. `bun run build` is the gate for shipping.
@@ -92,7 +102,7 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 - **Server errors:** return JSON `{ error }` with an appropriate status; log details with the module logger.
 - **Auth:** `verifyAuth()` on protected Bun routes; `requireAdmin()` on admin PocketBase routes.
 - **Frontend state:** Jotai atoms; use `useAtomValue` / `useSetAtom`; keep `useDocumentData()` at `AppContent` only. Board tasks are route-local in `useBoardState`.
-- **Styling:** theme-aware Tailwind utilities over the Signal & Paper tokens; reuse `src/components/ui/` before adding a primitive. See [`../DESIGN.md`](../DESIGN.md).
+- **Styling:** theme-aware Tailwind utilities over the Graphite tokens; reuse `src/components/ui/` before adding a primitive. See [`../DESIGN.md`](../DESIGN.md).
 - **PocketBase hooks:** CommonJS `require()`, synchronous, `$os.getenv()`, `$app`.
 - **Migrations:** append-only; the next free number is `0000020`. Use `migrate((app) => {}, (app) => {})`, a safe `down()`, and idempotent guards.
 
@@ -104,7 +114,7 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 2. Register the path in `src/index.ts` (inside `routes`).
 3. Call `verifyAuth()` unless the route is intentionally public.
 4. Add rate limiting if it is expensive or exposed.
-5. Add tests under `tests/api/`.
+5. Add tests under `tests/api/`; pure helpers also get a `tests/unit/` case.
 6. Update [`api.md`](api.md) and the route list in [`architecture.md`](architecture.md) if the surface changed.
 
 #### Add a PocketBase hook or route
@@ -112,7 +122,7 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 1. Create the module under the relevant `pocketbase/pb_hooks/` directory.
 2. `require()` it from its parent module and ensure that parent is required by `index.pb.js`.
 3. Use `requireAdmin`, `parseRequestBody`, `escapeHtml`, `sanitizeUrl` from `utils.js`.
-4. Add tests under `tests/pocketbase/`.
+4. Add tests under `tests/pocketbase/`; use the factories in `tests/helpers/factories.ts`.
 5. Update [`pocketbase.md`](pocketbase.md) and [`api.md`](api.md) for new routes.
 
 #### Change UI
@@ -168,13 +178,17 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 - **`bun run dev` does not start PocketBase.** Use the dev compose stack unless PocketBase is already running.
 - **SSE needs `server.timeout(req, 0)`.** Chat and PocketBase realtime connections are cut off otherwise.
 - **Tool loops need an explicit stop condition.** `streamText` stops after one step without `stopWhen(stepCountIs(8))`, so list → read chains fail.
-- **Archived boards block task writes.** A task update returns an error while the board is archived; deletes still work. This is enforced by PocketBase rules, not just the UI.
+- **Archived boards block task writes.** A task update returns an error while the board is archived; deletes still work. This is enforced by PocketBase rules plus `pb_hooks/guards/task_guards.js`.
+- **Task moves need the request guard.** The update rule sees the stored board, not the incoming one. `task_guards.js` validates the new `board` relation for ownership and archived state.
+- **The integration suite shares one database.** Use `tests/helpers/factories.ts` for unique users and records. Only the onboarding test may rely on an empty database.
+- **Admin tests restore instance settings.** Snapshot with `snapshotAdminSettings()` and restore in `afterAll`; never leave SMTP, OAuth, attachment, or app-url changes behind for the next file.
 - **Board deletion is two-step.** Active board → archive → permanent delete. The delete cascades tasks; do not add a client-side task loop.
 - **Migration `0000018` backfills only empty boards.** It creates `My board` for authors with unassigned tasks, then makes `tasks.board` required. Do not create a default board for every user in a later migration without a product decision.
 - **Superuser credentials are bootstrapped.** Tests read `pb_data/superuser_credentials.json`; changing env credentials changes the login.
 - **Migration compatibility hook:** old filenames are rewritten in `_migrations` on startup. Don't rename historical migrations.
 - **No embeddings or vector store.** Chat reads through the read tools; do not reintroduce auto-embed, `embedding_config`, or background indexing.
 - **The test container resets its database.** Never mount host `pb_data` into the test compose.
+- **`tests/preload.ts` is opt-in.** The Docker entrypoint and `bun run test:integration` pass it with `--preload`; a bare `bun test` does not wait for services.
 - **`src/api/admin/rate-limits/reload` is auth-only**, not role-checked. Be deliberate if you change or rely on it.
 - **No destructive git.** No `git reset --hard`, `git checkout --`, forced cleans, or deleting unmerged branches without preserving the work first.
 

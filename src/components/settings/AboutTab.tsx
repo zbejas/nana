@@ -75,13 +75,13 @@ export function AboutTab() {
             <img src={logo} alt="Nana" className="h-20 w-20 shrink-0" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-display text-3xl leading-none tracking-tight text-ink">Nana</h2>
+                <h2 className="text-3xl leading-none tracking-tight text-ink">Nana</h2>
                 <Badge tone="neutral">v{versionInfo.currentVersion}</Badge>
                 {versionInfo.updateAvailable && versionInfo.latestVersion && (
                   <Badge tone="signal">v{versionInfo.latestVersion} available</Badge>
                 )}
               </div>
-              <p className="mt-2 font-display text-base text-ink-secondary">Not Another Notes App</p>
+              <p className="mt-2 text-base text-ink-secondary">Not Another Notes App</p>
               <p className="mt-3 max-w-xl text-sm leading-relaxed text-ink-secondary">
                 A self-hosted document workspace with a warm desk, a clear board, and your own AI. Built to keep the
                 writing — and the work around it — in one place you control.
@@ -111,11 +111,11 @@ export function AboutTab() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card className="p-5 sm:p-6">
-          <h3 className="font-display text-lg text-ink">What is inside</h3>
+          <h3 className="text-lg text-ink">What is inside</h3>
           <ul className="mt-4 space-y-2.5">
             {FEATURES.map((feature) => (
               <li key={feature} className="flex items-start gap-2.5 text-sm text-ink-secondary">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-signal/80" aria-hidden="true" />
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-muted/50" aria-hidden="true" />
                 {feature}
               </li>
             ))}
@@ -124,7 +124,7 @@ export function AboutTab() {
 
         <div className="space-y-5">
           <Card className="p-5 sm:p-6">
-            <h3 className="font-display text-lg text-ink">Built with</h3>
+            <h3 className="text-lg text-ink">Built with</h3>
             <div className="mt-4 grid grid-cols-2 gap-2">
               {STACK.map((item) => (
                 <a
@@ -144,7 +144,7 @@ export function AboutTab() {
           <Card className="p-5 sm:p-6">
             <div className="flex items-center gap-2">
               <HeartIcon className="h-4 w-4 text-signal" />
-              <h3 className="font-display text-lg text-ink">Support Nana</h3>
+              <h3 className="text-lg text-ink">Support Nana</h3>
             </div>
             <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
               Free and open source, built with care in spare time. If Nana makes your day a little lighter, you can

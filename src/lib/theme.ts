@@ -51,7 +51,7 @@ export function applyTheme(preference: ThemePreference = getThemePreference()): 
 
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) {
-    meta.setAttribute('content', resolved === 'light' ? '#f4f1e9' : '#141518');
+    meta.setAttribute('content', resolved === 'light' ? '#faf9f7' : '#0c0c0d');
   }
 
   return resolved;

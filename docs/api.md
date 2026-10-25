@@ -118,7 +118,7 @@ Chat errors:
 | `/api/chat/conversations/:id` | GET | `{ conversation, messages }`. |
 | `/api/chat/conversations/:id` | DELETE | `204` on success. |
 
-Conversation list/view/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, and every route forwards the caller's token. Responses include the stored message objects, including any legacy fields tolerated on read.
+Conversation list/view/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, and every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. Responses include the stored message objects, including any legacy fields tolerated on read.
 
 #### Admin
 

@@ -11,6 +11,7 @@ import {
   ChevronDoubleLeftIcon,
   PlusIcon,
   FolderPlusIcon,
+  PencilSquareIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from "../lib/auth";
 import { useSidebar } from "../state/hooks";
@@ -189,27 +190,45 @@ export function Sidebar() {
         }}
       >
         <div className="flex min-h-0 flex-1 flex-col" style={{ width: isMobile ? '100%' : `${sidebarWidth}px` }}>
-          <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
-            <button
-              onClick={() => {
-                reset();
-                handleViewNavigation('/timeline');
-              }}
-              className="flex min-h-11 min-w-0 items-center gap-2.5 md:min-h-0"
-              aria-label="Nana home"
-            >
-              <img src={logo} alt="" className="h-6 w-6 shrink-0" draggable={false} />
-              <span className="font-display text-[15px] font-semibold leading-none tracking-[-0.02em] text-ink">Nana</span>
-            </button>
-            <div className="ml-auto flex items-center gap-0.5">
-              <IconButton
-                label={isMobile ? 'Close menu' : 'Collapse sidebar'}
-                size={isMobile ? 'md' : 'sm'}
-                onClick={toggle}
+          <div className="px-3 pb-2 pt-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  reset();
+                  handleViewNavigation('/timeline');
+                }}
+                className="flex min-h-11 min-w-0 items-center gap-2.5 rounded-control md:min-h-0"
+                aria-label="Nana home"
               >
-                {isMobile ? <XMarkIcon /> : <ChevronDoubleLeftIcon />}
-              </IconButton>
+                <img src={logo} alt="" className="h-6 w-6 shrink-0" draggable={false} />
+                <span className="min-w-0">
+                  <span className="block truncate text-[14px] font-semibold leading-none tracking-[-0.02em] text-ink">
+                    Nana
+                  </span>
+                  <span className="mt-1 block truncate text-[11.5px] font-medium leading-none text-ink-muted">
+                    Your workspace
+                  </span>
+                </span>
+              </button>
+              <div className="ml-auto flex items-center gap-0.5">
+                <IconButton
+                  label={isMobile ? 'Close menu' : 'Collapse sidebar'}
+                  size={isMobile ? 'md' : 'sm'}
+                  onClick={toggle}
+                >
+                  {isMobile ? <XMarkIcon /> : <ChevronDoubleLeftIcon />}
+                </IconButton>
+              </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => void handlers.handleAddDocument()}
+              className="mt-3 flex h-9 w-full items-center gap-2 rounded-control bg-ink px-3 text-[13px] font-medium text-canvas transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal"
+            >
+              <PencilSquareIcon className="h-4 w-4" aria-hidden="true" />
+              New note
+            </button>
           </div>
 
           <nav className="px-2 pb-2" aria-label="Primary">
@@ -221,16 +240,13 @@ export function Sidebar() {
                   key={item.key}
                   onClick={() => handleViewNavigation(item.path)}
                   aria-current={active ? 'page' : undefined}
-                  className={`group relative flex h-8 w-full items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] font-medium transition-colors ${
+                  className={`group relative mb-0.5 flex h-8 w-full items-center gap-2.5 rounded-control border px-2.5 text-[13px] font-medium transition-colors ${
                     active
-                      ? 'bg-signal-soft text-signal'
-                      : 'text-ink-secondary hover:bg-surface hover:text-ink'
+                      ? 'border-line bg-surface text-ink'
+                      : 'border-transparent text-ink-secondary hover:bg-surface/70 hover:text-ink'
                   }`}
                 >
-                  {active && (
-                    <span className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 bg-signal" aria-hidden="true" />
-                  )}
-                  <Icon className="h-4 w-4 shrink-0" />
+                  <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-signal' : 'text-ink-muted'}`} />
                   <span>{item.label}</span>
                 </button>
               );
@@ -258,7 +274,7 @@ export function Sidebar() {
 
                 <section className="px-3 pt-5" aria-label="Files">
                   <div className="flex items-center gap-1 px-2 pb-1.5">
-                    <p className="eyebrow flex-1">Files</p>
+                    <p className="flex-1 text-[11.5px] font-medium text-ink-muted">Library</p>
                     <IconButton
                       label="New folder"
                       size="sm"

@@ -110,7 +110,8 @@ The contributor and agent guide lives in [AGENTS.md](AGENTS.md), with subsystem 
 
 ```bash
 docker compose -f docker/compose.dev.yml up --build   # dev stack (PocketBase + Bun)
-docker compose -f docker/compose.test.yml up --build --abort-on-container-exit --exit-code-from nana-test
+bun run test:unit                                     # pure unit tests
+bun run test:docker                                   # isolated unit + integration suite
 ```
 
 ## License

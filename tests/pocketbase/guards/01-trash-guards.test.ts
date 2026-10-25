@@ -1,96 +1,144 @@
-import { describe, test, expect, beforeAll } from "bun:test";
-import { PB_API, authenticateSuperuser, authenticateUser, signupUser } from "../../helpers/setup";
+import { beforeAll, describe, expect, test } from "bun:test";
+import { expectStatus, pbFindFirst, pbList, pbRequest, readJson } from "../../helpers/client";
+import {
+    createFolder,
+    createNote,
+    createUser,
+    getSuperuserToken,
+    publishNote,
+    type TestUser,
+} from "../../helpers/factories";
 
 const TRASH_COLLECTIONS = ["trash_documents", "trash_folders", "trash_document_versions"] as const;
 
-describe("Trash Guards", () => {
-    let userToken: string;
+describe("Trash collection guards", () => {
+    let user: TestUser;
+    let superuserToken: string;
+    let trashDocumentId: string;
+    let trashFolderId: string;
+    let trashVersionId: string;
 
     beforeAll(async () => {
-        // Ensure first user exists (may already exist from user-guards tests)
-        const superuserToken = await authenticateSuperuser();
+        user = await createUser("trash-guards");
+        superuserToken = await getSuperuserToken();
 
-        // Check if test user exists, create if not
-        const listRes = await fetch(
-            `${PB_API}/collections/users/records?filter=(email='trash-test@test.local')`,
-            { headers: { Authorization: superuserToken } },
+        const note = await createNote(user, { title: "Guarded note" });
+        await publishNote(user, note.id);
+        const moveDocRes = await pbRequest("/trash/move-document", {
+            method: "POST",
+            headers: { Authorization: user.token, "Content-Type": "application/json" },
+            body: JSON.stringify({ documentId: note.id }),
+        });
+        await expectStatus(moveDocRes, 200, "move note to trash");
+        const moved = await readJson<{ trashDocumentId: string }>(moveDocRes);
+        trashDocumentId = moved.trashDocumentId;
+
+        const trashVersion = await pbFindFirst<{ id: string }>(
+            superuserToken,
+            "trash_document_versions",
+            `trash_document='${trashDocumentId}'`,
         );
-        const listData = await listRes.json();
-        if (listData.items.length === 0) {
-            // Ensure at least one user exists first (for signup lock)
-            const checkRes = await fetch(`${PB_API}/collections/users/records?perPage=1`, {
-                headers: { Authorization: superuserToken },
-            });
-            const checkData = await checkRes.json();
-            if (checkData.items.length === 0) {
-                // Create first user via signup
-                await signupUser({ email: "first@test.local", password: "testPassword123!" });
-            }
-            // Create test user via superuser
-            await fetch(`${PB_API}/collections/users/records`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: superuserToken },
-                body: JSON.stringify({
-                    email: "trash-test@test.local",
-                    password: "testPassword123!",
-                    passwordConfirm: "testPassword123!",
-                    name: "Trash Test User",
-                }),
-            });
-        }
+        if (!trashVersion) throw new Error("Expected a trash version fixture");
+        trashVersionId = trashVersion.id;
 
-        const auth = await authenticateUser("trash-test@test.local", "testPassword123!");
-        userToken = auth.token;
+        const folder = await createFolder(user, { name: "Guarded folder" });
+        const moveFolderRes = await pbRequest("/trash/move-folder", {
+            method: "POST",
+            headers: { Authorization: user.token, "Content-Type": "application/json" },
+            body: JSON.stringify({ folderId: folder.id }),
+        });
+        await expectStatus(moveFolderRes, 200, "move folder to trash");
+        trashFolderId = (await readJson<{ trashFolderId: string }>(moveFolderRes)).trashFolderId;
     });
 
-    for (const collection of TRASH_COLLECTIONS) {
-        describe(`${collection}`, () => {
-            test(`regular user cannot create records in ${collection}`, async () => {
-                const res = await fetch(`${PB_API}/collections/${collection}/records`, {
+    describe("direct writes are blocked", () => {
+        test("regular user cannot create trash records", async () => {
+            for (const collection of TRASH_COLLECTIONS) {
+                const res = await pbRequest(`/collections/${collection}/records`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: userToken,
-                    },
+                    headers: { Authorization: user.token, "Content-Type": "application/json" },
                     body: JSON.stringify({}),
                 });
-                expect(res.ok).toBe(false);
-                expect([400, 403]).toContain(res.status);
-            });
-
-            test(`regular user cannot update records in ${collection}`, async () => {
-                // Try to update a nonexistent record — guard should fire before 404
-                const res = await fetch(`${PB_API}/collections/${collection}/records/nonexistent123456`, {
-                    method: "PATCH",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: userToken,
-                    },
-                    body: JSON.stringify({ deleted_by: "test" }),
-                });
-                expect(res.ok).toBe(false);
-            });
-
-            test(`regular user cannot delete records in ${collection}`, async () => {
-                const res = await fetch(`${PB_API}/collections/${collection}/records/nonexistent123456`, {
-                    method: "DELETE",
-                    headers: { Authorization: userToken },
-                });
-                expect(res.ok).toBe(false);
-            });
+                await expectStatus(res, 400, `create ${collection}`);
+            }
         });
-    }
 
-    describe("unauthenticated access", () => {
-        for (const collection of TRASH_COLLECTIONS) {
-            test(`unauthenticated user cannot create in ${collection}`, async () => {
-                const res = await fetch(`${PB_API}/collections/${collection}/records`, {
+        test("regular user cannot update a trashed document", async () => {
+            const res = await pbRequest(`/collections/trash_documents/records/${trashDocumentId}`, {
+                method: "PATCH",
+                headers: { Authorization: user.token, "Content-Type": "application/json" },
+                body: JSON.stringify({ title: "Changed" }),
+            });
+
+            await expectStatus(res, 400, "update trashed note");
+            expect(await readJson<{ message?: string }>(res)).toHaveProperty("message");
+        });
+
+        test("regular user cannot delete a trashed document", async () => {
+            const res = await pbRequest(`/collections/trash_documents/records/${trashDocumentId}`, {
+                method: "DELETE",
+                headers: { Authorization: user.token },
+            });
+
+            await expectStatus(res, 400, "delete trashed note");
+        });
+
+        test("regular user cannot update or delete a trashed folder", async () => {
+            const updateRes = await pbRequest(`/collections/trash_folders/records/${trashFolderId}`, {
+                method: "PATCH",
+                headers: { Authorization: user.token, "Content-Type": "application/json" },
+                body: JSON.stringify({ name: "Changed" }),
+            });
+            await expectStatus(updateRes, 400, "update trashed folder");
+
+            const deleteRes = await pbRequest(`/collections/trash_folders/records/${trashFolderId}`, {
+                method: "DELETE",
+                headers: { Authorization: user.token },
+            });
+            await expectStatus(deleteRes, 400, "delete trashed folder");
+        });
+
+        test("regular user cannot update or delete a trashed version", async () => {
+            const updateRes = await pbRequest(
+                `/collections/trash_document_versions/records/${trashVersionId}`,
+                {
+                    method: "PATCH",
+                    headers: { Authorization: user.token, "Content-Type": "application/json" },
+                    body: JSON.stringify({ content: "Changed" }),
+                },
+            );
+            // The collection rule and the request guard both deny this path.
+            expect([400, 404]).toContain(updateRes.status);
+
+            const deleteRes = await pbRequest(
+                `/collections/trash_document_versions/records/${trashVersionId}`,
+                {
+                    method: "DELETE",
+                    headers: { Authorization: user.token },
+                },
+            );
+            expect([400, 404]).toContain(deleteRes.status);
+        });
+
+        test("unauthenticated users cannot create trash records", async () => {
+            for (const collection of TRASH_COLLECTIONS) {
+                const res = await pbRequest(`/collections/${collection}/records`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({}),
                 });
                 expect(res.ok).toBe(false);
-            });
-        }
+                expect([400, 403]).toContain(res.status);
+            }
+        });
+    });
+
+    test("trash records remain visible only to their owner", async () => {
+        const other = await createUser("trash-guards-other");
+        const docs = await pbList<{ id: string }>(other.token, "trash_documents");
+        const folders = await pbList<{ id: string }>(other.token, "trash_folders");
+
+        expect(docs.items).toEqual([]);
+        expect(folders.items).toEqual([]);
     });
 });

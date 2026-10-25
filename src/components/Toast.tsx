@@ -16,20 +16,17 @@ interface ToastProps {
 const tones = {
   error: {
     icon: ExclamationCircleIcon,
-    accent: 'bg-danger',
-    iconClass: 'border-danger/25 bg-danger-soft text-danger',
+    iconClass: 'text-danger',
     label: 'Error',
   },
   success: {
     icon: CheckCircleIcon,
-    accent: 'bg-success',
-    iconClass: 'border-success/25 bg-success-soft text-success',
+    iconClass: 'text-success',
     label: 'Success',
   },
   info: {
     icon: InformationCircleIcon,
-    accent: 'bg-signal',
-    iconClass: 'border-signal/25 bg-signal-soft text-signal',
+    iconClass: 'text-signal',
     label: 'Notice',
   },
 };
@@ -71,18 +68,16 @@ export function Toast({ message, type = 'error', onClose, durationMs = 3000 }: T
       }`}
     >
       <div className="relative overflow-hidden rounded-panel border border-line bg-surface-raised shadow-float">
-        <span className={`absolute left-0 top-0 h-full w-[3px] ${tone.accent}`} aria-hidden="true" />
-        <div className="flex items-start gap-3 px-4 py-3 pl-5">
-          <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${tone.iconClass}`}>
-            <Icon className="h-4 w-4" />
+        <div className="flex items-start gap-3 px-4 py-3.5">
+          <span className={`mt-0.5 shrink-0 ${tone.iconClass}`}>
+            <Icon className="h-[1.15rem] w-[1.15rem]" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-muted">{tone.label}</p>
-            <p className="mt-0.5 text-[13px] leading-snug text-ink">{message}</p>
+            <p className="text-[13.5px] leading-snug text-ink">{message}</p>
           </div>
           <button
             onClick={closeToast}
-            className="rounded-[6px] p-1 text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink"
+            className="rounded-[5px] p-1 text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink"
             aria-label="Dismiss notification"
           >
             <XMarkIcon className="h-3.5 w-3.5" />

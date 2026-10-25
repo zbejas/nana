@@ -59,7 +59,7 @@ export function ContextMenuShell({
       className="max-h-[min(70vh,22rem)] min-w-[14rem] overflow-y-auto scrollbar-autohide"
     >
       <div className="pb-1">
-        <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-muted">{title}</p>
+        <p className="px-3 pb-1 pt-1 text-[11px] font-semibold text-ink-muted">{title}</p>
         {children}
       </div>
     </MenuSurface>

@@ -3,9 +3,9 @@
 @import "@uiw/react-markdown-preview/markdown.css";
 
 /*
- * Signal & Paper — Nana's visual world.
- * Bone and charcoal neutrals, one ultramarine signal, mono metadata, and
- * editorial rules. Light theme is the same ledger on paper, not a different app.
+ * Graphite — Nana's visual world.
+ * Paper and graphite neutrals, a single restrained ember, precise hairlines,
+ * and one sans voice. A quiet desk: the writing leads, the chrome recedes.
  */
 
 /* ------------------------------------------------------------------ */
@@ -13,35 +13,27 @@
 /* ------------------------------------------------------------------ */
 
 @font-face {
-  font-family: "Schibsted Grotesk";
+  font-family: "Geist";
   font-style: normal;
-  font-weight: 400 900;
+  font-weight: 100 900;
   font-display: swap;
-  src: url("./assets/fonts/schibsted-grotesk-variable.woff2") format("woff2");
+  src: url("./assets/fonts/geist-variable.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: "Schibsted Grotesk";
+  font-family: "Geist";
   font-style: italic;
-  font-weight: 400 900;
+  font-weight: 100 900;
   font-display: swap;
-  src: url("./assets/fonts/schibsted-grotesk-variable-italic.woff2") format("woff2");
+  src: url("./assets/fonts/geist-variable-italic.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: "JetBrains Mono";
+  font-family: "Geist Mono";
   font-style: normal;
-  font-weight: 400;
+  font-weight: 100 900;
   font-display: swap;
-  src: url("./assets/fonts/jetbrains-mono-400.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "JetBrains Mono";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("./assets/fonts/jetbrains-mono-500.woff2") format("woff2");
+  src: url("./assets/fonts/geist-mono-variable.woff2") format("woff2");
 }
 
 @theme inline {
@@ -57,6 +49,8 @@
   --color-ink-muted: var(--ink-muted);
   --color-signal: var(--signal);
   --color-signal-strong: var(--signal-strong);
+  --color-signal-bright: var(--signal-bright);
+  --color-signal-bright-strong: var(--signal-bright-strong);
   --color-signal-soft: var(--signal-soft);
   --color-on-signal: var(--on-signal);
   --color-warning: var(--warning);
@@ -67,10 +61,15 @@
   --color-danger-soft: var(--danger-soft);
   --color-on-danger: var(--on-danger);
   --color-scrim: var(--scrim);
+  --color-cover: var(--cover);
+  --color-cover-surface: var(--cover-surface);
+  --color-cover-line: var(--cover-line);
+  --color-cover-ink: var(--cover-ink);
+  --color-cover-muted: var(--cover-muted);
+  --color-cover-signal: var(--cover-signal);
 
-  --font-sans: "Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-display: "Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
   --radius-control: 6px;
   --radius-panel: 10px;
@@ -80,29 +79,39 @@
 }
 
 :root {
-  --canvas: #141518;
-  --canvas-deep: #0f1012;
-  --surface: #1b1d21;
-  --surface-raised: #232529;
-  --surface-sunken: #101114;
-  --line: rgb(236 237 239 / 0.12);
-  --line-strong: rgb(236 237 239 / 0.36);
-  --ink: #ecedef;
-  --ink-secondary: #a8abb2;
-  --ink-muted: #8a8d94;
-  --signal: #7483ff;
-  --signal-strong: #95a2ff;
-  --signal-soft: rgb(116 131 255 / 0.14);
-  --on-signal: #0b0d12;
-  --warning: #d9a84e;
-  --warning-soft: rgb(217 168 78 / 0.14);
-  --success: #57c08a;
-  --success-soft: rgb(87 192 138 / 0.14);
-  --danger: #f08a80;
-  --danger-soft: rgb(240 138 128 / 0.14);
-  --on-danger: #1a0b09;
-  --scrim: rgb(0 0 0 / 0.62);
-  --float-shadow: 0 24px 60px -24px rgb(0 0 0 / 0.55);
+  --canvas: #0c0c0d;
+  --canvas-deep: #080809;
+  --surface: #131315;
+  --surface-raised: #1b1b1e;
+  --surface-sunken: #0f0f10;
+  --line: rgb(255 255 255 / 0.07);
+  --line-strong: rgb(255 255 255 / 0.18);
+  --ink: #f5f5f4;
+  --ink-secondary: #a3a39e;
+  --ink-muted: #8a8a84;
+  --signal: #ff7a54;
+  --signal-strong: #ff9b7c;
+  --signal-bright: #ff7048;
+  --signal-bright-strong: #ff8a66;
+  --signal-soft: rgb(255 112 72 / 0.12);
+  --on-signal: #1a0b06;
+  --warning: #e3b25f;
+  --warning-soft: rgb(227 178 95 / 0.12);
+  --success: #74c69d;
+  --success-soft: rgb(116 198 157 / 0.12);
+  --danger: #ff7b72;
+  --danger-soft: rgb(255 123 114 / 0.12);
+  --on-danger: #200a08;
+  --scrim: rgb(0 0 0 / 0.66);
+  --float-shadow:
+    0 16px 48px -16px rgb(0 0 0 / 0.7),
+    0 2px 8px -2px rgb(0 0 0 / 0.45);
+  --cover: #09090a;
+  --cover-surface: #121214;
+  --cover-line: rgb(255 255 255 / 0.08);
+  --cover-ink: #f5f5f4;
+  --cover-muted: #9b9b95;
+  --cover-signal: #ff7a54;
   --mobile-navbar-height: calc(4.5rem + env(safe-area-inset-bottom));
 
   color-scheme: dark;
@@ -110,29 +119,39 @@
 
 :root[data-theme="light"],
 :root.light {
-  --canvas: #f4f1e9;
-  --canvas-deep: #eae6dc;
-  --surface: #fbfaf6;
-  --surface-raised: #ffffff;
-  --surface-sunken: #ede9e0;
-  --line: rgb(26 27 30 / 0.12);
-  --line-strong: rgb(26 27 30 / 0.5);
-  --ink: #1a1b1e;
-  --ink-secondary: #53565c;
-  --ink-muted: #63656c;
-  --signal: #2b3fd1;
-  --signal-strong: #1f2fa6;
-  --signal-soft: rgb(43 63 209 / 0.1);
+  --canvas: #faf9f7;
+  --canvas-deep: #f2f1ee;
+  --surface: #ffffff;
+  --surface-raised: #f7f6f3;
+  --surface-sunken: #f3f2ef;
+  --line: rgb(26 26 24 / 0.08);
+  --line-strong: rgb(26 26 24 / 0.18);
+  --ink: #1a1a18;
+  --ink-secondary: #52524e;
+  --ink-muted: #6b6b65;
+  --signal: #b7431e;
+  --signal-strong: #943314;
+  --signal-bright: #b7431e;
+  --signal-bright-strong: #9c3718;
+  --signal-soft: rgb(183 67 30 / 0.08);
   --on-signal: #ffffff;
-  --warning: #7a4b00;
-  --warning-soft: rgb(122 75 0 / 0.1);
-  --success: #17683f;
-  --success-soft: rgb(23 104 63 / 0.1);
-  --danger: #b3261e;
-  --danger-soft: rgb(179 38 30 / 0.1);
+  --warning: #855600;
+  --warning-soft: rgb(133 86 0 / 0.09);
+  --success: #1f6b45;
+  --success-soft: rgb(31 107 69 / 0.09);
+  --danger: #b42318;
+  --danger-soft: rgb(180 35 24 / 0.08);
   --on-danger: #ffffff;
-  --scrim: rgb(20 21 24 / 0.38);
-  --float-shadow: 0 24px 60px -28px rgb(20 21 24 / 0.22);
+  --scrim: rgb(20 20 18 / 0.36);
+  --float-shadow:
+    0 16px 48px -20px rgb(20 20 18 / 0.18),
+    0 2px 8px -4px rgb(20 20 18 / 0.08);
+  --cover: #09090a;
+  --cover-surface: #121214;
+  --cover-line: rgb(255 255 255 / 0.08);
+  --cover-ink: #f5f5f4;
+  --cover-muted: #9b9b95;
+  --cover-signal: #ff7a54;
 
   color-scheme: light;
 }
@@ -167,7 +186,7 @@
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--signal) 30%, transparent);
+    background: color-mix(in srgb, var(--signal-bright) 24%, transparent);
     color: var(--ink);
   }
 
@@ -183,8 +202,8 @@
   }
 
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
 
   ::-webkit-scrollbar-track {
@@ -606,12 +625,21 @@ body.public-route-active {
 
   .eyebrow,
   .meta {
-    font-family: var(--font-mono);
-    font-size: 10px;
+    font-family: var(--font-sans);
+    font-size: 12px;
     line-height: 1.4;
     font-weight: 500;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    color: var(--ink-muted);
+  }
+
+  .meta-mono {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 500;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
     color: var(--ink-muted);
   }
 }
@@ -631,8 +659,78 @@ body.public-route-active {
 /* Third-party overrides                                               */
 /* ------------------------------------------------------------------ */
 
+.w-md-editor,
+.wmde-markdown,
+.w-md-editor-preview {
+  --color-fg-default: var(--ink);
+  --color-fg-muted: var(--ink-muted);
+  --color-canvas-default: transparent;
+  --color-canvas-subtle: var(--surface-sunken);
+  --color-border-default: var(--line);
+  --color-border-muted: var(--line);
+  --color-accent-fg: var(--signal);
+  --color-accent-emphasis: var(--signal);
+  --color-danger-fg: var(--danger);
+  --color-success-fg: var(--success);
+  --color-attention-fg: var(--warning);
+  font-family: var(--font-sans) !important;
+}
+
+.wmde-markdown h1,
+.wmde-markdown h2,
+.wmde-markdown h3,
+.wmde-markdown h4,
+.wmde-markdown h5,
+.wmde-markdown h6,
+.w-md-editor-preview h1,
+.w-md-editor-preview h2,
+.w-md-editor-preview h3,
+.w-md-editor-preview h4,
+.w-md-editor-preview h5,
+.w-md-editor-preview h6 {
+  font-family: var(--font-sans) !important;
+  letter-spacing: -0.02em;
+}
+
 .w-md-editor {
   background: transparent !important;
+  color: var(--ink) !important;
+}
+
+.wmde-markdown h1,
+.wmde-markdown h2,
+.wmde-markdown h3,
+.wmde-markdown h4,
+.wmde-markdown h5,
+.wmde-markdown h6,
+.w-md-editor-preview h1,
+.w-md-editor-preview h2,
+.w-md-editor-preview h3,
+.w-md-editor-preview h4,
+.w-md-editor-preview h5,
+.w-md-editor-preview h6 {
+  color: var(--ink) !important;
+  border-bottom-color: var(--line) !important;
+}
+
+.wmde-markdown p,
+.wmde-markdown li,
+.wmde-markdown td,
+.wmde-markdown th,
+.wmde-markdown dd,
+.wmde-markdown dt {
+  color: var(--ink-secondary) !important;
+}
+
+.w-md-editor-preview p,
+.w-md-editor-preview li {
+  color: var(--ink) !important;
+}
+
+.chat-answer .wmde-markdown p,
+.chat-answer .wmde-markdown li,
+.chat-answer .wmde-markdown td,
+.chat-answer .wmde-markdown th {
   color: var(--ink) !important;
 }
 
@@ -655,6 +753,23 @@ body.public-route-active {
 .w-md-editor-text-input {
   color: var(--ink) !important;
   caret-color: var(--signal) !important;
+}
+
+.w-md-editor-text-pre .code-line {
+  color: var(--ink) !important;
+}
+
+.w-md-editor-text-pre .token.punctuation {
+  color: var(--ink-muted) !important;
+}
+
+.w-md-editor-text-pre .token.title {
+  color: var(--ink) !important;
+  font-weight: 600;
+}
+
+.w-md-editor-text-pre .token.list.punctuation {
+  color: var(--ink-muted) !important;
 }
 
 .w-md-editor-preview {

@@ -89,8 +89,8 @@ export function Sheet({ open, onClose, title, description, children, footer, cla
         {(title || description) && (
           <div className="flex items-start justify-between gap-4 px-5 pb-3 pt-3">
             <div className="min-w-0">
-              {title && <h2 className="font-display text-lg font-semibold leading-tight tracking-[-0.02em] text-ink">{title}</h2>}
-              {description && <p className="mt-1 text-sm text-ink-secondary">{description}</p>}
+              {title && <h2 className="text-[17px] font-semibold leading-snug tracking-[-0.015em] text-ink">{title}</h2>}
+              {description && <p className="mt-1 text-[13.5px] text-ink-secondary">{description}</p>}
             </div>
             <IconButton label="Close" size="sm" onClick={onClose} className="-mr-1">
               <XMarkIcon />

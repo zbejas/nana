@@ -66,7 +66,7 @@ function InlineNameCard({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-[7.5rem] flex-col justify-center gap-2 rounded-panel border border-signal/35 bg-signal-soft/40 p-3">
+    <div className="flex min-h-[9rem] flex-col justify-center gap-2 rounded-panel border border-signal/35 bg-signal-soft/40 p-4">
       <div className="text-signal">{icon}</div>
       <input
         autoFocus
@@ -129,7 +129,7 @@ export function FolderViewGrid({
   onDrop,
 }: FolderViewGridProps) {
   return (
-    <div className="grid grid-cols-2 gap-2.5 p-3 sm:grid-cols-3 sm:p-4 lg:grid-cols-4 xl:grid-cols-5">
+    <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 sm:p-4 lg:grid-cols-4 xl:grid-cols-5">
       {pendingCreate && (
         <InlineNameCard
           value={pendingCreate.name}
@@ -171,7 +171,7 @@ export function FolderViewGrid({
                 onDragOver={(event) => onDragOver(event, folder.id, 'into')}
                 onDragLeave={onDragLeave}
                 onDrop={(event) => void onDrop(event, folder.id, folder.parent || undefined)}
-                className={`flex min-h-[7.5rem] w-full flex-col justify-between rounded-panel border p-3 text-left transition-colors ${
+                className={`flex min-h-[9rem] w-full flex-col justify-between rounded-panel border p-4 text-left transition-colors ${
                   dropZone === folder.id
                     ? 'border-signal/50 bg-signal-soft'
                     : isSelected
@@ -179,16 +179,16 @@ export function FolderViewGrid({
                       : 'border-line bg-surface hover:border-line-strong hover:bg-surface-raised'
                 }`}
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-line bg-surface-sunken text-warning">
+                <span className="flex h-10 w-10 items-center justify-center rounded-[8px] border border-line bg-surface-sunken text-ink-secondary">
                   <FolderIcon className="h-4 w-4" />
                 </span>
-                <span className="mt-3 block">
+                <span className="mt-4 block">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate text-[13px] font-medium text-ink">{folder.name}</span>
+                    <span className="truncate text-[13.5px] font-medium text-ink">{folder.name}</span>
                     {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
                     {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
                   </span>
-                  <span className="mt-0.5 block text-[11px] text-ink-muted">
+                  <span className="mt-0.5 block text-[11.5px] text-ink-muted">
                     {folder.subfolders.length === 0 ? 'Folder' : `${folder.subfolders.length} subfolders`}
                   </span>
                 </span>
@@ -240,24 +240,35 @@ export function FolderViewGrid({
                 }
                 onDragStart={(event) => onDragStart(event, document.id, currentFolderId || undefined)}
                 onDragEnd={onDragEnd}
-                className={`flex min-h-[7.5rem] w-full flex-col justify-between rounded-panel border p-3 text-left transition-colors ${
+                className={`flex min-h-[9rem] w-full flex-col justify-between rounded-panel border p-4 text-left transition-colors ${
                   isSelected
                     ? 'border-signal/35 bg-signal-soft/60'
                     : 'border-line bg-surface hover:border-line-strong hover:bg-surface-raised'
                 }`}
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-line bg-surface-sunken text-ink-muted">
+                <span className="flex h-10 w-10 items-center justify-center rounded-[8px] border border-line bg-surface-sunken text-ink-muted">
                   <DocumentTextIcon className="h-4 w-4" />
                 </span>
-                <span className="mt-3 block">
+                <span className="mt-4 block">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate text-[13px] font-medium text-ink">{document.title || 'Untitled'}</span>
+                    <span className="truncate text-[13.5px] font-medium text-ink">{document.title || 'Untitled'}</span>
                     {document.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
                     {document.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
                   </span>
-                  <span className="mt-0.5 block truncate text-[11px] text-ink-muted">
+                  <span className="mt-0.5 block truncate text-[11.5px] text-ink-muted">
                     {document.word_count > 0 ? `${document.word_count} words` : 'Empty note'}
                   </span>
+                  {document.content && (
+                    <span className="mt-1 line-clamp-2 block text-[12px] leading-relaxed text-ink-muted">
+                      {document.content
+                        .slice(0, 400)
+                        .replace(/```[\s\S]*?```/g, ' ')
+                        .replace(/[#>*_`~\-[\]()]/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim()
+                        .slice(0, 100)}
+                    </span>
+                  )}
                   {tags.length > 0 && (
                     <span className="mt-1.5 flex flex-wrap gap-1">
                       {tags.slice(0, 1).map((tag) => (
@@ -265,7 +276,7 @@ export function FolderViewGrid({
                           {tag}
                         </Badge>
                       ))}
-                      {tags.length > 1 && <span className="text-[10px] leading-5 text-ink-muted">+{tags.length - 1}</span>}
+                      {tags.length > 1 && <span className="text-[11.5px] leading-5 text-ink-muted">+{tags.length - 1}</span>}
                     </span>
                   )}
                 </span>

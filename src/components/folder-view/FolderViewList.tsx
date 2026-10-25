@@ -6,6 +6,16 @@ import type { DropPosition } from '../file-folder-handling/types';
 import type { PendingCreate, PendingRename } from './types';
 import { Badge, Button, IconButton } from '../ui';
 
+function plainExcerpt(content: string): string {
+  return content
+    .slice(0, 600)
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[#>*_`~\-[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140);
+}
+
 type FolderViewListProps = {
   displayedFolders: FolderTreeNode[];
   displayedDocuments: Document[];
@@ -64,7 +74,7 @@ function InlineNameRow({
   submitLabel: string;
 }) {
   return (
-    <div className="flex flex-col gap-2 border-b border-line bg-signal-soft/30 px-3 py-2.5 sm:flex-row sm:items-center">
+    <div className="m-1 flex flex-col gap-2 rounded-[8px] border border-signal/25 bg-signal-soft/30 px-3 py-2.5 sm:flex-row sm:items-center">
       <input
         autoFocus
         value={value}
@@ -126,7 +136,11 @@ export function FolderViewList({
   onDrop,
 }: FolderViewListProps) {
   return (
-    <div className="overflow-hidden">
+    <div>
+      <div className="hidden h-9 items-center justify-between border-b border-line px-3 text-[11.5px] font-medium text-ink-muted sm:flex sm:px-4">
+        <span>Name</span>
+        <span>Details</span>
+      </div>
       {pendingCreate && (
         <InlineNameRow
           value={pendingCreate.name}
@@ -168,7 +182,7 @@ export function FolderViewList({
                 onDragOver={(event) => onDragOver(event, folder.id, 'into')}
                 onDragLeave={onDragLeave}
                 onDrop={(event) => void onDrop(event, folder.id, folder.parent || undefined)}
-                className={`flex w-full items-center gap-3 px-3 py-2.5 pr-12 text-left transition-colors sm:px-4 ${
+                className={`flex w-full items-center gap-3 px-3 py-3.5 pr-12 text-left transition-colors sm:px-4 ${
                   dropZone === folder.id
                     ? 'bg-signal-soft ring-1 ring-inset ring-signal/40'
                     : isSelected
@@ -177,21 +191,21 @@ export function FolderViewList({
                 }`}
               >
                 <span
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border ${
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] border ${
                     isSelected || dropZone === folder.id
                       ? 'border-signal/30 bg-signal-soft text-signal'
-                      : 'border-line bg-surface-sunken text-warning'
+                      : 'border-line bg-surface-sunken text-ink-secondary'
                   }`}
                 >
                   <FolderIcon className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate text-[13px] font-medium text-ink">{folder.name}</span>
+                    <span className="truncate text-[13.5px] font-medium text-ink">{folder.name}</span>
                     {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
                     {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
                   </span>
-                  <span className="mt-0.5 block text-[11px] text-ink-muted">
+                  <span className="mt-0.5 block text-[11.5px] text-ink-muted">
                     {folder.subfolders.length === 0
                       ? 'Folder'
                       : `${folder.subfolders.length} subfolder${folder.subfolders.length === 1 ? '' : 's'}`}
@@ -246,23 +260,28 @@ export function FolderViewList({
                 }
                 onDragStart={(event) => onDragStart(event, document.id, currentFolderId || undefined)}
                 onDragEnd={onDragEnd}
-                className={`flex w-full items-center gap-3 px-3 py-2.5 pr-12 text-left transition-colors sm:px-4 ${
+                className={`flex w-full items-center gap-3 px-3 py-3.5 pr-12 text-left transition-colors sm:px-4 ${
                   isSelected ? 'bg-signal-soft' : 'hover:bg-surface-raised'
                 }`}
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-line bg-surface-sunken text-ink-muted">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] border border-line bg-surface-sunken text-ink-muted">
                   <DocumentTextIcon className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate text-[13px] font-medium text-ink">{document.title || 'Untitled'}</span>
+                    <span className="truncate text-[13.5px] font-medium text-ink">{document.title || 'Untitled'}</span>
                     {document.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
                     {document.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
                   </span>
-                  <span className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-muted">
+                  <span className="mt-0.5 flex items-center gap-2 text-[11.5px] text-ink-muted">
                     <span>Updated {new Date(document.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                     {document.word_count > 0 && <span>· {document.word_count} words</span>}
                   </span>
+                  {document.content && (
+                    <span className="mt-1 block truncate text-[12px] leading-relaxed text-ink-muted">
+                      {plainExcerpt(document.content)}
+                    </span>
+                  )}
                 </span>
                 {tags.length > 0 && (
                   <span className="hidden shrink-0 items-center gap-1 sm:flex">
@@ -271,7 +290,7 @@ export function FolderViewList({
                         {tag}
                       </Badge>
                     ))}
-                    {tags.length > 2 && <span className="text-[10px] text-ink-muted">+{tags.length - 2}</span>}
+                    {tags.length > 2 && <span className="text-[11.5px] text-ink-muted">+{tags.length - 2}</span>}
                   </span>
                 )}
               </button>

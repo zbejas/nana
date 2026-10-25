@@ -106,8 +106,8 @@ function AppContent() {
 
   // Detect mobile viewport
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const COMPACT_SIDEBAR_WIDTH = 80;
-  const MOBILE_NAVBAR_HEIGHT = 'var(--mobile-navbar-height, calc(72px + env(safe-area-inset-bottom)))';
+  const COMPACT_SIDEBAR_WIDTH = 64;
+  const MOBILE_NAVBAR_HEIGHT = 'var(--mobile-navbar-height, calc(64px + env(safe-area-inset-bottom)))';
   const previousMobilePathRef = useRef(location.pathname);
 
   // Reload app when returning after long inactivity (tab switch, app switch, sleep/wake)
@@ -238,23 +238,28 @@ function AppContent() {
       ? 'mobile-route-enter-from-left'
       : null;
 
+  const showCompactRail = shouldShowSidebar && !isMobile && !sidebarOpen;
+  const dockedContentInset = shouldShowSidebar && shouldDockSidebar
+    ? (sidebarOpen ? sidebarWidth : COMPACT_SIDEBAR_WIDTH)
+    : showCompactRail
+      ? COMPACT_SIDEBAR_WIDTH
+      : 0;
+
   return (
-    <div className={`${isMobile ? 'h-[100dvh]' : 'h-screen'} w-full flex flex-col`}>
+    <div className={`${isMobile ? 'h-[100dvh]' : 'h-screen'} flex w-full flex-col bg-canvas`}>
       {/* <NavigationProgress /> */}
       {shouldShowSidebar && <Sidebar />}
       <div 
-        className={`w-full min-w-0 flex-1 flex flex-col overflow-x-hidden ${isMobile && (isDocumentRoute || isChatRoute) ? 'overflow-y-hidden' : isPublicRoute ? 'overflow-y-auto' : 'overflow-y-auto md:overflow-hidden'}`}
+        className={`flex w-full min-w-0 flex-1 flex-col overflow-x-hidden ${isMobile && (isDocumentRoute || isChatRoute) ? 'overflow-y-hidden' : isPublicRoute ? 'overflow-y-auto' : 'overflow-y-auto md:overflow-hidden'}`}
         style={{
-          paddingLeft: shouldShowSidebar && shouldDockSidebar
-            ? (sidebarOpen ? `${sidebarWidth}px` : `${COMPACT_SIDEBAR_WIDTH}px`)
-            : '0px',
+          paddingLeft: `${dockedContentInset}px`,
           paddingBottom: shouldShowSidebar && isMobile && !isDocumentRoute ? MOBILE_NAVBAR_HEIGHT : '0px',
           transition: sidebarResizing ? 'none' : 'padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
         <div
           key={isMobile ? getMobileRouteKey(location.pathname) : 'desktop-routes'}
-          className={`${isPublicRoute ? 'min-h-full' : 'h-full'} w-full min-w-0 flex flex-col`}
+          className={`${isPublicRoute ? 'min-h-full' : 'h-full'} flex w-full min-w-0 flex-col`}
           style={{
             animation: isMobile && mobileAnimationName
               ? `${mobileAnimationName} 240ms ease-out`
@@ -262,9 +267,9 @@ function AppContent() {
           }}
         >
           <Suspense fallback={
-            <div className="flex h-screen items-center justify-center bg-canvas">
+            <div className="flex h-full items-center justify-center bg-canvas">
               <div className="flex flex-col items-center gap-4">
-                <div className="h-9 w-9 animate-spin rounded-full border-2 border-line-strong border-t-signal" />
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-line-strong border-t-signal" />
                 <p className="text-sm text-ink-muted">Loading…</p>
               </div>
             </div>

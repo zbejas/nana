@@ -131,7 +131,7 @@ Conversations live in the `conversations` collection with messages stored inline
 
 ### Chat surface
 
-The client has no document picker and no attachment flow. The empty state reads `Ask your notes.`; the composer placeholder is `Ask about your notes or board...`. Tool activity is a quiet mono row above the answer, derived from streamed tool parts (`running`, then `success`/`error`). The persisted history shows only names and statuses. See [`frontend.md`](frontend.md) for layout and the [`DESIGN.md`](../DESIGN.md) chat treatment.
+The client has no document picker and no attachment flow. The empty state reads `Ask your notes.`; the composer placeholder is `Ask about your notes or board...`. Tool activity is a quiet neutral pill above the answer, derived from streamed tool parts (`running`, then `success`/`error`). The persisted history shows only names and statuses. See [`frontend.md`](frontend.md) for layout and the [`DESIGN.md`](../DESIGN.md) chat treatment.
 
 ### Security boundaries
 

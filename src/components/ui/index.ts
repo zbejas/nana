@@ -7,6 +7,8 @@ export { Badge, Spinner, EmptyState } from './Feedback';
 export type { BadgeTone } from './Feedback';
 export { Avatar } from './Avatar';
 export { PageHeader } from './PageHeader';
+export { PageShell } from './PageShell';
+export type { PageWidth } from './PageShell';
 export { Switch, Checkbox, SegmentedControl } from './Controls';
 export { Dialog, useLayer } from './Dialog';
 export type { DialogProps, DialogSize } from './Dialog';

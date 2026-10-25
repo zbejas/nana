@@ -132,7 +132,7 @@ export function ImportNoteDialog({
                   <DocumentTextIcon className="h-4 w-4 shrink-0 text-ink-muted" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm text-ink">{document.title || 'Untitled'}</span>
-                    <span className="mt-0.5 block text-[11px] text-ink-muted">
+                    <span className="mt-0.5 block text-[11.5px] text-ink-muted">
                       Updated {new Date(document.updated).toLocaleDateString()}
                       {document.word_count ? ` · ${document.word_count} words` : ''}
                     </span>
@@ -140,11 +140,11 @@ export function ImportNoteDialog({
                   {importingId === document.id ? (
                     <Spinner className="h-4 w-4" />
                   ) : alreadyOnBoard ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-success">
+                    <span className="inline-flex shrink-0 items-center gap-1 text-[11.5px] text-success">
                       <CheckCircleIcon className="h-3.5 w-3.5" /> On board
                     </span>
                   ) : (
-                    <span className="shrink-0 text-[11px] font-medium text-signal">Import</span>
+                    <span className="shrink-0 text-[11.5px] font-medium text-signal">Import</span>
                   )}
                 </button>
               );

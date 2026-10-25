@@ -19,20 +19,20 @@ export function PublicTopBar({ subtitle, author, title, rightContent, logo }: Pu
                             <p className="truncate text-[12px] font-medium leading-tight text-ink">
                                 {subtitle || 'Nana'}
                             </p>
-                            <p className="truncate text-[11px] leading-tight text-ink-muted">
+                            <p className="truncate text-[11.5px] leading-tight text-ink-muted">
                                 {author ? `Shared by ${author}` : 'Shared note'}
                             </p>
                         </div>
                     </div>
 
-                    <h1 className="hidden min-w-0 flex-1 truncate text-center font-display text-base text-ink sm:block">
+                    <h1 className="hidden min-w-0 flex-1 truncate text-center text-base text-ink sm:block">
                         {title || 'Untitled'}
                     </h1>
 
                     <div className="ml-auto flex shrink-0 items-center gap-3">{rightContent}</div>
                 </div>
 
-                <h1 className="truncate font-display text-lg text-ink sm:hidden">{title || 'Untitled'}</h1>
+                <h1 className="truncate text-lg text-ink sm:hidden">{title || 'Untitled'}</h1>
             </div>
         </header>
     );

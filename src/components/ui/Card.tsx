@@ -33,9 +33,9 @@ export function SectionHeading({ title, description, actions, className }: Secti
   return (
     <div className={cn('flex flex-wrap items-start justify-between gap-4', className)}>
       <div className="min-w-0">
-        <h2 className="font-display text-xl font-semibold leading-tight tracking-[-0.02em] text-ink">{title}</h2>
+        <h2 className="text-[17px] font-semibold leading-snug tracking-[-0.015em] text-ink">{title}</h2>
         {description && (
-          <p className="mt-1.5 max-w-[64ch] text-sm leading-relaxed text-ink-secondary">{description}</p>
+          <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-ink-secondary">{description}</p>
         )}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}

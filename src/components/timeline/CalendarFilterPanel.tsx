@@ -59,11 +59,10 @@ export function CalendarFilterPanel({
 
   return (
     <div>
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div>
-          <p className="eyebrow">Filter</p>
-          <p className="mt-1 text-sm text-ink">{rangeLabel}</p>
-        </div>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <p className="text-[13px] font-semibold text-ink">
+          {visibleMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+        </p>
         <div className="flex items-center gap-0.5">
           <IconButton label="Previous month" size="sm" onClick={onPreviousMonth}>
             <ChevronLeftIcon />
@@ -74,18 +73,16 @@ export function CalendarFilterPanel({
         </div>
       </div>
 
-      <div className="mb-1 flex items-center justify-between">
-        <p className="text-[13px] font-medium text-ink">
-          {visibleMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-        </p>
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-[11.5px] text-ink-muted">{rangeLabel}</p>
         {isSameDay(selectedRange.startDate, new Date()) && !selectedRange.endDate && (
-          <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-signal">Today</span>
+          <span className="rounded-[5px] border border-line bg-surface px-1.5 py-0.5 text-[11px] font-medium text-ink-muted">Today</span>
         )}
       </div>
 
       <div className="grid grid-cols-7 gap-0.5">
         {WEEKDAY_LABELS.map((weekday, index) => (
-          <div key={`${weekday}-${index}`} className="py-1 text-center text-[10px] font-medium text-ink-muted">
+          <div key={`${weekday}-${index}`} className="py-1.5 text-center text-[11px] font-semibold text-ink-muted">
             {weekday}
           </div>
         ))}
@@ -107,14 +104,14 @@ export function CalendarFilterPanel({
             <button
               key={toDateString(day)}
               onClick={() => onDayClick(day)}
-              className={`relative h-8 rounded-[6px] text-[12px] tabular-nums transition-colors ${
+              className={`relative h-9 rounded-[8px] text-[12px] tabular-nums transition-colors ${
                 isSelected
-                  ? 'bg-signal font-semibold text-on-signal'
+                  ? 'bg-signal-bright font-semibold text-on-signal'
                   : inRange
                     ? 'bg-signal-soft text-ink'
                     : inCurrentMonth
-                      ? 'text-ink-secondary hover:bg-surface-raised hover:text-ink'
-                      : 'text-ink-muted/40 hover:bg-surface-raised/60 hover:text-ink-muted'
+                      ? 'text-ink-secondary hover:bg-surface-sunken hover:text-ink'
+                      : 'text-ink-muted hover:bg-surface-sunken/60 hover:text-ink'
               }`}
               title={day.toLocaleDateString()}
               aria-label={`Select ${day.toLocaleDateString()}`}

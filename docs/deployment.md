@@ -11,7 +11,7 @@ Nana ships as one container with two processes: PocketBase on `:8090` and Bun on
 | `build.ts` | Bundles `src/**/*.html` into `dist/` with `bun-plugin-tailwind`. |
 | `docker/Dockerfile` | Multi-stage image: base, builder, development, testing, production. |
 | `docker/docker-entrypoint.sh` | Runs migrations, starts PocketBase and Bun, prefixes logs, handles shutdown. |
-| `docker/docker-test-entrypoint.sh` | Resets a disposable database and runs the phased integration suite. |
+| `docker/docker-test-entrypoint.sh` | Resets a disposable database and runs the unit phase plus the phased integration suite. |
 | `compose.yml` | Production image, port `3000`, bind-mounted `./pocketbase/pb_data`. |
 | `docker/compose.dev.yml` | Development build with source and hook watches, ports `3000` and `8090`. |
 | `docker/compose.test.yml` | Isolated test container; no host ports or volumes. |
@@ -235,4 +235,4 @@ The workflow is idempotent: if the release already exists it is a no-op, so edit
 - [`ai.md`](ai.md) — provider configuration and read-tool behavior.
 - [`security.md`](security.md) — exposure, secrets, and runtime data.
 - [`architecture.md`](architecture.md) — process topology and runtime modes.
-- [`testing.md`](testing.md) — Docker test stack and gate.
+- [`testing.md`](testing.md) — unit and Docker integration layers and the shipping gate.

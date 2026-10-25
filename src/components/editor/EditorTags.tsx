@@ -18,19 +18,19 @@ export function EditorTags({
   onRemoveTag,
 }: EditorTagsProps) {
   return (
-    <div className="border-b border-line bg-surface/30 px-3 py-2 sm:px-5">
+    <div className="border-b border-line bg-canvas px-3 py-2 sm:px-5">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="eyebrow mr-1">Tags</span>
+        <span className="mr-1 text-[11.5px] font-medium text-ink-muted">Tags</span>
         {tags.map((tag) => (
           <span
             key={tag}
-            className="inline-flex items-center gap-1 rounded-full border border-signal/25 bg-signal-soft py-0.5 pl-2 pr-1 text-[11px] text-signal"
+            className="inline-flex items-center gap-1 rounded-[5px] border border-line bg-surface px-1.5 py-0.5 text-[11.5px] text-ink-secondary"
           >
             {tag}
             {!readOnly && (
               <button
                 onClick={() => onRemoveTag(tag)}
-                className="rounded-full p-0.5 text-signal/70 transition-colors hover:bg-signal/15 hover:text-signal"
+                className="rounded-[3px] p-0.5 text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink"
                 aria-label={`Remove tag ${tag}`}
               >
                 <XMarkIcon className="h-3 w-3" />

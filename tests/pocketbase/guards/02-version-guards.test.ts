@@ -1,92 +1,106 @@
-import { describe, test, expect, beforeAll } from "bun:test";
-import { PB_API, authenticateSuperuser, authenticateUser, signupUser } from "../../helpers/setup";
+import { beforeAll, describe, expect, test } from "bun:test";
+import { expectStatus, pbGetRecord, pbList, pbRequest } from "../../helpers/client";
+import {
+    createNote,
+    createUser,
+    getSuperuserToken,
+    publishNote,
+    type TestUser,
+} from "../../helpers/factories";
 
-describe("Version Guards", () => {
-    let userToken: string;
+describe("Document version guards", () => {
+    let user: TestUser;
+    let other: TestUser;
+    let superuserToken: string;
+    let noteId: string;
+    let versionId: string;
 
     beforeAll(async () => {
-        const superuserToken = await authenticateSuperuser();
+        user = await createUser("version-guards");
+        other = await createUser("version-guards-other");
+        superuserToken = await getSuperuserToken();
 
-        // Check if test user exists, create if not
-        const listRes = await fetch(
-            `${PB_API}/collections/users/records?filter=(email='version-test@test.local')`,
-            { headers: { Authorization: superuserToken } },
+        const note = await createNote(user, { title: "Versioned note", content: "version one" });
+        noteId = note.id;
+        await publishNote(user, note.id, "version two");
+
+        const versions = await pbList<{ id: string; content: string }>(
+            user.token,
+            "document_versions",
+            { filter: `document='${noteId}'`, perPage: 1 },
         );
-        const listData = await listRes.json();
-        if (listData.items.length === 0) {
-            // Ensure at least one user exists first
-            const checkRes = await fetch(`${PB_API}/collections/users/records?perPage=1`, {
-                headers: { Authorization: superuserToken },
-            });
-            const checkData = await checkRes.json();
-            if (checkData.items.length === 0) {
-                await signupUser({ email: "first@test.local", password: "testPassword123!" });
-            }
-            await fetch(`${PB_API}/collections/users/records`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: superuserToken },
-                body: JSON.stringify({
-                    email: "version-test@test.local",
-                    password: "testPassword123!",
-                    passwordConfirm: "testPassword123!",
-                    name: "Version Test User",
-                }),
-            });
-        }
-
-        const auth = await authenticateUser("version-test@test.local", "testPassword123!");
-        userToken = auth.token;
+        expect(versions.items).toHaveLength(1);
+        versionId = versions.items[0]!.id;
     });
 
-    test("regular user cannot create document_versions", async () => {
-        const res = await fetch(`${PB_API}/collections/document_versions/records`, {
+    test("regular user cannot create document versions directly", async () => {
+        const res = await pbRequest("/collections/document_versions/records", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: userToken,
-            },
+            headers: { Authorization: user.token, "Content-Type": "application/json" },
             body: JSON.stringify({
-                document: "fake_doc_id_12345",
-                title: "Fake Version",
+                document: noteId,
+                title: "Fake version",
                 content: "Should not be created",
             }),
         });
+
+        await expectStatus(res, 400, "create document version");
+    });
+
+    test("regular user cannot update a document version", async () => {
+        const res = await pbRequest(`/collections/document_versions/records/${versionId}`, {
+            method: "PATCH",
+            headers: { Authorization: user.token, "Content-Type": "application/json" },
+            body: JSON.stringify({ content: "Tampered" }),
+        });
+
+        // The update rule is empty, so PocketBase may hide the record before the
+        // request guard runs. Both outcomes deny the write.
+        expect([400, 404]).toContain(res.status);
+
+        const stored = await pbGetRecord<{ content: string }>(
+            superuserToken,
+            "document_versions",
+            versionId,
+        );
+        expect(stored.content).toBe("version one");
+    });
+
+    test("regular user cannot delete a document version", async () => {
+        const res = await pbRequest(`/collections/document_versions/records/${versionId}`, {
+            method: "DELETE",
+            headers: { Authorization: user.token },
+        });
+
+        await expectStatus(res, 400, "delete document version");
+        expect(
+            await pbGetRecord<{ id: string }>(superuserToken, "document_versions", versionId),
+        ).toHaveProperty("id");
+    });
+
+    test("unauthenticated users cannot create document versions", async () => {
+        const res = await pbRequest("/collections/document_versions/records", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                document: noteId,
+                content: "Unauthenticated attempt",
+            }),
+        });
+
         expect(res.ok).toBe(false);
         expect([400, 403]).toContain(res.status);
     });
 
-    test("regular user cannot update document_versions", async () => {
-        const res = await fetch(`${PB_API}/collections/document_versions/records/nonexistent123456`, {
-            method: "PATCH",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: userToken,
-            },
-            body: JSON.stringify({ title: "Modified" }),
+    test("another user cannot list or read the versions", async () => {
+        const list = await pbList<{ id: string }>(other.token, "document_versions", {
+            filter: `document='${noteId}'`,
         });
-        expect(res.ok).toBe(false);
-    });
+        expect(list.items).toEqual([]);
 
-    test("regular user cannot delete document_versions", async () => {
-        const res = await fetch(`${PB_API}/collections/document_versions/records/nonexistent123456`, {
-            method: "DELETE",
-            headers: { Authorization: userToken },
+        const res = await pbRequest(`/collections/document_versions/records/${versionId}`, {
+            headers: { Authorization: other.token },
         });
-        expect(res.ok).toBe(false);
-    });
-
-    describe("unauthenticated access", () => {
-        test("unauthenticated user cannot create document_versions", async () => {
-            const res = await fetch(`${PB_API}/collections/document_versions/records`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    document: "fake_doc_id_12345",
-                    title: "Fake Version",
-                    content: "Unauthenticated attempt",
-                }),
-            });
-            expect(res.ok).toBe(false);
-        });
+        await expectStatus(res, 404, "read another user's version");
     });
 });

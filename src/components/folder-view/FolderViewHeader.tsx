@@ -78,10 +78,10 @@ export function FolderViewHeader({
   }, [isInfoOpen]);
 
   const crumbClass = (active: boolean) =>
-    `inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[6px] border px-2.5 text-[12px] transition-colors ${
+    `inline-flex h-7 shrink-0 items-center gap-1.5 rounded-control border px-2 text-[12px] font-medium transition-colors ${
       active
-        ? 'border-signal/35 bg-signal-soft text-signal'
-        : 'border-transparent text-ink-secondary hover:bg-surface-raised hover:text-ink'
+        ? 'border-line bg-surface text-ink'
+        : 'border-transparent text-ink-muted hover:bg-surface hover:text-ink'
     }`;
 
   return (

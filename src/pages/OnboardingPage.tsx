@@ -56,7 +56,7 @@ export function OnboardingPage() {
   return (
     <AuthShell
       footer={
-        <p className="mt-4 text-center text-[11px] text-ink-muted">
+        <p className="mt-4 text-center text-[11.5px] text-ink-muted">
           This first account becomes the instance administrator.
         </p>
       }

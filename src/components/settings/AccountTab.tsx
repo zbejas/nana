@@ -88,7 +88,7 @@ export function AccountTab({ user }: AccountTabProps) {
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-display text-2xl leading-tight text-ink">{displayName}</h2>
+              <h2 className="text-2xl leading-tight text-ink">{displayName}</h2>
               <Badge tone={isAdmin ? 'signal' : 'neutral'}>{isAdmin ? 'Administrator' : 'Member'}</Badge>
             </div>
             <p className="mt-1 text-sm text-ink-secondary">{user.email}</p>

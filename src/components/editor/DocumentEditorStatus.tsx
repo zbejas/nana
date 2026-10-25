@@ -15,7 +15,7 @@ export function DocumentNotFoundState() {
       <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-warning/25 bg-warning-soft text-warning">
         <ExclamationTriangleIcon className="h-6 w-6" />
       </span>
-      <h2 className="font-display text-2xl text-ink">Note not found</h2>
+      <h2 className="text-2xl text-ink">Note not found</h2>
       <p className="mt-2 text-sm text-ink-secondary">It may have been moved to trash or removed.</p>
       <p className="mt-1 text-xs text-ink-muted">Taking you back to the library…</p>
     </div>

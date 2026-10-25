@@ -7,8 +7,8 @@ const log = createLogger('Settings');
 
 // Sidebar width constraints
 const MIN_SIDEBAR_WIDTH = 240;
-const MAX_SIDEBAR_WIDTH = 600;
-const DEFAULT_SIDEBAR_WIDTH = 320;
+const MAX_SIDEBAR_WIDTH = 420;
+const DEFAULT_SIDEBAR_WIDTH = 288;
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'nana-sidebar-width';
 const AUTO_SAVE_DELAY_STORAGE_KEY = 'nana-auto-save-delay';

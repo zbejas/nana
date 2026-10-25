@@ -17,7 +17,7 @@ export function LazyAttachmentViewer(props: AttachmentViewerModalProps) {
           />
           <div className="relative flex h-full w-full flex-col overflow-hidden bg-surface md:max-h-[90vh] md:max-w-6xl md:rounded-panel md:border md:border-line md:shadow-float">
             <div className="flex items-center justify-between border-b border-line px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] md:px-4 md:py-3 flex-shrink-0">
-              <h3 className="text-sm font-medium truncate mr-4 font-display text-base text-ink">{props.filename}</h3>
+              <h3 className="text-sm font-medium truncate mr-4 text-base text-ink">{props.filename}</h3>
               <button
                 onClick={props.onClose}
                 aria-label="Close viewer"

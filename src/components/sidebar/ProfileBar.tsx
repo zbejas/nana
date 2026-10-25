@@ -35,7 +35,7 @@ export function ProfileBar({ user, onSignOut, onNavigateSettings }: ProfileBarPr
             <span className="block truncate text-[13px] font-medium leading-tight text-ink">
               {user.name || 'User'}
             </span>
-            <span className="block truncate text-[11px] leading-tight text-ink-muted">{user.email}</span>
+            <span className="block truncate text-[11.5px] leading-tight text-ink-muted">{user.email}</span>
           </span>
           <svg
             className={`h-3.5 w-3.5 shrink-0 text-ink-muted transition-transform ${menuOpen ? 'rotate-180' : ''}`}

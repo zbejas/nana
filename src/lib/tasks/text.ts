@@ -11,7 +11,12 @@ export function stripMarkdown(value: string): string {
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/[#>*_~`]/g, '')
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '')
+    .replace(/^[ \t]*>[ \t]?/gm, '')
+    .replace(/^[ \t]*[-*+][ \t]+/gm, '')
+    .replace(/^[ \t]*\d+[.)][ \t]+/gm, '')
+    .replace(/\[[ xX]\]\s*/g, '')
+    .replace(/[*_~`]/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

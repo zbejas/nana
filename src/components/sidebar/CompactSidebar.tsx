@@ -66,23 +66,30 @@ export function CompactSidebar({
   }, [isExpanded]);
 
   const itemClass = (active: boolean) =>
-    `relative flex h-12 w-full flex-col items-center justify-center gap-1 rounded-control border text-[9px] font-medium transition-colors ${
+    `relative flex h-12 w-full flex-col items-center justify-center gap-1 rounded-control text-[11px] font-medium transition-colors ${
       active
-        ? 'border-signal/25 bg-signal-soft text-signal'
-        : 'border-transparent text-ink-muted hover:bg-surface hover:text-ink'
+        ? 'bg-surface text-ink'
+        : 'text-ink-muted hover:bg-surface/70 hover:text-ink'
+    }`;
+
+  const railItemClass = (active: boolean) =>
+    `flex h-10 w-10 items-center justify-center rounded-control border transition-colors ${
+      active
+        ? 'border-line bg-surface text-signal'
+        : 'border-transparent text-ink-muted hover:bg-surface/70 hover:text-ink'
     }`;
 
   return (
     <>
       <aside
-        className={`fixed left-0 top-0 z-40 hidden h-full w-20 flex-col border-r border-line bg-canvas-deep px-2 py-3 transition-opacity duration-300 md:flex ${
+        className={`fixed left-0 top-0 z-40 hidden h-full w-16 flex-col items-center border-r border-line bg-canvas-deep px-2 py-3 transition-opacity duration-300 md:flex ${
           isExpanded ? 'pointer-events-none opacity-0' : 'opacity-100'
         }`}
         aria-label="Workspace rail"
       >
         <button
           onClick={onToggleExpanded}
-          className="mb-4 flex h-11 w-full items-center justify-center rounded-control transition-colors hover:bg-surface"
+          className="mb-5 flex h-10 w-10 items-center justify-center rounded-control transition-colors hover:bg-surface"
           aria-label="Expand sidebar"
           title="Expand sidebar"
         >
@@ -98,13 +105,12 @@ export function CompactSidebar({
               <button
                 key={item.key}
                 onClick={() => navigate(item.path)}
-                className={itemClass(isActive)}
+                className={railItemClass(isActive)}
                 title={item.label}
                 aria-label={item.label}
                 aria-current={isActive ? 'page' : undefined}
               >
-                <Icon className="h-5 w-5" />
-                <span className="leading-none">{item.label}</span>
+                <Icon className="h-[1.15rem] w-[1.15rem]" />
               </button>
             );
           })}
@@ -117,13 +123,13 @@ export function CompactSidebar({
             aria-label="Profile menu"
             aria-expanded={profileMenuOpen}
             aria-haspopup="menu"
-            className="flex h-11 w-11 items-center justify-center rounded-full transition-opacity hover:opacity-90"
+            className="flex h-10 w-10 items-center justify-center rounded-full transition-opacity hover:opacity-90"
           >
-            <Avatar src={avatarUrl} name={user.name || user.email} size="md" />
+            <Avatar src={avatarUrl} name={user.name || user.email} size="sm" />
           </button>
           <button
             onClick={onToggleExpanded}
-            className="flex h-11 w-full items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface hover:text-ink"
+            className="flex h-9 w-9 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface hover:text-ink"
             aria-label="Expand sidebar"
             title="Expand sidebar"
           >
@@ -170,7 +176,7 @@ export function CompactSidebar({
                 aria-label={item.label}
                 aria-current={isActive ? 'page' : undefined}
               >
-                <Icon className="h-5 w-5" />
+                <Icon className={`h-5 w-5 ${isActive ? 'text-signal' : ''}`} />
                 <span className="leading-none">{item.label}</span>
               </button>
             );

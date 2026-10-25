@@ -331,7 +331,7 @@ export default function AttachmentViewerModal({
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-line px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] md:px-4 md:py-3 flex-shrink-0">
-          <h3 className="mr-4 truncate font-display text-base text-ink">
+          <h3 className="mr-4 truncate text-base text-ink">
             {filename}
           </h3>
           <button

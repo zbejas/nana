@@ -143,7 +143,7 @@ export function DateTimePicker({ value, disabled, onChange }: DateTimePickerProp
     function dayClassName(day: CalendarDay) {
         const base = 'flex h-7 w-7 items-center justify-center rounded-[6px] text-xs transition-colors sm:h-8 sm:w-8 sm:text-[13px]';
         if (isSelected(day)) {
-            return `${base} bg-signal font-semibold text-on-signal`;
+            return `${base} bg-signal-bright font-semibold text-on-signal`;
         }
         if (!day.isCurrentMonth) {
             return `${base} text-ink-muted/40`;
@@ -170,7 +170,7 @@ export function DateTimePicker({ value, disabled, onChange }: DateTimePickerProp
 
             <div className="grid grid-cols-7">
                 {WEEKDAYS.map((weekday) => (
-                    <div key={weekday} className="py-1 text-center text-[10px] font-medium text-ink-muted">
+                    <div key={weekday} className="py-1 text-center text-[11px] font-medium text-ink-muted">
                         {weekday}
                     </div>
                 ))}
@@ -190,7 +190,7 @@ export function DateTimePicker({ value, disabled, onChange }: DateTimePickerProp
             </div>
 
             <div className="mt-3 flex items-center justify-center gap-2 border-t border-line pt-3">
-                <p className="text-[11px] text-ink-muted">Time</p>
+                <p className="text-[11.5px] text-ink-muted">Time</p>
                 <div className="w-16">
                     <Input
                         type="number"

@@ -30,7 +30,7 @@ import { useContextMenuState } from '../components/file-folder-handling';
 import { DocumentContextMenu } from '../components/file-folder-handling/context-menu/DocumentContextMenu';
 import { PublicShareModal } from '../components/modals/PublicShareModal';
 import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
-import { Button, Card, ConfirmDialog, EmptyState, Input, PageHeader, Spinner } from '../components/ui';
+import { Button, Card, ConfirmDialog, EmptyState, Input, PageHeader, PageShell, Spinner } from '../components/ui';
 
 export function TimelinePage() {
   const navigate = useNavigate();
@@ -192,22 +192,21 @@ export function TimelinePage() {
 
   const searchField = (
     <div className="relative">
-      <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
+      <MagnifyingGlassIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
       <Input
         type="text"
         value={searchQuery}
         onChange={(event) => setSearchQuery(event.target.value)}
         placeholder="Search your notes"
         aria-label="Search documents"
-        className="h-9 pl-9 text-[13px]"
+        className="h-9 rounded-control border-line bg-surface pl-10 text-[13px]"
       />
     </div>
   );
 
   return (
-    <div className="h-full overflow-y-auto scrollbar-autohide">
-      <div className="desktop-page-content-enter mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <PageHeader
+    <PageShell contentClassName="desktop-page-content-enter">
+      <PageHeader
           eyebrow="Library"
           title="Timeline"
           description="Everything you have touched, newest first. Search it, filter by date, or start something new."
@@ -216,7 +215,7 @@ export function TimelinePage() {
               <Button
                 ref={calendarTriggerRef}
                 variant="secondary"
-                className="lg:hidden"
+                className="xl:hidden"
                 icon={<CalendarDaysIcon />}
                 onClick={toggleCalendar}
                 aria-expanded={isCalendarOpen}
@@ -230,13 +229,13 @@ export function TimelinePage() {
           }
         />
 
-        <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_20rem] lg:gap-10">
           <main className="min-w-0">
-            <div className="mb-4 lg:hidden">{searchField}</div>
+            <div className="mb-4 xl:hidden">{searchField}</div>
 
             <div
               ref={calendarPopupRef}
-              className={`overflow-hidden transition-all duration-200 ease-out lg:hidden ${
+              className={`overflow-hidden transition-all duration-200 ease-out xl:hidden ${
                 isCalendarOpen ? "mb-4 max-h-[36rem] opacity-100" : "mb-0 max-h-0 opacity-0"
               }`}
             >
@@ -306,7 +305,6 @@ export function TimelinePage() {
                       Create a note
                     </Button>
                   }
-                  className="border-b-0"
                 />
               )
             ) : (
@@ -320,11 +318,15 @@ export function TimelinePage() {
                 {groups.map((group) => (
                   <section key={group.label}>
                     <div className="mb-3 flex items-center gap-3">
-                      <h2 className="eyebrow">{group.label}</h2>
+                      <h2 className="text-[12.5px] font-semibold tracking-[-0.005em] text-ink-secondary">
+                        {group.label}
+                      </h2>
                       <span className="h-px flex-1 bg-line" aria-hidden="true" />
-                      <span className="text-[10px] tabular-nums text-ink-muted">{group.items.length}</span>
+                      <span className="text-[11.5px] font-medium tabular-nums text-ink-muted">
+                        {group.items.length}
+                      </span>
                     </div>
-                    <div className="space-y-2.5">
+                    <div className="space-y-3">
                       {group.items.map((document) => (
                         <TimelineDocumentCard
                           key={document.id}
@@ -359,7 +361,7 @@ export function TimelinePage() {
             )}
           </main>
 
-          <aside className="hidden lg:block">
+          <aside className="hidden xl:block">
             <div className="sticky top-0 space-y-4">
               {searchField}
 
@@ -379,22 +381,42 @@ export function TimelinePage() {
                 />
               </Card>
 
-              <Card className="p-4">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-signal/25 bg-signal-soft text-signal">
-                  <ViewColumnsIcon className="h-4 w-4" />
+              <Card className="overflow-hidden p-0">
+                <div className="p-4">
+                  <p className="text-[11.5px] font-semibold text-ink-muted">In this view</p>
+                  <dl className="mt-3 grid grid-cols-2 gap-3">
+                    <div className="rounded-[8px] bg-surface-sunken px-3 py-2.5">
+                      <dt className="text-[11.5px] font-medium text-ink-muted">Notes</dt>
+                      <dd className="mt-0.5 text-[20px] font-medium tabular-nums tracking-[-0.02em] text-ink">{totalVisible}</dd>
+                    </div>
+                    <div className="rounded-[8px] bg-surface-sunken px-3 py-2.5">
+                      <dt className="text-[11.5px] font-medium text-ink-muted">Folders</dt>
+                      <dd className="mt-0.5 text-[20px] font-medium tabular-nums tracking-[-0.02em] text-ink">{folders.length}</dd>
+                    </div>
+                  </dl>
                 </div>
-                <h3 className="mt-3 font-display text-base text-ink">Notes become work</h3>
-                <p className="mt-1 text-xs leading-relaxed text-ink-secondary">
-                  Right-click any note and choose “Add to board” to turn it into a task without losing the writing.
-                </p>
-                <Button variant="ghost" size="sm" className="mt-2 px-0" onClick={() => navigate('/board')}>
-                  Open boards →
-                </Button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/board')}
+                  className="group flex w-full items-center gap-3 border-t border-line px-4 py-3 text-left transition-colors hover:bg-surface-raised"
+                >
+                  <span className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-surface-sunken text-ink-muted">
+                    <ViewColumnsIcon className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12.5px] font-medium text-ink">Turn notes into work</span>
+                    <span className="mt-0.5 block truncate text-[11.5px] text-ink-muted">
+                      Right-click a note, then Add to board
+                    </span>
+                  </span>
+                  <span className="text-ink-muted transition-colors group-hover:text-ink" aria-hidden="true">
+                    →
+                  </span>
+                </button>
               </Card>
             </div>
           </aside>
         </div>
-      </div>
 
       {contextMenu && contextMenu.type === 'document' &&
         createPortal(
@@ -448,6 +470,6 @@ export function TimelinePage() {
         onClose={publicShareModal.close}
         onSave={publicShareModal.save}
       />
-    </div>
+    </PageShell>
   );
 }

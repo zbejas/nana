@@ -7,9 +7,9 @@ import {
 } from '@heroicons/react/24/outline';
 import type { Board } from '../lib/boards';
 import { useToasts } from '../state/hooks';
-import { Button, EmptyState, PageHeader } from '../components/ui';
+import { Button, EmptyState, PageHeader, PageShell } from '../components/ui';
 import { BoardDialog } from '../components/board/BoardDialog';
-import { formatRelativeDate, padCount } from '../components/board/dates';
+import { formatRelativeDate } from '../components/board/dates';
 import { useBoardSummaries } from '../components/board/useBoardSummaries';
 
 export function BoardsPage() {
@@ -28,10 +28,26 @@ export function BoardsPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-4 pb-8 pt-5 sm:px-6 sm:pt-6 lg:px-8">
+    <PageShell contentClassName="desktop-page-content-enter">
       <PageHeader
         title="Boards"
         description="Every board keeps its own tasks, separate from the notes in your library."
+        meta={
+          <>
+            <span className="inline-flex items-baseline gap-1.5">
+              <span className="text-[13px] font-medium tabular-nums text-ink">{boards.length}</span>
+              {boards.length === 1 ? 'board' : 'boards'}
+            </span>
+            <span className="inline-flex items-baseline gap-1.5">
+              <span className="text-[13px] font-medium tabular-nums text-ink">{openCount}</span>
+              open
+            </span>
+            <span className="inline-flex items-baseline gap-1.5">
+              <span className="text-[13px] font-medium tabular-nums text-ink">{doneCount}</span>
+              done
+            </span>
+          </>
+        }
         actions={
           <>
             <Button
@@ -48,17 +64,6 @@ export function BoardsPage() {
         }
       />
 
-      <div
-        className="mb-5 flex flex-wrap items-center gap-x-2 border-y border-line py-2.5 font-mono text-[10px] uppercase tracking-[0.08em] tabular-nums text-ink-muted"
-        aria-label={`${boards.length} ${boards.length === 1 ? 'board' : 'boards'}, ${openCount} open tasks, ${doneCount} done tasks`}
-      >
-        <span>{padCount(boards.length)} {boards.length === 1 ? 'board' : 'boards'}</span>
-        <span aria-hidden="true">·</span>
-        <span>{padCount(openCount)} open</span>
-        <span aria-hidden="true">·</span>
-        <span>{padCount(doneCount)} done</span>
-      </div>
-
       {error ? (
         <EmptyState
           title="The boards could not load"
@@ -70,98 +75,96 @@ export function BoardsPage() {
           }
         />
       ) : isLoading ? (
-        <div className="space-y-0" aria-label="Loading boards" aria-busy="true">
-          <div className="hidden h-8 grid-cols-[minmax(0,1fr)_180px_64px_96px] items-center gap-6 border-b border-line px-2 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted lg:grid">
-            <span>Board</span>
-            <span>Progress</span>
-            <span>Open</span>
-            <span>Updated</span>
-          </div>
+        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Loading boards" aria-busy="true">
           {[0, 1, 2].map((index) => (
-            <div
-              key={index}
-              className="grid gap-3 border-b border-line px-2 py-4 lg:grid-cols-[minmax(0,1fr)_180px_64px_96px] lg:items-center lg:gap-6"
-            >
-              <div className="space-y-2">
-                <div className="h-3.5 w-40 animate-pulse bg-surface-raised" />
-                <div className="h-3 w-64 max-w-full animate-pulse bg-surface-raised" />
-              </div>
-              <div className="h-[3px] w-full animate-pulse bg-surface-raised" />
-              <div className="h-3 w-8 animate-pulse bg-surface-raised" />
-              <div className="h-3 w-16 animate-pulse bg-surface-raised" />
+            <div key={index} className="min-h-56 animate-pulse rounded-panel border border-line bg-surface p-5">
+              <div className="h-3 w-16 bg-surface-raised" />
+              <div className="mt-5 h-5 w-40 bg-surface-raised" />
+              <div className="mt-3 h-3 w-56 max-w-full bg-surface-raised" />
+              <div className="mt-10 h-1.5 w-full bg-surface-raised" />
+              <div className="mt-5 h-6 w-32 bg-surface-raised" />
             </div>
           ))}
         </div>
       ) : isEmpty ? (
-        <EmptyState
-          title="No boards yet"
-          description="Create a board to separate the work."
-          action={
-            <Button variant="primary" icon={<PlusIcon />} onClick={() => setCreateOpen(true)}>
-              Create board
-            </Button>
-          }
-        />
+        <div className="flex min-h-[52vh] items-center justify-center pb-16">
+          <EmptyState
+            title="No boards yet"
+            description="Create a board to separate the work from the writing. Each board keeps its own tasks."
+            action={
+              <Button variant="primary" icon={<PlusIcon />} onClick={() => setCreateOpen(true)}>
+                Create board
+              </Button>
+            }
+            className="max-w-lg"
+          />
+        </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-autohide">
-          <div className="hidden h-8 grid-cols-[minmax(0,1fr)_180px_64px_96px] items-center gap-6 border-b border-line px-2 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted lg:grid">
-            <span>Board</span>
-            <span>Progress</span>
-            <span>Open</span>
-            <span>Updated</span>
-          </div>
+        <div className="pb-2">
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+            {boards.map((board) => {
+              const percent = board.total > 0 ? (board.doneCount / board.total) * 100 : 0;
+              const updated = formatRelativeDate(board.updated);
 
-          {boards.map((board) => {
-            const percent = board.total > 0 ? (board.doneCount / board.total) * 100 : 0;
-            const updated = formatRelativeDate(board.updated);
-
-            return (
-              <button
-                key={board.id}
-                type="button"
-                onClick={() => navigate(`/board/${board.id}`)}
-                className="group relative block w-full border-b border-line px-2 py-4 text-left transition-colors hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-signal lg:grid lg:grid-cols-[minmax(0,1fr)_180px_64px_96px] lg:items-center lg:gap-6 lg:py-3.5"
-              >
-                <span
-                  className="pointer-events-none absolute inset-y-0 left-0 w-[2px] bg-signal opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-                  aria-hidden="true"
-                />
-
-                <span className="block min-w-0">
-                  <span className="block truncate text-[15px] font-semibold leading-snug text-ink">
-                    {board.name}
+              return (
+                <button
+                  key={board.id}
+                  type="button"
+                  onClick={() => navigate(`/board/${board.id}`)}
+                  className="group relative flex min-h-40 flex-col rounded-panel border border-line bg-surface p-5 text-left transition-colors hover:border-line-strong hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal"
+                >
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="block text-[17px] font-semibold leading-snug tracking-[-0.015em] text-ink">
+                      {board.name}
+                    </span>
+                    <span className="shrink-0 pt-0.5 text-[11.5px] text-ink-muted">{updated || '—'}</span>
                   </span>
-                  <span className="mt-0.5 block truncate text-[12px] leading-relaxed text-ink-muted">
+                  <span className="mt-1.5 line-clamp-2 block min-h-10 text-[13px] leading-relaxed text-ink-muted">
                     {board.description || 'No description'}
                   </span>
-                </span>
 
-                <span className="mt-3 flex items-center gap-4 lg:contents">
-                  <span className="flex min-w-0 flex-1 items-center gap-2 lg:flex-none">
-                    <span className="h-[3px] min-w-0 flex-1 bg-line" aria-hidden="true">
+                  <span className="mt-auto block pt-5">
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="text-[11.5px] font-medium text-ink-muted">
+                        {board.total > 0 ? `${board.doneCount} of ${board.total} done` : 'No tasks yet'}
+                      </span>
+                      <span className="flex items-center gap-2 text-[11.5px] font-medium tabular-nums text-ink-secondary">
+                        {Math.round(percent)}%
+                        <span className="text-ink-muted transition-colors group-hover:text-ink" aria-hidden="true">
+                          →
+                        </span>
+                      </span>
+                    </span>
+                    <span className="mt-2 block h-1 overflow-hidden rounded-full bg-surface-sunken" aria-hidden="true">
                       <span
-                        className="block h-full bg-signal"
+                        className="block h-full rounded-full bg-signal-bright"
                         style={{ width: `${percent}%` }}
                       />
                     </span>
-                    <span className="shrink-0 font-mono text-[10px] tabular-nums text-ink-muted">
-                      {board.total > 0 ? `${board.doneCount}/${board.total}` : 'No tasks'}
-                    </span>
                   </span>
-
-                  <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.06em] tabular-nums text-ink-muted lg:text-center">
-                    {padCount(board.openCount)}
-                    <span className="lg:hidden"> open</span>
+                </button>
+              );
+            })}
+            {boards.length < 3 && (
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className="group hidden min-h-40 flex-col items-center md:col-span-2 2xl:col-span-1 justify-center gap-3 rounded-panel border border-dashed border-line-strong bg-transparent p-5 text-center transition-colors hover:border-ink-muted/40 hover:bg-surface/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal md:flex"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-[7px] border border-line bg-surface text-ink-muted transition-colors group-hover:text-ink">
+                  <PlusIcon className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <span>
+                  <span className="block text-[14px] font-medium tracking-[-0.01em] text-ink">
+                    New board
                   </span>
-
-                  <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.06em] text-ink-muted lg:text-right">
-                    <span className="lg:hidden">Updated </span>
-                    {updated || '—'}
+                  <span className="mt-1 block text-[12.5px] leading-relaxed text-ink-muted">
+                    Start a separate stream of work.
                   </span>
                 </span>
               </button>
-            );
-          })}
+            )}
+          </div>
         </div>
       )}
 
@@ -170,7 +173,7 @@ export function BoardsPage() {
         onClose={() => setCreateOpen(false)}
         onSaved={handleCreated}
       />
-    </div>
+    </PageShell>
   );
 }
 

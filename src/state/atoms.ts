@@ -16,7 +16,7 @@ export const sidebarOpenAtom = atomWithStorage<boolean>(
     true,
     {
         getItem: (key, initialValue) => {
-            if (typeof window !== 'undefined' && window.innerWidth < 768) {
+            if (typeof window !== 'undefined' && window.innerWidth < 1024) {
                 return false;
             }
 

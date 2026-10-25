@@ -60,7 +60,7 @@ export function ProviderCard({
             onClick={onToggleActive}
             className={cn(
               'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal',
-              isActive ? 'border-signal/50 bg-signal' : 'border-line-strong bg-surface-sunken'
+              isActive ? 'border-signal/50 bg-signal-bright' : 'border-line-strong bg-surface-sunken'
             )}
           >
             <span

@@ -85,36 +85,44 @@ export function EditorContent({ content, onContentChange, readOnly = false, view
   };
 
   return (
-    <div
-      ref={containerRef}
-      className="scrollbar-autohide relative flex h-full min-h-0 flex-1 overflow-hidden"
-      onKeyDownCapture={handleKeyDownCapture}
-    >
-      <MDEditor
-        value={content}
-        onChange={(val) => onContentChange(val || '')}
-        preview={previewMode}
-        previewOptions={{
-          skipHtml: true,
-          rehypePlugins: [rehypeSanitizePlugin],
-          components: previewTagFallbacks,
-        }}
-        height="100%"
-        visibleDragbar={showDragbar}
-        hideToolbar={true}
-        enableScroll={true}
-        textareaProps={{
-          readOnly,
-          placeholder: readOnly ? 'Read-only trash document' : 'Start writing…',
-        }}
-        style={{
-          width: '100%',
-          backgroundColor: 'transparent',
-          minHeight: '100%',
-          ...(!isSplitMode ? { border: 'none', boxShadow: 'none' } : {}),
-        }}
-        className={`!bg-transparent ${!isSplitMode ? 'md:!mx-auto md:!w-full md:!max-w-4xl' : ''} ${isPreviewMode ? 'md:px-6 lg:px-10' : ''} ${!isSplitMode ? '!border-none !shadow-none [&_.w-md-editor]:!border-none [&_.w-md-editor]:!shadow-none [&_.w-md-editor-text]:!border-none [&_.w-md-editor-preview]:!border-none [&_.w-md-editor-preview]:!shadow-none [&_.wmde-markdown]:!border-none [&_.wmde-markdown]:!shadow-none' : ''} [&_.wmde-markdown]:!bg-transparent [&_.w-md-editor-preview]:!bg-transparent [&_.w-md-editor]:!h-full [&_.w-md-editor]:!min-h-0 [&_.w-md-editor-text]:!px-5 [&_.w-md-editor-preview]:!px-5 [&_.wmde-markdown-var]:!w-2 [&_.wmde-markdown-var]:!cursor-col-resize [&_.wmde-markdown-var]:!bg-line-strong [&_.wmde-markdown-var]:hover:!bg-signal [&_.w-md-editor-text]:scrollbar-autohide [&_.w-md-editor-preview]:scrollbar-autohide [&_.wmde-markdown]:scrollbar-autohide [&_textarea]:!outline-none [&_textarea]:!ring-0 [&_textarea]:!text-ink [&_textarea]:!leading-7 [&_textarea]:!caret-signal [&_textarea::placeholder]:!text-ink-muted [&_textarea::placeholder]:!opacity-100 [&_.w-md-editor-text-pre]:!text-ink [&_.w-md-editor-text-input]:!text-ink [&_.w-md-editor-preview]:!border-l [&_.w-md-editor-preview]:!border-line`}
-      />
+    <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-canvas px-2.5 py-2.5 md:px-5 md:py-4">
+      <div
+        className={`relative mx-auto flex h-full min-h-0 w-full flex-col overflow-hidden rounded-panel border border-line bg-surface ${
+          isSplitMode ? 'max-w-[1240px]' : 'max-w-[920px]'
+        }`}
+      >
+        <div
+          ref={containerRef}
+          className="scrollbar-autohide relative flex h-full min-h-0 flex-1 overflow-hidden"
+          onKeyDownCapture={handleKeyDownCapture}
+        >
+          <MDEditor
+            value={content}
+            onChange={(val) => onContentChange(val || '')}
+            preview={previewMode}
+            previewOptions={{
+              skipHtml: true,
+              rehypePlugins: [rehypeSanitizePlugin],
+              components: previewTagFallbacks,
+            }}
+            height="100%"
+            visibleDragbar={showDragbar}
+            hideToolbar={true}
+            enableScroll={true}
+            textareaProps={{
+              readOnly,
+              placeholder: readOnly ? 'Read-only trash document' : 'Start writing…',
+            }}
+            style={{
+              width: '100%',
+              backgroundColor: 'transparent',
+              minHeight: '100%',
+              ...(!isSplitMode ? { border: 'none', boxShadow: 'none' } : {}),
+            }}
+            className={`!bg-transparent ${!isSplitMode ? '!border-none !shadow-none [&_.w-md-editor]:!border-none [&_.w-md-editor]:!shadow-none [&_.w-md-editor-text]:!border-none [&_.w-md-editor-preview]:!border-none [&_.w-md-editor-preview]:!shadow-none [&_.wmde-markdown]:!border-none [&_.wmde-markdown]:!shadow-none' : ''} [&_.wmde-markdown]:!bg-transparent [&_.w-md-editor-preview]:!bg-transparent [&_.w-md-editor]:!h-full [&_.w-md-editor]:!min-h-0 [&_.w-md-editor-text]:!px-6 [&_.w-md-editor-text]:!py-4 md:[&_.w-md-editor-text]:!px-10 md:[&_.w-md-editor-text]:!py-6 [&_.w-md-editor-preview]:!px-6 [&_.w-md-editor-preview]:!py-4 md:[&_.w-md-editor-preview]:!px-10 [&_.w-md-editor-preview]:!rounded-none [&_.wmde-markdown-var]:!w-2 [&_.wmde-markdown-var]:!cursor-col-resize [&_.wmde-markdown-var]:!bg-line-strong [&_.wmde-markdown-var]:hover:!bg-signal [&_.w-md-editor-text]:scrollbar-autohide [&_.w-md-editor-preview]:scrollbar-autohide [&_.wmde-markdown]:scrollbar-autohide [&_textarea]:!font-sans [&_textarea]:!outline-none [&_textarea]:!ring-0 [&_textarea]:!text-[15px] [&_textarea]:!leading-7 [&_textarea]:!caret-signal [&_.w-md-editor-text-pre]:!font-sans [&_.w-md-editor-text-pre]:!text-[15px] [&_textarea::placeholder]:!text-ink-muted [&_textarea::placeholder]:!opacity-100 [&_.w-md-editor-text-pre]:!text-ink [&_.w-md-editor-text-input]:!text-ink [&_.w-md-editor-preview]:!border-l [&_.w-md-editor-preview]:!border-line`}
+          />
+        </div>
+      </div>
     </div>
   );
 }

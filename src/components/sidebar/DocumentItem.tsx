@@ -57,7 +57,7 @@ export function DocumentItem({
         {document.tags?.slice(0, 1).map((tag) => (
           <span
             key={tag}
-            className="hidden shrink-0 rounded border border-line px-1 py-px text-[9px] leading-4 text-ink-muted lg:inline"
+            className="hidden shrink-0 rounded border border-line px-1 py-px text-[10px] leading-4 text-ink-muted lg:inline"
           >
             {tag}
           </span>

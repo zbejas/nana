@@ -9,7 +9,7 @@ import { ChevronDownIcon } from '@heroicons/react/20/solid';
 import { cn } from './cn';
 
 const controlBase =
-  'w-full rounded-control border border-line-strong bg-surface-sunken text-ink transition-colors duration-150 placeholder:text-ink-muted/80 focus:border-signal focus:outline-none focus:ring-2 focus:ring-signal/20 disabled:cursor-not-allowed disabled:opacity-50';
+  'w-full rounded-control border border-line bg-surface text-ink transition-colors duration-150 placeholder:text-ink-muted hover:border-line-strong focus:border-signal/70 focus:outline-none focus-visible:outline-none focus:ring-4 focus:ring-signal/10 disabled:cursor-not-allowed disabled:opacity-50';
 
 interface FieldProps {
   label?: ReactNode;
@@ -27,7 +27,7 @@ export function Field({ label, hint, error, htmlFor, children, className, option
       {label && (
         <label htmlFor={htmlFor} className="flex items-baseline gap-2 text-[13px] font-medium text-ink">
           {label}
-          {optional && <span className="text-[11px] font-normal text-ink-muted">Optional</span>}
+          {optional && <span className="text-[11.5px] font-normal text-ink-muted">Optional</span>}
         </label>
       )}
       {children}
@@ -49,7 +49,7 @@ export function Input({ className, invalid, ref, ...rest }: InputProps) {
   return (
     <input
       ref={ref}
-      className={cn(controlBase, 'h-10 px-3 text-sm', invalid && 'border-danger/60', className)}
+      className={cn(controlBase, 'h-9 px-3 text-sm', invalid && 'border-danger/60', className)}
       aria-invalid={invalid || undefined}
       {...rest}
     />
@@ -82,7 +82,7 @@ export function Select({ className, children, ref, ...rest }: SelectProps) {
     <div className="relative">
       <select
         ref={ref}
-        className={cn(controlBase, 'h-10 appearance-none pl-3 pr-9 text-sm', className)}
+        className={cn(controlBase, 'h-9 appearance-none pl-3 pr-9 text-sm', className)}
         {...rest}
       >
         {children}

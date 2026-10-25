@@ -246,15 +246,15 @@ export function Dialog({
         }}
       >
         {!bare && (title || showClose) && (
-          <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6 sm:py-5">
+          <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6">
             <div className="min-w-0">
               {title && (
-                <h2 id={titleId} className="font-display text-xl font-semibold leading-tight tracking-[-0.02em] text-ink">
+                <h2 id={titleId} className="text-[18px] font-semibold leading-snug tracking-[-0.015em] text-ink">
                   {title}
                 </h2>
               )}
               {description && (
-                <p id={descriptionId} className="mt-1.5 max-w-[64ch] text-sm leading-relaxed text-ink-secondary">
+                <p id={descriptionId} className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-ink-secondary">
                   {description}
                 </p>
               )}

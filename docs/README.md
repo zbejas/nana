@@ -14,11 +14,11 @@ The docs describe **how the code works today**. When code and docs disagree, the
 | [`pocketbase.md`](pocketbase.md) | JSVM hooks, migrations, collections, settings, trash, sharing | Changing schema or backend behavior |
 | [`ai.md`](ai.md) | Chat, providers, read tools, persistence, failures | Touching AI features |
 | [`security.md`](security.md) | Trust boundaries, auth, proxy, CSP, rate limits, secrets | Changing access or exposure |
-| [`testing.md`](testing.md) | Docker test stack, layout, helpers, conventions | Adding or fixing tests |
+| [`testing.md`](testing.md) | Unit + Docker integration layers, layout, helpers, conventions | Adding or fixing tests |
 | [`deployment.md`](deployment.md) | Build, Docker, compose, releases, operations | Building, shipping, debugging deploys |
 | [`development.md`](development.md) | Local setup, workflow, common tasks, sharp edges | Beginning implementation |
 | [`../PRODUCT.md`](../PRODUCT.md) | Audience, product truth, principles, surfaces | Deciding what belongs in the product |
-| [`../DESIGN.md`](../DESIGN.md) | Signal & Paper tokens, type, components, motion, voice | Building or reviewing UI |
+| [`../DESIGN.md`](../DESIGN.md) | Graphite tokens, type, components, motion, voice | Building or reviewing UI |
 
 ## Documentation rules
 

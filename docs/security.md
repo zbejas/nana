@@ -104,6 +104,8 @@ Admin-only PocketBase routes call `requireAdmin(c)`, which:
 2. Requires the `admin` field to be true.
 3. Throws `ForbiddenError` otherwise.
 
+Route handlers pass caught errors to `sendError()` in `pocketbase/pb_hooks/utils.js`, so `ForbiddenError` becomes `403`, `BadRequestError` `400`, and `NotFoundError` `404`; only unknown failures become `500`. Do not swallow these into a generic 500 — clients and tests rely on the status.
+
 Admin capabilities include user updates, password changes, SMTP configuration, OAuth configuration, attachment limits, and app URL sync.
 
 The first user is auto-assigned `admin = true` and `verified = true`. After that, public signup is locked and only admins can create users. Only verified admins can grant admin to another user. Verified users cannot be deleted.
@@ -124,7 +126,7 @@ Keep the proxy transparent. Do not add client-controlled upstream URLs, and do n
 
 ### CSP and response headers
 
-`src/index.ts` applies security headers to every response:
+`src/index.ts` wraps API, proxy, manifest, service-worker, icon, PDF-worker, and production static responses with these headers. The development SPA route is served by Bun's HTML bundle; production serves the built files through the wrapped static handler.
 
 | Header | Value |
 | --- | --- |

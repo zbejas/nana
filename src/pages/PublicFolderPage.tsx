@@ -127,8 +127,7 @@ export function PublicFolderPage() {
             <div className="flex min-h-screen items-center justify-center px-4 py-10">
                 <div className="w-full max-w-md rounded-panel border border-line bg-surface p-6 text-center sm:p-8">
                     <img src={logo} alt="Nana" className="mx-auto h-16 w-16" />
-                    <p className="eyebrow mt-5">Public folder</p>
-                    <h1 className="mt-2 font-display text-2xl text-ink">This link is not available</h1>
+                    <h1 className="mt-5 text-2xl text-ink">This link is not available</h1>
                     <p className="mt-3 text-sm leading-relaxed text-ink-secondary">
                         {error ?? 'The owner may have stopped sharing this folder, or the link has expired.'}
                     </p>
@@ -143,7 +142,7 @@ export function PublicFolderPage() {
     const topBarRight = (
         <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
             {activeDocument?.updated && (
-                <span className="hidden text-[11px] text-ink-muted sm:inline">
+                <span className="hidden text-[11.5px] text-ink-muted sm:inline">
                     Updated {new Date(activeDocument.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                 </span>
             )}
@@ -165,8 +164,8 @@ export function PublicFolderPage() {
                 <aside className="w-full shrink-0 lg:sticky lg:top-24 lg:w-64">
                     <div className="overflow-hidden rounded-panel border border-line bg-surface">
                         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-                            <BookOpenIcon className="h-4 w-4 text-warning" />
-                            <p className="eyebrow">Contents</p>
+                            <BookOpenIcon className="h-4 w-4 text-ink-muted" />
+                            <p className="text-[11.5px] font-medium text-ink-muted">Contents</p>
                         </div>
                         <div className="px-3 py-3">
                             <PublicFolderTree
@@ -200,7 +199,7 @@ export function PublicFolderPage() {
                 </div>
             </div>
 
-            <footer className="px-4 pb-6 pt-4 text-center text-[11px] text-ink-muted">
+            <footer className="px-4 pb-6 pt-4 text-center text-[11.5px] text-ink-muted">
                 Published with{' '}
                 <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-signal hover:text-signal-strong">
                     Nana

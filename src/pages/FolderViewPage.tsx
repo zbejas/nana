@@ -21,6 +21,7 @@ import {
   ConfirmDialog,
   EmptyState,
   PageHeader,
+  PageShell,
   SegmentedControl,
   Spinner,
 } from '../components/ui';
@@ -129,24 +130,35 @@ export function FolderViewPage() {
         : 'Create your first note or folder, then keep the work moving on the board.';
 
   return (
-    <div
-      className="flex h-full flex-col overflow-hidden px-4 py-5 sm:px-6 sm:py-6 lg:px-8"
-      onClick={(event) => {
-        if (!hasSelection) return;
+    <PageShell scroll="content" contentClassName="desktop-page-content-enter">
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        onClick={(event) => {
+          if (!hasSelection) return;
 
-        const target = event.target as HTMLElement;
-        if (target.closest('[data-selection-item="true"]') || target.closest('[data-selection-control="true"]')) {
-          return;
-        }
+          const target = event.target as HTMLElement;
+          if (target.closest('[data-selection-item="true"]') || target.closest('[data-selection-control="true"]')) {
+            return;
+          }
 
-        clearSelection();
-      }}
-    >
-      <div className="desktop-page-content-enter flex min-h-0 flex-1 flex-col">
+          clearSelection();
+        }}
+      >
         <PageHeader
-          eyebrow="Library"
           title={title}
           description={description}
+          meta={
+            <>
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-[13px] font-medium tabular-nums text-ink">{displayedFolders.length}</span>
+                {displayedFolders.length === 1 ? 'folder' : 'folders'}
+              </span>
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-[13px] font-medium tabular-nums text-ink">{displayedDocuments.length}</span>
+                {displayedDocuments.length === 1 ? 'note' : 'notes'}
+              </span>
+            </>
+          }
           actions={
             canModify ? (
               <>
@@ -161,7 +173,7 @@ export function FolderViewPage() {
           }
         />
 
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
           <SegmentedControl
             label="Library section"
             value={mode}
@@ -172,11 +184,9 @@ export function FolderViewPage() {
               { value: 'public', label: 'Shared', icon: <GlobeAltIcon className="h-3.5 w-3.5" /> },
             ]}
           />
-          <p className="text-[11px] text-ink-muted">
-            {displayedFolders.length} folder{displayedFolders.length === 1 ? '' : 's'}
-            <span className="mx-1.5 text-line-strong">·</span>
-            {displayedDocuments.length} note{displayedDocuments.length === 1 ? '' : 's'}
-          </p>
+          <span className="hidden text-[11.5px] text-ink-muted sm:inline">
+            Drag notes into folders to organise them.
+          </span>
         </div>
 
         <FolderViewHeader
@@ -198,7 +208,7 @@ export function FolderViewPage() {
         />
 
         <main
-          className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-line bg-surface/60"
+          className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden border-t border-line"
           onContextMenu={(event) =>
             handleContextMenu(event, 'empty', {
               folderId: currentFolderId || undefined,
@@ -214,6 +224,7 @@ export function FolderViewPage() {
             ) : !hasItems ? (
               <div className="flex h-full items-center justify-center p-6">
                 <EmptyState
+                  compact
                   icon={<FolderIcon />}
                   title={emptyTitle}
                   description={emptyDescription}
@@ -421,6 +432,6 @@ export function FolderViewPage() {
         onClose={publicShareModal.close}
         onSave={publicShareModal.save}
       />
-    </div>
+    </PageShell>
   );
 }

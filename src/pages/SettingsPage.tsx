@@ -6,7 +6,7 @@ import {
   UserCircleIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../lib/auth';
-import { PageHeader } from '../components/ui';
+import { PageHeader, PageShell } from '../components/ui';
 import { AccountTab } from '../components/settings/AccountTab';
 import { PreferencesTab } from '../components/settings/PreferencesTab';
 import { WorkspaceTab, type WorkspaceSection } from '../components/settings/WorkspaceTab';
@@ -63,16 +63,14 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-8 md:pb-8">
-        <PageHeader
-          eyebrow="Your workspace"
-          title="Settings"
-          description="Your account, how Nana feels, and the instance behind it."
-        />
+    <PageShell contentClassName="desktop-page-content-enter pb-24 md:pb-8">
+      <PageHeader
+        title="Settings"
+        description="Your account, how Nana feels, and the instance behind it."
+      />
 
-        <div className="flex flex-col gap-6 lg:flex-row lg:gap-10">
-          <nav aria-label="Settings sections" className="shrink-0 lg:w-48">
+      <div className="flex max-w-[1100px] flex-col gap-6 lg:flex-row lg:gap-10">
+          <nav aria-label="Settings sections" className="shrink-0 lg:w-44">
             <div className="grid grid-cols-2 gap-1.5 pb-2 lg:flex lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-0">
               {TABS.filter((item) => !item.adminOnly || isAdmin).map((item) => {
                 const Icon = item.icon;
@@ -83,13 +81,13 @@ export function SettingsPage() {
                     type="button"
                     onClick={() => goToTab(item.key)}
                     aria-current={active ? 'page' : undefined}
-                    className={`inline-flex h-9 w-full items-center gap-2.5 rounded-control px-3 text-[13px] transition-colors ${
+                    className={`inline-flex h-8 w-full items-center gap-2.5 rounded-control border px-2.5 text-[13px] transition-colors ${
                       active
-                        ? 'bg-signal-soft font-medium text-signal'
-                        : 'text-ink-secondary hover:bg-surface-raised hover:text-ink'
+                        ? 'border-line bg-surface font-medium text-ink'
+                        : 'border-transparent text-ink-secondary hover:bg-surface hover:text-ink'
                     }`}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
+                    <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-signal' : 'text-ink-muted'}`} />
                     {item.label}
                   </button>
                 );
@@ -103,9 +101,8 @@ export function SettingsPage() {
             {activeTab === 'admin' && <WorkspaceTab section={workspaceSection} />}
             {activeTab === 'about' && <AboutTab />}
           </div>
-        </div>
       </div>
-    </div>
+    </PageShell>
   );
 }
 

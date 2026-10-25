@@ -2,7 +2,7 @@
 
 ## Overview
 
-PocketBase is the source of truth for data, auth, schema, and server-side behavior. Nana customizes it through JavaScript hooks and append-only migrations in `pocketbase/`. Boards and tasks are ordinary collections; their archive and cascade behavior is enforced by collection rules and relation settings, not by custom routes.
+PocketBase is the source of truth for data, auth, schema, and server-side behavior. Nana customizes it through JavaScript hooks and append-only migrations in `pocketbase/`. Boards and tasks are ordinary collections; their archive and cascade behavior is enforced by collection rules and relation settings, plus a request guard for task board moves, not by custom routes.
 
 ## Key files
 
@@ -11,12 +11,12 @@ PocketBase is the source of truth for data, auth, schema, and server-side behavi
 | `pocketbase/pb_hooks/index.pb.js` | The only file PocketBase loads automatically; requires every active hook module. |
 | `pocketbase/pb_hooks/bootstrap.js` | Seeds `site_url`, syncs `meta.appURL`, provisions the superuser, handles first-user/signup bootstrap and legacy migration filenames. |
 | `pocketbase/pb_hooks/documents/` | Word count/reading time and version snapshots. |
-| `pocketbase/pb_hooks/guards/` | User signup/deletion, trash immutability, version immutability. |
+| `pocketbase/pb_hooks/guards/` | User signup/deletion, trash immutability, version immutability, task board ownership on move. |
 | `pocketbase/pb_hooks/mailer/` | Password reset, email change, OTP, auth-alert templates. |
 | `pocketbase/pb_hooks/routes/` | Custom routes: trash, admin, public shares, check-users. |
 | `pocketbase/pb_hooks/templates/` | HTML and text email templates. |
 | `pocketbase/pb_hooks/public_sharing_cron.js` | Clears expired public shares every 15 minutes. |
-| `pocketbase/pb_hooks/utils.js` | `requireAdmin`, `parseRequestBody`, `escapeHtml`, `sanitizeUrl`, site/sender helpers. |
+| `pocketbase/pb_hooks/utils.js` | `requireAdmin`, `parseRequestBody`, `escapeHtml`, `sanitizeUrl`, `sendError`, site/sender helpers. |
 | `pocketbase/pb_migrations/0000016_created_tasks.js` | Creates `tasks` with its original author/status/order index. |
 | `pocketbase/pb_migrations/0000017_tighten_task_rules.js` | Makes task creation author-scoped. |
 | `pocketbase/pb_migrations/0000018_created_boards.js` | Creates `boards`, adds the required `tasks.board` relation, backfills tasks, and applies archive rules. |
@@ -55,7 +55,7 @@ Groups:
 | --- | --- |
 | `bootstrap.js` | Seed `site_url` from `SITE_URL`, sync `meta.appURL`, provision the superuser, first-user/signup bootstrap, legacy migration filename compatibility. |
 | `documents/` | Word count/reading time and version snapshots. |
-| `guards/` | User signup/deletion, trash immutability, version immutability. |
+| `guards/` | User signup/deletion, trash immutability, version immutability, task board ownership on move. |
 | `mailer/` | Password reset, email change, OTP, auth alert templates. |
 | `routes/` | Custom HTTP routes (trash, admin, public shares, check-users). |
 | `templates/` | HTML/text email templates. |
@@ -192,6 +192,8 @@ Rules:
 
 The split is deliberate: an archived board freezes task creation and updates, but the owner can still delete tasks from it. Deleting an active board is rejected before the cascade can run. Deleting an archived board cascades its tasks; deleting a note does not touch tasks that reference it.
 
+PocketBase evaluates relation rules against the **stored** record, not the incoming relation value. Moving a task to another board therefore also passes through `guards/task_guards.js`, which loads the new `board` and rejects a board owned by someone else or archived. Keep that guard when changing task rules.
+
 `status` and `priority` are single selects. The UI sends `""` for an unset priority. `board_order` is scoped to a column by the client; `persistTaskPositions()` writes only rows whose status or order changed and never sends `board`.
 
 ### Archive and permanent-delete lifecycle
@@ -292,7 +294,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 1. Add or update the schema in a new migration (`0000020+`).
 2. Add hooks/routes under the relevant `pb_hooks/` directory.
 3. Require the new module from `index.pb.js` (or from a parent module that is already required).
-4. Use `requireAdmin(c)`, `parseRequestBody(c)`, `escapeHtml()`, and `sanitizeUrl()` from `utils.js`.
+4. Use `requireAdmin(c)`, `parseRequestBody(c)`, `escapeHtml()`, and `sanitizeUrl()` from `utils.js`; admin route catch blocks should return `sendError(c, err, fallbackMessage)` so known failures keep 400/401/403/404.
 5. Add integration tests under `tests/pocketbase/`.
 6. Update this doc and [`api.md`](api.md) if behavior is externally visible.
 
@@ -303,6 +305,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 - **The down migration removes the relation before deleting boards.** Deleting boards first would cascade every task. `0000018` removes the field and index, resets task rules, then deletes the boards collection.
 - **Deleting an active board returns an error.** The delete rule requires `archived = true`; the UI only exposes delete on the archive page. Do not “fix” this by loosening the rule.
 - **Archived boards block task updates, not deletes.** A `PATCH` on a task whose board is archived fails; `DELETE` still succeeds for the owner. This keeps cleanup possible.
+- **Task board moves are guarded twice.** The update rule checks the stored task; `guards/task_guards.js` checks the incoming `board` relation for ownership and archived state. Removing the guard reintroduces cross-author moves because PocketBase does not re-evaluate the old relation.
 - **`tasks.board` cascades; `tasks.document` does not.** Deleting a board removes its tasks; deleting a note leaves its tasks and their note link dangling.
 - **`0000019` is destructive and one-way for custom settings.** It deletes every `embedding_config` record. The `down()` re-seeds defaults, not the previous custom values.
 - **Zvec files are not deleted by a migration.** `pb_data/zvec` can survive upgrades; remove it manually after stopping the stack, per [`deployment.md`](deployment.md).

@@ -13,7 +13,7 @@ The scene: a desk at night, a low lamp, a browser window that should feel like p
 - **The writing is the point.** Every surface clears space for reading and writing. Boards, chat, and settings are supporting rooms, not competing products.
 - **Quiet ownership.** Self-hosted, no telemetry, no third-party account. Public sharing is opt-in and revocable.
 - **One content model.** Notes live in `documents`. Folders organise them. Versions and trash protect them. Boards group separate work items; a task may point at the note it came from, but neither side duplicates or deletes the other. Boards are archived before they can be deleted.
-- **Familiar affordances, editorial material.** Standard controls, keyboard behaviour, and structure; a distinct visual world built from bone and charcoal, one ultramarine signal, and rules rather than neon glass.
+- **Familiar affordances, editorial material.** Standard controls, keyboard behaviour, and structure; a distinct visual world built from paper and graphite, one restrained ember accent, and a single sans voice rather than neon glass.
 - **Nothing hides behind hover.** Every action has a touch path and a keyboard path.
 - **The interface should disappear.** No gamification, no engagement mechanics, no badges for their own sake.
 

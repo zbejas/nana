@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowPathIcon,
   ArrowUturnLeftIcon,
-  ChevronLeftIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline';
 import {
@@ -17,8 +16,9 @@ import {
   ConfirmDialog,
   EmptyState,
   PageHeader,
+  PageShell,
 } from '../components/ui';
-import { formatRelativeDate, padCount } from '../components/board/dates';
+import { formatRelativeDate } from '../components/board/dates';
 import { useBoardSummaries } from '../components/board/useBoardSummaries';
 
 export function BoardArchivePage() {
@@ -71,19 +71,17 @@ export function BoardArchivePage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-4 pb-8 pt-5 sm:px-6 sm:pt-6 lg:px-8">
-      <button
-        type="button"
-        onClick={() => navigate('/board')}
-        className="mb-4 inline-flex h-8 w-fit items-center gap-1.5 text-[12px] font-medium text-ink-muted transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal"
-      >
-        <ChevronLeftIcon className="h-4 w-4" aria-hidden="true" />
-        Boards
-      </button>
-
+    <PageShell contentClassName="desktop-page-content-enter">
       <PageHeader
+        back={{ label: 'Boards', onClick: () => navigate('/board') }}
         title="Archived boards"
         description="Boards set aside with their tasks. Nothing here is deleted until you delete it for good."
+        meta={
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className="text-[13px] font-medium tabular-nums text-ink">{archived.length}</span>
+            archived
+          </span>
+        }
       />
 
       {error ? (
@@ -97,77 +95,79 @@ export function BoardArchivePage() {
           }
         />
       ) : isLoading ? (
-        <div className="space-y-0" aria-label="Loading archived boards" aria-busy="true">
+        <div className="grid gap-4 md:grid-cols-2" aria-label="Loading archived boards" aria-busy="true">
           {[0, 1].map((index) => (
-            <div key={index} className="flex items-center gap-6 border-b border-line px-2 py-4">
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className="h-3.5 w-40 animate-pulse bg-surface-raised" />
-                <div className="h-3 w-56 max-w-full animate-pulse bg-surface-raised" />
-              </div>
-              <div className="h-8 w-20 animate-pulse bg-surface-raised" />
+            <div key={index} className="rounded-panel border border-line bg-surface p-5">
+              <div className="h-4 w-40 animate-pulse rounded bg-surface-raised" />
+              <div className="mt-3 h-3 w-56 max-w-full animate-pulse rounded bg-surface-raised" />
+              <div className="mt-8 h-8 w-24 animate-pulse rounded bg-surface-raised" />
             </div>
           ))}
         </div>
       ) : isEmpty ? (
-        <EmptyState
-          title="No archived boards"
-          description="Archive a board from its edit dialog to set it aside without deleting its tasks."
-        />
+        <div className="flex min-h-[52vh] items-center justify-center pb-16">
+          <EmptyState
+            title="No archived boards"
+            description="Archive a board from its edit dialog to set it aside without deleting its tasks."
+            className="max-w-lg"
+          />
+        </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-autohide">
-          <div className="mb-4 flex items-center border-b border-line px-2 pb-2.5 font-mono text-[10px] uppercase tracking-[0.08em] tabular-nums text-ink-muted">
-            {padCount(archived.length)} archived
-          </div>
+        <div className="grid gap-4 pb-2 md:grid-cols-2">
+            {archived.map((board) => {
+              const restoring = restoringId === board.id;
+              const archivedDate = formatRelativeDate(board.updated);
 
-          {archived.map((board) => {
-            const restoring = restoringId === board.id;
-            const archivedDate = formatRelativeDate(board.updated);
+              return (
+                <div
+                  key={board.id}
+                  className="flex flex-col rounded-panel border border-line bg-surface p-5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 rounded-full bg-ink-muted" aria-hidden="true" />
+                      <h2 className="truncate text-[16px] font-semibold leading-snug tracking-[-0.015em] text-ink">
+                        {board.name}
+                      </h2>
+                    </div>
+                    <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-relaxed text-ink-muted">
+                      {board.description || 'No description'}
+                    </p>
+                    <div className="mt-4 flex flex-wrap items-center gap-2 text-[11.5px] tabular-nums text-ink-muted">
+                      <span className="rounded-full bg-surface-sunken px-2 py-0.5">
+                        {board.total} {board.total === 1 ? 'task' : 'tasks'}
+                      </span>
+                      <span className="rounded-full bg-surface-sunken px-2 py-0.5">
+                        Archived {archivedDate || '—'}
+                      </span>
+                    </div>
+                  </div>
 
-            return (
-              <div
-                key={board.id}
-                className="border-b border-line px-2 py-4 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-6"
-              >
-                <div className="min-w-0">
-                  <h2 className="truncate text-[15px] font-semibold leading-snug text-ink">
-                    {board.name}
-                  </h2>
-                  <p className="mt-0.5 truncate text-[12px] leading-relaxed text-ink-muted">
-                    {board.description || 'No description'}
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-[0.06em] tabular-nums text-ink-muted">
-                    <span>
-                      {padCount(board.total)} {board.total === 1 ? 'task' : 'tasks'}
-                    </span>
-                    <span>Archived {archivedDate || '—'}</span>
+                  <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<ArrowUturnLeftIcon />}
+                      onClick={() => void handleRestore(board)}
+                      loading={restoring}
+                      disabled={restoring || deletingId !== null}
+                    >
+                      Restore
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-danger hover:bg-danger-soft hover:text-danger"
+                      icon={<TrashIcon />}
+                      onClick={() => setPendingDelete(board)}
+                      disabled={restoring || deletingId !== null}
+                    >
+                      Delete forever
+                    </Button>
                   </div>
                 </div>
-
-                <div className="mt-3 flex flex-wrap items-center gap-2 lg:mt-0 lg:justify-end">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={<ArrowUturnLeftIcon />}
-                    onClick={() => void handleRestore(board)}
-                    loading={restoring}
-                    disabled={restoring || deletingId !== null}
-                  >
-                    Restore
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-danger hover:bg-danger-soft hover:text-danger"
-                    icon={<TrashIcon />}
-                    onClick={() => setPendingDelete(board)}
-                    disabled={restoring || deletingId !== null}
-                  >
-                    Delete forever
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
       )}
 
@@ -189,7 +189,7 @@ export function BoardArchivePage() {
           }
         }}
       />
-    </div>
+    </PageShell>
   );
 }
 
