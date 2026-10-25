@@ -1,4 +1,4 @@
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from '../record-model';
 
 export interface Folder extends RecordModel {
     name: string;

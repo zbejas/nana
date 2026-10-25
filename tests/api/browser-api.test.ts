@@ -207,6 +207,61 @@ describe("browser record facade", () => {
         await expectStatus(readRestored, 200, "read restored note");
     });
 
+    test("accepts multipart note uploads through the facade", async () => {
+        const form = new FormData();
+        form.set("title", `Multipart browser note ${uniqueSuffix()}`);
+        form.set("slug", `multipart-browser-${uniqueSuffix()}`);
+        form.set("content", "# Uploaded\n\nMultipart through Elysia.");
+        form.set("attachments", new File(
+            [new TextEncoder().encode("multipart bytes")],
+            `multipart-${uniqueSuffix()}.txt`,
+            { type: "text/plain" },
+        ));
+
+        const res = await bunRequest(api("/records/documents"), {
+            method: "POST",
+            headers: authHeaders(user.token),
+            body: form,
+        });
+        await expectStatus(res, 200, "multipart create document");
+        const note = await readJson<{ id: string; author: string; attachments: string[] }>(res);
+        expect(note.author).toBe(user.id);
+        expect(note.attachments).toHaveLength(1);
+
+        const tokenRes = await bunRequest(api("/files/token"), {
+            method: "POST",
+            headers: authHeaders(user.token),
+        });
+        await expectStatus(tokenRes, 200, "multipart file token");
+        const tokenBody = await readJson<{ token: string }>(tokenRes);
+
+        const fileRes = await bunRequest(
+            api(`/files/documents/${note.id}/${encodeURIComponent(note.attachments[0]!)}?token=${encodeURIComponent(tokenBody.token)}`),
+        );
+        await expectStatus(fileRes, 200, "multipart file bytes");
+        expect(await fileRes.text()).toBe("multipart bytes");
+    });
+
+    test("relays the realtime handshake", async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5_000);
+        try {
+            const res = await bunRequest(api("/realtime"), { signal: controller.signal });
+            await expectStatus(res, 200, "realtime handshake");
+            expect(res.headers.get("Content-Type")).toContain("text/event-stream");
+
+            const reader = res.body?.getReader();
+            expect(reader).toBeTruthy();
+            const chunk = await reader!.read();
+            const text = new TextDecoder().decode(chunk.value);
+            expect(text).toContain("PB_CONNECT");
+            await reader!.cancel();
+        } finally {
+            clearTimeout(timer);
+            controller.abort();
+        }
+    });
+
     test("serves protected files through the facade", async () => {
         const note = await createNoteWithAttachment(
             user,

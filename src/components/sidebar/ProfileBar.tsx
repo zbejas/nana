@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from '../../lib/record-model';
 import { Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { pb } from '../../lib/pocketbase';
 import { Avatar, IconButton } from '../ui';

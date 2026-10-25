@@ -11,14 +11,9 @@
  * uses are implemented, and every write is validated again on the server.
  */
 
-export interface RecordModel {
-    id: string;
-    collectionId?: string;
-    collectionName?: string;
-    created?: string;
-    updated?: string;
-    [key: string]: unknown;
-}
+import type { RecordModel } from "./record-model";
+
+export type { RecordModel } from "./record-model";
 
 interface AuthRecord extends RecordModel {
     email?: string;
@@ -275,10 +270,24 @@ class RealtimeClient {
             listeners = new Set();
             this.subscriptions.set(fullTopic, listeners);
         }
-        listeners.add(callback);
+
+        // PocketBase sends `{action, record}` in the SSE data. The SDK parses
+        // that before invoking the listener; keep the same contract.
+        const listener = (event: MessageEvent) => {
+            let data: unknown = {};
+            try {
+                data = JSON.parse(event.data);
+            } catch {
+                // Ignore malformed frames; PB_CONNECT and keep-alives are not
+                // delivered to topic listeners.
+            }
+            callback(data ?? {});
+        };
+
+        listeners.add(listener);
 
         if (this.isConnected) {
-            this.eventSource?.addEventListener(fullTopic, callback as EventListener);
+            this.eventSource?.addEventListener(fullTopic, listener as EventListener);
             await this.submitSubscriptions();
         } else {
             this.connect();
@@ -286,8 +295,8 @@ class RealtimeClient {
 
         return async () => {
             const current = this.subscriptions.get(fullTopic);
-            current?.delete(callback);
-            this.eventSource?.removeEventListener(fullTopic, callback as EventListener);
+            current?.delete(listener);
+            this.eventSource?.removeEventListener(fullTopic, listener as EventListener);
             if (current && current.size === 0) this.subscriptions.delete(fullTopic);
             if (this.subscriptions.size === 0) this.disconnect();
             else if (this.isConnected) await this.submitSubscriptions();
@@ -676,7 +685,17 @@ class NanaClient {
         const headers = new Headers(options.headers);
         const tokenAtStart = this.authStore.token;
 
-        if (tokenAtStart && !headers.has("authorization")) {
+        const publicAuthPath = [
+            "/auth/login",
+            "/auth/methods",
+            "/auth/password-reset/request",
+            "/auth/password-reset/confirm",
+            "/auth/email-change/confirm",
+            "/auth/oauth2",
+            "/check-users",
+        ].some((prefix) => path.startsWith(prefix));
+
+        if (!publicAuthPath && tokenAtStart && !headers.has("authorization")) {
             headers.set("authorization", tokenAtStart);
         }
 

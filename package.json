@@ -28,7 +28,6 @@
     "elysia": "^1.4.30",
     "jotai": "^2.19.1",
     "jszip": "^3.10.1",
-    "pocketbase": "^0.26.8",
     "rate-limiter-flexible": "^11.0.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",

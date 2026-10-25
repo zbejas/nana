@@ -1,5 +1,5 @@
 import { useRef, useState, type ChangeEvent } from 'react';
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from '../../lib/record-model';
 import { CameraIcon, KeyIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import { pb } from '../../lib/pocketbase';
 import { useToasts } from '../../state/hooks';

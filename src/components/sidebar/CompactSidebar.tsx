@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from '../../lib/record-model';
 import {
   ChevronRightIcon,
   FolderIcon,

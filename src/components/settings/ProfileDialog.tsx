@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from '../../lib/record-model';
 import { pb } from '../../lib/pocketbase';
 import { useToasts } from '../../state/hooks';
 import { Button, Dialog, Field, Input, SegmentedControl } from '../ui';

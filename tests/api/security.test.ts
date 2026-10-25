@@ -48,6 +48,7 @@ describe("Security headers and public surface", () => {
             expect(csp).toContain("frame-src 'none'");
             expect(csp).toContain("object-src 'none'");
             expect(csp).toContain("connect-src 'self'");
+            expect(csp).toContain("font-src 'self' data:");
             expect(csp).toContain("base-uri 'self'");
         });
     });

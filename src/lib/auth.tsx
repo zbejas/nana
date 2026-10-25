@@ -6,7 +6,7 @@ import { createLogger } from './logger';
 import { showToastAtom } from '../state/atoms';
 
 const logger = createLogger('Auth');
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from './record-model';
 import { ensureAttachmentFileToken } from './documents/attachments';
 
 const SESSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;

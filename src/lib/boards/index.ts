@@ -1,4 +1,4 @@
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from '../record-model';
 import { pb } from '../pocketbase';
 import type { Task } from '../tasks';
 

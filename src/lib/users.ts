@@ -1,5 +1,5 @@
 import { pb } from './pocketbase';
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from './record-model';
 import { createLogger } from './logger';
 
 const logger = createLogger('Users');

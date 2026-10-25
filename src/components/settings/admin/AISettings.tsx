@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { pb } from '../../../lib/pocketbase';
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from '../../../lib/record-model';
 import type { AIConfig, AIProviderKey, AIProviderConfig } from '../../../lib/ai/types';
 import { DEFAULT_AI_CONFIG, PROVIDER_META } from '../../../lib/ai/types';
 import { ProviderCard } from './ai/ProviderCard';
