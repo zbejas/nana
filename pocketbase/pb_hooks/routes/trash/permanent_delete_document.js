@@ -11,23 +11,7 @@ routerAdd("POST", "/api/trash/permanent-delete-document", (c) => {
             throw new BadRequestError("trashDocumentId is required")
         }
 
-        const trashDocument = $app.findRecordById("trash_documents", trashDocumentId)
-        h.assertOwned(trashDocument, userId, "Trash document")
-
-        const originalDocumentId = String(trashDocument.get("original_document_id") || "").trim()
-        if (originalDocumentId) {
-            try {
-                const originalDocument = $app.findRecordById("documents", originalDocumentId)
-                h.assertOwned(originalDocument, userId, "Document")
-                $app.delete(originalDocument)
-            } catch (_) {
-                // Original already removed, continue cleanup.
-            }
-        }
-
-        h.permanentlyDeleteTrashVersions(trashDocument.id)
-        $app.delete(trashDocument)
-
+        h.permanentlyDeleteDocumentById(trashDocumentId, userId)
         return c.json(200, { success: true })
     } catch (err) {
         console.error("Failed to permanently delete trash document:", err)

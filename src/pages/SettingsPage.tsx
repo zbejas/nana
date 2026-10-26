@@ -3,16 +3,18 @@ import {
   AdjustmentsHorizontalIcon,
   BuildingOffice2Icon,
   InformationCircleIcon,
+  KeyIcon,
   UserCircleIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../lib/auth';
 import { PageHeader, PageShell } from '../components/ui';
 import { AccountTab } from '../components/settings/AccountTab';
+import { ApiKeysTab } from '../components/settings/ApiKeysTab';
 import { PreferencesTab } from '../components/settings/PreferencesTab';
 import { WorkspaceTab, type WorkspaceSection } from '../components/settings/WorkspaceTab';
 import { AboutTab } from '../components/settings/AboutTab';
 
-type SettingsTab = 'account' | 'preferences' | 'admin' | 'about';
+type SettingsTab = 'account' | 'api-keys' | 'preferences' | 'admin' | 'about';
 
 const TABS: Array<{
   key: SettingsTab;
@@ -21,6 +23,7 @@ const TABS: Array<{
   adminOnly?: boolean;
 }> = [
   { key: 'account', label: 'Account', icon: UserCircleIcon },
+  { key: 'api-keys', label: 'API keys', icon: KeyIcon },
   { key: 'preferences', label: 'Preferences', icon: AdjustmentsHorizontalIcon },
   { key: 'admin', label: 'Workspace', icon: BuildingOffice2Icon, adminOnly: true },
   { key: 'about', label: 'About', icon: InformationCircleIcon },
@@ -97,6 +100,7 @@ export function SettingsPage() {
 
           <div key={`${activeTab}:${workspaceSection}`} className="settings-tab-content-enter min-w-0 flex-1">
             {activeTab === 'account' && <AccountTab user={user} />}
+            {activeTab === 'api-keys' && <ApiKeysTab />}
             {activeTab === 'preferences' && <PreferencesTab />}
             {activeTab === 'admin' && <WorkspaceTab section={workspaceSection} />}
             {activeTab === 'about' && <AboutTab />}

@@ -13,7 +13,6 @@ export async function getDocumentVersions(
         {
             filter: `document="${documentId}"`,
             sort: '-version_number',
-            expand: 'created_by',
         }
     );
 
@@ -25,9 +24,7 @@ export async function getDocumentVersions(
 
 // Get a specific version
 export async function getDocumentVersion(versionId: string): Promise<DocumentVersion> {
-    return await pb.collection('document_versions').getOne<DocumentVersion>(versionId, {
-        expand: 'created_by',
-    });
+    return await pb.collection('document_versions').getOne<DocumentVersion>(versionId);
 }
 
 // Restore a document to a specific version

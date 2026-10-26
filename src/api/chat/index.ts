@@ -121,7 +121,7 @@ export async function handleChat(req: Request): Promise<Response> {
 
             return jsonOk({
                 conversation,
-                messages: conversation.messages || [],
+                messages: await getConversationMessages(authHeader, conversationId),
             });
         }
 

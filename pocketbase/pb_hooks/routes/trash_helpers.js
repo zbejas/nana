@@ -1,5 +1,10 @@
 /// <reference path="../../pb_data/types.d.ts" />
 
+// Shared soft-delete helpers for documents and folders. Trash is a state, not
+// a second copy: records keep their id, attachments, versions, and relations
+// while `deleted_at` is set, and permanently deleting a folder relies on the
+// relation cascades declared in migration 0000022.
+
 function getAuthUserId(c) {
   const authRecord = c.auth
   if (!authRecord) {
@@ -20,158 +25,38 @@ function parseBody(c) {
   return parseRequestBody(c)
 }
 
-/**
- * Copy all collection-defined fields from source to target,
- * skipping auto-managed keys (id, created, updated).
- * Fields present in `overrides` are set from the override value instead.
- * Source fields that don't exist on the target collection are silently skipped.
- */
-function copyFields(source, target, overrides) {
-  const skip = new Set(["id", "created", "updated"])
-  const ov = overrides || {}
-  const data = source.fieldsData()
-  for (const key of Object.keys(data)) {
-    if (skip.has(key) || key in ov) continue
-    target.setIfFieldExists(key, source.get(key))
-  }
-  for (const [key, value] of Object.entries(ov)) {
-    target.set(key, value)
-  }
+function nowIso() {
+  return new Date().toISOString()
 }
 
-function buildRecordFileKey(record, filename) {
-  const baseFilesPath = String(record.baseFilesPath() || "").replace(/\/+$/, "")
-  const cleanFilename = String(filename || "").replace(/^\/+/, "")
-
-  if (!baseFilesPath || !cleanFilename) {
-    throw new Error("Cannot build file key for record attachment")
-  }
-
-  return `${baseFilesPath}/${cleanFilename}`
+function clearPublicShare(record) {
+  record.setIfFieldExists("is_public", false)
+  record.setIfFieldExists("public_share_token", "")
+  record.setIfFieldExists("public_expires_at", "")
 }
 
-function getFileFieldFilenames(record, fieldName) {
-  const value = record.get(fieldName)
-  if (Array.isArray(value)) {
-    return value.filter(Boolean).map((item) => String(item))
-  }
-
-  if (!value) {
-    return []
-  }
-
-  return [String(value)]
+function markDeleted(record, userId, deletedAt) {
+  record.setIfFieldExists("deleted_at", deletedAt || nowIso())
+  record.setIfFieldExists("deleted_by", userId)
+  clearPublicShare(record)
+  $app.save(record)
 }
 
-// PocketBase file fields store filenames only, so cross-collection moves must reupload the files.
-function saveRecordWithClonedAttachments(source, target) {
-  const attachments = getFileFieldFilenames(source, "attachments")
-  if (!attachments.length) {
-    target.set("attachments", [])
-    $app.save(target)
-    return
-  }
-
-  const filesystem = $app.newFilesystem()
-
-  try {
-    const clonedFiles = attachments.map((filename) => {
-      return filesystem.getReuploadableFile(buildRecordFileKey(source, filename), true)
-    })
-
-    target.set("attachments", clonedFiles)
-    $app.save(target)
-  } finally {
-    filesystem.close()
-  }
+function markRestored(record) {
+  record.setIfFieldExists("deleted_at", "")
+  record.setIfFieldExists("deleted_by", "")
+  $app.save(record)
 }
 
-function saveTrashDocumentVersion(versionRecord, trashDocumentId, userId, deletedAt, originalDocumentId) {
-  const collection = $app.findCollectionByNameOrId("trash_document_versions")
-  const trashVersion = new Record(collection)
-  copyFields(versionRecord, trashVersion, {
-    trash_document: trashDocumentId,
-    original_version_id: versionRecord.id,
-    original_document_id: originalDocumentId,
-    author: userId,
-    deleted_at: deletedAt,
-    source_created_at: versionRecord.get("source_created_at") || versionRecord.get("created") || null,
-    source_version_record: versionRecord.id,
-  })
-  $app.save(trashVersion)
-}
-
-function restoreDocumentVersions(trashDocumentId, activeDocumentId) {
-  const versions = $app.findRecordsByFilter(
-    "trash_document_versions",
-    `trash_document = "${trashDocumentId}"`,
-    "+version_number"
-  )
-
-  const collection = $app.findCollectionByNameOrId("document_versions")
-
-  for (const trashVersion of versions) {
-    const restoredVersion = new Record(collection)
-    copyFields(trashVersion, restoredVersion, {
-      document: activeDocumentId,
-    })
-    $app.save(restoredVersion)
-    $app.delete(trashVersion)
+function assertInTrash(record, label) {
+  if (!String(record.getString("deleted_at") || "")) {
+    throw new BadRequestError(`${label} is not in trash`)
   }
-}
-
-function permanentlyDeleteTrashVersions(trashDocumentId) {
-  const versions = $app.findRecordsByFilter(
-    "trash_document_versions",
-    `trash_document = "${trashDocumentId}"`,
-    ""
-  )
-  for (const version of versions) {
-    $app.delete(version)
-  }
-}
-
-function moveDocumentToTrashById(documentId, userId, options) {
-  const document = $app.findRecordById("documents", documentId)
-  assertOwned(document, userId, "Document")
-
-  const deletedAt = options?.deletedAt || new Date().toISOString()
-  const targetTrashFolderId = options?.targetTrashFolderId || ""
-
-  const trashCollection = $app.findCollectionByNameOrId("trash_documents")
-  const trashDocument = new Record(trashCollection)
-  copyFields(document, trashDocument, {
-    attachments: [],
-    author: userId,
-    folder: targetTrashFolderId,
-    original_document_id: document.id,
-    original_folder_id: document.get("folder") || "",
-    deleted_by: userId,
-    deleted: true,
-    deleted_at: deletedAt,
-  })
-  saveRecordWithClonedAttachments(document, trashDocument)
-
-  const versions = $app.findRecordsByFilter(
-    "document_versions",
-    `document = "${document.id}"`,
-    "+version_number"
-  )
-
-  for (const versionRecord of versions) {
-    saveTrashDocumentVersion(versionRecord, trashDocument.id, userId, deletedAt, document.id)
-    $app.delete(versionRecord)
-  }
-
-  // Physically delete the original document (no more soft-delete fallback)
-  $app.delete(document)
-  return trashDocument
 }
 
 /**
- * Boards are archived, not trashed. When a folder leaves the live tree, move
- * its boards to the root so a relation can never orphan them. Returns the ids
- * that were moved.
+ * Boards are archived, never trashed. When a folder leaves the live tree its
+ * boards move to the root so the folder relation can never dangle.
  */
 function rehomeBoardsFromFolderIds(folderIds) {
   const movedBoardIds = []
@@ -208,12 +93,15 @@ function rehomeBoardsFromFolderIds(folderIds) {
   return movedBoardIds
 }
 
-function collectFolderTree(folderRecord, collectionName) {
-  const sourceCollection = collectionName || "folders"
+function collectFolderTree(folderRecord) {
   const result = [folderRecord]
-  const children = $app.findRecordsByFilter(sourceCollection, `parent = "${folderRecord.id}"`, "+created")
+  const children = $app.findRecordsByFilter(
+    "folders",
+    `parent = "${folderRecord.id}"`,
+    "+created"
+  )
   for (const child of children) {
-    const nested = collectFolderTree(child, sourceCollection)
+    const nested = collectFolderTree(child)
     for (const item of nested) {
       result.push(item)
     }
@@ -221,15 +109,191 @@ function collectFolderTree(folderRecord, collectionName) {
   return result
 }
 
+function clearTaskDocumentLinks(documentId) {
+  const tasks = $app.findRecordsByFilter(
+    "tasks",
+    `document = "${documentId}"`,
+    ""
+  )
+  for (const task of tasks) {
+    task.set("document", "")
+    $app.save(task)
+  }
+}
+
+/** Soft-delete a document and its public share. */
+function moveDocumentToTrashById(documentId, userId) {
+  const document = $app.findRecordById("documents", documentId)
+  assertOwned(document, userId, "Document")
+  if (String(document.getString("deleted_at") || "")) {
+    throw new BadRequestError("Document is already in trash")
+  }
+
+  markDeleted(document, userId, nowIso())
+  return document
+}
+
+/** Restore a document. A document whose folder is still trashed moves to root. */
+function restoreDocumentById(documentId, userId) {
+  const document = $app.findRecordById("documents", documentId)
+  assertOwned(document, userId, "Document")
+  assertInTrash(document, "Document")
+
+  const folderId = String(document.getString("folder") || "")
+  if (folderId) {
+    let folder = null
+    try {
+      folder = $app.findRecordById("folders", folderId)
+    } catch (_) {
+      folder = null
+    }
+    if (!folder || String(folder.getString("deleted_at") || "")) {
+      document.set("folder", "")
+    }
+  }
+
+  markRestored(document)
+  return {
+    documentId: document.id,
+    folderId: document.getString("folder") || null,
+  }
+}
+
+/** Permanently delete an already-trashed document and its versions. */
+function permanentlyDeleteDocumentById(documentId, userId) {
+  const document = $app.findRecordById("documents", documentId)
+  assertOwned(document, userId, "Document")
+  assertInTrash(document, "Document")
+
+  clearTaskDocumentLinks(document.id)
+  $app.delete(document)
+}
+
+/**
+ * Soft-delete a folder subtree, mark its documents deleted, and rehome boards.
+ * The tree is collected before any row is saved so parents stay dereferenceable.
+ */
+function moveFolderToTrash(folderId, userId) {
+  const folder = $app.findRecordById("folders", folderId)
+  assertOwned(folder, userId, "Folder")
+  if (String(folder.getString("deleted_at") || "")) {
+    throw new BadRequestError("Folder is already in trash")
+  }
+
+  const deletedAt = nowIso()
+  const tree = collectFolderTree(folder)
+  const folderIds = tree.map((node) => node.id)
+  const documentIds = []
+
+  for (const node of tree) {
+    markDeleted(node, userId, deletedAt)
+  }
+
+  for (const id of folderIds) {
+    const documents = $app.findRecordsByFilter(
+      "documents",
+      `folder = "${id}" && deleted_at = ""`,
+      ""
+    )
+    for (const document of documents) {
+      markDeleted(document, userId, deletedAt)
+      documentIds.push(document.id)
+    }
+  }
+
+  const movedBoardIds = rehomeBoardsFromFolderIds(folderIds)
+  return { folderId: folder.id, folderIds, documentIds, movedBoardIds }
+}
+
+/**
+ * Restore a folder subtree and every document trashed with it. A subtree whose
+ * parent is still trashed is re-rooted rather than left dangling.
+ */
+function restoreFolderTree(folderId, userId) {
+  const root = $app.findRecordById("folders", folderId)
+  assertOwned(root, userId, "Folder")
+  assertInTrash(root, "Folder")
+
+  const tree = collectFolderTree(root)
+  const folderIdSet = {}
+  for (const node of tree) {
+    folderIdSet[node.id] = true
+  }
+
+  const restoredDocumentIds = []
+  for (const node of tree) {
+    const parentId = String(node.getString("parent") || "")
+    if (parentId && !folderIdSet[parentId]) {
+      let parent = null
+      try {
+        parent = $app.findRecordById("folders", parentId)
+      } catch (_) {
+        parent = null
+      }
+      if (!parent || String(parent.getString("deleted_at") || "")) {
+        node.set("parent", "")
+      }
+    }
+    markRestored(node)
+  }
+
+  for (const node of tree) {
+    const documents = $app.findRecordsByFilter(
+      "documents",
+      `folder = "${node.id}" && deleted_at != ""`,
+      ""
+    )
+    for (const document of documents) {
+      markRestored(document)
+      restoredDocumentIds.push(document.id)
+    }
+  }
+
+  return { folderId: root.id, restoredDocumentIds }
+}
+
+/** Permanently delete a trashed folder subtree through relation cascades. */
+function permanentlyDeleteFolderTree(folderId, userId) {
+  const root = $app.findRecordById("folders", folderId)
+  assertOwned(root, userId, "Folder")
+  assertInTrash(root, "Folder")
+
+  const tree = collectFolderTree(root)
+  const folderIds = tree.map((node) => node.id)
+
+  rehomeBoardsFromFolderIds(folderIds)
+
+  // Cascades delete child folders, documents, and versions. Clear optional
+  // task links first because tasks deliberately do not cascade.
+  for (const id of folderIds) {
+    const documents = $app.findRecordsByFilter(
+      "documents",
+      `folder = "${id}"`,
+      ""
+    )
+    for (const document of documents) {
+      clearTaskDocumentLinks(document.id)
+    }
+  }
+
+  $app.delete(root)
+}
+
 module.exports = {
   getAuthUserId,
   assertOwned,
   parseBody,
-  copyFields,
-  saveRecordWithClonedAttachments,
-  restoreDocumentVersions,
-  permanentlyDeleteTrashVersions,
-  moveDocumentToTrashById,
+  nowIso,
+  clearPublicShare,
+  markDeleted,
+  markRestored,
+  assertInTrash,
   rehomeBoardsFromFolderIds,
   collectFolderTree,
+  moveDocumentToTrashById,
+  restoreDocumentById,
+  permanentlyDeleteDocumentById,
+  moveFolderToTrash,
+  restoreFolderTree,
+  permanentlyDeleteFolderTree,
 }

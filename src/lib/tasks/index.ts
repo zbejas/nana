@@ -16,7 +16,6 @@ export interface Task extends RecordModel {
   due_date: string;
   board_order: number;
   labels: string[];
-  author: string;
   board: string;
   document?: string;
   created: string;
@@ -70,14 +69,6 @@ function normalizeTask(task: Task): Task {
   };
 }
 
-function requireAuthor(): string {
-  const author = pb.authStore.record?.id;
-  if (!author) {
-    throw new Error('You must be signed in to manage tasks.');
-  }
-  return author;
-}
-
 export async function listTasks(boardId: string): Promise<Task[]> {
   if (!boardId) {
     return [];
@@ -107,7 +98,6 @@ export async function createTask(data: CreateTaskData): Promise<Task> {
     board_order: data.board_order ?? 0,
     labels: normalizeLabels(data.labels),
     board: data.board,
-    author: requireAuthor(),
     ...(data.document ? { document: data.document } : {}),
   });
 
@@ -203,7 +193,7 @@ export async function createTaskFromDocument(
 }
 
 export function subscribeToTasks(
-  userId: string,
+  _userId: string,
   onChange: () => void,
   boardId?: string
 ): () => void {
@@ -213,11 +203,9 @@ export function subscribeToTasks(
     .collection(COLLECTION)
     .subscribe(
       '*',
-      (event) => {
-        const record = event.record as Task | undefined;
-        if (!record || record.author === userId) {
-          onChange();
-        }
+      () => {
+        // Realtime rules already scope tasks to boards owned by the caller.
+        onChange();
       },
       boardId ? { filter: pb.filter('board = {:id}', { id: boardId }) } : undefined
     )

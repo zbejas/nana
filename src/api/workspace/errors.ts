@@ -24,6 +24,10 @@ export function unauthorized(message = "Sign in to use the workspace."): ApiErro
     return new ApiError(401, "unauthorized", message);
 }
 
+export function forbidden(message = "This credential cannot perform that action."): ApiError {
+    return new ApiError(403, "forbidden", message);
+}
+
 export function notFound(message = "That item was not found."): ApiError {
     return new ApiError(404, "not_found", message);
 }

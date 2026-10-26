@@ -150,6 +150,38 @@ export function useFolderLazyLoading({
         ]
     );
 
+    /**
+     * Reload documents for folders that are already in memory. Used after a
+     * trash/restore mutation, where the record leaves or re-enters the
+     * collection list rule and realtime cannot report the transition.
+     */
+    const reloadFolderDocuments = useCallback(
+        async (folderIds: string[]) => {
+            if (folderIds.length === 0) return;
+
+            const reloaded = await Promise.all(
+                folderIds.map(async (folderId) => {
+                    const docs = await fetchFolderDocuments(folderId);
+                    return [folderId, docs] as const;
+                })
+            );
+
+            setFolderDocuments((prev: Map<string, Document[]>) => {
+                const next = new Map(prev);
+                for (const [folderId, docs] of reloaded) {
+                    next.set(
+                        folderId,
+                        docs.slice().sort(
+                            (a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime()
+                        )
+                    );
+                }
+                return next;
+            });
+        },
+        [setFolderDocuments]
+    );
+
     // Auto-load documents for expanded folders on page load
     const hasAutoLoadedRef = useRef(false);
 
@@ -286,6 +318,7 @@ export function useFolderLazyLoading({
 
     return {
         loadFolderDocuments,
+        reloadFolderDocuments,
         loadedFolders,
         loadedTrashFolders,
         loadingFolders,

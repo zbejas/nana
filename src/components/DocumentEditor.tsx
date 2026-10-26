@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSetAtom } from 'jotai';
 import { EditorHeader } from './editor/EditorHeader';
 import { EditorTags } from './editor/EditorTags';
 import { EditorContent } from './editor/EditorContent';
@@ -14,6 +15,7 @@ import { ConfirmDialog } from './ui';
 import { deleteDocument } from '../lib/documents/trash';
 import { exportDocument } from '../lib/export';
 import { useToasts } from '../state/hooks';
+import { refreshTriggerAtom } from '../state/atoms';
 
 export function DocumentEditor() {
   const {
@@ -65,6 +67,7 @@ export function DocumentEditor() {
   } = useDocumentEditorState();
 
   const navigate = useNavigate();
+  const setRefreshTrigger = useSetAtom(refreshTriggerAtom);
   const { showToast } = useToasts();
   const publicShareModal = usePublicShareModalState();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -93,6 +96,7 @@ export function DocumentEditor() {
     if (!document?.id) return;
     try {
       await deleteDocument(document.id);
+      setRefreshTrigger((previous) => previous + 1);
       showToast('Note moved to trash', 'info');
       setDeleteConfirm(false);
       navigate('/folders');

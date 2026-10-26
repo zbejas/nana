@@ -11,14 +11,14 @@ Nana exposes four HTTP surfaces through one Bun origin:
 
 The browser uses the small client in `src/lib/pocketbase.ts`, which talks only to `/api/v1`. The compatibility-shaped browser facade in `src/api/rest/browser/` keeps PocketBase's record and error shapes so the SPA did not need a screen-by-screen rewrite. `/pb` is gone: `GET /pb` and `/pb/*` return `404`.
 
-`/api/v1` and `/mcp` accept the user token raw or as a Bearer token:
+`/api/v1` and `/mcp` accept a PocketBase user token or a long-lived Nana API key, raw or as a Bearer token:
 
 ```http
 Authorization: <pocketbase-auth-token>
-Authorization: Bearer <pocketbase-auth-token>
+Authorization: Bearer <nana_api_key>
 ```
 
-`verifyAuth()` validates tokens for the application API. `authenticateApiRequest()` validates them for the typed workspace API and `/mcp`, accepts either form, and uses the refreshed token for downstream calls. The browser facade decodes the JWT for the caller id, then lets PocketBase verify the token on every upstream call. PocketBase collection rules, guards, hooks, cascades, trash logic, and file protection stay in force.
+`verifyAuth()` validates session tokens for the application API. `authenticateApiRequest()` validates the typed workspace API and `/mcp`: a PocketBase token is refreshed through `auth-refresh`; a `nana_…` key is hashed and matched against `api_keys`, then exchanged server-side for a normal user token through PocketBase impersonation. Either form yields the same author-scoped `ToolContext`, and the refreshed or minted token is used for downstream calls. The browser facade decodes the JWT for the caller id, then lets PocketBase verify the token on every upstream call. API keys are not accepted by the browser facade. PocketBase collection rules, guards, hooks, cascades, trash logic, and file protection stay in force.
 
 ## Key files
 
@@ -31,7 +31,8 @@ Authorization: Bearer <pocketbase-auth-token>
 | `src/api/rest/browser/realtime.ts` | SSE relay for `/api/v1/realtime` plus authenticated subscription POSTs. |
 | `src/api/rest/openapi.ts` | OpenAPI document metadata, Scalar configuration, Graphite docs theme, and shared docs paths. |
 | `src/api/rest/responses.ts` | Shared error response schemas used by runtime validation and the OpenAPI document. |
-| `src/api/rest/auth.ts` | `authenticateApiRequest()`; raw/Bearer token handling and `auth-refresh` for typed workspace routes. |
+| `src/api/rest/auth.ts` | `authenticateApiRequest()`; raw/Bearer token handling, `auth-refresh`, and API key exchange for typed workspace routes and MCP. |
+| `src/api/api-keys/` | Key token format/hash, superuser-only lookup, user-token impersonation, and owner key management. |
 | `src/api/rest/schemas.ts` | TypeBox request, query, params, and response schemas. |
 | `src/api/mcp/index.ts` | MCP server construction, folder/note/board/task tool registrations, stateless transport, JSON-RPC errors. |
 | `src/api/workspace/` | Shared folder, note, board, and task services used by the typed workspace API and MCP. |
@@ -46,7 +47,7 @@ Authorization: Bearer <pocketbase-auth-token>
 | `src/lib/boards/` | Browser-side board CRUD, folder/privacy/public-share fields, and summaries over `/api/v1/records`. |
 | `src/lib/tasks/` | Browser-side task CRUD, ordering, and note import over `/api/v1/records`. |
 | `pocketbase/pb_hooks/routes/` | Custom PocketBase routes: trash, admin, public shares, check-users. |
-| `pocketbase/pb_hooks/guards/board_guards.js` | Board folder ownership on API create/update. |
+| `pocketbase/pb_hooks/guards/relation_guards.js` | Incoming folder, parent, board, and note ownership on API create/update. |
 | `pocketbase/pb_migrations/` | Collection schema and API rules. |
 
 ## How it works
@@ -57,7 +58,7 @@ Authorization: Bearer <pocketbase-auth-token>
 | --- | --- |
 | Typed workspace API | `/api/v1/folders`, `/notes`, `/boards`, `/tasks`: JSON with camelCase fields and `{ "error": "message" }` failures. |
 | Browser facade | `/api/v1/records`, `/auth`, `/files`, `/realtime`, `/trash`, `/admin`, `/public`: PocketBase-shaped records (snake_case fields) and `{ code, message, data }` failures. |
-| `/api/v1` auth | Raw user token or `Authorization: Bearer <token>`; invalid or expired tokens return `401`. |
+| `/api/v1` auth | Raw user token or API key, or `Authorization: Bearer <token>`; invalid, expired, or revoked credentials return `401`. Read-only keys return `403` on writes. |
 | Typed validation | Path/query/body schemas return `422`; malformed JSON returns `400`. |
 | Browser facade validation | The facade rejects unknown collections, cross-user relations, author spoofing, and unsafe writes with `400`/`404`; PocketBase field errors pass through. |
 | MCP | JSON-RPC over Streamable HTTP; tool failures are `isError` results, not HTTP failures. |
@@ -75,22 +76,22 @@ Authorization: Bearer <pocketbase-auth-token>
 2. **Browser facade** — `/auth`, `/records`, `/files`, `/realtime`, `/trash`, `/admin`, `/public`, `/check-users`, `/me`. These keep the PocketBase record/error shape the SPA already understands while Elysia owns the public edge.
 3. **Admin settings** — `/admin/rate-limits`. This Bun-native route requires the admin flag, persists `settings.rate_limits` with the server's superuser token, and reloads the in-memory limiter in the same request. It is hidden from the public OpenAPI document.
 
-The workspace and facade layers do not replace PocketBase. They call the loopback PocketBase REST API with the caller's own token; PocketBase still enforces API rules, guards, hooks, cascades, trash copying, and file protection. The browser facade adds the missing public-edge checks: collection allowlisting, author injection, relation ownership, and note sanitization.
+The workspace and facade layers do not replace PocketBase. They call the loopback PocketBase REST API with the caller's own token; PocketBase still enforces API rules, guards, hooks, relation cascades, soft-delete trash routes, and file protection. The browser facade adds the missing public-edge checks: collection allowlisting, author injection, relation ownership, and note sanitization.
 
 #### Authentication and docs
 
 Typed workspace routes and MCP call `authenticateApiRequest()` before the handler:
 
 1. Extract the raw token or the value after `Bearer`.
-2. POST it to PocketBase `auth-refresh` (8-second timeout).
-3. Use the returned record id as the author and the refreshed token for downstream PocketBase calls.
-4. Return `401 { "error": "..." }` when the header is missing, the token is invalid/expired, or PocketBase cannot verify it.
+2. For a `nana_…` key, SHA-256 hash it, read the matching `api_keys` record with the server's superuser token, and mint a normal user token through PocketBase impersonation. The key's `access` and `scope` travel in the `ToolContext`; the superuser token never does.
+3. Otherwise POST the token to PocketBase `auth-refresh` (8-second timeout) and use the returned record id as the author and the refreshed token for downstream PocketBase calls.
+4. Return `401 { "error": "..." }` when the header is missing, the token or key is invalid/revoked, or PocketBase cannot verify it.
 
-Browser facade routes decode the JWT locally for the caller id and expiry, then send the unchanged token upstream. PocketBase rejects a forged or revoked token, so no write or read succeeds without its authorization. Auth, public-share, and file-token routes are the deliberate exceptions to "decode first"; they proxy PocketBase's public/auth endpoints directly.
+Browser facade routes decode the JWT locally for the caller id and expiry, then send the unchanged token upstream. PocketBase rejects a forged or revoked token, so no write or read succeeds without its authorization. Auth, public-share, and file-token routes are the deliberate exceptions to "decode first"; they proxy PocketBase's public/auth endpoints directly. API keys are not JWTs and are rejected by the browser facade.
 
 `GET /docs` serves a Scalar API reference and `GET /docs/json` serves the OpenAPI document. Both are **public**; `/api/v1` itself is not. The Scalar bundle is served from `@scalar/api-reference` at `/docs/scalar.js`; the docs use the app's self-hosted Geist fonts at `/docs/geist.woff2` and `/docs/geist-mono.woff2`. No CDN or external font origin is needed, so the CSP stays `script-src 'self'` and `font-src 'self' data:` (the production bundle inlines the app fonts as data URIs).
 
-The spec uses `APP_VERSION`, grouped Folders/Notes/Boards/Tasks tags, stable operation ids, per-status error responses, request/response examples, and a `bearerAuth` HTTP security scheme. Scalar's own theme is disabled in favour of Graphite CSS variables so the reference reads like the rest of Nana.
+The spec uses `APP_VERSION`, a single `Workspace` tag group for Folders/Notes/Boards/Tasks, stable operation ids, per-status error responses, request/response examples, and a `bearerAuth` HTTP security scheme. Scalar's own theme is disabled in favour of Graphite CSS variables so the reference reads like the rest of Nana.
 
 #### Endpoints
 
@@ -116,6 +117,9 @@ Path ids must match `[A-Za-z0-9]{1,64}`.
 | `GET` | `/api/v1/tasks/:id` | — | `200` task DTO. |
 | `PATCH` | `/api/v1/tasks/:id` | `{ title?, description?, status?, priority?, dueDate?, boardOrder?, labels?, noteId?, boardId? }` | `200` task DTO. |
 | `DELETE` | `/api/v1/tasks/:id` | — | `204`; permanent. |
+| `GET` | `/api/v1/api-keys` | — | `200` array of key metadata; session token only. |
+| `POST` | `/api/v1/api-keys` | `{ name, access, scope, folderIds? }` | `201 { token, apiKey }`; plaintext shown once. Session token only. |
+| `DELETE` | `/api/v1/api-keys/:id` | — | `204`; revokes immediately. Session token only. |
 
 List endpoints return:
 
@@ -151,13 +155,63 @@ List endpoints return:
 - **Tasks.** A task is created on the active board in the path. The board must belong to the caller and must not be archived. `status` defaults to `backlog`; `priority` defaults to `""`. `noteId` links a note without modifying it; `""` clears the link. `boardId`, `status`, and `boardOrder` move a task. Task deletion is permanent.
 - **Add note to board.** `POST /boards/:id/notes` copies the note title, a plain-text excerpt (up to 4,000 characters), up to six labels, and the `document` relation into a new task. The note is unchanged.
 
+#### API keys
+
+Long-lived keys authenticate the typed workspace API and `/mcp`. They are created and revoked only with a signed-in session; a key cannot manage keys. The plaintext is returned once and only a SHA-256 hash is stored.
+
+```json
+{
+  "name": "Claude Desktop",
+  "access": "read",
+  "scope": "folders",
+  "folderIds": ["folder123"]
+}
+```
+
+The response includes the one-time secret and the metadata:
+
+```json
+{
+  "token": "nana_a1b2c3d4e5f6…",
+  "apiKey": {
+    "id": "key123",
+    "name": "Claude Desktop",
+    "prefix": "nana_a1b2c3d4e5",
+    "access": "read",
+    "scope": "folders",
+    "folders": [{ "id": "folder123", "name": "Product" }],
+    "lastUsedAt": null,
+    "createdAt": "2026-10-24 16:40:00.000Z"
+  }
+}
+```
+
+| Field | Values |
+| --- | --- |
+| `access` | `read` allows workspace reads; `write` also allows create, update, move, archive, and delete. |
+| `scope` | `workspace` covers the root and every folder; `root` covers only records with no folder; `folders` covers the selected folders and their descendants. |
+| `folderIds` | Required for `folders` (1–20 owned, non-trashed folders); ignored for other scopes. |
+
+Scope is enforced by the same workspace services for REST and MCP:
+
+- Lists exclude out-of-scope folders, notes, boards, and tasks; totals describe the visible set.
+- Reads and writes by id outside the scope return `404`.
+- A read-only key returns `403` on any mutation.
+- A folder-scoped key cannot read or create root records and cannot move a record to the root.
+- A root-only key cannot use folders at all, including `create_folder`.
+- MCP still applies the private lock: private notes, boards, folders, and private-folder subtrees stay hidden even for a `workspace` key.
+- `lastUsedAt` records successful authentication, at most once a minute.
+
+Revoking a key deletes its record and invalidates the next request immediately. Keys are not accepted by the browser facade (`/records`, `/auth`, `/files`, `/realtime`, `/trash`, `/admin`, `/public`), chat, export, or admin routes.
+
 #### Errors
 
 | Status | Meaning |
 | --- | --- |
 | `400` | Invalid request body or an invalid field value. |
-| `401` | Missing, invalid, or expired user token. |
-| `404` | Unknown route, or a record the caller cannot see. Another user's record and a missing record look identical. |
+| `401` | Missing, invalid, expired, or revoked user token or API key. |
+| `403` | The credential is valid but cannot perform this action, such as a read-only key attempting a write. |
+| `404` | Unknown route, or a record the caller cannot see or is outside the key's scope. Another user's record and a missing record look identical. |
 | `409` | The action conflicts with state: deleting an active board, or writing a task on an archived board. |
 | `422` | Elysia schema validation failed. |
 | `500` | Unexpected server failure; the body is generic. |
@@ -165,7 +219,7 @@ List endpoints return:
 
 #### Browser facade
 
-The browser facade is the replacement for `/pb`. It is public-facing Elysia code with PocketBase-shaped payloads; PocketBase itself is loopback-only.
+The browser facade is the replacement for `/pb`. It is public-facing Elysia code with PocketBase-shaped payloads; PocketBase itself is loopback-only. It accepts only a PocketBase session JWT, never a `nana_…` API key.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
@@ -233,7 +287,7 @@ Browser facade behavior:
 
 ### MCP
 
-`POST /mcp` is a stateless Streamable HTTP MCP endpoint. It uses the same user-token authentication as `/api/v1`; auth runs before any MCP work.
+`POST /mcp` is a stateless Streamable HTTP MCP endpoint. It accepts the same session token or `nana_…` API key as `/api/v1`; auth runs before any MCP work. A key contributes its read-only and folder/root scope to every tool call.
 
 | Behavior | Contract |
 | --- | --- |
@@ -255,7 +309,7 @@ The server registers tools for folders, notes, boards, and tasks; the table belo
 | Boards | `list_boards`, `read_board`, `create_board`, `update_board`, `move_board`, `archive_board`, `restore_board`, `delete_board` | List with task counts; read a non-archived board; create/update/move; archive/restore; permanently delete an archived board. |
 | Tasks | `list_tasks`, `create_task`, `update_task`, `move_task`, `delete_task`, `add_note_to_board` | List, create, update, move, or permanently delete tasks; copy a note onto a board. |
 
-MCP is an AI surface, so private notes, boards, folders, and private-folder subtrees are omitted from lists and look missing by id. A tool that tries to write to a hidden record returns `not_found`. See [`ai.md`](ai.md) for the privacy rules and tool semantics.
+MCP is an AI surface, so private notes, boards, folders, and private-folder subtrees are omitted from lists and look missing by id. A tool that tries to write to a hidden record returns `not_found`. API-key scope is an additional envelope: a folder-scoped key sees only those subtrees and never the root; a root-only key sees no folders; a read-only key is not offered write tools at all. See [`ai.md`](ai.md) for the privacy rules and tool semantics.
 
 ### Bun application routes
 
@@ -335,7 +389,7 @@ Chat errors:
 | `/api/chat/conversations/:id` | GET | `{ conversation, messages }`. |
 | `/api/chat/conversations/:id` | DELETE | `204` on success. |
 
-Conversation list/view/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, and every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. Responses include the stored message objects, including any legacy fields tolerated on read.
+Conversation list/view/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, then writes each turn to the `messages` collection. Every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. `GET /api/chat/conversations/:id` returns `{ conversation, messages }`, with messages ordered by `position` and sanitized on read.
 
 #### Admin
 
@@ -383,12 +437,12 @@ All require a user token and ownership checks.
 
 | Route | Body | Result |
 | --- | --- | --- |
-| `POST /api/trash/move-document` | `{ "documentId": "id" }` | `{ trashDocumentId }` |
-| `POST /api/trash/restore-document` | `{ "trashDocumentId": "id" }` | `{ documentId, folderId }` |
-| `POST /api/trash/permanent-delete-document` | `{ "trashDocumentId": "id" }` | Deletes the trash record and its versions. |
-| `POST /api/trash/move-folder` | `{ "folderId": "id" }` | `{ trashFolderId, movedDocumentIds, movedBoardIds }`; boards in the trashed subtree are rehomed to the root. |
-| `POST /api/trash/restore-folder` | `{ "trashFolderId": "id" }` | Restores the folder subtree and documents. Boards rehomed to the root are not moved back. |
-| `POST /api/trash/permanent-delete-folder` | `{ "trashFolderId": "id" }` | Permanently deletes the folder subtree and defensively rehomes any board still pointing at it. |
+| `POST /api/trash/move-document` | `{ "documentId": "id" }` | Sets `deleted_at`/`deleted_by` and clears sharing; returns `{ trashDocumentId }`, which equals the document id. |
+| `POST /api/trash/restore-document` | `{ "trashDocumentId": "id" }` | Clears the soft-delete fields; returns `{ documentId, folderId }`. A note whose folder is still trashed is re-rooted. |
+| `POST /api/trash/permanent-delete-document` | `{ "trashDocumentId": "id" }` | Hard-deletes the document, cascades versions, deletes attachments, and clears task `document` links. |
+| `POST /api/trash/move-folder` | `{ "folderId": "id" }` | Marks the subtree and its documents deleted, clears sharing, and rehomes boards to the root; returns `{ trashFolderId, movedDocumentIds, movedBoardIds }`. |
+| `POST /api/trash/restore-folder` | `{ "trashFolderId": "id" }` | Clears the subtree and its documents; returns `{ success, folderId, restoredDocumentIds }`. Boards rehomed to the root stay there. |
+| `POST /api/trash/permanent-delete-folder` | `{ "trashFolderId": "id" }` | Rehomes boards, clears task note links, then hard-deletes the subtree through `folders.parent` and `documents.folder` cascades. |
 
 #### Admin
 
@@ -436,7 +490,7 @@ PocketBase's standard collection endpoints under `/api/collections/...` are inte
 
 - `name` is required (max 120); `description` is optional (max 500).
 - `archived` defaults to false. Archiving is a normal `PATCH`; there is no separate archive route. An archived board’s public link stops serving.
-- `folder` is optional. It must belong to the caller; `board_guards.js` checks the incoming relation. An empty value means the workspace root.
+- `folder` is optional. It must belong to the caller and not be trashed; `relation_guards.js` checks the incoming relation. An empty value means the workspace root.
 - `is_private` hides the board from chat and MCP, not from its owner. A private board cannot be served publicly.
 - `is_public`, `public_share_token`, and `public_expires_at` are the board public-share fields; the browser generates the token and the public route validates it.
 - `author` is required and set on create. Ownership cannot be changed later.
@@ -454,7 +508,6 @@ PocketBase's standard collection endpoints under `/api/collections/...` are inte
   "due_date": "2026-10-30 00:00:00.000Z",
   "board_order": 0,
   "labels": ["release"],
-  "author": "user_record_id",
   "board": "board_record_id",
   "document": "optional_document_id"
 }
@@ -463,8 +516,9 @@ PocketBase's standard collection endpoints under `/api/collections/...` are inte
 - `board` is required. A task cannot be created without a board, on another user's board, or on an archived board.
 - `status` is required and limited to the four column values. `priority` is optional; the UI sends `""` when unset.
 - `board_order` is a non-negative number scoped to a column. Dragging writes only changed rows.
-- `document` is optional and does not cascade. Deleting the note leaves the task; deleting the task leaves the note.
-- List, view, and delete are author-scoped. Create and update additionally require `board.author = @request.auth.id` and `board.archived = false`.
+- `document` is optional and does not cascade. Trashing the note keeps the link so a restore restores it; unrelated task edits still work while the note is trashed. Permanently deleting the note clears the link. Deleting the task leaves the note.
+- Tasks have no `author` field. Ownership is `board.author`; the board relation is required and cascades.
+- List, view, and delete require `board.author = @request.auth.id`. Create and update additionally require `board.archived = false`.
 - Tasks have no trash flow. Deleting a task is permanent.
 
 See [`pocketbase.md`](pocketbase.md) for the exact rules, indexes, and archive lifecycle.
@@ -514,23 +568,31 @@ Folder response includes `rootFolder`, `folders`, `documents`, `boards`, and `en
 
 - **`/api/v1` has two contracts.** The typed workspace routes return camelCase DTOs and `{ error }` failures; the browser facade returns PocketBase-shaped records and `{ code, message, data }` failures. Do not mix their paths or schemas.
 - **The browser never calls PocketBase.** `src/lib/pocketbase.ts` is a small client over `/api/v1`; `/pb` returns `404`. Server-side code uses `serverConfig.pocketbaseUrl` on loopback.
+- **API keys are machine credentials, not browser sessions.** Only `/api/v1` typed workspace routes and `/mcp` accept them. The browser facade, chat, export, and admin routes reject them. Key management itself requires a session.
+- **Only a hash is stored.** `api_keys.key_hash` is SHA-256 of the `nana_…` secret. The plaintext is returned once by `POST /api/v1/api-keys` and never stored or logged.
+- **Key scope is enforced in the services.** A key's `access` and `scope` travel in `ToolContext`; lists filter out-of-scope folders and records, and reads/writes outside the envelope return `404`. Do not rely on the client or the MCP prompt to enforce it.
+- **MCP private lock still wins.** A workspace-scoped key does not expose private records to MCP. `/api/v1` remains the owner surface and still shows the key owner's private records.
 - **Legacy file links are rewritten.** Existing Markdown may contain `/pb/api/files/...`; `src/lib/legacy-urls.ts` rewrites those to `/api/v1/files/...` in Markdown previews and public views. There is no compatibility `/pb` route.
 - **The browser facade is an allowlist, not a proxy.** Do not add system collections, schema, logs, backups, or superuser paths to `/api/v1/records`. New collections need an explicit entry in `src/api/rest/browser/records.ts`.
 - **Ownership is server-injected.** Browser `author` values are ignored on create and removed on update. Folder parents, board folders, task boards, and note links are checked before the upstream write.
 - **Document content is sanitized at the edge.** The facade calls `sanitizeHtml()` on create/update; PocketBase is still the storage and rules engine.
 - **Private records are visible to their owner.** `/api/v1` is the owner surface. Only chat and MCP apply the private lock; do not add `aiVisibilityConditions()` to REST or browser facade handlers.
 - **`/docs` is public.** The OpenAPI document and Scalar assets are intentionally unauthenticated; `/api/v1` routes are not.
+- **Scalar renders only tags listed in `x-tagGroups`.** When the extension is present, the sidebar is built from each group's tag names; a tag declared in `tags` but omitted from every group disappears from the nav. Add new reference tags to the `Workspace` group in `src/api/rest/openapi.ts`.
 - **MCP is POST-only and stateless.** There is no session to continue. Every request authenticates, builds a server, handles one payload, and closes the transport.
 - **MCP tool failures are model-facing, not HTTP failures.** An `isError` text result still returns `200`; only auth, parse, and transport failures return HTTP errors.
 - **Chat has no `documentIds`.** A request containing extra fields is ignored; only `conversationId`, `message`, and `regenerate` are read.
 - **No RAG headers or sources.** Clients must not expect `X-RAG-Sources` or a `sources` field in new assistant messages.
 - **Chat tool errors are model-facing, not HTTP errors.** `list_notes` etc. return `{ ok: false, code, message }` inside the stream; the chat `POST` still succeeds.
 - **Persisted chat tool activity is allowlisted.** Only `CHAT_TOOL_NAMES` entries and `success`/`error` statuses survive `sanitizeTools()`; args and outputs are never stored. MCP tool activity is not persisted in conversations.
+- **Messages are records.** `conversations.messages` no longer exists. Appending a message writes a `messages` row and touches the conversation's `updated` timestamp so the sidebar order stays current.
 - **Deleting an active board fails.** Archive it first, then delete from `/board/archive` or `DELETE /api/v1/boards/:id`.
 - **Task deletion still works on an archived board.** The archived-board rule blocks create/update, not delete; this is intentional so cleanup stays possible.
 - **A `403` and a `404` can look identical through the services.** PocketBase hides unauthorized records; the shared client maps both to a generic `not_found`.
-- **Cross-author folders are rejected twice.** The workspace service checks folder ownership before the write; `board_guards.js` checks the incoming relation again for direct API calls.
+- **Cross-author folders are rejected twice.** The workspace service checks folder ownership before the write; `relation_guards.js` checks the incoming relation again for direct API calls.
 - **A trashed folder does not trash its boards.** Boards are rehomed to the root and keep their tasks and archive state.
+- **Trash is soft delete.** `move-*` keeps the document/folder id and attachments; `trash_documents`/`trash_folders` are read-only views. Permanently deleting is a separate route.
+- **Direct deletes are disabled on notes and folders.** `documents.deleteRule` and `folders.deleteRule` are `null`; use `/api/v1/trash/move-*` and then restore or permanently delete.
 - **Rate limits apply before handlers.** `/api/*`, `/api/v1`, `/docs`, and `/mcp` all pass through `checkRateLimit()`; a `429` includes `Retry-After`. The `/api/v1` bucket is still stored under the legacy `pbMaxPerMinute` settings key; update it through `PATCH /api/v1/admin/rate-limits` so the limiter reloads with the write.
 
 ## Related docs

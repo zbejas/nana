@@ -23,9 +23,13 @@ function disablePublicShare(record) {
 
 function findPublicShareRecord(collectionName, token) {
   try {
+    var filter = "public_share_token = {:token}"
+    if (collectionName === "documents" || collectionName === "folders") {
+      filter += " && deleted_at = ''"
+    }
     return $app.findFirstRecordByFilter(
       collectionName,
-      "public_share_token = {:token}",
+      filter,
       { token: token }
     )
   } catch (_) {
@@ -38,7 +42,12 @@ function findPublicShareRecord(collectionName, token) {
  * is_public=true, is_private=false, and not expired.
  */
 function ensureActivePublicShare(record) {
-  if (!record || !record.getBool("is_public") || record.getBool("is_private")) {
+  if (
+    !record ||
+    !record.getBool("is_public") ||
+    record.getBool("is_private") ||
+    String(record.get("deleted_at") || "") !== ""
+  ) {
     throw new NotFoundError("Public share not found")
   }
 
@@ -173,7 +182,7 @@ function collectFolderDescendants(folderRecord) {
 
     var children = $app.findRecordsByFilter(
       "folders",
-      "parent = {:parentId}",
+      "parent = {:parentId} && deleted_at = ''",
       "+name",
       500,
       0,
@@ -199,7 +208,7 @@ function collectFolderDocuments(folderIds) {
   for (var f = 0; f < folderIds.length; f++) {
     var folderDocuments = $app.findRecordsByFilter(
       "documents",
-      "folder = {:folderId}",
+      "folder = {:folderId} && deleted_at = ''",
       "+title",
       500,
       0,

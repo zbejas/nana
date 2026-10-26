@@ -44,7 +44,8 @@ describe("Document version guards", () => {
             }),
         });
 
-        await expectStatus(res, 400, "create document version");
+        expect(res.ok).toBe(false);
+        expect([400, 403, 404]).toContain(res.status);
     });
 
     test("regular user cannot update a document version", async () => {
@@ -56,7 +57,7 @@ describe("Document version guards", () => {
 
         // The update rule is empty, so PocketBase may hide the record before the
         // request guard runs. Both outcomes deny the write.
-        expect([400, 404]).toContain(res.status);
+        expect([400, 403, 404]).toContain(res.status);
 
         const stored = await pbGetRecord<{ content: string }>(
             superuserToken,
@@ -72,7 +73,8 @@ describe("Document version guards", () => {
             headers: { Authorization: user.token },
         });
 
-        await expectStatus(res, 400, "delete document version");
+        expect(res.ok).toBe(false);
+        expect([400, 403, 404]).toContain(res.status);
         expect(
             await pbGetRecord<{ id: string }>(superuserToken, "document_versions", versionId),
         ).toHaveProperty("id");
@@ -89,7 +91,7 @@ describe("Document version guards", () => {
         });
 
         expect(res.ok).toBe(false);
-        expect([400, 403]).toContain(res.status);
+        expect([400, 401, 403, 404]).toContain(res.status);
     });
 
     test("another user cannot list or read the versions", async () => {

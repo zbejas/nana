@@ -27,7 +27,7 @@ export interface ChatSendRequest {
     regenerate?: boolean;
 }
 
-/** A single chat message stored inline in a conversation's JSON field */
+/** A single chat message shape returned by the chat API. */
 export interface ChatMessage {
     role: "user" | "assistant";
     content: string;
@@ -39,14 +39,26 @@ export interface ChatMessage {
     model?: string;
 }
 
-/** PocketBase conversations record (messages stored inline as JSON) */
+/** PocketBase conversations record. Messages live in the `messages` collection. */
 export interface PBConversation {
     id: string;
     title: string;
     author: string;
-    messages: ChatMessage[];
     created: string;
     updated: string;
+}
+
+/** One persisted chat message. */
+export interface PBMessage {
+    id: string;
+    conversation: string;
+    role: "user" | "assistant";
+    content: string;
+    reasoning?: string;
+    model?: string;
+    tools?: ChatToolActivity[];
+    position: number;
+    created: string;
 }
 
 /** PocketBase paginated list response */

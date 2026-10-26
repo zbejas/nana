@@ -17,8 +17,6 @@ export {
     hasSubfolders,
     getFolderPath,
     moveFolder,
-    publishFolder,
-    unpublishFolder,
 } from './crud';
 
 // Re-export tree operations

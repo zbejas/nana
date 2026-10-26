@@ -11,8 +11,8 @@ routerAdd("POST", "/api/trash/move-document", (c) => {
             throw new BadRequestError("documentId is required")
         }
 
-        const trashDocument = h.moveDocumentToTrashById(documentId, userId)
-        return c.json(200, { trashDocumentId: trashDocument.id })
+        const document = h.moveDocumentToTrashById(documentId, userId)
+        return c.json(200, { trashDocumentId: document.id })
     } catch (err) {
         console.error("Failed to move document to trash:", err)
         return c.json(400, { error: String(err) })

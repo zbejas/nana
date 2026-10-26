@@ -18,7 +18,6 @@ describe("Document hooks", () => {
             content: string;
             version_number: number;
             change_summary: string;
-            created_by: string;
             source_created_at: string;
         }>(token, "document_versions", {
             filter: `document='${noteId}'`,
@@ -93,7 +92,6 @@ describe("Document hooks", () => {
             expect(versions[0]?.document).toBe(note.id);
             expect(versions[0]?.content).toBe("Version 1 content");
             expect(versions[0]?.version_number).toBe(1);
-            expect(versions[0]?.created_by).toBe(user.id);
             expect(versions[0]?.change_summary).toMatch(/^Published on \d{4}\.\d{2}\.\d{2}/);
             expect(versions[0]?.source_created_at).toBeTruthy();
         });
@@ -140,7 +138,9 @@ describe("Document hooks", () => {
             const versions = await getVersions(note.id);
             expect(versions).toHaveLength(1);
 
-            await pbDelete(user.token, "documents", note.id);
+            // Owner deletes go through the trash route; the superuser path
+            // exercises the relation cascade directly.
+            await pbDelete(superuserToken, "documents", note.id);
 
             const res = await pbRequest(`/collections/document_versions/records/${versions[0]!.id}`, {
                 headers: { Authorization: superuserToken },

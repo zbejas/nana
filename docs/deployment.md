@@ -20,6 +20,7 @@ Nana ships as one container with two processes: PocketBase bound to `127.0.0.1:8
 | `pocketbase/pb_migrations/0000018_created_boards.js` | Boards schema and task backfill. |
 | `pocketbase/pb_migrations/0000019_remove_embedding_settings.js` | Deletes the obsolete embedding setting. |
 | `pocketbase/pb_migrations/0000020_boards_in_folders.js` | Adds the optional board folder relation, private flag, and author/folder index. |
+| `pocketbase/pb_migrations/0000022_relational_remodel.js` | Soft-delete trash, messages records, relation indexes/cascades, and redundant-relation cleanup. |
 
 ## How it works
 
@@ -149,6 +150,17 @@ Migration `0000020_boards_in_folders.js` adds `boards.folder` as an optional rel
 
 Migration `0000021_add_board_public_sharing.js` adds the board public-share fields. Existing boards stay unshared. An archived board’s public link stops serving without deleting the token, so restoring the board restores its previous link.
 
+Migration `0000022_relational_remodel.js` upgrades existing data in place:
+
+- Copies legacy `trash_documents`/`trash_folders` back into `documents`/`folders` as soft-deleted records, reuses their original ids, reuploads attachments, and moves legacy version rows into `document_versions`.
+- Converts `conversations.messages` JSON arrays into `messages` records.
+- Drops the legacy trash collections and creates the `trash_documents`/`trash_folders` views.
+- Removes `tasks.author`, `document_versions.created_by`, and `folders.published`; ownership now comes from `tasks.board` and `document_versions.document`.
+- Adds relation indexes and partial unique indexes on share tokens.
+- Rewrites collection rules and `cascadeDelete` flags.
+
+Back up `pb_data` before the first boot on this migration. The `down()` moves soft-deleted rows back into legacy trash collections and restores the removed fields, but it is not a substitute for a backup.
+
 ### Upgrades
 
 1. Back up `pocketbase/pb_data/`.
@@ -158,6 +170,7 @@ Migration `0000021_add_board_public_sharing.js` adds the board public-share fiel
 5. Verify the timeline and sidebar: existing tasks should appear under `My board` (or their existing board), with status and order preserved.
 6. Verify the archive flow: active boards cannot be deleted; archived boards can be restored or deleted forever.
 7. Verify boards in folders: create a folder, drag a board into it, and confirm the board remains after trashing the folder (it returns to the root).
+8. Verify trash: move a note to trash, confirm it disappears from the library but keeps its id in Trash, restore it, then permanently delete it. Check that its versions and attachments are gone after permanent delete.
 8. Verify the active AI provider/model in Settings → Workspace → AI. There is nothing to configure for embeddings.
 
 Migrations are append-only. Do not rename or remove historical migration files; `bootstrap.js` has a temporary compatibility rewrite for old filenames.

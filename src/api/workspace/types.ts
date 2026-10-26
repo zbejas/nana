@@ -82,5 +82,6 @@ export interface TaskDto {
 }
 
 export interface DeleteNoteResult {
+    /** The trashed document id; soft delete keeps the original id. */
     trashDocumentId: string;
 }

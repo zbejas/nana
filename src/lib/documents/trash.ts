@@ -30,7 +30,7 @@ async function postTrashAction(path: string, payload: Record<string, unknown>) {
     return response.json().catch(() => ({}));
 }
 
-// Delete a document (move to trash collection)
+// Soft-delete a document (keep its id, attachments, and versions)
 export async function deleteDocument(id: string): Promise<boolean> {
     await postTrashAction('/api/trash/move-document', { documentId: id });
     return true;
@@ -76,13 +76,13 @@ export async function listTrashDocuments(options?: {
     }
 }
 
-// Permanently delete a document from trash
+// Permanently delete a trashed document
 export async function permanentlyDeleteDocument(id: string): Promise<boolean> {
     await postTrashAction('/api/trash/permanent-delete-document', { trashDocumentId: id });
     return true;
 }
 
-// Restore a document from trash
+// Restore a trashed document
 export async function restoreDocument(id: string): Promise<Document> {
     try {
         const restoreResult = await postTrashAction('/api/trash/restore-document', {

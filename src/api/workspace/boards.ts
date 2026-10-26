@@ -6,10 +6,11 @@ import {
     type ToolContext,
 } from "../pocketbase/client";
 import { ApiError, badRequest, conflict, notFound } from "./errors";
-import { aiVisibilityConditions, boardIsLocked } from "./privacy";
+import { recordIsLocked, workspaceVisibilityConditions } from "./privacy";
 import {
     assertFolderVisible,
     assertRecordId,
+    assertWritable,
     clampPaging,
     normalizeFolderId,
     unwrap,
@@ -78,10 +79,8 @@ async function loadVisibleBoard(
     id: string,
 ): Promise<PBBoardRecord> {
     const record = await loadBoardRecord(context, id);
-    if (surface === "ai") {
-        const visibility = await visibilityFor(context, surface);
-        if (boardIsLocked(visibility, record)) throw notFound();
-    }
+    const visibility = await visibilityFor(context, surface);
+    if (recordIsLocked(visibility, surface, record)) throw notFound();
     return record;
 }
 
@@ -100,10 +99,8 @@ export async function listBoards(
         conditions.push(`folder="${escapeFilterString(assertRecordId(folderId, "That folder id is not valid."))}"`);
     }
 
-    if (surface === "ai") {
-        const visibility = await visibilityFor(context, surface);
-        conditions.push(...aiVisibilityConditions(visibility));
-    }
+    const visibility = await visibilityFor(context, surface);
+    conditions.push(...workspaceVisibilityConditions(visibility, surface));
 
     const path = `/api/collections/boards/records${queryString({
         filter: conditions.join(" && "),
@@ -138,13 +135,17 @@ export async function createBoard(
     surface: Surface = "user",
     input: CreateBoardInput,
 ): Promise<BoardDto> {
+    assertWritable(context);
+
     const name = (input.name || "").trim();
     if (!name) throw badRequest("A board name is required.");
 
     const folderId = normalizeFolderId(input.folderId);
+    const visibility = await visibilityFor(context, surface);
     if (folderId) {
-        const visibility = await visibilityFor(context, surface);
         await assertFolderVisible(context, surface, folderId, visibility);
+    } else if (!visibility.rootAllowed) {
+        throw notFound();
     }
 
     const body: Record<string, unknown> = {
@@ -167,9 +168,11 @@ export async function updateBoard(
     id: string,
     patch: UpdateBoardInput,
 ): Promise<BoardDto> {
+    assertWritable(context);
+
     const current = await loadBoardRecord(context, id);
     const visibility = await visibilityFor(context, surface);
-    if (surface === "ai" && boardIsLocked(visibility, current)) throw notFound();
+    if (recordIsLocked(visibility, surface, current)) throw notFound();
 
     const body: Record<string, unknown> = {};
     let changed = false;
@@ -205,6 +208,7 @@ export async function updateBoard(
             await assertFolderVisible(context, surface, folderId, visibility);
             body.folder = folderId;
         } else {
+            if (!visibility.rootAllowed) throw notFound();
             body.folder = "";
         }
         changed = true;
@@ -236,6 +240,8 @@ export async function deleteBoard(
     surface: Surface = "user",
     id: string,
 ): Promise<void> {
+    assertWritable(context);
+
     const current = await loadVisibleBoard(context, surface, id);
     if (current.archived !== true) throw conflict("Archive the board before deleting it.");
 

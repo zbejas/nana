@@ -62,16 +62,13 @@ export async function listTrashFolders(): Promise<FolderTreeNode[]> {
  */
 export async function restoreFolder(id: string): Promise<Folder> {
     try {
-        await postTrashAction('/api/trash/restore-folder', { trashFolderId: id });
-        const restoredList = await pb.collection('folders').getList<Folder>(1, 1, {
-            filter: `author="${getCurrentUserId()}"`,
-            sort: '-updated',
-        });
-        const restored = restoredList.items[0];
-        if (!restored) {
-            throw new Error('Folder restored but failed to fetch updated folder state');
+        const result = await postTrashAction('/api/trash/restore-folder', { trashFolderId: id });
+        const folderId = typeof result?.folderId === 'string' ? result.folderId : '';
+        if (!folderId) {
+            throw new Error('Missing restored folder id in response');
         }
-        logger.info('Folder restored', { id });
+        const restored = await pb.collection('folders').getOne<Folder>(folderId);
+        logger.info('Folder restored', { id, folderId });
         return restored;
     } catch (error: any) {
         logger.error('Failed to restore folder', {

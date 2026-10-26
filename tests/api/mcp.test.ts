@@ -370,12 +370,13 @@ describe("note tools", () => {
 
         const trashId = deleteCall.payload.trashDocumentId as string;
         expect(await pbRecordExists(owner.token, "documents", note.id)).toBe(false);
-        const trash = await pbGetRecord<{ original_document_id: string }>(
+        const trash = await pbGetRecord<{ id: string; deleted_at: string }>(
             owner.token,
             "trash_documents",
             trashId,
         );
-        expect(trash.original_document_id).toBe(note.id);
+        expect(trash.id).toBe(note.id);
+        expect(trash.deleted_at.length).toBeGreaterThan(0);
 
         const afterDeleteCall = await mcpCall(owner.token, "list_notes", { folderId: folder.id });
         const afterDelete = afterDeleteCall.payload as unknown as { notes: NoteSummaryDto[] };

@@ -12,6 +12,7 @@ import {
     createNoteWithAttachment,
     createTask,
     createUser,
+    getSuperuserToken,
     superuserUpdate,
     type TestUser,
 } from "../../helpers/factories";
@@ -21,9 +22,11 @@ const PUBLIC_API = "/public";
 
 describe("Public share routes", () => {
     let user: TestUser;
+    let superuserToken: string;
 
     beforeAll(async () => {
         user = await createUser("public-share");
+        superuserToken = await getSuperuserToken();
     });
 
     function uniqueToken(): string {
@@ -112,6 +115,34 @@ describe("Public share routes", () => {
             const record = await readJson<{ is_public: boolean; public_share_token: string }>(stored);
             expect(record.is_public).toBe(false);
             expect(record.public_share_token).toBe("");
+        });
+
+        test("trashing a shared document disables the link", async () => {
+            const token = uniqueToken();
+            const note = await createNote(user);
+            await shareDocument(note.id, token);
+
+            const moved = await pbRequest("/trash/move-document", {
+                method: "POST",
+                headers: { Authorization: user.token, "Content-Type": "application/json" },
+                body: JSON.stringify({ documentId: note.id }),
+            });
+            await expectStatus(moved, 200, "move shared document to trash");
+
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 404);
+
+            const stored = await readJson<{
+                is_public: boolean;
+                public_share_token: string;
+                deleted_at: string;
+            }>(
+                await pbRequest(`/collections/documents/records/${note.id}`, {
+                    headers: { Authorization: superuserToken },
+                }),
+            );
+            expect(stored.is_public).toBe(false);
+            expect(stored.public_share_token).toBe("");
+            expect(stored.deleted_at.length).toBeGreaterThan(0);
         });
 
         test("returns the document and author for a valid share", async () => {

@@ -57,7 +57,6 @@ interface PBTaskRecord {
     document?: string;
     note?: string;
     board?: string;
-    author?: string;
     created?: string;
     updated?: string;
 }
@@ -175,7 +174,6 @@ async function countTasks(
     signal: AbortSignal,
 ): Promise<{ ok: true; count: number } | ToolFailure> {
     const filter = [
-        `author="${escapeFilterString(context.userId)}"`,
         `board="${escapeFilterString(boardId)}"`,
         `status="${status}"`,
     ].join(" && ");
@@ -336,7 +334,6 @@ export async function readBoard(
     if (boardIsLocked(visibility, board)) return notFound();
 
     const conditions = [
-        `author="${escapeFilterString(context.userId)}"`,
         `board="${escapeFilterString(boardId)}"`,
     ];
     if (column) conditions.push(`status="${column}"`);

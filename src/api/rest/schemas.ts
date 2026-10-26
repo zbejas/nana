@@ -1,5 +1,6 @@
 import { t } from "elysia";
 import type { TSchema } from "@sinclair/typebox";
+import { API_KEY_ACCESS_VALUES, API_KEY_SCOPE_VALUES } from "../api-keys/types";
 import { TASK_PRIORITIES, TASK_STATUSES } from "../workspace/types";
 
 const recordId = t.String({
@@ -268,8 +269,8 @@ export const BoardListSchema = listOf(BoardDtoSchema);
 export const TaskListSchema = listOf(TaskDtoSchema);
 export const DeleteNoteResultSchema = t.Object({
     trashDocumentId: t.String({
-        description: "Id of the trash record. Use it to restore or permanently delete the note.",
-        examples: ["trash123"],
+        description: "Id of the trashed note. The soft-delete keeps the document id; use it to restore or permanently delete the note.",
+        examples: ["note123"],
     }),
 }, {
     description: "The note was moved to trash.",
@@ -564,4 +565,115 @@ export const AddNoteToBoardBodySchema = t.Object({
 }, {
     description: "Copy a note into a new task.",
     examples: [{ noteId: "note123", status: "done" }],
+});
+
+// ── API keys ─────────────────────────────────────────────────────────
+
+export const ApiKeyAccessSchema = t.Union(
+    API_KEY_ACCESS_VALUES.map((access) => t.Literal(access)),
+    {
+        description: "`read` allows workspace reads only; `write` also allows create, update, move, and delete.",
+        examples: ["read"],
+    },
+);
+
+export const ApiKeyScopeSchema = t.Union(
+    API_KEY_SCOPE_VALUES.map((scope) => t.Literal(scope)),
+    {
+        description:
+            "`workspace` covers the root and every folder; `root` covers only records with no folder; `folders` covers the selected folders and their descendants.",
+        examples: ["folders"],
+    },
+);
+
+const ApiKeyFolderSchema = t.Object({
+    id: t.String({ description: "Folder id.", examples: ["folder123"] }),
+    name: t.String({ description: "Folder name.", examples: ["Product"] }),
+}, {
+    description: "A folder selected as a key scope root.",
+});
+
+export const ApiKeyDtoSchema = t.Object({
+    id: t.String({ description: "Key metadata id.", examples: ["key123"] }),
+    name: t.String({ description: "Display name.", examples: ["Claude Desktop"] }),
+    prefix: t.String({
+        description: "The visible prefix of the secret. The rest is stored only as a hash.",
+        examples: ["nana_a1b2c3d4e5"],
+    }),
+    // Response schemas use plain strings for these two fields. Elysia's
+    // response inference cannot unify literal unions inside an array DTO, and
+    // the allowed values are still documented and validated on create.
+    access: t.String({
+        description: "Key access: `read` or `write`.",
+        examples: ["read"],
+    }),
+    scope: t.String({
+        description: "Key scope: `workspace`, `root`, or `folders`.",
+        examples: ["folders"],
+    }),
+    folders: t.Array(ApiKeyFolderSchema, {
+        description: "Scope roots when `scope` is `folders`; empty otherwise.",
+    }),
+    lastUsedAt: t.Union([dateTime, t.Null()], {
+        description: "Last successful authentication, or null when never used.",
+        examples: ["2026-10-25 12:00:00.000Z"],
+    }),
+    createdAt: dateTime,
+}, {
+    description: "API key metadata. The secret and its hash are never returned after creation.",
+    examples: [{
+        id: "key123",
+        name: "Claude Desktop",
+        prefix: "nana_a1b2c3d4e5",
+        access: "read",
+        scope: "folders",
+        folders: [{ id: "folder123", name: "Product" }],
+        lastUsedAt: null,
+        createdAt: "2026-10-24 16:40:00.000Z",
+    }],
+});
+
+export const ApiKeyListSchema = t.Array(ApiKeyDtoSchema);
+
+export const CreateApiKeyBodySchema = t.Object({
+    name: t.String({
+        minLength: 1,
+        maxLength: 80,
+        description: "A label such as the client that will use the key.",
+        examples: ["Claude Desktop"],
+    }),
+    access: ApiKeyAccessSchema,
+    scope: ApiKeyScopeSchema,
+    folderIds: t.Optional(t.Array(
+        t.String({
+            minLength: 1,
+            maxLength: 64,
+            pattern: "^[A-Za-z0-9]{1,64}$",
+            description: "Folder id.",
+            examples: ["folder123"],
+        }),
+        {
+            maxItems: 20,
+            description: "Scope roots when `scope` is `folders`. Ignored for other scopes.",
+            examples: [["folder123"]],
+        },
+    )),
+}, {
+    description: "Create a long-lived API key. The plaintext is returned exactly once.",
+    examples: [{
+        name: "Claude Desktop",
+        access: "read",
+        scope: "folders",
+        folderIds: ["folder123"],
+    }],
+});
+
+export const CreatedApiKeySchema = t.Object({
+    token: t.String({
+        description: "The plaintext key. Store it now; it cannot be shown again.",
+        examples: ["nana_a1b2c3d4e5f6g7h8i9j0"],
+    }),
+    apiKey: ApiKeyDtoSchema,
+}, {
+    description: "A newly created key and its metadata.",
 });

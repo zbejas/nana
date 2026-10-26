@@ -33,6 +33,7 @@ src/
   api/                  Server handlers: chat, export, version, static files
   api/rest/             Elysia /api/v1, REST auth, OpenAPI /docs, Scalar assets
   api/rest/browser/     Browser facade: records, auth, files, realtime, trash, admin, public
+  api/api-keys/         Long-lived API key hashing, exchange, and owner management
   api/mcp/              Stateless MCP server and its folder/note/board/task tools
   api/workspace/        Shared workspace services and the AI visibility lock
   api/pocketbase/       Caller-token PocketBase client shared by REST, MCP, chat
@@ -98,12 +99,12 @@ Bun :3000 ── src/index.ts
 4. **Never touch `pocketbase/pb_data/`** except the generated `types.d.ts`. It contains the live SQLite database, attachments, and credentials. Tests use a disposable copy.
 5. **No destructive git.** No `git reset --hard`, `git checkout --`, forced cleans, or deleting unmerged branches without preserving the work first.
 6. **The browser only talks to `/api/v1`.** Client code uses `src/lib/pocketbase.ts` (an `/api/v1` client), never PocketBase directly. PocketBase is loopback-only; server code uses `serverConfig.pocketbaseUrl`. `/pb` returns `404`.
-7. **Use `verifyAuth()` for protected Bun application APIs, `authenticateApiRequest()` for the typed `/api/v1` workspace routes and `/mcp`, the browser-facade auth helper for `/api/v1/records|auth|files|realtime|trash|admin|public`, and `requireAdmin()` for admin-only PocketBase routes.**
+7. **Use `verifyAuth()` for protected Bun application APIs, `authenticateApiRequest()` for the typed `/api/v1` workspace routes and `/mcp` (session tokens and `nana_…` API keys), the browser-facade auth helper for `/api/v1/records|auth|files|realtime|trash|admin|public` (session JWT only), and `requireAdmin()` for admin-only PocketBase routes.**
 8. **Use `serverConfig` / `clientConfig`** from `src/lib/config.ts`; never read `process.env` elsewhere.
 9. **Use `createLogger()`** instead of `console.log` in application code.
 10. **Call `useDocumentData()` exactly once**, in `AppContent` (`src/App.tsx`). Never call it in a child component.
 11. **Register every new PocketBase hook or route** in its parent module and in `pocketbase/pb_hooks/index.pb.js`.
-12. **Migrations are append-only**, numbered from `0000022`, with a safe `down()` and idempotent guards. Never rename existing migration files.
+12. **Migrations are append-only**, numbered from the next free sequence, with a safe `down()` and idempotent guards. Never rename existing migration files.
 13. **Preserve the streaming paths**: SSE chat with tool streaming, `/api/v1/realtime` SSE relay, export caching. There is no auto-embed or background indexer.
 14. **No secrets in the repo.** Use environment variables and the generated credentials file under `pb_data/`.
 15. **Verify the change.** Run `bun run test:unit` for pure logic, the Docker suite (`bun run test:docker`) for behavior changes, check desktop and mobile for UI changes, and build before shipping.
@@ -111,10 +112,10 @@ Bun :3000 ── src/index.ts
 17. **Use semantic tokens, not raw colours.** The Graphite tokens are defined in `src/index.css` and documented in [`DESIGN.md`](DESIGN.md). Use `bg-surface`, `border-line`, `text-ink`, `text-ink-secondary`, `text-ink-muted`, `bg-signal-bright`, `bg-signal-soft`, `text-signal`, `text-warning`, `text-success`, `text-danger`, etc. No `gray`/`stone`/`blue` families, no `dark:`/`light:` variants, no gradients, grain, glass, or serif faces. Use one family (`Geist`) for interface text; reserve `Geist Mono` for code and identifiers.
 18. **Tasks are separate from documents.** Tasks belong to an author-scoped `boards` record through the required `board` relation; a task may reference one document. Notes and tasks do not cascade into each other. Do not turn notes into tasks by overloading `documents`.
 19. **Boards archive before delete.** Permanent delete is allowed only for archived boards, and PocketBase cascades that board's tasks. Never add a client-side task-deletion loop or loosen the delete rule.
-20. **Chat tools are read-only; MCP is the separate write surface.** `src/api/chat/tools/` uses the caller's token, never the superuser, and every read is author-scoped and private-locked. Keep chat read-only. MCP tools use the caller's user token, author scoping, `surface: "ai"`, and the private lock through `src/api/workspace/`; they do not extend the chat tool set.
-21. **Private records stay hidden from every AI surface.** Private notes, private boards, private folders, and every descendant of a private folder are invisible to chat and MCP: omitted from lists, `not_found` by id, and refused for writes. `/api/v1` is the owner surface and deliberately still shows private records to their owner.
-22. **Typed workspace writes go through the shared services; browser writes go through the facade adapter.** Typed REST and MCP call `src/api/workspace/` with a `ToolContext`; they do not call PocketBase directly. The browser facade calls PocketBase only through `src/api/rest/browser/` with its collection allowlist, author injection, relation checks, and sanitization. New `/api/v1` routes belong in the Elysia app, and new MCP tools belong in `src/api/mcp/`, not in `/api` aliases.
-23. **Boards in folders never cascade.** `boards.folder` uses `cascadeDelete: false`; folder trash and permanent delete rehome boards to the root. Board folder writes go through `pocketbase/pb_hooks/guards/board_guards.js`, which checks folder ownership.
+20. **Chat tools are read-only; MCP is the separate write surface.** `src/api/chat/tools/` uses the caller's token, never the superuser, and every read is owner-scoped (`author`, or `board.author` for tasks) and private-locked. Keep chat read-only. MCP tools use the caller's refreshed session token or the user token minted for an API key, owner scoping, `surface: "ai"`, and the private lock through `src/api/workspace/`; they do not extend the chat tool set.
+21. **Private records stay hidden from every AI surface.** Private notes, private boards, private folders, and every descendant of a private folder are invisible to chat and MCP: omitted from lists, `not_found` by id, and refused for writes. `/api/v1` is the owner surface and deliberately still shows private records to their owner. API key scope is an additional envelope on top of this rule; it never bypasses the private lock.
+22. **Typed workspace writes go through the shared services; browser writes go through the facade adapter.** Typed REST and MCP call `src/api/workspace/` with a `ToolContext`; they do not call PocketBase directly. Every service honors `context.apiKey` access and scope. The browser facade calls PocketBase only through `src/api/rest/browser/` with its collection allowlist, author injection, relation checks, and sanitization. New `/api/v1` routes belong in the Elysia app, and new MCP tools belong in `src/api/mcp/`, not in `/api` aliases.
+23. **Boards in folders never cascade.** `boards.folder` uses `cascadeDelete: false`; folder trash and permanent delete rehome boards to the root. Incoming folder, parent, board, and note relations go through `pocketbase/pb_hooks/guards/relation_guards.js`, which checks ownership, trashed state, and folder cycles.
 
 ## Workflow
 

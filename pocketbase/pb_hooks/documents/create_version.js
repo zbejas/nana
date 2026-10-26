@@ -32,7 +32,6 @@ onModelUpdate((e) => {
   version.set("content", oldContent)
   version.set("version_number", versionNumber)
   version.set("change_summary", `Published on ${formattedDate}`)
-  version.set("created_by", e.model.get("author"))
   version.set("source_created_at", createdAt)
   
   $app.save(version)

@@ -101,7 +101,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 ### Sidebar
 
-- Brand is the rabbit mascot glyph at 24px, plus the “Nana” wordmark and “Your workspace”. The mascot is also used in About, public pages, the install prompt, and the app icons, so the sidebar mark stays recognisably the same character.
+- Brand is the rabbit mascot glyph at 32px, plus the “Nana” wordmark and “Your workspace”. The wordmark starts on the navigation label line, and the mascot marks the sidebar edge. The mascot is also used in About, public pages, the install prompt, and the app icons, so the sidebar mark stays recognisably the same character.
 - A full-width inverted `ink` **New** button sits under the brand and opens a Note/Board menu. It is global chrome, not the contextual primary action; page-level primary actions take `signal-bright`.
 - Primary navigation rows are 32px with 6px radius. The active row is `surface` with a hairline and an ember icon; inactive rows are transparent with muted icons. There are no inverted navigation chips.
 - Section labels are 11.5px medium muted: “Recent”, “Library”.
@@ -193,7 +193,7 @@ Settings uses the shared `PageShell` and `PageHeader`, keeps an 11rem left rail 
 
 ### Public pages
 
-Public notes and folders use the same canvas and panel language without app chrome. The reading measure stays narrow; the public bar uses `canvas-deep`.
+Public notes and folders use the same canvas and panel language without app chrome. The reading measure stays narrow; the public bar uses `canvas-deep` and centres the page title between the author block and the meta.
 
 ## Components
 

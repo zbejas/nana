@@ -7,6 +7,11 @@ import {
     readJson,
 } from "../helpers/client";
 import { createConversation, createUser, type TestUser } from "../helpers/factories";
+import {
+    appendMessage,
+    getConversationMessages,
+    trimLastExchange,
+} from "../../src/api/chat/pocketbase";
 
 describe("Chat API", () => {
     let user: TestUser;
@@ -110,6 +115,29 @@ describe("Chat API", () => {
                 { role: "user", content: "hello" },
                 { role: "assistant", content: "hi" },
             ]);
+        });
+
+        test("appends, reads, and trims messages as separate records", async () => {
+            const conversation = await createConversation(user, {
+                title: "Append flow",
+                messages: [
+                    { role: "user", content: "one" },
+                    { role: "assistant", content: "two" },
+                ],
+            });
+
+            const appended = await appendMessage(user.token, conversation.id, {
+                role: "user",
+                content: "three",
+            });
+            expect(appended.position).toBe(2);
+
+            const messages = await getConversationMessages(user.token, conversation.id);
+            expect(messages.map((message) => message.content)).toEqual(["one", "two", "three"]);
+
+            await trimLastExchange(user.token, conversation.id);
+            const trimmed = await getConversationMessages(user.token, conversation.id);
+            expect(trimmed.map((message) => message.content)).toEqual(["one", "two"]);
         });
 
         test("hides another user's conversation behind a 404", async () => {

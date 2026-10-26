@@ -12,6 +12,8 @@ export interface Document extends RecordModel {
     share_attachments: boolean;
     public_share_token?: string;
     public_expires_at?: string;
+    deleted_at?: string;
+    deleted_by?: string;
     author: string; // User ID
     folder?: string; // Folder ID
     word_count: number;
@@ -25,7 +27,6 @@ export interface DocumentVersion extends RecordModel {
     content: string;
     version_number: number;
     change_summary: string;
-    created_by: string; // User ID
     source_created_at?: string;
     created: string;
 }

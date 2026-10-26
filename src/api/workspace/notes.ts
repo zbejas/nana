@@ -8,10 +8,11 @@ import {
     type ToolContext,
 } from "../pocketbase/client";
 import { notFound, upstream } from "./errors";
-import { aiVisibilityConditions, noteIsLocked } from "./privacy";
+import { recordIsLocked, workspaceVisibilityConditions } from "./privacy";
 import {
     assertFolderVisible,
     assertRecordId,
+    assertWritable,
     clampPaging,
     normalizeFolderId,
     normalizeStringArray,
@@ -151,10 +152,8 @@ export async function listNotes(
         conditions.push(`folder="${escapeFilterString(assertRecordId(folderId, "That folder id is not valid."))}"`);
     }
 
-    if (surface === "ai") {
-        const visibility = await visibilityFor(context, surface);
-        conditions.push(...aiVisibilityConditions(visibility));
-    }
+    const visibility = await visibilityFor(context, surface);
+    conditions.push(...workspaceVisibilityConditions(visibility, surface));
 
     const sort = params.sort === "created"
         ? "-created"
@@ -183,17 +182,15 @@ export async function listNotes(
     };
 }
 
-/** Read one owned note, including content. AI-hidden notes are not found. */
+/** Read one owned note, including content. Hidden or out-of-scope notes are not found. */
 export async function getNote(
     context: ToolContext,
     surface: Surface = "user",
     id: string,
 ): Promise<NoteDto> {
     const record = await loadNoteRecord(context, id);
-    if (surface === "ai") {
-        const visibility = await visibilityFor(context, surface);
-        if (noteIsLocked(visibility, record)) throw notFound();
-    }
+    const visibility = await visibilityFor(context, surface);
+    if (recordIsLocked(visibility, surface, record)) throw notFound();
     return toNoteDto(record);
 }
 
@@ -203,12 +200,16 @@ export async function createNote(
     surface: Surface = "user",
     input: CreateNoteInput = {},
 ): Promise<NoteDto> {
+    assertWritable(context);
+
     const title = (input.title || "").trim() || "Untitled";
     const folderId = normalizeFolderId(input.folderId);
+    const visibility = await visibilityFor(context, surface);
 
     if (folderId) {
-        const visibility = await visibilityFor(context, surface);
         await assertFolderVisible(context, surface, folderId, visibility);
+    } else if (!visibility.rootAllowed) {
+        throw notFound();
     }
 
     const content = input.content !== undefined ? await sanitizeHtml(input.content) : "";
@@ -239,9 +240,11 @@ export async function updateNote(
     id: string,
     patch: UpdateNoteInput,
 ): Promise<NoteDto> {
+    assertWritable(context);
+
     const current = await loadNoteRecord(context, id);
     const visibility = await visibilityFor(context, surface);
-    if (surface === "ai" && noteIsLocked(visibility, current)) throw notFound();
+    if (recordIsLocked(visibility, surface, current)) throw notFound();
 
     const body: Record<string, unknown> = {};
     let changed = false;
@@ -270,6 +273,7 @@ export async function updateNote(
             await assertFolderVisible(context, surface, folderId, visibility);
             body.folder = folderId;
         } else {
+            if (!visibility.rootAllowed) throw notFound();
             body.folder = "";
         }
         changed = true;
@@ -301,11 +305,11 @@ export async function deleteNote(
     surface: Surface = "user",
     id: string,
 ): Promise<DeleteNoteResult> {
+    assertWritable(context);
+
     const current = await loadNoteRecord(context, id);
-    if (surface === "ai") {
-        const visibility = await visibilityFor(context, surface);
-        if (noteIsLocked(visibility, current)) throw notFound();
-    }
+    const visibility = await visibilityFor(context, surface);
+    if (recordIsLocked(visibility, surface, current)) throw notFound();
 
     const result = unwrap(await pbRequest<{ trashDocumentId?: string }>(
         "/api/trash/move-document",
@@ -331,9 +335,7 @@ export async function loadVisibleNoteReference(
     if (typeof record.id !== "string" || record.author !== context.userId) {
         throw notFound();
     }
-    if (surface === "ai") {
-        const visibility = await visibilityFor(context, surface);
-        if (noteIsLocked(visibility, record)) throw notFound();
-    }
+    const visibility = await visibilityFor(context, surface);
+    if (recordIsLocked(visibility, surface, record)) throw notFound();
     return record;
 }

@@ -143,12 +143,10 @@ describe("browser record facade", () => {
                 title: `Browser task ${uniqueSuffix()}`,
                 status: "next",
                 board: board.id,
-                author: other.id,
             }),
         });
         await expectStatus(taskRes, 200, "browser create task");
-        const task = await readJson<{ id: string; author: string; board: string }>(taskRes);
-        expect(task.author).toBe(user.id);
+        const task = await readJson<{ id: string; board: string }>(taskRes);
         expect(task.board).toBe(board.id);
 
         const foreignTask = await bunRequest(api("/records/tasks"), {

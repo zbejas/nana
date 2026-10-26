@@ -197,7 +197,6 @@ export async function createTask(
         board_order: options.board_order ?? 0,
         labels: options.labels ?? [],
         board: boardId,
-        author: user.id,
         ...(document ? { document } : {}),
         ...rest,
     });
@@ -235,9 +234,21 @@ export async function createConversation(
     user: TestUser,
     options: CreateConversationOptions = {},
 ): Promise<TestRecord> {
-    return pbCreate<TestRecord>(user.token, "conversations", {
+    const conversation = await pbCreate<TestRecord>(user.token, "conversations", {
         title: options.title ?? `Conversation ${uniqueSuffix()}`,
         author: user.id,
-        messages: options.messages ?? [{ role: "user", content: "Hello" }],
     });
+
+    const messages = options.messages ?? [{ role: "user", content: "Hello" }];
+    for (let position = 0; position < messages.length; position++) {
+        const message = messages[position]!;
+        await pbCreate<TestRecord>(user.token, "messages", {
+            conversation: conversation.id,
+            role: message.role,
+            content: message.content,
+            position,
+        });
+    }
+
+    return conversation;
 }

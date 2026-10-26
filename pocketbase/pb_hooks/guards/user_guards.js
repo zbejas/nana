@@ -57,11 +57,31 @@ onRecordAfterCreateSuccess((e) => {
 
 
 // Guard: block deletion of verified users (protects the original admin).
+// Unverified users with workspace content are also blocked so their author
+// relations cannot dangle; conversations cascade with the user.
 onRecordDeleteRequest((e) => {
   const { isVerifiedUser } = require(`${__hooks}/utils.js`);
 
   if (isVerifiedUser(e.record)) {
     throw new BadRequestError("Cannot delete a verified user.");
   }
+
+  const ownedCollections = ["documents", "folders", "boards"];
+  for (const collection of ownedCollections) {
+    const owned = $app.findRecordsByFilter(
+      collection,
+      "author = {:author}",
+      "",
+      1,
+      0,
+      { author: e.record.id }
+    );
+    if (owned && owned.length > 0) {
+      throw new BadRequestError(
+        "Delete or permanently remove this user's content before deleting the account."
+      );
+    }
+  }
+
   return e.next();
 }, "users");

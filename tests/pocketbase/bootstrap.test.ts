@@ -74,7 +74,6 @@ describe("PocketBase bootstrap", () => {
             "documents",
             "document_versions",
             "trash_documents",
-            "trash_document_versions",
         ];
 
         for (const name of collections) {

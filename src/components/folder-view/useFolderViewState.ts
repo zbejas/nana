@@ -943,6 +943,7 @@ export function useFolderViewState() {
             }
             setSelectionAnchorKey(null);
             setDeleteConfirmState(null);
+            setRefreshTrigger((previous) => previous + 1);
         } catch (error) {
             log.error('Failed to delete selected items', error);
             showToast(deleteConfirmState.isPermanent

@@ -5,10 +5,11 @@ import {
     type PBListResponse,
     type ToolContext,
 } from "../pocketbase/client";
-import { badRequest } from "./errors";
-import { folderIsLocked } from "./privacy";
+import { badRequest, notFound } from "./errors";
+import { folderIsLocked, visibilityFromFolders } from "./privacy";
 import {
     assertFolderVisible,
+    assertWritable,
     normalizeFolderId,
     unwrap,
     visibilityFor,
@@ -77,19 +78,16 @@ async function loadAllFolders(context: ToolContext): Promise<PBFolderRecord[]> {
 
 /**
  * List the caller's folders. AI hides private folders and their entire
- * subtree; any surviving child whose parent was hidden is re-rooted to null so
- * the hidden id never escapes.
+ * subtree; an API key hides everything outside its envelope. Any surviving
+ * child whose parent was hidden is re-rooted to null so the hidden id never
+ * escapes.
  */
 export async function listFolders(
     context: ToolContext,
     surface: Surface = "user",
 ): Promise<FolderDto[]> {
-    const visibility = await visibilityFor(context, surface);
     const records = await loadAllFolders(context);
-
-    if (surface !== "ai") {
-        return records.map((record) => toFolderDto(record));
-    }
+    const visibility = visibilityFromFolders(records, context, surface);
 
     return records
         .filter((record) => !folderIsLocked(visibility, record.id))
@@ -100,25 +98,28 @@ export async function listFolders(
         });
 }
 
-/** Create a folder. The parent must be the caller's and visible to AI. */
+/** Create a folder. The parent must be visible to this caller's credential. */
 export async function createFolder(
     context: ToolContext,
     surface: Surface = "user",
     input: CreateFolderInput,
 ): Promise<FolderDto> {
+    assertWritable(context);
+
     const name = (input.name || "").trim();
     if (!name) throw badRequest("A folder name is required.");
 
+    const visibility = await visibilityFor(context, surface);
     const parentId = normalizeFolderId(input.parentId);
     if (parentId) {
-        const visibility = await visibilityFor(context, surface);
         await assertFolderVisible(context, surface, parentId, visibility);
+    } else if (!visibility.rootAllowed || !visibility.foldersAllowed) {
+        throw notFound();
     }
 
     const body: Record<string, unknown> = {
         name,
         author: context.userId,
-        published: false,
         is_private: input.isPrivate === true,
     };
     if (parentId) body.parent = parentId;

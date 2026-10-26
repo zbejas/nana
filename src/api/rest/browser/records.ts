@@ -31,7 +31,7 @@ const CREATE_FIELDS: Record<string, Set<string>> = {
         "public_expires_at", "attachments",
     ]),
     folders: new Set([
-        "name", "color", "parent", "published", "is_public", "is_private",
+        "name", "color", "parent", "is_public", "is_private",
         "share_attachments", "public_share_token", "public_expires_at",
     ]),
     boards: new Set([
@@ -162,7 +162,7 @@ async function relationIsOwned(
     auth: BrowserAuth,
     collection: string,
     id: unknown,
-    options: { archived?: boolean } = {},
+    options: { archived?: boolean; visible?: boolean } = {},
 ): Promise<boolean> {
     if (typeof id !== "string" || !id) return true;
     const response = await fetch(
@@ -180,6 +180,7 @@ async function relationIsOwned(
         const record = (await response.json()) as Record<string, unknown>;
         if (record.author !== auth.userId) return false;
         if (options.archived && record.archived === true) return false;
+        if (options.visible && String(record.deleted_at ?? "") !== "") return false;
         return true;
     } catch {
         return false;
@@ -195,7 +196,7 @@ async function validateRelations(
     if (collection === "folders") {
         if (typeof data.parent === "string" && data.parent) {
             if (data.parent === targetId) return jsonError(400, "A folder cannot be its own parent.");
-            if (!(await relationIsOwned(auth, "folders", data.parent))) {
+            if (!(await relationIsOwned(auth, "folders", data.parent, { visible: true }))) {
                 return jsonError(404, "Not found.");
             }
         }
@@ -203,7 +204,7 @@ async function validateRelations(
 
     if (collection === "documents" || collection === "boards") {
         if (typeof data.folder === "string" && data.folder) {
-            if (!(await relationIsOwned(auth, "folders", data.folder))) {
+            if (!(await relationIsOwned(auth, "folders", data.folder, { visible: true }))) {
                 return jsonError(404, "Not found.");
             }
         }
@@ -222,7 +223,7 @@ async function validateRelations(
         }
 
         if (typeof data.document === "string" && data.document) {
-            if (!(await relationIsOwned(auth, "documents", data.document))) {
+            if (!(await relationIsOwned(auth, "documents", data.document, { visible: true }))) {
                 return jsonError(404, "Not found.");
             }
         }

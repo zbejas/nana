@@ -5,6 +5,12 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 import { createLogger } from "../../lib/logger";
 import {
+    createApiKeyForUser,
+    listApiKeysForUser,
+    revokeApiKeyForUser,
+} from "../api-keys";
+import type { ApiKeyDto } from "../api-keys/types";
+import {
     addNoteToBoard,
     createBoard,
     createFolder,
@@ -25,16 +31,19 @@ import {
     updateTask,
     type ToolContext,
 } from "../workspace";
-import { ApiError } from "../workspace/errors";
+import { ApiError, forbidden } from "../workspace/errors";
 import { authenticateApiRequest, AuthError } from "./auth";
 import {
     AddNoteToBoardBodySchema,
+    ApiKeyListSchema,
     BoardDtoSchema,
     BoardListSchema,
+    CreateApiKeyBodySchema,
     CreateBoardBodySchema,
     CreateFolderBodySchema,
     CreateNoteBodySchema,
     CreateTaskBodySchema,
+    CreatedApiKeySchema,
     DeleteNoteResultSchema,
     FolderDtoSchema,
     FolderListSchema,
@@ -122,6 +131,19 @@ const handleApiError: ErrorHandler = ({ code, error, request, set }) => {
     return { error: "Internal server error." };
 };
 
+/**
+ * Key management is a session action. A key cannot mint, list, or revoke
+ * credentials, even when it belongs to an admin.
+ */
+function assertSessionKeyManagement(workspace: ToolContext): void {
+    if (workspace.apiKey) throw forbidden("API keys cannot manage API keys.");
+}
+
+async function listSessionApiKeys(workspace: ToolContext): Promise<ApiKeyDto[]> {
+    assertSessionKeyManagement(workspace);
+    return listApiKeysForUser(workspace.userId);
+}
+
 const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
     .onError(handleApiError)
     .derive({ as: "scoped" }, async ({ request }) => {
@@ -129,6 +151,7 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
         const workspace: ToolContext = {
             authHeader: auth.authHeader,
             userId: auth.userId,
+            apiKey: auth.apiKey,
         };
         return { auth, workspace };
     })
@@ -207,7 +230,7 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
             tags: ["Notes"],
             operationId: "deleteNote",
             summary: "Move a note to trash",
-            description: "Moves the note to trash through the PocketBase trash route and returns the trash record id. Restore or permanently delete it from the trash surface.",
+            description: "Soft-deletes the note through the PocketBase trash route and returns the trashed document id. Restore or permanently delete it from the trash surface.",
         },
     })
     // ── Boards ──────────────────────────────────────────────────────
@@ -341,6 +364,49 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
             operationId: "deleteTask",
             summary: "Delete a task",
             description: "Permanently deletes the task. Tasks have no trash flow.",
+        },
+    })
+    // ── API keys ────────────────────────────────────────────────────
+    .get("/api-keys", ({ workspace }) => listSessionApiKeys(workspace), {
+        response: { 200: ApiKeyListSchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["API keys"],
+            operationId: "listApiKeys",
+            summary: "List API keys",
+            description: "Returns metadata for every long-lived key owned by the caller, newest first. Secrets and hashes are never returned. A key cannot call this route; use a signed-in session.",
+        },
+    })
+    .post("/api-keys", ({ workspace, body, set }) => {
+        assertSessionKeyManagement(workspace);
+        set.status = 201;
+        return createApiKeyForUser(workspace.userId, {
+            name: body.name,
+            access: body.access,
+            scope: body.scope,
+            folderIds: body.folderIds,
+        });
+    }, {
+        body: CreateApiKeyBodySchema,
+        response: { 201: CreatedApiKeySchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["API keys"],
+            operationId: "createApiKey",
+            summary: "Create an API key",
+            description: "Creates a long-lived key for the `/api/v1` workspace API and `/mcp`. The plaintext token is returned exactly once; only a SHA-256 hash is stored. `access` limits reads/writes and `scope` limits the key to the workspace, the root, or selected folder subtrees. Private records stay hidden from MCP regardless of scope.",
+        },
+    })
+    .delete("/api-keys/:id", async ({ workspace, params }) => {
+        assertSessionKeyManagement(workspace);
+        await revokeApiKeyForUser(workspace.userId, params.id);
+        return status(204);
+    }, {
+        params: IdParamsSchema,
+        response: { 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["API keys"],
+            operationId: "revokeApiKey",
+            summary: "Revoke an API key",
+            description: "Permanently deletes the key. Requests using it fail with `401` immediately. A key cannot revoke keys.",
         },
     });
 

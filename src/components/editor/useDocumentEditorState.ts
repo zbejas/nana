@@ -1,8 +1,10 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useSetAtom } from 'jotai';
 import { getDocument, type Document } from '../../lib/documents';
 import { useDocumentEditor, useSidebar, useToasts } from '../../state/hooks';
 import { createLogger } from '../../lib/logger';
+import { refreshTriggerAtom } from '../../state/atoms';
 
 const logger = createLogger('DocEditor');
 import { type ViewMode } from './EditorHeader';
@@ -35,6 +37,7 @@ export function useDocumentEditorState() {
         startNew,
     } = useDocumentEditor();
     const { isOpen: sidebarOpen } = useSidebar();
+    const setRefreshTrigger = useSetAtom(refreshTriggerAtom);
     const { showToast: showAppToast } = useToasts();
     const sidebarWidth = useSidebarWidth();
     const autoSaveDelay = useAutoSaveDelay();
@@ -316,11 +319,12 @@ export function useDocumentEditorState() {
             const updatedDocument = await getDocument(document.id);
             save(updatedDocument);
             setGlobalUnsavedChanges(false);
+            setRefreshTrigger((previous) => previous + 1);
         } catch (err: any) {
             logger.error('Failed to reload document after restore', { error: err.message });
             setError('Failed to reload document. Please refresh the page.');
         }
-    }, [document?.id, save, setGlobalUnsavedChanges]);
+    }, [document?.id, save, setGlobalUnsavedChanges, setRefreshTrigger]);
 
     const handleCreateNewFromVersion = useCallback((versionContent: string) => {
         const docName = document?.title || 'Untitled';

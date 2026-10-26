@@ -1,11 +1,14 @@
 import { serverConfig } from "../../lib/config";
+import type { ApiKeyPermission } from "../api-keys/types";
 
 /**
  * Shared PocketBase REST client for server-side workspace access.
  *
- * Every request carries the caller's own user token. The superuser token is
- * never accepted here, so PocketBase collection rules and the explicit author
- * checks in the workspace services both stay in force.
+ * Every request carries the caller's own user token. For a long-lived API key,
+ * the server mints an equivalent user token through PocketBase impersonation;
+ * the superuser token itself is never accepted here. PocketBase collection
+ * rules and the explicit author/scope checks in the workspace services both
+ * stay in force.
  */
 
 export interface ToolContext {
@@ -13,6 +16,8 @@ export interface ToolContext {
     authHeader: string;
     /** The authenticated user's PocketBase record id. */
     userId: string;
+    /** Present only when the caller authenticated with an API key. */
+    apiKey?: ApiKeyPermission;
 }
 
 export type ToolErrorCode = "unauthorized" | "not_found" | "invalid_input" | "unavailable";
@@ -40,8 +45,9 @@ export interface PbRequestOptions {
 }
 
 const POCKETBASE_URL = serverConfig.pocketbaseUrl;
-// Workspace writes can copy attachments and version rows into trash. Chat
-// passes its own 8-second signal; REST and MCP use this wider default.
+// Workspace writes can move documents and folders through the soft-delete
+// trash routes. Chat passes its own 8-second signal; REST and MCP use this
+// wider default.
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 function failure(code: ToolErrorCode, message: string): ToolFailure {

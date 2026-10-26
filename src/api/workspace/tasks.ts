@@ -11,6 +11,7 @@ import { loadVisibleNoteReference } from "./notes";
 import { getBoard } from "./boards";
 import {
     assertRecordId,
+    assertWritable,
     clampPaging,
     normalizeStringArray,
     unwrap,
@@ -36,7 +37,6 @@ interface PBTaskRecord {
     labels?: unknown;
     document?: string;
     board?: string;
-    author?: string;
     created?: string;
     updated?: string;
 }
@@ -88,7 +88,6 @@ const TASK_FIELDS = [
     "labels",
     "document",
     "board",
-    "author",
     "created",
     "updated",
 ].join(",");
@@ -116,7 +115,7 @@ async function loadTaskRecord(context: ToolContext, id: string): Promise<PBTaskR
         fields: TASK_FIELDS,
     })}`;
     const record = unwrap(await pbRequest<PBTaskRecord>(path, context));
-    if (typeof record.id !== "string" || record.author !== context.userId) throw notFound();
+    if (typeof record.id !== "string") throw notFound();
     return record;
 }
 
@@ -155,7 +154,6 @@ export async function listTasks(
 
     const { page, perPage } = clampPaging(params.page, params.perPage, 50, 50);
     const conditions = [
-        `author="${escapeFilterString(context.userId)}"`,
         `board="${escapeFilterString(assertRecordId(boardId, "That board id is not valid."))}"`,
     ];
     if (params.status) conditions.push(`status="${params.status}"`);
@@ -197,6 +195,7 @@ export async function createTask(
     surface: Surface = "user",
     input: CreateTaskInput,
 ): Promise<TaskDto> {
+    assertWritable(context);
     await activeBoard(context, surface, input.boardId);
 
     const status = input.status ?? "backlog";
@@ -219,7 +218,6 @@ export async function createTask(
         board_order: boardOrder,
         labels: normalizeStringArray(input.labels),
         board: input.boardId,
-        author: context.userId,
     };
     if (noteId) body.document = noteId;
 
@@ -234,6 +232,7 @@ export async function updateTask(
     id: string,
     patch: UpdateTaskInput,
 ): Promise<TaskDto> {
+    assertWritable(context);
     const current = await loadTaskRecord(context, id);
 
     let targetBoardId = current.board;
@@ -318,6 +317,7 @@ export async function deleteTask(
     surface: Surface = "user",
     id: string,
 ): Promise<void> {
+    assertWritable(context);
     const task = await loadTaskRecord(context, id);
     if (task.board) await getBoard(context, surface, task.board);
 
@@ -336,6 +336,7 @@ export async function addNoteToBoard(
     noteId: string,
     status: TaskStatus = "backlog",
 ): Promise<TaskDto> {
+    assertWritable(context);
     await activeBoard(context, surface, boardId);
     if (!isTaskStatus(status)) throw badRequest("That task status is not valid.");
 

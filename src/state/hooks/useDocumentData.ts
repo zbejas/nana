@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import {
     foldersAtom,
     rootDocumentsAtom,
+    folderDocumentsAtom,
     recentDocumentsAtom,
     trashDocumentsAtom,
     trashFoldersAtom,
@@ -28,6 +29,7 @@ export function useDocumentData({ enabled = true }: { enabled?: boolean } = {}) 
     const { user } = useAuth();
     const effectiveUserId = enabled ? user?.id : undefined;
     const folders = useAtomValue(foldersAtom);
+    const folderDocuments = useAtomValue(folderDocumentsAtom);
     const trashFolders = useAtomValue(trashFoldersAtom);
     const setIsDataLoading = useSetAtom(isDataLoadingAtom);
     const refreshTrigger = useAtomValue(refreshTriggerAtom);
@@ -53,6 +55,7 @@ export function useDocumentData({ enabled = true }: { enabled?: boolean } = {}) 
     // Setup lazy loading for folder documents
     const {
         loadFolderDocuments,
+        reloadFolderDocuments,
     } = useFolderLazyLoading({
         userId: effectiveUserId,
         folders,
@@ -74,6 +77,7 @@ export function useDocumentData({ enabled = true }: { enabled?: boolean } = {}) 
             const epoch = ++refreshEpochRef.current;
             let isCancelled = false;
             const activeUserId = user.id;
+            const loadedFolderIds = [...folderDocuments.keys()];
 
             (async () => {
                 setIsDataLoading(true);
@@ -107,6 +111,13 @@ export function useDocumentData({ enabled = true }: { enabled?: boolean } = {}) 
                     const trashDocsResult = await listTrashDocuments();
                     if (isCancelled || epoch !== refreshEpochRef.current) return;
                     setTrashDocuments(trashDocsResult.items);
+
+                    // Loaded folder lists are not part of the initial data set.
+                    // Refresh them so a moved/restored note leaves or re-enters
+                    // the folder view without relying on a realtime event.
+                    if (loadedFolderIds.length > 0) {
+                        await reloadFolderDocuments(loadedFolderIds);
+                    }
                 } catch (error: any) {
                     if (!isCancelled && !error.isAbort) {
                         logger.error('Failed to refresh data', { error: error.message });
@@ -124,7 +135,16 @@ export function useDocumentData({ enabled = true }: { enabled?: boolean } = {}) 
         }
 
         return;
-    }, [refreshTrigger, user, setIsDataLoading, setRootDocuments, setRecentDocuments, setTrashDocuments]);
+    }, [
+        refreshTrigger,
+        user,
+        folderDocuments,
+        reloadFolderDocuments,
+        setIsDataLoading,
+        setRootDocuments,
+        setRecentDocuments,
+        setTrashDocuments,
+    ]);
 
     return;
 }

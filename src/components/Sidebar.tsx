@@ -268,10 +268,10 @@ export function Sidebar() {
                   reset();
                   handleViewNavigation('/timeline');
                 }}
-                className="flex min-h-11 min-w-0 items-center gap-2.5 rounded-control md:min-h-0"
+                className="-ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-control text-left md:min-h-0"
                 aria-label="Nana home"
               >
-                <img src={logo} alt="" className="h-6 w-6 shrink-0" draggable={false} />
+                <img src={logo} alt="" className="h-8 w-8 shrink-0" draggable={false} />
                 <span className="min-w-0">
                   <span className="block truncate text-[14px] font-semibold leading-none tracking-[-0.02em] text-ink">
                     Nana

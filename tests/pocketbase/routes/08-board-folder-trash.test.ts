@@ -85,8 +85,10 @@ describe("Board folder trash routes", () => {
         expect(data.movedBoardIds).not.toContain(rootBoardId);
         expect(data.movedDocumentIds).toContain(note.id);
 
-        expect(await pbRecordExists(superuserToken, "folders", parent.id)).toBe(false);
-        expect(await pbRecordExists(superuserToken, "folders", child.id)).toBe(false);
+        expect(await pbRecordExists(superuserToken, "folders", parent.id)).toBe(true);
+        expect(await pbRecordExists(superuserToken, "folders", child.id)).toBe(true);
+        expect(await pbRecordExists(superuserToken, "trash_folders", parent.id)).toBe(true);
+        expect(await pbRecordExists(superuserToken, "trash_folders", child.id)).toBe(true);
 
         const rehomedBoard = await pbGetRecord<{ folder: string; is_private: boolean }>(
             user.token,
@@ -99,13 +101,8 @@ describe("Board folder trash routes", () => {
         const keptTask = await pbGetRecord<{ board: string }>(user.token, "tasks", task.id);
         expect(keptTask.board).toBe(board.id);
 
-        expect(await pbRecordExists(superuserToken, "documents", note.id)).toBe(false);
-        const trashedNote = await pbFindFirst<{ id: string }>(
-            superuserToken,
-            "trash_documents",
-            `original_document_id='${note.id}'`,
-        );
-        expect(trashedNote).not.toBeNull();
+        expect(await pbRecordExists(superuserToken, "documents", note.id)).toBe(true);
+        expect(await pbRecordExists(superuserToken, "trash_documents", note.id)).toBe(true);
 
         const untouchedRoot = await pbGetRecord<{ folder: string }>(user.token, "boards", rootBoardId);
         expect(untouchedRoot.folder).toBe("");
@@ -148,6 +145,8 @@ describe("Board folder trash routes", () => {
         expect(task.board).toBe(restoreBoardId);
 
         expect(await pbRecordExists(superuserToken, "trash_folders", restoreTrashFolderId)).toBe(false);
+        expect(await pbRecordExists(superuserToken, "folders", restoredParent!.id)).toBe(true);
+        expect(await pbRecordExists(superuserToken, "folders", restoredChild!.id)).toBe(true);
 
         const untouchedRoot = await pbGetRecord<{ folder: string }>(user.token, "boards", rootBoardId);
         expect(untouchedRoot.folder).toBe("");
@@ -193,9 +192,7 @@ describe("Board folder trash routes", () => {
         expect(await pbRecordExists(superuserToken, "trash_folders", moved.trashFolderId)).toBe(false);
         expect(await pbRecordExists(superuserToken, "folders", parent.id)).toBe(false);
         expect(await pbRecordExists(superuserToken, "documents", note.id)).toBe(false);
-        expect(
-            await pbFindFirst(superuserToken, "trash_documents", `original_document_id='${note.id}'`),
-        ).toBeNull();
+        expect(await pbRecordExists(superuserToken, "trash_documents", note.id)).toBe(false);
 
         const keptBoard = await pbGetRecord<{ folder: string }>(user.token, "boards", board.id);
         expect(keptBoard.folder).toBe("");

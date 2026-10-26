@@ -112,11 +112,11 @@ Critical rules:
 - Read atoms with `useAtomValue()`; write with `useSetAtom()`. Avoid `useAtom` when only one side is needed.
 - Use write-only action atoms (`resetEditorAtom`, `startNewDocumentAtom`, `selectDocumentAtom`, `saveDocumentAtom`) for editor transitions.
 - Folder documents load lazily through `useFolderLazyLoading()` when a folder is expanded.
-- Realtime subscriptions are initialized once per user session by `useRealtimeSubscriptions()`; it consumes PocketBase SSE for documents, folders, and trash.
+- Realtime subscriptions are initialized once per user session by `useRealtimeSubscriptions()`; it consumes PocketBase SSE for documents and folders. Trash is a soft-delete state and a record leaving the collection list rule does not produce a usable realtime event, so every trash/restore mutation bumps `refreshTriggerAtom` and reloads active, trash, and already-loaded folder lists. The `trash_*` views do not emit realtime events.
 - `initialLoadDoneAtom` is stored in `sessionStorage` on purpose: it tracks one browser session.
 - Client preferences (sidebar width, auto-save delay, default homepage, last non-document route, expanded folders) live in `src/lib/settings.ts` and `localStorage`, not Jotai.
 
-Initial load order is recent documents, root documents, folders + trash folders, then trash documents. A 20-second timeout unblocks the UI if PocketBase is slow; don't remove it without a replacement.
+Initial load order is recent documents, root documents, folders + trash folders, then trash documents. Trash folders/documents come from the read-only `trash_folders`/`trash_documents` views. A 20-second timeout unblocks the UI if PocketBase is slow; don't remove it without a replacement.
 
 ### Timeline
 
@@ -183,7 +183,7 @@ Boards are created and opened from the surfaces that already hold them.
 - `New board` and the folder context menu's `New board` create in the current folder, or in the folder the context menu was opened on. `BoardDialog` receives that `folderId`; a successful create navigates to the new board.
 - Boards are draggable between folders like notes. The drop calls `updateBoard(board.id, { folder })`; an empty destination is the root. The PocketBase guard validates folder ownership.
 - Editing a board opens `BoardDialog` with the board, its current folder selected, and a folder selector for moving it without drag. The dialog can also archive the board.
-- Folder trash and permanent delete rehome boards to the root on the server. The folder view does not list boards in trash; the shared view lists public boards.
+- Folder trash and permanent delete rehome boards to the root on the server. The folder view does not list boards in trash; the shared view lists public boards. Moving a folder or note to trash keeps its id, so the trash editor reads the same record through a `trash_*` view.
 - Archived boards are absent from folder views; `/board/archive` owns restore and permanent delete.
 
 ### Add to board
@@ -223,7 +223,8 @@ The board detail header uses a different flow: `ImportNoteDialog` imports into t
 - Notes over 5 MB warn; over the 100 MB database limit the warning becomes an error. Thresholds live in `ContentSizeWarning.tsx`.
 - Sidebar: full sidebar docked at `>=1024px`; 768–1023px uses the 64px rail with the full sidebar as an overlay; below 768px the sidebar is an overlay plus a bottom navbar. Folder trees are in `src/components/sidebar/`; folder contents in `src/components/folder-view/`; drag-and-drop in `src/components/file-folder-handling/`.
 - The sidebar Library tree mixes root notes and root boards; an expanded folder shows its notes and boards together. `useSidebarBoards()` loads active boards through `listBoards()` and refreshes on board realtime events. Board rows use the column icon, private lock, public-share icon, Open/Edit/Share menu, and drag between folders. The Library header includes **New board** and **Archived boards**; the global **New** button opens `NewContentMenu` with New note and New board.
-- Settings: `/settings/account`, `/settings/preferences`, `/settings/admin/general|people|email|signin|ai`, `/settings/about`. The URL owns the tab. AI covers providers, models, generation parameters, and prompts; there is no embedding or search-index section. General edits attachment limits and two per-IP rate-limit scopes (workspace API and app/AI) through `/api/v1/admin/rate-limits`; a saved rate-limit change reloads the limiter immediately.
+- Settings: `/settings/account`, `/settings/api-keys`, `/settings/preferences`, `/settings/admin/general|people|email|signin|ai`, `/settings/about`. The URL owns the tab. AI covers providers, models, generation parameters, and prompts; there is no embedding or search-index section. General edits attachment limits and two per-IP rate-limit scopes (workspace API and app/AI) through `/api/v1/admin/rate-limits`; a saved rate-limit change reloads the limiter immediately.
+- API keys (`src/components/settings/ApiKeysTab.tsx`) are self-service for every user. Create asks for a name, `read`/`write` access, and a scope (`workspace`, `root`, or selected folders). Folder selection is a checkbox tree loaded from the regular folder collection; selected roots include their descendants. The created secret is shown once in a non-dismissable dialog with copy and a warning; list rows show the prefix, access/scope badges, folder names, last use, and revoke. The tab also shows the `/mcp` Bearer header. Management always uses the session token, never a key.
 - Public pages fetch through `/api/v1/public/...` and skip authenticated app data; `AppContent` disables `useDocumentData()` for `/public/`. Documents, folders, and boards each have a public reader route; a folder share lists its notes and boards in the contents tree and opens either reader inline, while `PublicBoardPage` renders the board description and status-grouped tasks without task-note links.
 - Stored Markdown that still contains `/pb/api/files/...` is rewritten to `/api/v1/files/...` by the Markdown `img`/`a` renderers (`src/lib/legacy-urls.ts`). There is no compatibility `/pb` route.
 - The `PublicShareModal` supports documents, folders, and boards. Boards hide the attachment switch because they have no files. The `Private` switch hides the record from AI chat and MCP and from shared parents; a private board cannot be public. It does not hide the record from its owner.
@@ -283,6 +284,9 @@ Performance:
 - **Board drag moves the folder only.** `useFileFolderDnD` calls `updateBoard(id, { folder })`; it does not touch the board's tasks, archive state, or `name`/`description`.
 - **Editing a board does not move it.** `BoardDialog` sends the folder only on create. Moving is a drag or the folder context menu, not an implicit edit side effect.
 - **Folder trash keeps boards.** The server rehomes boards to the root before removing the folder. Do not add a client-side board delete loop or treat a missing folder as a deleted board.
+- **Trash views are read-only.** Do not subscribe to `trash_documents`/`trash_folders` or write to them. Use `/api/v1/trash/*` for moves/restores, then bump `refreshTriggerAtom`; a soft-delete transition does not produce a realtime event because the record stops matching the list rule.
+- **Notes and folders soft-delete.** `deleted_at` is the trash flag; the id and attachments do not change. Do not recreate a trashed record or copy its attachments client-side.
+- **Tasks have no `author` field.** Use `board.author`/board ownership; do not add an author column to task rows or payloads.
 - **The private lock is not a UI gate.** `/api/v1` and the browser client still show private records to their owner; chat and MCP hide them. The lock icon only explains the state.
 - **The board detail passes `undefined` to `useBoardState` while archived.** That is what prevents task loading; don't “fix” it by always passing `boardId`.
 - **Search pauses dragging.** A filtered column has a different index than the stored order; allowing a drop would write the wrong `board_order`.

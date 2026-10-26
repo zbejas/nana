@@ -115,7 +115,7 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 - **Styling:** theme-aware Tailwind utilities over the Graphite tokens; reuse `src/components/ui/` before adding a primitive. See [`../DESIGN.md`](../DESIGN.md).
 - **PocketBase hooks:** CommonJS `require()`, synchronous, `$os.getenv()`, `$app`.
 - **Bun:** stay on 1.4.4 or newer. Bun 1.3.x can emit a production `dist/index.html` that points at the wrong entry chunk, leaving the SPA blank. The Docker and CI pins are 1.4.4.
-- **Migrations:** append-only; the next free number is `0000022`. Use `migrate((app) => {}, (app) => {})`, a safe `down()`, and idempotent guards.
+- **Migrations:** append-only; the next free number is `0000025`. Use `migrate((app) => {}, (app) => {})`, a safe `down()`, and idempotent guards.
 
 ### Common tasks
 
@@ -165,7 +165,7 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 
 #### Add a migration
 
-1. Create `pocketbase/pb_migrations/0000022_<description>.js`.
+1. Create `pocketbase/pb_migrations/0000025_<description>.js`.
 2. Use the `migrate(up, down)` format.
 3. Guard field/collection additions and removals.
 4. Include a real `down()`.
@@ -179,14 +179,14 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 3. Preserve the required `tasks.board` relation, the archive-first delete rule, and the optional `boards.folder` relation.
 4. If you change the backfill, keep `0000018`'s order: optional relation → backfill → required relation → rules.
 5. Remember that deleting an archived board cascades tasks but never notes.
-6. Board folder writes need `guards/board_guards.js`; folder trash must rehome boards, never delete them.
-7. Update `tests/pocketbase/guards/03-task-rules.test.ts`, `04-board-rules.test.ts`, and `05-board-folders.test.ts`; add folder-trash coverage in `routes/08-board-folder-trash.test.ts`, then run the Docker suite.
+6. Incoming folder/parent/board/document writes need `guards/relation_guards.js`; folder trash must rehome boards, never delete them.
+7. Update `tests/pocketbase/guards/03-task-rules.test.ts`, `04-board-rules.test.ts`, `05-board-folders.test.ts`, and `06-relation-integrity.test.ts`; add folder-trash coverage in `routes/08-board-folder-trash.test.ts`, then run the Docker suite.
 
 #### Change AI tools
 
 1. Read [`ai.md`](ai.md) first. Chat tools are read-only; MCP is the separate write surface.
 2. Keep chat tools scoped to `context.authHeader` / `context.userId`. Never use the superuser token for tools.
-3. Add or preserve author scoping: filter lists on `author`, and verify `record.author` on single-record reads, even when PocketBase rules also enforce it.
+3. Add or preserve ownership scoping: filter lists on `author` (or `board.author` for tasks), and verify the owner on single-record reads, even when PocketBase rules also enforce it.
 4. Apply the private lock. Lists use `aiVisibilityConditions()`; reads and writes check `noteIsLocked()` / `boardIsLocked()` and return `not_found` for hidden records.
 5. Keep queries bounded (`perPage`, line windows, byte caps) and keep the 8-second tool timeout.
 6. If you add or rename a chat tool, update `CHAT_TOOL_NAMES` in `src/api/chat/tools/index.ts` and the label map in `src/pages/ChatPage.tsx`; persisted activity is allowlisted. MCP tool names are not persisted.
@@ -210,9 +210,9 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 - **`bun run dev` does not start PocketBase.** Use the dev compose stack unless PocketBase is already running.
 - **SSE needs `server.timeout(req, 0)`.** Chat and PocketBase realtime connections are cut off otherwise.
 - **Tool loops need an explicit stop condition.** `streamText` stops after one step without `stopWhen(stepCountIs(8))`, so list → read chains fail.
-- **Archived boards block task writes.** A task update returns an error while the board is archived; deletes still work. This is enforced by PocketBase rules plus `pb_hooks/guards/task_guards.js`.
-- **Task moves need the request guard.** The update rule sees the stored board, not the incoming one. `task_guards.js` validates the new `board` relation for ownership and archived state.
-- **Board folder moves need their own guard.** PocketBase relation rules see the stored board, so `board_guards.js` validates the incoming `folder`. Folder trash must rehome boards to the root; `boards.folder` does not cascade.
+- **Archived boards block task writes.** A task update returns an error while the board is archived; deletes still work. This is enforced by PocketBase rules plus `pb_hooks/guards/relation_guards.js`.
+- **Incoming relations need the request guard.** The update rule sees the stored record, not the incoming one. `relation_guards.js` validates `folder`, `parent`, `board`, and `document` for ownership and trashed state.
+- **Folder moves need their own guard.** PocketBase relation rules see the stored record, so `relation_guards.js` validates the incoming `parent` and rejects cycles. Folder trash must rehome boards to the root; `boards.folder` does not cascade.
 - **Private is an AI lock, not an owner lock.** `loadAiVisibility()` applies to chat and MCP. `/api/v1` and the browser client deliberately show private records to their owner.
 - **MCP is stateless and POST-only.** A new server and transport handle one request; there is no session to reuse. `/mcp` is not chat and does not share its read-only rule.
 - **`/docs` is public.** The OpenAPI document and self-hosted Scalar assets need no token. `/api/v1` and `/mcp` do.
@@ -250,12 +250,15 @@ For larger tasks:
 
 - **`bun run build` is mandatory before shipping**, even when the Docker suite passes. The suite runs source, not the production bundle.
 - **Docs-only changes still need a link check.** There is no docs build or Markdown linter; verify every relative link and every named path manually or with `grep`/`ls`.
-- **The next migration is `0000022`.** Do not reuse `0000018`–`0000021`; they are applied.
+- **The next migration is `0000025`.** Do not reuse `0000018`–`0000024`; they are applied.
 - **Board and task data is user data.** Never use `pb_data` fixtures from the host in tests, and never edit an applied migration in place.
 - **`useDocumentData()` is a single call site.** Moving it into a page duplicates subscriptions and breaks the initial-load order.
 - **The root AddToBoard host is the only picker.** New entry points set `addToBoardRequestAtom`; they do not open their own dialog.
 - **The chat tool set is a security boundary.** Chat stays read-only. MCP is the separate write surface and must keep user-token auth, author scoping, and the private lock.
 - **A folder delete never deletes boards.** `boards.folder` has `cascadeDelete: false`; the trash routes rehome boards to the root.
+- **Trash is soft delete.** Notes and folders keep their id, attachments, and versions while `deleted_at` is set. Use `/api/trash/*`; direct deletes are superuser-only.
+- **Hard-deleting a folder cascades.** `folders.parent` and `documents.folder` cascade, so permanent folder delete removes the subtree. Soft delete does not.
+- **Tasks have no author field.** Ownership is `board.author`; do not reintroduce a second source of truth.
 
 ## Related docs
 

@@ -6,11 +6,12 @@ import {
     type ToolFailure,
     type ToolResult,
 } from "../pocketbase/client";
-import { ApiError, badRequest, notFound, unauthorized, upstream } from "./errors";
+import { ApiError, badRequest, forbidden, notFound, unauthorized, upstream } from "./errors";
 import {
     folderIsLocked,
-    loadAiVisibility,
-    type AiVisibility,
+    loadWorkspaceVisibility,
+    unrestrictedVisibility,
+    type WorkspaceVisibility,
 } from "./privacy";
 import type { Surface } from "./types";
 
@@ -45,14 +46,25 @@ export function unwrap<T extends object>(result: ToolResult<T>): T {
     return value as T;
 }
 
-/** AI surfaces get the computed hidden subtree; user surfaces see everything. */
+/**
+ * Effective visibility for this caller. A session on the owner surface has no
+ * restrictions and returns immediately. AI surfaces compute the private
+ * subtree; API keys add their folder envelope even on the owner surface.
+ */
 export async function visibilityFor(
     context: ToolContext,
     surface: Surface,
     signal?: AbortSignal,
-): Promise<AiVisibility> {
-    if (surface !== "ai") return { hiddenFolderIds: new Set<string>() };
-    return unwrap(await loadAiVisibility(context, signal));
+): Promise<WorkspaceVisibility> {
+    if (surface !== "ai" && !context.apiKey) return unrestrictedVisibility();
+    return unwrap(await loadWorkspaceVisibility(context, surface, signal));
+}
+
+/** Refuse mutations for a read-only API key before any record work happens. */
+export function assertWritable(context: ToolContext): void {
+    if (context.apiKey?.access === "read") {
+        throw forbidden("This API key is read-only.");
+    }
 }
 
 export function assertRecordId(value: unknown, message = "That id is not valid."): string {
@@ -69,16 +81,17 @@ export function normalizeFolderId(value: unknown): string | null {
 
 /**
  * Validate a folder relation for create/update. The folder must belong to the
- * caller; AI surfaces additionally refuse hidden folders as not found.
+ * caller and be visible under the effective visibility (AI privacy or API key
+ * scope); hidden folders look missing.
  */
 export async function assertFolderVisible(
     context: ToolContext,
     surface: Surface,
     folderId: string,
-    visibility: AiVisibility,
+    visibility: WorkspaceVisibility,
 ): Promise<PBFolderReference> {
     const id = assertRecordId(folderId, "That folder id is not valid.");
-    if (surface === "ai" && folderIsLocked(visibility, id)) throw notFound();
+    if (folderIsLocked(visibility, id)) throw notFound();
 
     const path = `/api/collections/folders/records/${encodeURIComponent(id)}${queryString({
         fields: "id,parent,is_private,author",

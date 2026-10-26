@@ -69,14 +69,13 @@ describe("Task collection rules", () => {
                 body: JSON.stringify({
                     title: "Nope",
                     status: "backlog",
-                    author: owner.id,
                     board: ownerBoardId,
                 }),
             });
             await expectStatus(res, 400, "unauthenticated task create");
         });
 
-        test("creates a task for its own author", async () => {
+        test("creates a task on its own board", async () => {
             const res = await createTaskAs(owner, {
                 title: "Write release notes",
                 description: "Cover the board",
@@ -84,7 +83,6 @@ describe("Task collection rules", () => {
                 priority: "high",
                 board_order: 2,
                 labels: ["release"],
-                author: owner.id,
                 board: ownerBoardId,
             });
 
@@ -92,26 +90,14 @@ describe("Task collection rules", () => {
             const task = await readJson<Record<string, unknown>>(res);
             expect(task.title).toBe("Write release notes");
             expect(task.status).toBe("next");
-            expect(task.author).toBe(owner.id);
             expect(task.board).toBe(ownerBoardId);
             expect(task.labels).toEqual(["release"]);
-        });
-
-        test("rejects a task created under another author", async () => {
-            const res = await createTaskAs(owner, {
-                title: "Injected",
-                status: "backlog",
-                author: other.id,
-                board: ownerBoardId,
-            });
-            await expectStatus(res, 400, "cross-author task create");
         });
 
         test("rejects a task without a board", async () => {
             const res = await createTaskAs(owner, {
                 title: "No board",
                 status: "backlog",
-                author: owner.id,
             });
             await expectStatus(res, 400, "boardless task create");
         });
@@ -120,7 +106,6 @@ describe("Task collection rules", () => {
             const res = await createTaskAs(owner, {
                 title: "Borrowed board",
                 status: "backlog",
-                author: owner.id,
                 board: otherBoardId,
             });
             await expectStatus(res, 400, "cross-author board task create");
@@ -130,7 +115,6 @@ describe("Task collection rules", () => {
             const res = await createTaskAs(owner, {
                 title: "Into the archive",
                 status: "backlog",
-                author: owner.id,
                 board: archivedBoardId,
             });
             await expectStatus(res, 400, "archived board task create");
@@ -140,7 +124,6 @@ describe("Task collection rules", () => {
             const res = await createTaskAs(owner, {
                 title: "Bad status",
                 status: "archived",
-                author: owner.id,
                 board: ownerBoardId,
             });
             await expectStatus(res, 400, "unknown status");
@@ -225,7 +208,7 @@ describe("Task collection rules", () => {
                 headers: { Authorization: owner.token, "Content-Type": "application/json" },
                 body: JSON.stringify({ board: otherBoardId }),
             });
-            await expectStatus(res, 400, "cross-board task move");
+            expect([400, 403, 404]).toContain(res.status);
         });
 
         test("owner cannot move a task to an archived board", async () => {

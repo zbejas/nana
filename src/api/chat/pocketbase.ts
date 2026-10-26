@@ -2,7 +2,7 @@ import { serverConfig } from "../../lib/config";
 import { getSuperuserToken, invalidateSuperuserToken } from "./superuser";
 import { sanitizeHtml } from "../../lib/sanitize";
 import type { AIConfig } from "../../lib/ai/types";
-import type { PBConversation, ChatMessage, ChatToolActivity, PBListResponse } from "./types";
+import type { PBConversation, PBMessage, ChatMessage, ChatToolActivity, PBListResponse } from "./types";
 import { CHAT_TOOL_NAMES } from "./tools";
 
 const POCKETBASE_URL = serverConfig.pocketbaseUrl;
@@ -143,14 +143,7 @@ async function sanitizeMessage(msg: ChatMessage): Promise<ChatMessage> {
 }
 
 /**
- * Sanitize the content of each ChatMessage before persisting.
- */
-async function sanitizeMessages(messages: ChatMessage[]): Promise<ChatMessage[]> {
-    return Promise.all(messages.map(sanitizeMessage));
-}
-
-/**
- * Create a new conversation with initial messages.
+ * Create a new conversation and persist its initial messages.
  */
 export async function createConversation(
     authHeader: string,
@@ -158,12 +151,17 @@ export async function createConversation(
     initialMessages: ChatMessage[] = []
 ): Promise<PBConversation> {
     const userId = await getUserIdFromAuth(authHeader);
-    const sanitizedMessages = await sanitizeMessages(initialMessages);
 
-    return pbFetch<PBConversation>("/api/collections/conversations/records", authHeader, {
+    const conversation = await pbFetch<PBConversation>("/api/collections/conversations/records", authHeader, {
         method: "POST",
-        body: JSON.stringify({ title, author: userId, messages: sanitizedMessages }),
+        body: JSON.stringify({ title, author: userId }),
     });
+
+    for (const message of initialMessages) {
+        await appendMessage(authHeader, conversation.id, message);
+    }
+
+    return conversation;
 }
 
 /**
@@ -205,40 +203,98 @@ export async function updateConversationTitle(
     );
 }
 
+function messageFilter(conversationId: string): string {
+    return encodeURIComponent(`conversation="${conversationId}"`);
+}
+
 /**
- * Append a message to a conversation's messages JSON array.
+ * Touch the conversation so `updated` (and the sidebar order) reflects the
+ * latest message. Messages are separate records now, so this cannot rely on a
+ * JSON field write.
+ */
+async function touchConversation(authHeader: string, conversationId: string): Promise<void> {
+    const conversation = await getConversation(authHeader, conversationId);
+    await pbFetch<PBConversation>(
+        `/api/collections/conversations/records/${encodeURIComponent(conversationId)}`,
+        authHeader,
+        {
+            method: "PATCH",
+            body: JSON.stringify({ title: conversation.title }),
+        }
+    );
+}
+
+async function nextMessagePosition(authHeader: string, conversationId: string): Promise<number> {
+    const result = await pbFetch<PBListResponse<Pick<PBMessage, "position">>>(
+        `/api/collections/messages/records?filter=${messageFilter(conversationId)}&sort=-position&perPage=1&fields=position`,
+        authHeader
+    );
+    const last = result.items[0];
+    return typeof last?.position === "number" ? last.position + 1 : 0;
+}
+
+/**
+ * Append one message to a conversation.
  */
 export async function appendMessage(
     authHeader: string,
     conversationId: string,
     message: ChatMessage
-): Promise<PBConversation> {
-    // Sanitize the message content before persisting
+): Promise<PBMessage> {
     const sanitizedMessage = await sanitizeMessage(message);
+    const position = await nextMessagePosition(authHeader, conversationId);
 
-    // Fetch current messages, append, and save
-    const conv = await getConversation(authHeader, conversationId);
-    const messages = [...(conv.messages || []), sanitizedMessage];
+    const created = await pbFetch<PBMessage>("/api/collections/messages/records", authHeader, {
+        method: "POST",
+        body: JSON.stringify({
+            conversation: conversationId,
+            role: sanitizedMessage.role,
+            content: sanitizedMessage.content,
+            ...(sanitizedMessage.reasoning ? { reasoning: sanitizedMessage.reasoning } : {}),
+            ...(sanitizedMessage.model ? { model: sanitizedMessage.model } : {}),
+            ...(sanitizedMessage.tools?.length ? { tools: sanitizedMessage.tools } : {}),
+            position,
+        }),
+    });
 
-    return pbFetch<PBConversation>(
-        `/api/collections/conversations/records/${encodeURIComponent(conversationId)}`,
-        authHeader,
-        {
-            method: "PATCH",
-            body: JSON.stringify({ messages }),
-        }
-    );
+    await touchConversation(authHeader, conversationId);
+    return created;
 }
 
 /**
- * Get the messages array from a conversation.
+ * Get every message in a conversation in display order.
  */
 export async function getConversationMessages(
     authHeader: string,
     conversationId: string
 ): Promise<ChatMessage[]> {
-    const conv = await getConversation(authHeader, conversationId);
-    return conv.messages || [];
+    const messages: ChatMessage[] = [];
+    let page = 1;
+    let totalPages = 1;
+
+    do {
+        const result = await pbFetch<PBListResponse<PBMessage>>(
+            `/api/collections/messages/records?filter=${messageFilter(conversationId)}&sort=position,created&perPage=500&page=${page}`,
+            authHeader
+        );
+
+        for (const row of result.items) {
+            if (row.role !== "user" && row.role !== "assistant") continue;
+            const message: ChatMessage = { role: row.role, content: row.content || "" };
+            if (typeof row.reasoning === "string" && row.reasoning) message.reasoning = row.reasoning;
+            if (typeof row.model === "string" && row.model) message.model = row.model;
+            const tools = sanitizeTools(row.tools);
+            if (tools.length > 0) message.tools = tools;
+            messages.push(message);
+        }
+
+        totalPages = typeof result.totalPages === "number" && result.totalPages > 0
+            ? result.totalPages
+            : page;
+        page += 1;
+    } while (page <= totalPages && page <= 100);
+
+    return messages;
 }
 
 /**
@@ -250,25 +306,29 @@ export async function trimLastExchange(
     authHeader: string,
     conversationId: string
 ): Promise<void> {
-    const conv = await getConversation(authHeader, conversationId);
-    const messages = [...(conv.messages || [])];
-
-    // Remove trailing assistant message(s)
-    while (messages.length > 0 && messages.at(-1)?.role === 'assistant') {
-        messages.pop();
+    const result = await pbFetch<PBListResponse<PBMessage>>(
+        `/api/collections/messages/records?filter=${messageFilter(conversationId)}&sort=-position,-created&perPage=50`,
+        authHeader
+    );
+    // Newest first: remove trailing assistant messages, then the user turn.
+    const messages = [...result.items];
+    let index = 0;
+    while (index < messages.length && messages[index]?.role === "assistant") {
+        await deleteMessage(authHeader, messages[index]!.id);
+        index += 1;
     }
-    // Remove the last user message
-    if (messages.length > 0 && messages.at(-1)?.role === 'user') {
-        messages.pop();
+    if (index < messages.length && messages[index]?.role === "user") {
+        await deleteMessage(authHeader, messages[index]!.id);
     }
 
-    await pbFetch<PBConversation>(
-        `/api/collections/conversations/records/${encodeURIComponent(conversationId)}`,
+    await touchConversation(authHeader, conversationId);
+}
+
+async function deleteMessage(authHeader: string, messageId: string): Promise<void> {
+    await pbFetch<void>(
+        `/api/collections/messages/records/${encodeURIComponent(messageId)}`,
         authHeader,
-        {
-            method: "PATCH",
-            body: JSON.stringify({ messages }),
-        }
+        { method: "DELETE" }
     );
 }
 

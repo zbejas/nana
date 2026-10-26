@@ -50,7 +50,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline of recent notes and boards. |
 | **Public sharing** | Share documents, boards, or entire folders (with their notes and boards) via link, with optional expiration. |
 | **Version history** | Save snapshots and restore earlier states when needed. |
-| **Trash system** | Recover deleted content instead of losing it permanently. |
+| **Trash system** | Recover deleted notes and folders intact, including attachments and version history; permanent delete is a separate step. |
 | **Mobile-friendly** | Clean, responsive interface across screen sizes, with dark and light themes. |
 
 ## Boards in folders
@@ -67,7 +67,7 @@ Nana exposes its workspace to your own tools:
 - `/api/v1` — JSON API for folders, notes, boards, and tasks. It is the owner's surface, so private records are visible to their owner.
 - `POST /mcp` — stateless MCP endpoint for AI clients, with tools to read and write the same workspace. Private records stay hidden.
 
-`/api/v1` and `/mcp` authenticate with a PocketBase user token, sent raw or as `Authorization: Bearer <token>`. They use the same origin and the same account as the app; the server adds no separate CORS configuration.
+`/api/v1` and `/mcp` authenticate with a PocketBase user token, sent raw or as `Authorization: Bearer <token>`. For long-lived machine access, create a key in **Settings → API keys** and use it the same way. Keys can be read-only or read/write, and scoped to the whole workspace, the workspace root, or selected folders. Only a hash is stored, and a key can be revoked at any time. MCP still hides private records regardless of scope. The browser app does not accept API keys, and keys use the same origin as the rest of Nana; the server adds no separate CORS configuration.
 
 ## Quick Start
 

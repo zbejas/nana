@@ -21,7 +21,8 @@ routerAdd("PATCH", "/api/admin/attachments", (c) => {
 
 		const maxAttachmentSizeBytes = maxAttachmentSizeMB * 1024 * 1024
 
-		for (const collectionName of ["documents", "trash_documents"]) {
+		// Trash is a view over documents now, so one field update covers both.
+		for (const collectionName of ["documents"]) {
 			const collection = $app.findCollectionByNameOrId(collectionName)
 			const attachmentsField = collection?.fields?.getByName("attachments")
 

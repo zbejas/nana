@@ -4,14 +4,15 @@
 
 Nana is self-hosted, so the operator controls the network boundary. The application still enforces a trust boundary between the browser, the Bun server, and PocketBase, and between one user's data and another's.
 
-Nana exposes three public access paths through the Bun origin: the application API (`/api/chat`, `/api/export`, `/api/admin`), the Elysia `/api/v1` typed workspace API plus browser facade with public docs at `/docs`, and the MCP endpoint at `/mcp`. PocketBase is a loopback-only backend. Chat is read-only. MCP is a separate write-capable AI surface with its own authorization rules. `/api/v1` is the owner surface.
+Nana exposes three public access paths through the Bun origin: the application API (`/api/chat`, `/api/export`, `/api/admin`), the Elysia `/api/v1` typed workspace API plus browser facade with public docs at `/docs`, and the MCP endpoint at `/mcp`. PocketBase is a loopback-only backend. Chat is read-only. MCP is a separate write-capable AI surface with its own authorization rules. `/api/v1` is the owner surface. Both `/api/v1` typed routes and `/mcp` also accept long-lived, scoped API keys for machine clients.
 
 ## Key files
 
 | File | Role |
 | --- | --- |
 | `src/api/auth.ts` | `verifyAuth()` for protected Bun application routes. |
-| `src/api/rest/auth.ts` | `authenticateApiRequest()` for `/api/v1` and `/mcp`; raw/Bearer tokens and `auth-refresh`. |
+| `src/api/rest/auth.ts` | `authenticateApiRequest()` for `/api/v1` and `/mcp`; raw/Bearer tokens, `auth-refresh`, and `nana_…` API key exchange. |
+| `src/api/api-keys/` | Key token format, SHA-256 hashing, superuser-only lookup, impersonation, and owner key management. |
 | `src/api/rest/index.ts` | Elysia routes, request validation, OpenAPI docs, error mapping, browser facade mount. |
 | `src/api/rest/browser/` | Browser facade: auth, allowlisted records, files, realtime relay, trash, admin, public shares. |
 | `src/api/rest/browser/records.ts` | Collection allowlist, author injection, relation ownership, document sanitization. |
@@ -27,10 +28,12 @@ Nana exposes three public access paths through the Bun origin: the application A
 | `src/api/chat/tools/boards.ts` | Author-filtered board/task reads; archived and hidden boards refused. |
 | `src/api/chat/pocketbase.ts` | Message sanitization and tool-activity allowlist. |
 | `src/api/chat/superuser.ts` | Superuser token for admin-only config reads; never used by tools. |
-| `pocketbase/pb_hooks/guards/` | Signup, deletion, trash, version, task, and board-folder guards. |
+| `pocketbase/pb_hooks/guards/` | Signup, deletion, owner lock, folder-cycle, and incoming relation guards. |
 | `pocketbase/pb_hooks/routes/` | Public, trash, and admin routes with ownership checks. |
 | `pocketbase/pb_migrations/0000018_created_boards.js` | Board/task rules and the board delete rule. |
 | `pocketbase/pb_migrations/0000020_boards_in_folders.js` | Board folder relation, private flag, and author/folder index. |
+| `pocketbase/pb_migrations/0000022_relational_remodel.js` | Soft-delete trash views, messages records, owner/relation integrity, and indexes. |
+| `pocketbase/pb_migrations/0000024_api_keys.js` | `api_keys`: hashed machine credentials with no public rules, access, scope, and folder roots. |
 
 ## How it works
 
@@ -66,9 +69,9 @@ Production compose exposes only `:3000`. PocketBase binds to `127.0.0.1:8090`, a
 | --- | --- |
 | Browser session | Local auth store in `src/lib/pocketbase.ts`; token validated through `/api/v1/auth/refresh` on startup and on focus. |
 | Bun application API | `verifyAuth(req)` calls PB `auth-refresh` and returns the user ID. |
-| Elysia typed workspace API | `authenticateApiRequest()` accepts a raw token or `Bearer`, refreshes it, and returns the user ID and refreshed token. |
-| Elysia browser facade | Decodes the JWT for caller id/expiry, then PocketBase verifies the unchanged token on every upstream call. |
-| MCP `/mcp` | The same `authenticateApiRequest()`, before any MCP work. |
+| Elysia typed workspace API | `authenticateApiRequest()` accepts a raw token or `Bearer`, refreshes a session token or exchanges an API key, and returns the user ID plus an optional key scope. |
+| Elysia browser facade | Decodes the JWT for caller id/expiry, then PocketBase verifies the unchanged token on every upstream call. API keys are not JWTs and are rejected. |
+| MCP `/mcp` | The same `authenticateApiRequest()`, before any MCP work; the key's access and scope travel in `ToolContext`. |
 | PocketBase collections | Per-collection API rules (`author = @request.auth.id`, etc.). |
 | PocketBase admin routes | `$apis.requireAuth()` plus `requireAdmin(c)`. |
 | Server-side admin reads | Auto-provisioned PocketBase superuser token. |
@@ -92,7 +95,7 @@ Production compose exposes only `:3000`. PocketBase binds to `127.0.0.1:8090`, a
 - Escapes filter values and accepts ids only when they match `[A-Za-z0-9]{1,64}`.
 - Maps PocketBase `403` and `404` to the same generic `not_found` so another user's ids are not disclosed.
 
-The superuser token is used for `settings.ai_config` and rate-limit configuration only. It is never passed into `ToolContext`.
+The superuser token is used for `settings.ai_config`, rate-limit configuration, and API key lookup/exchange only. It is never passed into `ToolContext` or returned to a client.
 
 ### MCP authorization design
 
@@ -100,10 +103,11 @@ MCP is the separate write-capable AI surface. Its safety does not rely on the ch
 
 | Rule | Implementation |
 | --- | --- |
-| User token only | `handleMcpRequest()` calls `authenticateApiRequest()` and builds `ToolContext` from the caller. No superuser path exists. |
-| Auth before work | A missing or invalid token returns `401` before the server or transport is created. |
-| Author scoping | Every list filters on `author`; every loaded record is checked against `context.userId`; relation targets are checked for ownership. |
-| Private lock | Every tool passes `surface: "ai"` to the workspace services. Lists filter hidden records; reads and writes to hidden records return `not_found`. |
+| Caller credential only | `handleMcpRequest()` calls `authenticateApiRequest()` and builds `ToolContext` from the caller. A session token is refreshed; a key is exchanged for a normal user token. The superuser token never enters `ToolContext`. |
+| Auth before work | A missing, invalid, or revoked token/key returns `401` before the server or transport is created. |
+| Author scoping | Every list filters on the owning record (`author`, or `board.author` for tasks); every loaded record is checked against `context.userId`; relation targets are checked for ownership and trashed state. |
+| Key scope | An API key's `access` and `scope` travel in `ToolContext`. Read-only keys are not offered write tools; folder/root scope hides out-of-envelope records as `not_found`. |
+| Private lock | Every tool passes `surface: "ai"` to the workspace services. Lists filter hidden records; reads and writes to hidden records return `not_found`. A key scope never overrides the private lock. |
 | Stateless | No session id, no server-side session store, no cross-request context. A fresh `McpServer` and transport handle one request. |
 | No CORS | The endpoint is same-origin only, like the rest of the app. |
 | Bounded input | Zod schemas cap ids, names, tags, pages, and per-page sizes; the workspace services re-check enums and bounds. |
@@ -114,6 +118,26 @@ MCP is the separate write-capable AI surface. Its safety does not rely on the ch
 A prompt-injected note or task can at worst cause writes inside the caller's own **visible** workspace: it cannot reach another user's records, and it cannot read or write a private record. It could still delete a visible note (to trash), delete an archived board, or permanently delete a visible task, so MCP clients should treat destructive tools with the same care as any other agent tool.
 
 `/api/v1` is the counterpart owner surface: it uses `surface: "user"`, so private records are visible to their owner. Do not copy the REST handler pattern into an AI surface, and do not copy the AI lock into REST.
+
+### API keys and scopes
+
+API keys are the long-lived alternative to a PocketBase session token for machine clients. They are deliberately narrower than a browser session.
+
+| Property | Implementation |
+| --- | --- |
+| Secret format | `nana_` plus 32 random bytes, base64url. Only a display prefix and a SHA-256 hash are stored in `api_keys`. |
+| Storage | `api_keys` has no public PocketBase rules. Bun reads and writes it with the cached superuser token after verifying the caller; hashes never reach a client. |
+| Exchange | `resolveApiKeyToken()` matches the hash, then `mintUserToken()` calls PocketBase impersonation for the key's `author`. The minted user token is cached in process memory for 15 minutes and never returned to the caller. |
+| Access | `read` blocks every mutation with `403`; MCP also omits write tools. `write` allows mutations inside the scope. |
+| Scope | `workspace` = root plus every folder; `root` = records with no folder and no folders themselves; `folders` = selected root subtrees, including descendants, but never the workspace root. |
+| Revocation | Deleting the key record invalidates the next authentication immediately. There is no expiry field; revocation is the lifecycle control. |
+| Management | Only a signed-in session can list, create, or revoke keys. A key cannot manage keys, even for an admin. |
+| Surfaces | Typed `/api/v1` workspace routes and `/mcp` only. The browser facade, chat, export, and admin routes reject keys. |
+| Private lock | Unchanged. A workspace key still cannot see private records through MCP; `/api/v1` remains the owner surface. |
+
+Scope is applied by the workspace services through the same hidden-folder set used by the AI lock: lists add exclusions, single-record reads and writes check `recordIsLocked()`, and creating or moving into an out-of-scope location returns `404`. The key envelope is not a prompt statement and not a client-side filter.
+
+The superuser token appears in this flow only to read the hashed key record and to mint the user token. It is never put in `ToolContext`, never sent as the downstream workspace authorization, and never returned by an API route.
 
 ### Prompt injection stance
 
@@ -170,7 +194,8 @@ The first user is auto-assigned `admin = true` and `verified = true`. After that
 - Collection names are allowlisted; system collections, schema, logs, backups, and superuser paths are unreachable.
 - Reads forward PocketBase `filter`, `sort`, `expand`, `fields`, and paging only for allowlisted collections.
 - Writes drop unknown fields, ignore browser-supplied `author`, inject the caller id, and remove `author` on update.
-- Folder parents, board folders, task boards, and task note links are checked for ownership before the upstream write.
+- Folder parents, board folders, task boards, and task note links are checked for ownership and trashed state before the upstream write.
+- Trashed records are hidden by `documents`/`folders` list rules; the read-only `trash_*` views are the only owner-visible path.
 - Document `content` is sanitized at the edge; PocketBase file rules and file tokens still protect attachments.
 - Admin routes require `admin = true`; settings routes are admin-only.
 - File routes allowlist `documents`, `users`, and `trash_documents`.
@@ -226,13 +251,14 @@ Never render raw user HTML without sanitization. If you add a new Markdown/HTML 
 ### Board and task access
 
 - `boards` list/view/create/update are author-scoped. Delete requires the owner **and** `archived = true`.
-- `boards.folder` is an optional relation. `guards/board_guards.js` checks the incoming folder on API create/update; the folder must belong to the caller. Clearing it is always allowed.
+- `boards.folder` is an optional relation. `guards/relation_guards.js` checks the incoming folder on API create/update; the folder must belong to the caller and not be trashed. Clearing it is always allowed.
 - `boards.is_private` hides the board from chat and MCP. It does not hide it from its owner, `/api/v1`, or the browser UI.
-- `tasks` list/view/delete are author-scoped. Create/update require the author's own active board: `board.author = @request.auth.id && board.archived = false`.
+- `tasks` list/view/delete require `board.author = @request.auth.id`. Create/update additionally require the board to be active, and a newly set note link must be owned and not trashed. Tasks store no separate author.
 - An archived board blocks task creation and updates, but still allows the owner to delete tasks.
 - Deleting an archived board cascades its tasks through `tasks.board.cascadeDelete`.
 - Notes linked via `tasks.document` are not cascaded; deleting a board never deletes notes.
 - Folder trash clears the folder pointer on affected boards instead of deleting them. A board is never deleted by a folder operation.
+- Documents and folders soft-delete (`deleted_at`) instead of disappearing; normal list/view rules filter them out, and permanent delete is a superuser/internal route.
 - Another user's board, task, folder, note, or private record returns `404` through PocketBase or the workspace services, not a list of forbidden ids.
 
 ### Public shares
@@ -253,6 +279,7 @@ Never commit or expose:
 
 - `pocketbase/pb_data/` (SQLite DB, attachments, credentials).
 - `pocketbase/pb_data/superuser_credentials.json`.
+- API key plaintext. `api_keys` stores only a prefix and a SHA-256 hash.
 - AI provider API keys (`settings.ai_config`).
 - SMTP/OAuth credentials.
 - `.env` files.
@@ -265,10 +292,11 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 - Does a new Bun application route call `verifyAuth()`?
 - Does a new `/api/v1` route sit under the scoped Elysia app so `authenticateApiRequest()` runs?
 - Does a new MCP tool use the caller's token, author scoping, `surface: "ai"`, and the private lock?
+- Does a new workspace read or write respect API key access and scope, including the root/folder boundary?
 - Is chat still read-only? MCP writes belong in the separate surface, not in `src/api/chat/tools/`.
 - Does a new PocketBase admin route call `requireAdmin(c)`?
 - Are PocketBase collection rules still author-scoped?
-- Does a board write validate the incoming `folder` owner through `board_guards.js`?
+- Does a write validate incoming `folder`, `parent`, `board`, and `document` relations through `relation_guards.js`?
 - Could the change expose a private record to chat or MCP? Could it expose `:8090`, a superuser token, or an API key to the browser?
 - Are destructive MCP tools explicit, and does each one preserve its invariant (note → trash, board → archived, task → permanent)?
 - Is new HTML sanitized on the server and client?
@@ -278,7 +306,10 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 
 ## Gotchas & invariants
 
-- **Chat tools must never use the superuser token.** The superuser exists for admin settings reads; using it in `ToolContext` removes the per-user boundary.
+- **Chat tools must never use the superuser token.** The superuser exists for admin settings reads and API key metadata/exchange; using it in `ToolContext` removes the per-user boundary.
+- **API keys store only a hash.** Never add the plaintext, hash, or a reversible secret to logs, list responses, or the OpenAPI examples. `api_keys` stays superuser-only.
+- **A key is exchanged, not trusted as a user token.** The key's `author` is the only source of identity; mint an impersonation token for that user and keep the superuser token out of `ToolContext`.
+- **Key scope is part of the boundary.** A folder-scoped key must never read the root or a sibling subtree, a root-only key must never manage folders, and a read-only key must never reach a mutating service.
 - **Author scoping is mandatory even with PocketBase rules.** Lists filter on `author`; single-record reads check `record.author` before returning. Rules protect the API; service code keeps the result set correct and the intent explicit.
 - **`403` and `404` collapse to one error.** That is deliberate: PocketBase hides records the caller cannot view, and the service must not reveal the difference.
 - **Chat read-only is a security property, not a prompt.** The model cannot be trusted to ignore injected instructions; the chat tool set has no write path.
@@ -294,7 +325,9 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 - **Deleting an active board is blocked at the rule layer.** Do not rely on the UI to enforce archive-first.
 - **Board deletion cascades tasks but not notes.** `tasks.board` has `cascadeDelete: true`; `tasks.document` does not.
 - **Folder delete never deletes boards.** `boards.folder` has `cascadeDelete: false`; the trash routes rehome boards to the root first.
-- **The board folder guard is required.** PocketBase relation rules evaluate the stored record, so the incoming `folder` needs `guards/board_guards.js`.
+- **Incoming relation guards are required.** PocketBase relation rules evaluate the stored record, so `folder`, `parent`, `board`, and `document` need `guards/relation_guards.js`.
+- **Soft-deleted records still exist.** `$app` code bypasses rules, so internal/public queries must check `deleted_at`; the browser never sees trashed records through the live collections.
+- **Direct note/folder deletes are disabled.** `deleteRule` is `null`; only the trash routes can move or permanently delete. Do not loosen this to let a client skip trash.
 - **The browser facade is an allowlist.** No system collections, no client-controlled upstream URLs, no superuser token injection, and no generic PocketBase pass-through.
 - **Rate-limit admin routes are role-checked.** `GET`/`PATCH /api/v1/admin/rate-limits` and the legacy `POST /api/admin/rate-limits/reload` require the PocketBase admin flag, not just a valid token.
 - **The rate limiter is per process.** It does not coordinate across replicas and resets on restart.

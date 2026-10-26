@@ -16,6 +16,7 @@ import { deleteDocument } from '../lib/documents';
 import {
   addToBoardRequestAtom,
   foldersAtom,
+  refreshTriggerAtom,
   selectDocumentAtom,
   startNewDocumentAtom,
 } from '../state/atoms';
@@ -43,6 +44,7 @@ export function TimelinePage() {
   const selectDocument = useSetAtom(selectDocumentAtom);
   const startNewDocument = useSetAtom(startNewDocumentAtom);
   const setAddToBoardRequest = useSetAtom(addToBoardRequestAtom);
+  const setRefreshTrigger = useSetAtom(refreshTriggerAtom);
   const folders = useAtomValue(foldersAtom);
   const { showToast } = useToasts();
   const publicShareModal = usePublicShareModalState();
@@ -244,6 +246,7 @@ export function TimelinePage() {
       await deleteDocument(deleteConfirmState.id);
       removeDocumentFromTimeline(deleteConfirmState.id);
       setDeleteConfirmState(null);
+      setRefreshTrigger((previous) => previous + 1);
       showToast('Note moved to trash', 'info');
     } catch (error) {
       log.error('Failed to delete timeline document', error);

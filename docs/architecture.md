@@ -14,8 +14,9 @@ The system is one deployable with two processes: **Bun** serves the SPA, the app
 | `src/frontend.tsx` | React root, Jotai provider, `AuthProvider`, service-worker registration. |
 | `src/App.tsx` | Router, protected routes, layout, mobile navigation, `useDocumentData()` call site, `AddToBoardHost`. |
 | `src/api/` | Server handlers: chat, export, version, auth, rate limiting, static files. |
-| `src/api/rest/` | Elysia typed workspace API and browser facade, PocketBase token auth, TypeBox schemas, public OpenAPI and Scalar reference. |
-| `src/api/rest/browser/` | Browser-only facade: auth, allowlisted records, files, SSE relay, trash, admin, public shares. |
+| `src/api/rest/` | Elysia typed workspace API and browser facade, PocketBase token/API key auth, TypeBox schemas, public OpenAPI and Scalar reference. |
+| `src/api/api-keys/` | API key token format, hashing, superuser lookup, impersonation, and owner key management. |
+| `src/api/rest/browser/` | Browser-only facade: auth, allowlisted records, files, SSE relay, trash, admin, public shares. Session JWT only. |
 | `src/api/mcp/` | Stateless Streamable HTTP MCP server, tool registration, and per-request transport handling. |
 | `src/api/workspace/` | Shared folder, note, board, and task services used by REST and MCP; `Surface` selection and the AI visibility lock. |
 | `src/api/pocketbase/` | Caller-token PocketBase REST client shared by chat tools, REST services, and MCP. Never accepts the superuser token. |
@@ -33,7 +34,7 @@ The system is one deployable with two processes: **Bun** serves the SPA, the app
 | `src/index.css` | Graphite tokens, self-hosted typefaces, global styles, motion, Markdown overrides. |
 | `src/assets/fonts/` | Self-hosted Geist and Geist Mono files plus the OFL licence. |
 | `src/state/` | Jotai atoms and data, realtime, and lazy-loading hooks. |
-| `pocketbase/pb_hooks/` | JSVM hooks, custom routes, guards (including board folder ownership), mailers, cron, bootstrap. |
+| `pocketbase/pb_hooks/` | JSVM hooks, soft-delete trash and public-share routes, relation/owner guards, mailers, cron, bootstrap. |
 | `pocketbase/pb_migrations/` | Append-only schema and data migrations. |
 | `docker/` | Dockerfile stages, production/dev entrypoint, test entrypoint and compose files. |
 | `tests/` | Unit tests plus integration tests against a real PocketBase and Bun server. |
@@ -55,6 +56,7 @@ Bun :3000 ── src/index.ts
   ├── /pb, /pb/* ─────────▶ 404 (the public PocketBase proxy is gone)
   ├── /docs, /docs/json ──▶ OpenAPI spec + self-hosted Scalar reference (public)
   ├── /mcp ───────────────▶ MCP Streamable HTTP ──▶ workspace services ──▶ PB REST (user token)
+  │                          └── session token or nana_ API key ──▶ PB impersonation
   ├── /api/chat/* ────────▶ AI SDK providers + read tools ──▶ PB REST (user token)
   ├── /api/export ────────▶ PB documents/attachments → Markdown/ZIP
   ├── /api/app/version ───▶ GitHub Releases API
@@ -70,14 +72,14 @@ There is no embedding service, vector store, or background indexer in the topolo
 | Bun | SPA serving, application API routes, Elysia `/api/v1`, public OpenAPI docs, MCP endpoint, auth verification, rate limiting, CSP, export, chat/provider orchestration, workspace services, read-only chat tools | `src/index.ts` |
 | PocketBase | Data, auth records, API rules, schema, hooks, custom routes, mailers, cron; loopback only | `pocketbase/pb_hooks/index.pb.js` |
 | Browser | React UI, Jotai state, `/api/v1` client calls, SSE chat client, SSE realtime relay | `src/frontend.tsx` |
-| API / MCP clients | JSON requests to `/api/v1` or `/mcp` with a PocketBase user token; no browser session required | `src/api/rest/`, `src/api/mcp/` |
+| API / MCP clients | JSON requests to `/api/v1` or `/mcp` with a PocketBase user token or a scoped `nana_…` API key; no browser session required | `src/api/rest/`, `src/api/mcp/`, `src/api/api-keys/` |
 
 ### Page load
 
 1. Bun serves `index.html` and built assets from `dist/` in production, or the HMR bundle in development.
 2. `src/frontend.tsx` mounts React inside `AuthProvider` and the Jotai `Provider`.
 3. `src/App.tsx` validates the stored token through `pb.authStore` and `/api/v1/auth/refresh`.
-4. Authenticated routes call `useDocumentData()` once in `AppContent`, which loads root documents, recents, folders, trash through `/api/v1/records`, and starts the `/api/v1/realtime` SSE relay.
+4. Authenticated routes call `useDocumentData()` once in `AppContent`, which loads root documents, recents, folders, and the read-only trash views through `/api/v1/records`, then starts the `/api/v1/realtime` SSE relay.
 5. `AddToBoardHost` mounts once at the app root and waits for a note request atom.
 
 ### Browser request
@@ -86,27 +88,27 @@ There is no embedding service, vector store, or background indexer in the topolo
 2. Auth calls proxy `/api/v1/auth/*`; records calls hit `/api/v1/records/:collection`; files use `/api/v1/files/*`; live updates use `/api/v1/realtime`.
 3. The browser facade decodes the JWT for the caller id and rejects an expired/missing token with `401`.
 4. Records writes parse JSON or multipart, drop unknown fields and `author`, inject the caller id, validate folder/board/note ownership, and sanitize document content.
-5. Elysia calls PocketBase REST on `127.0.0.1:8090` with the caller's token. PocketBase enforces rules and runs hooks, guards, cascades, trash copying, and file protection.
+5. Elysia calls PocketBase REST on `127.0.0.1:8090` with the caller's token. PocketBase enforces rules and runs hooks, guards, relation cascades, soft-delete routes, and file protection.
 6. The response keeps PocketBase's record shape and `{ code, message, data }` envelope so the SPA's existing error handling stays intact.
 7. Realtime is a streaming relay: the unauthenticated `GET /api/v1/realtime` opens the SSE handshake, and the authenticated `POST /api/v1/realtime` subscribes the client id to topics. Bun's timeout is disabled for the GET.
 
 ### Typed REST request
 
-1. A client calls `/api/v1/folders`, `/notes`, `/boards`, or `/tasks` with a PocketBase user token, sent raw or as `Authorization: Bearer <token>`.
-2. `authenticateApiRequest()` validates it against PocketBase `auth-refresh` and keeps the refreshed token for downstream calls.
+1. A client calls `/api/v1/folders`, `/notes`, `/boards`, or `/tasks` with a PocketBase user token or a `nana_…` API key, sent raw or as `Authorization: Bearer <token>`.
+2. `authenticateApiRequest()` refreshes a session token or hashes the key, looks it up with the superuser, and mints a normal user token through PocketBase impersonation. The key's access/scope joins `ToolContext`.
 3. Elysia validates paths, query strings, and JSON bodies with TypeBox. Validation failures return `422`, malformed JSON returns `400`.
 4. The handler calls a workspace service with `surface: "user"` and the caller's `ToolContext`.
-5. The service calls PocketBase REST with the caller's token, adds author filters and author checks, and maps upstream `403`/`404` to one generic `not_found`.
+5. The service calls PocketBase REST with the caller's user token, adds author and visibility filters, and maps upstream `403`/`404` to one generic `not_found`. A read-only key is rejected with `403` before a mutation.
 6. The response is JSON. Errors are `{ "error": "message" }` with the status from the `ApiError`.
 
 `GET /docs` serves a Scalar API reference and `GET /docs/json` serves the OpenAPI document. Both are public and use self-hosted assets, including the app's Geist fonts; `/api/v1` itself is authenticated. See [`api.md`](api.md) for the endpoint table.
 
 ### MCP request
 
-1. The client sends `POST /mcp` with the same raw or Bearer user token. Every other method returns `405`.
-2. Auth runs before any MCP work; a missing or invalid token returns a plain JSON `401`.
+1. The client sends `POST /mcp` with the same raw or Bearer session token or API key. Every other method returns `405`.
+2. Auth runs before any MCP work; a missing, invalid, or revoked credential returns a plain JSON `401`.
 3. A malformed JSON body returns a JSON-RPC `-32700` parse error. Transport failures return `-32603`.
-4. Bun creates a fresh `McpServer` and a stateless `WebStandardStreamableHTTPServerTransport` for the request. Responses are JSON, not SSE.
+4. Bun creates a fresh `McpServer` and a stateless `WebStandardStreamableHTTPServerTransport` for the request. Responses are JSON, not SSE. Read-only keys get only read tools; folder/root scope is carried in `ToolContext`.
 5. Tool calls run through `src/api/workspace/` with `surface: "ai"`; the read tools reuse the chat executors.
 6. A failed tool returns an MCP `isError` result whose text is `{ "error": { "code", "message" } }`. The HTTP request still succeeds.
 
@@ -116,10 +118,10 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 
 1. Browser posts to `/api/chat/send` with the user token.
 2. `verifyAuth()` validates the token; `fetchAIConfig()` reads `settings.ai_config` with the server superuser token.
-3. Bun creates or appends to a `conversations` record.
+3. Bun creates a `conversations` record, then appends the user turn and the assistant turn to `messages`.
 4. `createChatTools()` builds `list_notes`, `read_note`, `list_boards`, and `read_board`, all using the caller's `Authorization` header and the AI visibility lock.
 5. `streamText()` runs with `stopWhen(stepCountIs(8))`; tools read PocketBase on demand, bounded and author-scoped.
-6. `onFinish` persists the assistant text, reasoning, terminal tool names/statuses, and model name; title generation runs in the background.
+6. `onFinish` persists the assistant text, reasoning, terminal tool names/statuses, and model name as a `messages` row; appending also touches the conversation so it sorts to the top. Title generation runs in the background.
 7. The response is an SSE UI-message stream with `X-Conversation-Id`, `X-Is-New-Conversation`, and `X-Model-Name`.
 
 ### Board request
@@ -128,7 +130,7 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 2. `/board/:boardId` loads one board and `listTasks(boardId)`, sorted by `board_order` and `created`.
 3. The folder view filters active board summaries to the current folder; the shared view lists active `is_public` boards.
 4. Dragging a card writes only the changed rows through `persistTaskPositions()`: `status` and `board_order`, never `board`.
-5. Dragging a board between folders calls `updateBoard(id, { folder })`. PocketBase runs `guards/board_guards.js`, which verifies the incoming folder belongs to the caller.
+5. Dragging a board between folders calls `updateBoard(id, { folder })`. PocketBase runs `guards/relation_guards.js`, which verifies the incoming folder belongs to the caller and is not trashed.
 6. Realtime task events refresh the open board; board and task events refresh timeline and folder summaries after a short debounce.
 7. Archiving is a board `PATCH { archived: true }`. Permanent delete is allowed only for archived boards and cascades their tasks.
 8. Public board links use `public_share_token`; `/api/public/boards/:token` validates `is_public`, privacy, expiry, and archive state before returning tasks.
@@ -138,11 +140,11 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 | Flow | Path |
 | --- | --- |
 | Document save | Browser → `/api/v1/records/documents` (JSON or multipart) → Elysia author/relation/sanitize checks → PB hooks (word count, version snapshot) → response |
-| Document delete | Browser → `/api/v1/records/documents/:id` DELETE → PB removes the document and versions; no external index to update |
-| Trash move | Browser → `/api/v1/trash/move-document` → PB copies to `trash_*` and deletes the original |
-| Trash restore | Browser → `/api/v1/trash/restore-document` → PB moves the record back |
-| Folder trash | Browser → `/api/v1/trash/move-folder` → PB copies the subtree, moves documents to trash, rehomes boards to the root → `{ trashFolderId, movedDocumentIds, movedBoardIds }` |
-| Board folder move | Browser → `PATCH /api/v1/records/boards/:id { folder }` → Elysia folder ownership + `board_guards.js` → realtime refresh |
+| Document delete | Browser → `/api/v1/trash/move-document` → PB sets `deleted_at`/`deleted_by` and clears sharing; the record, attachments, and versions stay in place |
+| Trash move | Browser → `/api/v1/trash/move-document` → PB marks the live document deleted; `trash_documents` is a read-only view over it |
+| Trash restore | Browser → `/api/v1/trash/restore-document` → PB clears the soft-delete fields; a note whose folder is trashed is re-rooted |
+| Folder trash | Browser → `/api/v1/trash/move-folder` → PB marks the subtree and its documents, rehomes boards to the root → `{ trashFolderId, movedDocumentIds, movedBoardIds }` |
+| Board folder move | Browser → `PATCH /api/v1/records/boards/:id { folder }` → Elysia folder ownership + `guards/relation_guards.js` → realtime refresh |
 | Task move | Browser → `PATCH /api/v1/records/tasks/:id` (`status`, `board_order`) → realtime refresh |
 | Timeline boards | Browser → `boards` + `tasks` (`fields=board,status`) → per-board open/done/total counts → merged with notes |
 | Folder view boards | Browser → `listBoardSummaries()` → filter active boards by `folder = currentFolderId`; shared view filters `is_public` |
@@ -211,13 +213,16 @@ Production detection is deliberate: Bun treats the app as production only when `
 - **A task requires a board.** The `board` relation is required after migration `0000018_created_boards.js`; UI code cannot create a task without one.
 - **Archived boards freeze task writes.** `createRule`/`updateRule` require `board.archived = false`. Deletion of a task on an archived board remains allowed.
 - **Deleting an archived board cascades its tasks.** The `tasks.board` relation has `cascadeDelete: true`; notes linked through `tasks.document` stay in the library.
-- **Boards in folders need a request guard.** PocketBase relation rules see the stored board, so `guards/board_guards.js` checks the incoming `folder` on create/update. Removing it allows filing a board into another user's folder.
+- **Incoming relations need a request guard.** PocketBase relation rules see the stored record, so `guards/relation_guards.js` checks `folder`, `parent`, `board`, and `document` on create/update. Removing it allows filing a record into another user's folder or linking a foreign/trashed note.
 - **Folder trash rehomes boards.** `boards.folder` uses `cascadeDelete: false`; `move-folder` and permanent folder delete clear the folder pointer instead of deleting boards. `movedBoardIds` reports the rehomed rows from a trash move.
+- **Trash is a soft-delete state.** `documents` and `folders` keep their ids, attachments, and versions while `deleted_at` is set. `trash_documents` and `trash_folders` are read-only views; direct deletes are superuser-only.
+- **Hard-deleting a folder cascades.** `folders.parent` and `documents.folder` cascade, so permanent folder delete removes the subtree, notes, versions, and attachments. Soft delete does not trigger the cascade.
+- **Tasks have no `author`.** Ownership comes from `board.author`; the board relation cascades and the note link does not.
 - **`0000020` adds an optional folder relation without a backfill.** Existing boards stay at the workspace root until someone moves them.
 - **Board summaries count tasks from one query.** `listBoardSummaries()` includes boards with no tasks; don't replace it with per-board requests.
 - **`useDocumentData()` runs once.** It is called at `AppContent` and nowhere else; board pages own their own task state.
 - **Rate limits apply before the workspace surfaces.** `/api/v1`, `/docs`, and `/mcp` pass through `checkRateLimit()` at the Bun edge. REST and MCP requests get a 60-second Bun request ceiling; workspace PocketBase calls default to 30 seconds, while chat tool calls keep their 8-second signal.
-- **Migrations run on container boot.** The entrypoint runs `PB_MIGRATING=1 pocketbase migrate up` before starting either process; a fresh test database therefore includes `0000020`.
+- **Migrations run on container boot.** The entrypoint runs `PB_MIGRATING=1 pocketbase migrate up` before starting either process; a fresh test database therefore includes `0000022`.
 
 ## Related docs
 

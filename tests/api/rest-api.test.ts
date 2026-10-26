@@ -163,13 +163,22 @@ describe("public OpenAPI docs", () => {
             openapi: string;
             info: { title: string; version: string };
             paths: Record<string, unknown>;
+            "x-tagGroups"?: Array<{ name: string; tags: string[] }>;
         }>(res, "openapi spec");
 
         expect(spec.openapi).toMatch(/^3\./);
         expect(spec.info.title).toBe("Nana API");
         expect(Object.keys(spec.paths)).toEqual(
-            expect.arrayContaining(["/api/v1/notes", "/api/v1/boards", "/api/v1/folders"]),
+            expect.arrayContaining([
+                "/api/v1/notes",
+                "/api/v1/boards",
+                "/api/v1/folders",
+                "/api/v1/api-keys",
+            ]),
         );
+        expect(spec["x-tagGroups"]).toEqual([
+            { name: "Workspace", tags: ["Folders", "Notes", "Boards", "Tasks", "API keys"] },
+        ]);
     });
 
     test("GET /docs serves the self-hosted API reference assets", async () => {
@@ -402,12 +411,13 @@ describe("folders and notes", () => {
 
         expect(await pbRecordExists(owner.token, "documents", note.id)).toBe(false);
 
-        const trash = await pbGetRecord<{ original_document_id: string }>(
+        const trash = await pbGetRecord<{ id: string; deleted_at: string }>(
             owner.token,
             "trash_documents",
             result.trashDocumentId,
         );
-        expect(trash.original_document_id).toBe(note.id);
+        expect(trash.id).toBe(note.id);
+        expect(trash.deleted_at.length).toBeGreaterThan(0);
 
         const getRes = await restGet(`/notes/${note.id}`, owner.token);
         await expectJsonError(getRes, 404, "not found");
