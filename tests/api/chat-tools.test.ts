@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { listBoards, readBoard } from "../../src/api/chat/tools/boards";
+import { listFoldersForChat } from "../../src/api/chat/tools/folders";
 import type { ToolContext } from "../../src/api/chat/tools/http";
 import { listNotes, readNote } from "../../src/api/chat/tools/notes";
 import {
@@ -540,5 +541,28 @@ describe("read_board", () => {
         expect(badColumn.ok).toBe(false);
         if (badColumn.ok) return;
         expect(badColumn.code).toBe("invalid_input");
+    });
+});
+
+
+describe("list_folders", () => {
+    test("lists visible folders and hides private subtrees", async () => {
+        const visible = await createFolder(owner, { name: "Visible chat folder" });
+        const result = await listFoldersForChat(ownerContext);
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        const ids = result.folders.map((folder) => folder.id);
+        expect(ids).toContain(visible.id);
+        expect(ids).not.toContain(privateFolder.id);
+        expect(ids).not.toContain(privateChildFolder.id);
+    });
+
+    test("never returns another user's folders", async () => {
+        const foreign = await createFolder(other, { name: "Other user's folder" });
+        const result = await listFoldersForChat(ownerContext);
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.folders.map((folder) => folder.id)).not.toContain(foreign.id);
     });
 });

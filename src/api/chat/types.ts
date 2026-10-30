@@ -109,8 +109,9 @@ export interface PBListResponse<T> {
 
 // ── Chat edits ───────────────────────────────────────────────────────
 
-export type ChatEditTargetType = "document" | "board" | "task";
-export type ChatEditStatus = "applied" | "undone" | "failed";
+export type ChatEditTargetType = "document" | "board" | "task" | "folder";
+/** `pending` actions require an explicit user confirmation before execution. */
+export type ChatEditStatus = "pending" | "applied" | "undone" | "cancelled" | "failed";
 export type ChatEditUndoKind = "trash" | "restore" | "none";
 
 /** Where an AI write landed. `url` is generated from the target type. */

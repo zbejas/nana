@@ -27,6 +27,7 @@ import { CalendarFilterPanel } from '../components/timeline/CalendarFilterPanel'
 import { TimelineBoardCard } from '../components/timeline/TimelineBoardCard';
 import { TimelineDocumentCard } from '../components/timeline/TimelineDocumentCard';
 import { NewContentMenu } from '../components/NewContentMenu';
+import { ChatHeaderButton } from '../components/chat/ChatHeaderButton';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('Timeline');
@@ -321,6 +322,7 @@ export function TimelinePage() {
               >
                 New
               </Button>
+              <ChatHeaderButton />
             </>
           }
         />

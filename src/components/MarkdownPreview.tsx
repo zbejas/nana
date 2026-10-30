@@ -1,5 +1,5 @@
 import MDEditor from '@uiw/react-markdown-preview';
-import { rehypeSanitizePlugin } from '../lib/sanitize';
+import { rehypeNormalizeAlertClasses, rehypeSanitizePlugin } from '../lib/sanitize';
 import { rewriteLegacyFileUrl } from '../lib/legacy-urls';
 import { useTheme } from '../lib/theme';
 
@@ -30,7 +30,7 @@ export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProp
     <MDEditor
       source={content}
       skipHtml={true}
-      rehypePlugins={[rehypeSanitizePlugin]}
+      rehypePlugins={[rehypeNormalizeAlertClasses, rehypeSanitizePlugin]}
       components={previewTagFallbacks}
       className={className}
       style={{

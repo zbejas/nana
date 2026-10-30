@@ -227,6 +227,73 @@
     color: var(--ink-secondary);
   }
 
+  .nana-milkdown .ProseMirror blockquote.nana-alert {
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--line-strong);
+    border-left-width: 3px;
+    border-radius: 6px;
+    background: var(--surface-sunken);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert::before {
+    display: block;
+    margin-bottom: 0.4rem;
+    content: attr(data-alert-label);
+    font-size: 0.78em;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert .nana-alert-marker {
+    display: none;
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-note {
+    border-left-color: var(--alert-note-border);
+    background: var(--alert-note-soft);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-note::before {
+    color: var(--alert-note);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-tip {
+    border-left-color: var(--alert-tip-border);
+    background: var(--alert-tip-soft);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-tip::before {
+    color: var(--alert-tip);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-important {
+    border-left-color: var(--alert-important-border);
+    background: var(--alert-important-soft);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-important::before {
+    color: var(--alert-important);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-warning {
+    border-left-color: var(--alert-warning-border);
+    background: var(--alert-warning-soft);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-warning::before {
+    color: var(--alert-warning);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-caution {
+    border-left-color: var(--alert-caution-border);
+    background: var(--alert-caution-soft);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-caution::before {
+    color: var(--alert-caution);
+  }
+
   .nana-milkdown .ProseMirror code {
     padding: 0.12em 0.34em;
     border: 1px solid var(--line);

@@ -164,7 +164,8 @@ function normalizeChanges(value: unknown): ChatEditChanges {
 
 function normalizeEditStatus(value: unknown): ChatUiEdit['status'] {
   const status = stringValue(value, 'applied');
-  if (status === 'applying' || status === 'pending') return 'applying';
+  if (status === 'applying') return 'applying';
+  if (status === 'pending' || status === 'cancelled') return status;
   if (status === 'applied' || status === 'undone' || status === 'failed' || status === 'conflict') {
     return status;
   }
@@ -184,16 +185,24 @@ export function normalizeEdit(value: unknown): ChatUiEdit | null {
   const targetUrl = stringValue(rawTarget.url, record.url)
     || (targetType === 'document' && targetId
       ? `/document/${encodeURIComponent(targetId)}`
-      : targetType === 'board' && targetId
-        ? `/board/${encodeURIComponent(targetId)}`
-        : '');
+      : targetType === 'folder' && targetId
+        ? `/folders/${encodeURIComponent(targetId)}`
+        : targetType === 'board' && targetId
+          ? `/board/${encodeURIComponent(targetId)}`
+          : '');
 
   if (!targetId) return null;
 
   const target: ChatEditTarget = {
-    type: targetType === 'board' ? 'board' : targetType === 'task' ? 'task' : 'document',
+    type: targetType === 'board'
+      ? 'board'
+      : targetType === 'task'
+        ? 'task'
+        : targetType === 'folder'
+          ? 'folder'
+          : 'document',
     id: targetId,
-    title: targetTitle || (targetType === 'board' ? 'Board' : 'Note'),
+    title: targetTitle || (targetType === 'board' ? 'Board' : targetType === 'folder' ? 'Folder' : 'Note'),
     url: targetUrl,
   };
 
@@ -660,4 +669,27 @@ export async function undoEdit(auth: ChatAuth, editId: string): Promise<ChatUiEd
   if (!response.ok) throw errorFromResponse(response.status, data);
   const record = asRecord(data);
   return normalizeEdit(record.edit ?? data);
+}
+
+async function resolvePendingAction(
+  auth: ChatAuth,
+  editId: string,
+  action: 'confirm' | 'cancel',
+): Promise<ChatUiEdit | null> {
+  const response = await fetch(
+    `${CHAT_BASE}/edits/${encodeURIComponent(editId)}/${action}`,
+    { method: 'POST', headers: authHeaders(auth) },
+  );
+  const data = await readJson(response);
+  if (!response.ok) throw errorFromResponse(response.status, data);
+  const record = asRecord(data);
+  return normalizeEdit(record.edit ?? data);
+}
+
+export async function confirmEdit(auth: ChatAuth, editId: string): Promise<ChatUiEdit | null> {
+  return resolvePendingAction(auth, editId, 'confirm');
+}
+
+export async function cancelEdit(auth: ChatAuth, editId: string): Promise<ChatUiEdit | null> {
+  return resolvePendingAction(auth, editId, 'cancel');
 }

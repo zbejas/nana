@@ -12,6 +12,8 @@ import {
   useChatContextTarget,
 } from '../../lib/chat/context';
 import {
+  cancelDelete,
+  confirmDelete,
   retryLastMessage,
   sendMessage,
   setActiveConversation,
@@ -152,6 +154,7 @@ export function ChatThread({
             ) : isEmpty ? (
               <ChatEmptyState
                 target={target}
+                mode={mode}
                 configured={status?.configured ?? null}
                 onPrompt={prompt}
                 onOpenSettings={onOpenSettings}
@@ -163,6 +166,8 @@ export function ChatThread({
                     key={message.id ?? `${message.role}:${index}`}
                     message={message}
                     onUndoEdit={(id) => void undoEdit(id)}
+                    onConfirmDelete={(id) => void confirmDelete(id)}
+                    onCancelDelete={(id) => void cancelDelete(id)}
                   />
                 ))}
                 {error && (

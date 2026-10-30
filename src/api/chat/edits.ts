@@ -1,4 +1,7 @@
 import { deleteNote, restoreNoteSnapshot, type NoteSnapshot } from "../workspace/notes";
+import { deleteBoard } from "../workspace/boards";
+import { deleteFolder } from "../workspace/folders";
+import { deleteTask } from "../workspace/tasks";
 import { ApiError, conflict, notFound } from "../workspace/errors";
 import type { ToolContext } from "../pocketbase/client";
 import { getSuperuserToken } from "./superuser";
@@ -10,6 +13,7 @@ import type {
     ChatEditChanges,
     ChatEditDto,
     ChatEditSection,
+    ChatEditStatus,
     ChatEditTarget,
     ChatEditUndoKind,
     ChatEditTargetType,
@@ -44,6 +48,9 @@ export interface RecordChatEditInput {
     afterRevision?: number;
     afterUpdated?: string;
     undoKind?: ChatEditUndoKind;
+    /** Pending actions wait for the user; all other writes are already applied. */
+    status?: "pending" | "applied";
+    kind?: "create" | "edit" | "delete";
 }
 
 interface PBVersionRecord {
@@ -119,6 +126,7 @@ function parseChanges(value: unknown): ChatEditChanges {
 
 function targetUrl(type: ChatEditTargetType, id: string, boardId?: string): string {
     if (type === "document") return `/document/${id}`;
+    if (type === "folder") return `/folders/${id}`;
     if (type === "task") {
         return boardId ? `/board/${boardId}?task=${id}` : `/board`;
     }
@@ -136,7 +144,13 @@ function toChatEditDto(record: PBChatEdit): ChatEditDto {
     const operations = parseJsonObject(record.operations);
     const kind = undoKindFor(record.tool, operations);
     const title = (operations.targetTitle || "").trim()
-        || (record.target_type === "document" ? "Untitled note" : record.target_type === "board" ? "Untitled board" : "Untitled task");
+        || (record.target_type === "document"
+            ? "Untitled note"
+            : record.target_type === "board"
+                ? "Untitled board"
+                : record.target_type === "folder"
+                    ? "Untitled folder"
+                    : "Untitled task");
     const target: ChatEditTarget = {
         type: record.target_type,
         id: record.target_id,
@@ -192,7 +206,7 @@ export async function recordChatEdit(
     await conversationForCaller(authHeader, input.conversationId);
 
     const operations: ChatEditOperations = {
-        kind: input.tool === "create_note" ? "create" : "edit",
+        kind: input.kind ?? (input.tool.startsWith("create_") ? "create" : "edit"),
         targetTitle: input.targetTitle.slice(0, 200),
         ...(input.targetBoardId ? { targetBoardId: input.targetBoardId } : {}),
         changed: input.changed ?? {},
@@ -213,7 +227,7 @@ export async function recordChatEdit(
         tool: input.tool,
         summary: input.summary.slice(0, 500),
         operations,
-        status: "applied",
+        status: input.status ?? "applied",
     };
     if (input.messageId) body.message = input.messageId;
 
@@ -373,4 +387,74 @@ export async function undoChatEdit(
     );
 
     return { edit: toChatEditDto(updated), alreadyUndone: false };
+}
+
+async function loadPendingAction(
+    context: ToolContext,
+    editId: string,
+): Promise<PBChatEdit> {
+    // Read the server-owned row, then prove conversation ownership with the
+    // caller's token. This keeps pending actions reliable even if a collection
+    // view rule is narrowed, and still fails closed for every other user.
+    const record = await superuserRequest<PBChatEdit>(
+        `/api/collections/chat_edits/records/${encodeURIComponent(editId)}`,
+        { method: "GET" },
+    );
+    const conversation = await conversationForCaller(context.authHeader, record.conversation);
+    if (conversation.author !== context.userId) throw notFound();
+    if (record.actor_type !== "ai") throw conflict("That action was not made by Nana.");
+    return record;
+}
+
+async function setActionStatus(editId: string, status: ChatEditStatus): Promise<PBChatEdit> {
+    return superuserRequest<PBChatEdit>(
+        `/api/collections/chat_edits/records/${encodeURIComponent(editId)}`,
+        { method: "PATCH", body: JSON.stringify({ status }) },
+    );
+}
+
+/**
+ * Execute one pending delete after the user explicitly confirmed it. The
+ * pending row is created by a delete tool; the model never has a path that
+ * performs the delete directly. Ownership, visibility, and board/archive
+ * rules are checked again by the workspace service at confirmation time.
+ */
+export async function confirmChatEdit(
+    context: ToolContext,
+    editId: string,
+): Promise<ChatEditDto> {
+    const record = await loadPendingAction(context, editId);
+    if (record.status === "applied") return toChatEditDto(record);
+    if (record.status !== "pending") throw conflict("That action is no longer waiting for confirmation.");
+
+    try {
+        if (record.tool === "delete_note") {
+            await deleteNote(context, "ai", record.target_id);
+        } else if (record.tool === "delete_task") {
+            await deleteTask(context, "ai", record.target_id);
+        } else if (record.tool === "delete_folder") {
+            await deleteFolder(context, "ai", record.target_id);
+        } else if (record.tool === "delete_board") {
+            await deleteBoard(context, "ai", record.target_id);
+        } else {
+            throw conflict("That pending action cannot be confirmed.");
+        }
+    } catch (error) {
+        // Keep the row pending so a transient failure can be retried after the
+        // user fixes the cause (for example, archiving a board first).
+        throw error;
+    }
+
+    return toChatEditDto(await setActionStatus(record.id, "applied"));
+}
+
+/** Decline a pending delete without touching its target. */
+export async function cancelChatEdit(
+    context: ToolContext,
+    editId: string,
+): Promise<ChatEditDto> {
+    const record = await loadPendingAction(context, editId);
+    if (record.status === "cancelled") return toChatEditDto(record);
+    if (record.status !== "pending") throw conflict("That action is no longer waiting for confirmation.");
+    return toChatEditDto(await setActionStatus(record.id, "cancelled"));
 }

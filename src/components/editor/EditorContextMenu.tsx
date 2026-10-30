@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EllipsisVerticalIcon, ShareIcon, ArrowDownTrayIcon, SparklesIcon, TrashIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
+import { EllipsisVerticalIcon, ShareIcon, ArrowDownTrayIcon, BookmarkIcon, TrashIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import { IconButton, MenuItem, MenuSeparator, MenuSurface } from '../ui';
 
 interface EditorContextMenuProps {
   onShare: () => void;
   onExport: () => void;
+  onPublish?: () => void;
+  publishing?: boolean;
   onDelete: () => void;
   onHideHeader?: () => void;
-  onAskNana?: () => void;
-  askNanaDisabled?: boolean;
   disabled?: boolean;
   isNewDocument?: boolean;
 }
@@ -16,10 +16,10 @@ interface EditorContextMenuProps {
 export function EditorContextMenu({
   onShare,
   onExport,
+  onPublish,
+  publishing = false,
   onDelete,
   onHideHeader,
-  onAskNana,
-  askNanaDisabled,
   disabled,
   isNewDocument,
 }: EditorContextMenuProps) {
@@ -68,17 +68,6 @@ export function EditorContextMenu({
         ariaLabel="Note actions"
         className="w-48"
       >
-        {onAskNana && (
-          <>
-            <MenuItem
-              icon={<SparklesIcon />}
-              label="Ask about this note"
-              disabled={askNanaDisabled}
-              onClick={() => handleItem(onAskNana)}
-            />
-            <MenuSeparator />
-          </>
-        )}
         <MenuItem
           icon={<ShareIcon />}
           label="Share…"
@@ -91,6 +80,14 @@ export function EditorContextMenu({
           disabled={isNewDocument}
           onClick={() => handleItem(onExport)}
         />
+        {onPublish && (
+          <MenuItem
+            icon={<BookmarkIcon />}
+            label="Save this version"
+            disabled={isNewDocument || publishing}
+            onClick={() => handleItem(onPublish)}
+          />
+        )}
         {onHideHeader && (
           <>
             <MenuSeparator />

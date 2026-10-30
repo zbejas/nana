@@ -6,6 +6,8 @@ import { pb } from '../pocketbase';
 import { setLastChat } from '../settings';
 import {
   ChatApiError,
+  cancelEdit as cancelEditRequest,
+  confirmEdit as confirmEditRequest,
   deleteConversation as deleteConversationRequest,
   getChatStatus,
   listConversations as listConversationsRequest,
@@ -52,7 +54,7 @@ function initialState(): ChatUiState {
     conversationsError: null,
     edits: [],
     editsLoading: false,
-    mode: 'ask',
+    mode: 'edit',
     loadingConversation: false,
     loadedConversationId: null,
     editing: null,
@@ -547,6 +549,56 @@ export async function undoEdit(id: string): Promise<void> {
       undoError: error instanceof Error ? error.message : 'Undo failed.',
     });
   }
+}
+
+function markEditState(id: string, edit: ChatUiEdit): void {
+  const edits = state.edits.map((candidate) => candidate.id === id ? edit : candidate);
+  const messages = state.messages.map((message) => {
+    if (!message.edits?.some((candidate) => candidate.id === id)) return message;
+    return {
+      ...message,
+      edits: message.edits.map((candidate) => candidate.id === id ? edit : candidate),
+    };
+  });
+  setState({ edits, messages });
+}
+
+async function resolvePendingDelete(
+  id: string,
+  action: 'confirm' | 'cancel',
+): Promise<void> {
+  const previous = state.edits.find((edit) => edit.id === id);
+  if (!previous || previous.status !== 'pending') return;
+
+  markEditState(id, { ...previous, undoing: true, undoError: undefined });
+
+  try {
+    const updated = action === 'confirm'
+      ? await confirmEditRequest(auth(), id)
+      : await cancelEditRequest(auth(), id);
+    markEditState(id, updated
+      ? { ...updated, undoing: false }
+      : {
+        ...previous,
+        status: action === 'confirm' ? 'applied' : 'cancelled',
+        undo: { ...previous.undo, available: false },
+        undoing: false,
+      });
+  } catch (error) {
+    markEditState(id, {
+      ...previous,
+      undoing: false,
+      undoError: error instanceof Error ? error.message : `Could not ${action} the delete.`,
+    });
+  }
+}
+
+export async function confirmDelete(id: string): Promise<void> {
+  return resolvePendingDelete(id, 'confirm');
+}
+
+export async function cancelDelete(id: string): Promise<void> {
+  return resolvePendingDelete(id, 'cancel');
 }
 
 export interface SendOptions {

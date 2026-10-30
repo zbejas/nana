@@ -15,20 +15,26 @@ import type { ChatUiEdit } from '../../lib/chat/types';
 interface ChatEditCardProps {
   edit: ChatUiEdit;
   onUndo: (id: string) => void;
+  onConfirm?: (id: string) => void;
+  onCancel?: (id: string) => void;
 }
 
 const STATUS_LABEL: Record<ChatUiEdit['status'], string> = {
   applying: 'Applying',
+  pending: 'Needs confirmation',
   applied: 'Applied',
   undone: 'Undone',
+  cancelled: 'Cancelled',
   failed: 'Failed',
   conflict: 'Conflict',
 };
 
 const STATUS_CLASS: Record<ChatUiEdit['status'], string> = {
   applying: 'border-signal/25 bg-signal-soft text-signal',
+  pending: 'border-warning/25 bg-warning-soft text-warning',
   applied: 'border-success/25 bg-success-soft text-success',
   undone: 'border-line bg-surface-sunken text-ink-muted',
+  cancelled: 'border-line bg-surface-sunken text-ink-muted',
   failed: 'border-danger/25 bg-danger-soft text-danger',
   conflict: 'border-warning/25 bg-warning-soft text-warning',
 };
@@ -36,13 +42,30 @@ const STATUS_CLASS: Record<ChatUiEdit['status'], string> = {
 function TargetIcon({ type }: { type: ChatUiEdit['target']['type'] }) {
   if (type === 'board') return <ViewColumnsIcon className="h-4 w-4" aria-hidden="true" />;
   if (type === 'task') return <ListBulletIcon className="h-4 w-4" aria-hidden="true" />;
+  if (type === 'folder') return <FolderIcon className="h-4 w-4" aria-hidden="true" />;
   return <DocumentTextIcon className="h-4 w-4" aria-hidden="true" />;
 }
 
 function openLabel(edit: ChatUiEdit): string {
   if (edit.target.type === 'board') return 'Open board';
   if (edit.target.type === 'task') return 'Open task';
+  if (edit.target.type === 'folder') return 'Open folder';
   return 'Open note';
+}
+
+function confirmLabel(edit: ChatUiEdit): string {
+  if (edit.tool === 'delete_note') return 'Move note to trash';
+  if (edit.tool === 'delete_folder') return 'Move folder to trash';
+  if (edit.tool === 'delete_task') return 'Delete task';
+  if (edit.tool === 'delete_board') return 'Delete board';
+  return 'Confirm delete';
+}
+
+function cancelLabel(edit: ChatUiEdit): string {
+  if (edit.target.type === 'folder') return 'Keep folder';
+  if (edit.target.type === 'task') return 'Keep task';
+  if (edit.target.type === 'board') return 'Keep board';
+  return 'Keep note';
 }
 
 function withSection(url: string, section: string | undefined): string {
@@ -61,11 +84,12 @@ function sectionLabel(heading: string | null, path: string[]): string {
   return 'Section';
 }
 
-/** One direct, reversible write made by the assistant. */
-export function ChatEditCard({ edit, onUndo }: ChatEditCardProps) {
+/** One applied write or one destructive action waiting for confirmation. */
+export function ChatEditCard({ edit, onUndo, onConfirm, onCancel }: ChatEditCardProps) {
   const [now, setNow] = useState(() => Date.now());
   const created = Date.parse(edit.created);
   const deadline = Number.isFinite(created) ? created + 10_000 : 0;
+  const isPending = edit.status === 'pending';
   const showCountdown = edit.status === 'applied' && deadline > now;
   const remaining = showCountdown ? Math.max(1, Math.ceil((deadline - now) / 1000)) : 0;
 
@@ -106,6 +130,11 @@ export function ChatEditCard({ edit, onUndo }: ChatEditCardProps) {
             </span>
           </div>
           <p className="mt-1 text-[12.5px] leading-relaxed text-ink-secondary">{edit.summary}</p>
+          {isPending && (
+            <p className="mt-1 text-[11.5px] leading-relaxed text-ink-muted">
+              Nothing changes until you confirm.
+            </p>
+          )}
         </div>
       </div>
 
@@ -146,7 +175,7 @@ export function ChatEditCard({ edit, onUndo }: ChatEditCardProps) {
         <p className="border-t border-line px-3 py-2 text-[11.5px] text-danger">{edit.undoError}</p>
       )}
 
-      <div className="flex items-center gap-1.5 border-t border-line px-2.5 py-1.5">
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-2.5 py-1.5">
         {href ? (
           <Link
             to={href}
@@ -162,7 +191,30 @@ export function ChatEditCard({ edit, onUndo }: ChatEditCardProps) {
           </span>
         )}
 
-        {edit.status === 'applied' && edit.undo.available && (
+        {isPending && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[11.5px]"
+              disabled={edit.undoing}
+              onClick={() => onCancel?.(edit.id)}
+            >
+              {cancelLabel(edit)}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              className="h-7 px-2.5 text-[11.5px]"
+              loading={edit.undoing}
+              onClick={() => onConfirm?.(edit.id)}
+            >
+              {confirmLabel(edit)}
+            </Button>
+          </div>
+        )}
+
+        {!isPending && edit.status === 'applied' && edit.undo.available && (
           <Button
             variant="ghost"
             size="sm"

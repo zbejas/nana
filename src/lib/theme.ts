@@ -44,14 +44,16 @@ export function resolveTheme(preference: ThemePreference): ResolvedTheme {
 
 const FAVICON_FILES = {
   dark: {
-    svg: '/nana-favicon.svg?v=2',
-    png16: '/nana-favicon-16.png?v=2',
-    png32: '/nana-favicon-32.png?v=2',
+    svg: '/nana-favicon.svg?v=3',
+    png16: '/nana-favicon-16.png?v=3',
+    png32: '/nana-favicon-32.png?v=3',
   },
   light: {
-    svg: '/nana-favicon-light.svg?v=2',
-    png16: '/nana-favicon-light-16.png?v=2',
-    png32: '/nana-favicon-light-32.png?v=2',
+    // The transparent ink mark disappears on a light tab. Use the graphite
+    // app tile instead of a black rabbit, matching the workspace icon.
+    svg: '/nana-icon.svg?v=3',
+    png16: '/nana-favicon-light-16.png?v=3',
+    png32: '/nana-favicon-light-32.png?v=3',
   },
 } as const;
 

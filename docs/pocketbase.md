@@ -69,7 +69,7 @@ Groups:
 
 ### Migrations
 
-Files are sequential and zero-padded. **The next migration is `0000029_<description>.js`.**
+Files are sequential and zero-padded. **The next migration is `0000030_<description>.js`.**
 
 | Migration | Purpose |
 | --- | --- |
@@ -101,6 +101,7 @@ Files are sequential and zero-padded. **The next migration is `0000029_<descript
 | `0000026_sharing_repair.js` | Grant-only shared reads, permission-shaped write rules, access-grant rebuild, and private-boundary repair. |
 | `0000027_chat_edits.js` | Document revisions/actor metadata, message context/sources/stopped, version snapshots, and `chat_edits`. |
 | `0000028_kanban_hardening.js` | Repairs missing columns, counters, completion, comments index, and hardened collection rules for existing databases. |
+| `0000029_chat_actions.js` | Adds `pending`/`cancelled` chat action statuses and the `folder` edit target. |
 
 Use the migration API, not `module.exports`:
 
@@ -128,7 +129,7 @@ Rules:
 - Guard additions/removals so retries are idempotent.
 - Never rename an existing migration. `bootstrap.js` contains a temporary compatibility hook that rewrites old filenames in the `_migrations` table.
 - For data migrations, use `findRecordsByFilter` and tolerate missing records when the schema may not be seeded yet.
-- Migrations are append-only; start the next one at `0000029`.
+- Migrations are append-only; start the next one at `0000030`.
 - View collections reject `SELECT *`; list explicit columns. When a source field is added, update the view query in the same migration.
 
 ### Collections
@@ -473,7 +474,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 
 ### Adding backend behavior
 
-1. Add or update the schema in a new migration (`0000029+`).
+1. Add or update the schema in a new migration (`0000030+`).
 2. Add hooks/routes under the relevant `pb_hooks/` directory.
 3. Require the new module from `index.pb.js` (or from a parent module that is already required).
 4. Use `requireAdmin(c)`, `parseRequestBody(c)`, `escapeHtml()`, and `sanitizeUrl()` from `utils.js`; admin route catch blocks should return `sendError(c, err, fallbackMessage)` so known failures keep 400/401/403/404.
@@ -503,7 +504,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 - **API keys are hashed, not encrypted.** `key_hash` is SHA-256 of the full `nana_…` secret. Never add the plaintext, a reversible encoding, or the hash to an API response. The hash lookup uses the superuser only after the key itself is presented.
 - **`api_keys` has no public rules.** It is server-managed on purpose. Do not add it to the browser facade allowlist or expose it through a collection route.
 - **API keys cascade with the user.** `api_keys.author` uses `cascadeDelete: true`; `api_keys.folders` does not cascade from folders, so a deleted scope root grants nothing.
-- **The next migration is `0000029`.** `0000028` is the current head; never edit an applied migration in place.
+- **The next migration is `0000030`.** `0000029_chat_actions` is the current head; never edit an applied migration in place.
 
 ## Related docs
 

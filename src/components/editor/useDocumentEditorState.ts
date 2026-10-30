@@ -16,6 +16,7 @@ import {
 } from '../../lib/settings';
 import { useDocumentLoader } from './useDocumentLoader';
 import { useAutoSave } from './useAutoSave';
+import { isSameMarkdown } from './milkdown/helpers';
 import { useAttachmentHandlers } from './useAttachmentHandlers';
 import { useDocumentActions } from './useDocumentActions';
 
@@ -186,8 +187,9 @@ export function useDocumentEditorState() {
 
     const getInitialViewMode = (): ViewMode => {
         if (typeof window === 'undefined') return 'split';
-        const saved = localStorage.getItem('editorViewMode') as ViewMode | null;
-        if (saved && ['wysiwyg', 'text', 'preview', 'split'].includes(saved)) {
+        const saved = localStorage.getItem('editorViewMode') as ViewMode | 'preview' | null;
+        if (saved === 'preview') return 'wysiwyg';
+        if (saved && ['wysiwyg', 'text', 'split'].includes(saved)) {
             return saved;
         }
         return window.innerWidth < 768 ? 'wysiwyg' : 'split';
@@ -278,14 +280,19 @@ export function useDocumentEditorState() {
         if (!document) {
             hasChanges = title.trim().length > 0 || content.trim().length > 0 || newAttachments.length > 0;
         } else {
+            // Compare the same values autosave writes. Milkdown strips trailing
+            // newlines and the API may return them; treating that as a user edit
+            // starts an unsaved/save loop with no visible change.
+            const normalizedTitle = title.trim() || 'Untitled';
             hasChanges =
-                title !== document.title ||
-                content !== document.content ||
+                normalizedTitle !== document.title ||
+                !isSameMarkdown(content.trim(), document.content.trim()) ||
                 published !== document.published ||
                 JSON.stringify(tags) !== JSON.stringify(document.tags || []) ||
                 newAttachments.length > 0 ||
                 removedAttachments.length > 0;
         }
+
 
         setGlobalUnsavedChanges(hasChanges);
     }, [title, content, tags, published, newAttachments, removedAttachments, document, setGlobalUnsavedChanges]);
@@ -375,7 +382,6 @@ export function useDocumentEditorState() {
         tagInput,
         setTagInput,
         published,
-        setPublished,
         saving,
         publishing,
         loading,

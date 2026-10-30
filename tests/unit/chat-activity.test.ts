@@ -120,8 +120,8 @@ describe("buildSystemPrompt", () => {
     test("adds write guidance only in edit mode", () => {
         const ask = buildSystemPrompt("");
         const edit = buildSystemPrompt("", "edit");
-        expect(ask).not.toContain("You may edit notes and boards");
-        expect(edit).toContain("You may edit notes and boards");
+        expect(ask).not.toContain("Work mode can read and change");
+        expect(edit).toContain("Work mode can read and change");
         expect(edit).toContain("never replace a whole note");
     });
 

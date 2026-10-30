@@ -15,6 +15,7 @@ import {
 } from '../components/ui';
 import { PermissionBadge } from '../components/sharing/PermissionBadge';
 import { SharedItemRow } from '../components/sharing/SharedItemRow';
+import { ChatHeaderButton } from '../components/chat/ChatHeaderButton';
 import { displayShareUserName } from '../components/sharing/share-users';
 import { formatRelativeDate } from '../components/board/dates';
 
@@ -105,16 +106,19 @@ export function SharedFolderPage() {
           ) : undefined
         }
         actions={
-          data?.parent ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<ArrowUpIcon />}
-              onClick={() => openFolder(data.parent as SharedTarget)}
-            >
-              Up to {data.parent.name || 'parent folder'}
-            </Button>
-          ) : undefined
+          <>
+            {data?.parent && (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<ArrowUpIcon />}
+                onClick={() => openFolder(data.parent as SharedTarget)}
+              >
+                Up to {data.parent.name || 'parent folder'}
+              </Button>
+            )}
+            <ChatHeaderButton />
+          </>
         }
       />
 

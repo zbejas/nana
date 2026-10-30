@@ -1,8 +1,8 @@
-import { BookmarkIcon, CodeBracketIcon, EyeIcon, PencilSquareIcon, ShareIcon, SparklesIcon, XMarkIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
+import { ArrowsPointingInIcon, ArrowsPointingOutIcon, CodeBracketIcon, PencilSquareIcon, SparklesIcon, XMarkIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
 import { EditorContextMenu } from './EditorContextMenu';
 import { IconButton, SegmentedControl } from '../ui';
 
-type ViewMode = 'wysiwyg' | 'text' | 'preview' | 'split';
+type ViewMode = 'wysiwyg' | 'text' | 'split';
 
 interface EditorHeaderProps {
   title: string;
@@ -23,6 +23,8 @@ interface EditorHeaderProps {
   onDelete?: () => void;
   onAskNana?: () => void;
   askNanaDisabled?: boolean;
+  fullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
 export function EditorHeader({
@@ -44,11 +46,18 @@ export function EditorHeader({
   onDelete,
   onAskNana,
   askNanaDisabled = false,
+  fullscreen = false,
+  onToggleFullscreen,
 }: EditorHeaderProps) {
-  const writeOption = { value: 'wysiwyg' as const, label: 'Write', icon: <PencilSquareIcon className="h-3.5 w-3.5" /> };
+  const editorOption = { value: 'wysiwyg' as const, label: 'Editor', icon: <PencilSquareIcon className="h-3.5 w-3.5" /> };
   const sourceOption = { value: 'text' as const, label: 'Source', icon: <CodeBracketIcon className="h-3.5 w-3.5" /> };
-  const previewOption = { value: 'preview' as const, label: 'Read', icon: <EyeIcon className="h-3.5 w-3.5" /> };
   const splitOption = { value: 'split' as const, label: 'Split', icon: <ViewColumnsIcon className="h-3.5 w-3.5" /> };
+  const nextView = viewMode === 'wysiwyg' ? 'text' : viewMode === 'text' ? 'split' : 'wysiwyg';
+  const mobileViewLabel = viewMode === 'wysiwyg'
+    ? 'Switch to source view'
+    : viewMode === 'text'
+      ? 'Switch to split view'
+      : 'Switch to editor view';
 
   return (
     <div className="border-b border-line bg-canvas">
@@ -81,12 +90,12 @@ export function EditorHeader({
         <div className="flex shrink-0 items-center gap-1">
           <span className="md:hidden">
             <IconButton
-              label={viewMode === 'preview' ? 'Switch to write view' : 'Switch to read view'}
+              label={mobileViewLabel}
               size="md"
               className="h-11 w-11 sm:h-8 sm:w-8"
-              onClick={() => onViewModeChange(viewMode === 'preview' ? 'wysiwyg' : 'preview')}
+              onClick={() => onViewModeChange(nextView)}
             >
-              {viewMode === 'preview' ? <PencilSquareIcon /> : <EyeIcon />}
+              {viewMode === 'wysiwyg' ? <CodeBracketIcon /> : viewMode === 'text' ? <ViewColumnsIcon /> : <PencilSquareIcon />}
             </IconButton>
           </span>
           <span className="hidden md:inline-flex">
@@ -95,7 +104,7 @@ export function EditorHeader({
               value={viewMode}
               onChange={onViewModeChange}
               size="sm"
-              options={[writeOption, sourceOption, splitOption, previewOption]}
+              options={[editorOption, sourceOption, splitOption]}
             />
           </span>
 
@@ -113,40 +122,25 @@ export function EditorHeader({
             </IconButton>
           )}
 
-          {onShare && (
-            <span className="hidden sm:inline-flex">
-              <IconButton
-                label="Share note"
-                size="md"
-                className="h-8 w-8"
-                onClick={onShare}
-                disabled={readOnly || isNewDocument}
-              >
-                <ShareIcon />
-              </IconButton>
-            </span>
-          )}
-
-          <span className="hidden sm:inline-flex">
+          {onToggleFullscreen && (
             <IconButton
-              label={isNewDocument ? 'Save the note before publishing a version' : 'Save this version'}
+              label={fullscreen ? 'Exit fullscreen editor' : 'Expand editor to fullscreen'}
               size="md"
               className="h-11 w-11 sm:h-8 sm:w-8"
-              onClick={onPublish}
-              disabled={readOnly || publishing || isNewDocument}
+              onClick={onToggleFullscreen}
             >
-              <BookmarkIcon />
+              {fullscreen ? <ArrowsPointingInIcon /> : <ArrowsPointingOutIcon />}
             </IconButton>
-          </span>
+          )}
 
           {onShare && onExport && onDelete && (
             <EditorContextMenu
               onShare={onShare}
               onExport={onExport}
+              onPublish={onPublish}
+              publishing={publishing}
               onDelete={onDelete}
               onHideHeader={onToggleHeader}
-              onAskNana={onAskNana}
-              askNanaDisabled={askNanaDisabled}
               disabled={readOnly}
               isNewDocument={isNewDocument}
             />

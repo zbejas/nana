@@ -75,7 +75,7 @@ export function ChatComposer({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={mode === 'edit' ? 'Ask, or tell Nana what to change…' : 'Ask about your notes…'}
+          placeholder={mode === 'edit' ? 'Ask anything, or tell Nana what to change…' : 'Ask about your notes…'}
           rows={1}
           className="max-h-48 w-full resize-none overflow-y-auto scrollbar-autohide bg-transparent px-3 pb-1 pt-2.5 text-[14px] leading-relaxed text-ink placeholder:text-ink-muted focus:outline-none"
           style={{ minHeight: '2.75rem' }}

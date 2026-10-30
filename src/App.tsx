@@ -32,9 +32,17 @@ import {
   chatConversationIdAtom,
   chatDockHistoryOpenAtom,
   chatDockOpenAtom,
+  chatDockResizingAtom,
   initialLoadDoneAtom,
 } from './state/atoms';
-import { useSidebarWidth, setLastNonDocumentRoute } from "./lib/settings";
+import {
+  CHAT_HISTORY_WIDTH,
+  MAX_CHAT_DOCK_WIDTH,
+  MIN_CHAT_DOCK_WIDTH,
+  setLastNonDocumentRoute,
+  useChatDockWidth,
+  useSidebarWidth,
+} from "./lib/settings";
 import "./index.css";
 
 const MOBILE_ROUTE_ORDER = ['/timeline', '/folders', '/chat', '/settings'] as const;
@@ -96,8 +104,10 @@ function AppContent() {
   const { reset } = useDocumentEditor();
   const location = useLocation();
   const sidebarWidth = useSidebarWidth();
+  const chatDockBaseWidth = useChatDockWidth();
   const chatDockOpen = useAtomValue(chatDockOpenAtom);
   const chatDockHistoryOpen = useAtomValue(chatDockHistoryOpenAtom);
+  const chatDockResizing = useAtomValue(chatDockResizingAtom);
   const setChatDockOpen = useSetAtom(chatDockOpenAtom);
   const setChatConversationId = useSetAtom(chatConversationIdAtom);
 
@@ -120,6 +130,7 @@ function AppContent() {
 
   // Detect mobile viewport
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
   const COMPACT_SIDEBAR_WIDTH = 64;
   const MOBILE_NAVBAR_HEIGHT = 'var(--mobile-navbar-height, calc(64px + env(safe-area-inset-bottom)))';
   const previousMobilePathRef = useRef(location.pathname);
@@ -188,6 +199,7 @@ function AppContent() {
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
+      setViewportWidth(window.innerWidth);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -244,14 +256,32 @@ function AppContent() {
     previousUserIdRef.current = current;
   }, [user?.id, setChatDockOpen, setChatConversationId]);
 
-  const shouldShowSidebar = user && !isStandalonePage;
   const isDocumentRoute = location.pathname.startsWith('/document/');
   const isChatRoute = location.pathname.startsWith('/chat');
+  const shouldShowSidebar = user && !isStandalonePage;
   const shouldShowInstallPrompt = shouldShowSidebar && !isDocumentRoute;
-  const shouldDockSidebar = !isMobile && window.innerWidth >= 1024;
+  const shouldDockSidebar = !isMobile && viewportWidth >= 1024;
+  const showCompactRail = shouldShowSidebar && !isMobile && !sidebarOpen;
+  const sidebarInset = shouldShowSidebar && shouldDockSidebar
+    ? (sidebarOpen ? sidebarWidth : COMPACT_SIDEBAR_WIDTH)
+    : showCompactRail
+      ? COMPACT_SIDEBAR_WIDTH
+      : 0;
+
   const chatDockVisible = shouldShowSidebar && chatDockOpen && !isChatRoute && !isPublicRoute;
+  const chatDockMinWidth = chatDockHistoryOpen
+    ? MIN_CHAT_DOCK_WIDTH + CHAT_HISTORY_WIDTH
+    : MIN_CHAT_DOCK_WIDTH;
+  // Leave the route at least 480px wide on desktop. The dock may still grow
+  // when the sidebar is collapsed or the window is wide.
+  const chatDockMaxWidth = Math.min(
+    MAX_CHAT_DOCK_WIDTH,
+    Math.max(chatDockMinWidth, viewportWidth - sidebarInset - 480),
+  );
+  const requestedChatDockWidth = chatDockBaseWidth
+    + (chatDockHistoryOpen ? CHAT_HISTORY_WIDTH : 0);
   const chatDockWidth = !isMobile && chatDockVisible
-    ? (chatDockHistoryOpen ? 656 : 400)
+    ? Math.min(requestedChatDockWidth, chatDockMaxWidth)
     : 0;
   const routeDirection = isMobile
     ? getMobileRouteDirection(previousMobilePathRef.current, location.pathname)
@@ -282,13 +312,6 @@ function AppContent() {
       ? 'mobile-route-enter-from-left'
       : null;
 
-  const showCompactRail = shouldShowSidebar && !isMobile && !sidebarOpen;
-  const dockedContentInset = shouldShowSidebar && shouldDockSidebar
-    ? (sidebarOpen ? sidebarWidth : COMPACT_SIDEBAR_WIDTH)
-    : showCompactRail
-      ? COMPACT_SIDEBAR_WIDTH
-      : 0;
-
   return (
     <div className={`${isMobile ? 'h-[100dvh]' : 'h-screen'} flex w-full flex-col bg-canvas`}>
       {/* <NavigationProgress /> */}
@@ -296,10 +319,10 @@ function AppContent() {
       <div 
         className={`flex w-full min-w-0 flex-1 flex-col overflow-x-hidden ${isMobile && (isDocumentRoute || isChatRoute) ? 'overflow-y-hidden' : isPublicRoute ? 'overflow-y-auto' : 'overflow-y-auto md:overflow-hidden'}`}
         style={{
-          paddingLeft: `${dockedContentInset}px`,
+          paddingLeft: `${sidebarInset}px`,
           paddingRight: chatDockWidth > 0 ? `${chatDockWidth}px` : '0px',
           paddingBottom: shouldShowSidebar && isMobile && !isDocumentRoute ? MOBILE_NAVBAR_HEIGHT : '0px',
-          transition: sidebarResizing
+          transition: sidebarResizing || chatDockResizing
             ? 'none'
             : 'padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding-right 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
@@ -359,7 +382,9 @@ function AppContent() {
       {shouldShowInstallPrompt && <InstallBanner />}
       <ToastHost />
       <AddToBoardHost />
-      {shouldShowSidebar && <ChatDock />}
+      {shouldShowSidebar && (
+        <ChatDock width={chatDockWidth} maxWidth={chatDockMaxWidth} />
+      )}
     </div>
   );
 }

@@ -9,24 +9,34 @@ interface ChatToolStripProps {
 
 interface ToolMeta {
   verb: string;
-  noun: 'note' | 'board' | 'task';
+  noun: 'note' | 'board' | 'task' | 'folder';
   running: string;
 }
 
 const TOOL_META: Record<string, ToolMeta> = {
+  list_folders: { verb: 'Checked', noun: 'folder', running: 'Checking your folders…' },
   list_notes: { verb: 'Searched', noun: 'note', running: 'Searching your notes…' },
   read_note: { verb: 'Read', noun: 'note', running: 'Reading a note…' },
   list_boards: { verb: 'Checked', noun: 'board', running: 'Checking your boards…' },
   read_board: { verb: 'Read', noun: 'board', running: 'Reading a board…' },
+  create_folder: { verb: 'Created', noun: 'folder', running: 'Creating a folder…' },
+  rename_folder: { verb: 'Renamed', noun: 'folder', running: 'Renaming a folder…' },
+  move_folder: { verb: 'Moved', noun: 'folder', running: 'Moving a folder…' },
   create_note: { verb: 'Created', noun: 'note', running: 'Creating a note…' },
   edit_note: { verb: 'Edited', noun: 'note', running: 'Editing a note…' },
   update_note: { verb: 'Edited', noun: 'note', running: 'Editing a note…' },
+  move_note: { verb: 'Moved', noun: 'note', running: 'Moving a note…' },
   append_note: { verb: 'Edited', noun: 'note', running: 'Editing a note…' },
   create_board: { verb: 'Created', noun: 'board', running: 'Creating a board…' },
   update_board: { verb: 'Edited', noun: 'board', running: 'Updating a board…' },
+  move_board: { verb: 'Moved', noun: 'board', running: 'Moving a board…' },
   create_task: { verb: 'Created', noun: 'task', running: 'Adding a task…' },
   update_task: { verb: 'Updated', noun: 'task', running: 'Updating a task…' },
   move_task: { verb: 'Moved', noun: 'task', running: 'Moving a task…' },
+  delete_note: { verb: 'Prepared delete', noun: 'note', running: 'Preparing delete confirmation…' },
+  delete_task: { verb: 'Prepared delete', noun: 'task', running: 'Preparing delete confirmation…' },
+  delete_folder: { verb: 'Prepared delete', noun: 'folder', running: 'Preparing delete confirmation…' },
+  delete_board: { verb: 'Prepared delete', noun: 'board', running: 'Preparing delete confirmation…' },
 };
 
 function metaFor(name: string): ToolMeta {
@@ -46,6 +56,9 @@ function runningLabel(tool: ChatUiTool): string {
   if (tool.name.startsWith('edit_') || tool.name === 'update_note' || tool.name === 'append_note') {
     return `Editing “${title}”…`;
   }
+  if (tool.name.startsWith('move_')) return `Moving “${title}”…`;
+  if (tool.name === 'rename_folder') return `Renaming “${title}”…`;
+  if (tool.name.startsWith('delete_')) return `Preparing to delete “${title}”…`;
   if (tool.name === 'update_board') return `Updating “${title}”…`;
   return meta.running;
 }

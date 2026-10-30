@@ -27,17 +27,50 @@ export const sanitizeSchema: SanitizeSchema = {
             ...(defaultSchema.attributes?.span || []),
             ['className', /^(hljs|token|language-)/],
         ],
-        // Allow className on div/p for GitHub-style alerts (> [!NOTE], etc.)
+        // Allow className on div/p for GitHub-style alerts (> [!NOTE], etc.).
+        // remark-github-blockquote-alert emits the older `class` property, so
+        // accept both names before the normalizer turns it into className.
         div: [
             ...(defaultSchema.attributes?.div || []),
             ['className', /^markdown-alert/],
+            ['class', /^markdown-alert/],
         ],
         p: [
             ...(defaultSchema.attributes?.p || []),
             ['className', /^markdown-alert/],
+            ['class', /^markdown-alert/],
         ],
     },
 };
+
+interface HastNode {
+    type?: string;
+    properties?: Record<string, unknown>;
+    children?: HastNode[];
+}
+
+/**
+ * remark-github-blockquote-alert writes the HAST property `class` instead of
+ * the usual `className`. Normalize it before sanitization so the alert keeps
+ * its modifiers and React receives a standard className.
+ */
+export function rehypeNormalizeAlertClasses() {
+    return (tree: unknown) => {
+        const walk = (node: HastNode) => {
+            const value = node.properties?.class;
+            if (
+                typeof value === 'string'
+                && value.includes('markdown-alert')
+                && node.properties
+            ) {
+                node.properties.className = value.split(/\s+/).filter(Boolean);
+                delete node.properties.class;
+            }
+            node.children?.forEach(walk);
+        };
+        walk(tree as HastNode);
+    };
+}
 
 /**
  * The rehype-sanitize plugin pre-bound with our schema, for use as a

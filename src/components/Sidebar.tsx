@@ -6,7 +6,6 @@ import {
   ArchiveBoxIcon,
   ClockIcon,
   FolderIcon,
-  ChatBubbleLeftRightIcon,
   ViewColumnsIcon,
   XMarkIcon,
   ChevronDoubleLeftIcon,
@@ -34,7 +33,6 @@ import {
   resetEditorAtom,
   startNewDocumentAtom,
   selectDocumentAtom,
-  chatDockOpenAtom,
 } from "../state/atoms";
 import { FolderContextMenu } from "./file-folder-handling/context-menu/FolderContextMenu";
 import { DocumentContextMenu } from "./file-folder-handling/context-menu/DocumentContextMenu";
@@ -65,7 +63,6 @@ const NAV_ITEMS = [
   { key: 'timeline', label: 'Timeline', path: '/timeline', icon: ClockIcon },
   { key: 'folders', label: 'Folders', path: '/folders', icon: FolderIcon },
   { key: 'shared', label: 'Shared', path: '/shared', icon: UsersIcon },
-  { key: 'chat', label: 'Chat', path: '/chat', icon: ChatBubbleLeftRightIcon },
 ] as const;
 
 function isNavActive(pathname: string, path: string): boolean {
@@ -95,8 +92,6 @@ export function Sidebar() {
   const expandedFolders = useAtomValue(expandedFoldersAtom);
   const isDataLoading = useAtomValue(isDataLoadingAtom);
   const selectedDocument = useAtomValue(selectedDocumentAtom);
-  const chatDockOpen = useAtomValue(chatDockOpenAtom);
-  const setChatDockOpen = useSetAtom(chatDockOpenAtom);
   const saveCallback = useAtomValue(saveCallbackAtom);
   const toggleFolder = useSetAtom(toggleFolderAtom);
   const select = useSetAtom(selectDocumentAtom);
@@ -299,26 +294,12 @@ export function Sidebar() {
           <nav className="px-2 pb-2" aria-label="Primary">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
-              const isChat = item.key === 'chat';
-              const onChatRoute = location.pathname.startsWith('/chat');
-              const active = isNavActive(location.pathname, item.path) || (isChat && chatDockOpen && !onChatRoute);
-              const handleClick = () => {
-                if (!isChat || onChatRoute) {
-                  handleViewNavigation(item.path);
-                  return;
-                }
-                if (isMobile) {
-                  prepareForNavigation();
-                  toggle();
-                }
-                setChatDockOpen((open) => !open);
-              };
+              const active = isNavActive(location.pathname, item.path);
               return (
                 <button
                   key={item.key}
-                  onClick={handleClick}
-                  aria-current={isNavActive(location.pathname, item.path) ? 'page' : undefined}
-                  aria-pressed={isChat ? chatDockOpen : undefined}
+                  onClick={() => handleViewNavigation(item.path)}
+                  aria-current={active ? 'page' : undefined}
                   className={`group relative mb-0.5 flex h-8 w-full items-center gap-2.5 rounded-control border px-2.5 text-[13px] font-medium transition-colors ${
                     active
                       ? 'border-line bg-surface text-ink'

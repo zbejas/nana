@@ -4,7 +4,7 @@
 
 Nana is self-hosted, so the operator controls the network boundary. The application still enforces a trust boundary between the browser, the Bun server, and PocketBase, and between one user's data and another's.
 
-Nana exposes three public access paths through the Bun origin: the application API (`/api/chat`, `/api/export`, `/api/admin`), the Elysia `/api/v1` typed workspace API plus browser facade with public docs at `/docs`, and the MCP endpoint at `/mcp`. PocketBase is a loopback-only backend. Chat is read + edit: `ask` mode is read-only; `edit` mode can create and update notes, boards, and tasks through the workspace services. MCP is the separate external write surface with its own authorization rules. `/api/v1` is the owner surface. Both `/api/v1` typed routes and `/mcp` also accept long-lived, scoped API keys for machine clients.
+Nana exposes three public access paths through the Bun origin: the application API (`/api/chat`, `/api/export`, `/api/admin`), the Elysia `/api/v1` typed workspace API plus browser facade with public docs at `/docs`, and the MCP endpoint at `/mcp`. PocketBase is a loopback-only backend. Chat is read + edit: `ask` mode is read-only; `edit` (Work) can create, rename, move, and update folders, notes, boards, and tasks through the workspace services, and archive/restore boards. Deletes are confirm-first: the model creates a pending `chat_edits` row, and the user must approve it before the workspace delete runs. MCP is the separate external write surface with its own authorization rules. `/api/v1` is the owner surface. Both `/api/v1` typed routes and `/mcp` also accept long-lived, scoped API keys for machine clients.
 
 ## Key files
 
@@ -99,7 +99,7 @@ Production compose exposes only `:3000`. PocketBase binds to `127.0.0.1:8090`, a
 - Adds `author="<userId>"` to list queries and verifies `record.author === context.userId` for single-record reads.
 - Loads the AI visibility set and excludes private records and private-folder subtrees from lists and reads. Write tools re-check the loaded note, folder, board, or task before mutating.
 - Refuses archived boards and hidden boards in `read_board`, `list_tasks`, and `read_task`; `list_boards` can list archived boards only when `includeArchived: true`.
-- Cannot delete, archive/restore, move between folders or boards, publish, share, change privacy, or manage columns or labels. The only delete-adjacent chat action is undoing a note creation, which moves that note to trash.
+- Can create, rename, move, and update folders, notes, boards, and tasks; can archive/restore boards. Cannot publish, share, change privacy, manage columns/labels, or move a task to another board. Delete tools only create a pending action; confirmation re-checks ownership and visibility and runs the workspace delete with the caller's token.
 - Is bounded: `perPage` ≤ 50, note windows ≤ 600 lines, note bodies capped at 2,000,000 bytes, lines clipped at 2,000 characters, excerpts at 400 characters.
 - Note and board reads abort PocketBase after 8 seconds or when the model aborts; task reads and writes use the workspace client's 30-second default.
 - Escapes filter values and accepts ids only when they match `[A-Za-z0-9]{1,64}`.
@@ -114,6 +114,7 @@ Chat writes are a real mutation surface, not an extension of the read prompt. Th
 | Rule | Implementation |
 | --- | --- |
 | Mode gate | `createChatTools()` returns the read set in `ask`; the write tools exist only in `edit`. The tool registry, not the system prompt, decides. |
+| Delete approval | Delete tools write only a `pending` `chat_edits` row. `POST /api/chat/edits/:id/confirm` verifies the conversation owner, then executes the workspace delete with the caller's token; `/cancel` writes nothing. The model has no direct delete path. |
 | Caller token | Write tools call `src/api/workspace/` with `context.authHeader` and `context.userId`; the superuser token is never in `ToolContext`. |
 | Actor stamp | `actor: "ai"` adds `X-Nana-Actor: ai`. The revision guard and task activity hooks stamp `last_edited_by`/`last_edit_source`, version `source`/`actor_label`, and task `actor_type` as Nana. |
 | Revision | `read_note` returns `revision` and `versionToken`. Note edits require one of them; a mismatch returns `conflict` before PocketBase is touched. The PocketBase revision guard re-checks the submitted revision. |
@@ -121,7 +122,7 @@ Chat writes are a real mutation surface, not an extension of the read prompt. Th
 | Version snapshot | Note update tools send `published: true` as the version-request flag. The PocketBase hook snapshots the old title/content/tags/folder/privacy with `source: "ai"` and `actor_label: "Nana"`, then resets the flag. `create_note` starts a new revision instead. |
 | Audit | `chat_edits` has no create/update/delete rules. Bun writes the row with the server credential only after the caller's token proves ownership of the conversation. Its `operations` JSON may carry the pre-edit note snapshot used as an undo fallback, so the collection stays server-only. |
 | Undo | A created note is trashed; note edits restore the pre-edit snapshot. Board/task edits have no undo. Note-edit undo returns `409` if newer work exists; a successful undo is idempotent on repeat. |
-| No destructive tools | Chat has no delete, archive/restore, move-between-folders/boards, share, publish, privacy, column, or label tool. Do not add one by extending the write set. |
+| Confirm-first deletes | Delete tools create a pending `chat_edits` row only. The explicit confirm route re-checks ownership and visibility, then runs the workspace delete with the caller token. Chat has no direct share, publish, privacy, column, or label tool; moving and archive/restore stay behind the workspace services. |
 
 A failed `chat_edits` write does not fail the workspace mutation; the edit card is omitted and the model still sees success. A failed revision check, private-lock check, archived-board check, or invalid section anchor fails before the workspace write. Chat accepts PocketBase user session tokens only; `nana_…` API keys are rejected, so key scope never applies to chat.
 
@@ -174,7 +175,7 @@ Tool results are untrusted data. Note bodies and task descriptions can contain t
 The real boundary is structural, not the prompt:
 
 - Ask-mode chat has no write tools, so injected text can at worst produce a bad answer.
-- Edit-mode chat can create or change notes, boards, and tasks in the caller's visible workspace. It has no delete, archive/restore, move-between-folders/boards, publish, share, privacy, column, or label tools, and note writes are revision-checked.
+- Work-mode chat can create, rename, move, archive/restore, and change folders, notes, boards, and tasks in the caller's visible workspace. Deletes require a pending confirmation card. Note body writes are revision-checked; publish, share, privacy, column, and label tools remain unavailable, as does moving a task to another board.
 - MCP tools are user-scoped and private-locked, so injected text cannot reach another account or a private record. MCP does expose explicit destructive tools.
 - Tool output is bounded, so a single note cannot flood the context.
 - The final answer is rendered through the sanitized Markdown pipeline; stored message content is sanitized with `sanitizeHtml()`.
@@ -323,7 +324,7 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 - Does a new `/api/v1` route sit under the scoped Elysia app so `authenticateApiRequest()` runs?
 - Does a new MCP tool use the caller's token, author scoping, `surface: "ai"`, and the private lock?
 - Does a new workspace read or write respect API key access and scope, including the root/folder boundary?
-- Does chat keep `ask` read-only, gate every write behind `mode: "edit"`, and route writes through the workspace services with note revision checks and `chat_edits`?
+- Does chat keep `ask` read-only, gate every write behind `mode: "edit"`, route writes through the workspace services with note revision checks and `chat_edits`, and require confirmation for deletes?
 - Does a new PocketBase admin route call `requireAdmin(c)`?
 - Are PocketBase collection rules still author-scoped?
 - Does a write validate incoming `folder`, `parent`, `board`, and `document` relations through `relation_guards.js`?
@@ -344,14 +345,14 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 - **`403` and `404` collapse to one error.** That is deliberate: PocketBase hides records the caller cannot view, and the service must not reveal the difference.
 - **Chat writes are mode-gated, not prompt-gated.** Ask mode must return only the read tools. Edit mode adds the write allowlist; the model cannot obtain a write by asking for one in text.
 - **Chat note edits are revision-checked; every applied write is audited.** Note edits require the revision/`versionToken` from `read_note`; the PocketBase guard re-checks it. Applied writes record a server-owned `chat_edits` row. Undo returns `409` rather than overwriting newer work.
-- **Chat is not a destructive surface.** It has no delete, archive/restore, move-between-folders/boards, publish, share, privacy, column, or label tool. Do not add one by extending the chat registry.
+- **Chat deletion is confirm-first.** Delete tools can only create a pending card. Confirmation is a separate owner-scoped request that re-runs workspace visibility and board/archive rules. Do not add a direct delete path to the chat registry. Move/rename/archive tools go through the same workspace services and private lock.
 - **MCP has its own write design.** User token or exchanged key, author checks, `surface: "ai"`, the private lock, explicit tool schemas, and explicit destructive tools. Do not route MCP through the chat tool set.
 - **Private means hidden from AI, not from the owner.** Chat and MCP apply `loadAiVisibility()`; `/api/v1` and the browser client deliberately do not.
 - **A private folder hides its descendants.** The lock walks `parent`; a child does not need its own `is_private` flag.
 - **MCP has no CORS and no session.** That is deliberate. Cross-origin browser use is unsupported, and every request re-authenticates.
 - **Workspace requests are time-bounded.** REST and MCP requests get a 60-second Bun ceiling; the shared PocketBase client defaults to 30 seconds. Chat's note and board read tools pass their tighter 8-second signal; task reads and chat writes use the 30-second default.
 - **`/docs` is public.** It describes schemas and routes; it must never contain secrets or live credentials.
-- **Tool text can be hostile.** A note can say “ignore previous instructions”. Ask mode can only produce a bad answer; edit mode can create or change visible workspace records, but not delete or share them. MCP can also delete, so its private lock and author checks are part of the boundary.
+- **Tool text can be hostile.** A note can say “ignore previous instructions”. Ask mode can only produce a bad answer; Work mode can create or change visible workspace records, but deletes need the user's confirmation and sharing/privacy remain unavailable. MCP can also delete directly, so its private lock and author checks are part of the boundary.
 - **Persisted chat tool activity is content, not diagnostics.** Only allowlisted read/write names and statuses survive; never add args, queries, note text, or edit details to `tools`.
 - **`chat_edits` is server-owned.** No public create/update/delete rule exists. The superuser write happens only after the caller's token proves conversation ownership; never expose it as a client-writable collection.
 - **Undo is not a general restore.** Only a created note (trash) and note edits (snapshot restore) are undoable. Board/task cards have `undo.kind: "none"`, and a second undo is a no-op. A note-edit undo returns `409` when the note has newer work.

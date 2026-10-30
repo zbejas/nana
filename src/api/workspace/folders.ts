@@ -5,7 +5,7 @@ import {
     type PBListResponse,
     type ToolContext,
 } from "../pocketbase/client";
-import { badRequest, notFound } from "./errors";
+import { badRequest, notFound, upstream } from "./errors";
 import { folderIsLocked, visibilityFromFolders } from "./privacy";
 import {
     assertFolderVisible,
@@ -31,6 +31,11 @@ export interface CreateFolderInput {
     name: string;
     parentId?: string | null;
     isPrivate?: boolean;
+}
+
+export interface UpdateFolderInput {
+    name?: string;
+    parentId?: string | null;
 }
 
 const FOLDER_FIELDS = "id,name,parent,is_private,is_public,author,created,updated";
@@ -127,4 +132,88 @@ export async function createFolder(
     const path = "/api/collections/folders/records";
     const record = unwrap(await pbRequest<PBFolderRecord>(path, context, { method: "POST", body }));
     return toFolderDto(record);
+}
+
+/**
+ * Rename a folder or move it under another visible folder. Cycles are rejected
+ * before the write; PocketBase's relation guard remains the final check.
+ */
+export async function updateFolder(
+    context: ToolContext,
+    surface: Surface = "user",
+    id: string,
+    patch: UpdateFolderInput,
+): Promise<FolderDto> {
+    assertWritable(context);
+
+    const folders = await loadAllFolders(context);
+    const current = folders.find((folder) => folder.id === id);
+    if (!current) throw notFound();
+
+    const visibility = visibilityFromFolders(folders, context, surface);
+    if (folderIsLocked(visibility, id)) throw notFound();
+
+    const body: Record<string, unknown> = {};
+    let changed = false;
+
+    if (patch.name !== undefined) {
+        const name = (patch.name || "").trim();
+        if (!name) throw badRequest("A folder name is required.");
+        body.name = name;
+        changed = true;
+    }
+
+    if (patch.parentId !== undefined) {
+        const parentId = normalizeFolderId(patch.parentId);
+        if (parentId === id) throw badRequest("A folder cannot be its own parent.");
+        if (parentId) {
+            await assertFolderVisible(context, surface, parentId, visibility);
+            const byId = new Map(folders.map((folder) => [folder.id, folder]));
+            const seen = new Set<string>();
+            let cursor: string | null = parentId;
+            while (cursor) {
+                if (cursor === id) {
+                    throw badRequest("A folder cannot move inside itself.");
+                }
+                if (seen.has(cursor)) break;
+                seen.add(cursor);
+                cursor = byId.get(cursor)?.parent || null;
+            }
+        } else if (!visibility.rootAllowed || !visibility.foldersAllowed) {
+            throw notFound();
+        }
+        body.parent = parentId || "";
+        changed = true;
+    }
+
+    if (!changed) return toFolderDto(current);
+
+    const path = `/api/collections/folders/records/${encodeURIComponent(current.id)}`;
+    const record = unwrap(await pbRequest<PBFolderRecord>(path, context, { method: "PATCH", body }));
+    return toFolderDto(record);
+}
+
+/**
+ * Move a visible folder subtree to trash. PocketBase rehomes any boards in the
+ * subtree to the root and the folder keeps its trash entry for restore.
+ */
+export async function deleteFolder(
+    context: ToolContext,
+    surface: Surface = "user",
+    id: string,
+): Promise<{ trashFolderId: string }> {
+    assertWritable(context);
+
+    const folders = await listFolders(context, surface);
+    if (!folders.some((folder) => folder.id === id)) throw notFound();
+
+    const result = unwrap(await pbRequest<{ trashFolderId?: string }>(
+        "/api/trash/move-folder",
+        context,
+        { method: "POST", body: { folderId: id } },
+    ));
+    if (typeof result.trashFolderId !== "string" || !result.trashFolderId) {
+        throw upstream("The folder could not be moved to trash.");
+    }
+    return { trashFolderId: result.trashFolderId };
 }

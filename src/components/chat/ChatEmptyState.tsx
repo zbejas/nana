@@ -10,9 +10,11 @@ import {
 } from '@heroicons/react/24/outline';
 import { Button } from '../ui';
 import type { ChatContextTarget } from '../../lib/chat/context';
+import type { ChatMode } from '../../lib/chat/types';
 
 interface ChatEmptyStateProps {
   target: ChatContextTarget | null;
+  mode: ChatMode;
   configured: boolean | null;
   onPrompt: (prompt: string) => void;
   onOpenSettings: () => void;
@@ -64,7 +66,7 @@ function nounFor(target: ChatContextTarget): string {
   return 'folder';
 }
 
-export function ChatEmptyState({ target, configured, onPrompt, onOpenSettings }: ChatEmptyStateProps) {
+export function ChatEmptyState({ target, mode, configured, onPrompt, onOpenSettings }: ChatEmptyStateProps) {
   if (configured === false) {
     return (
       <div className="my-auto w-full py-4">
@@ -87,21 +89,30 @@ export function ChatEmptyState({ target, configured, onPrompt, onOpenSettings }:
   const privateNoun = target ? nounFor(target) : 'page';
   const prompts = target?.isPrivate ? GENERIC_PROMPTS : promptSet(target);
 
-  let title = 'Ask your notes.';
-  let description = 'Nana can search and read your notes and boards, then answer from what it finds.';
+  const workMode = mode === 'edit';
+  let title = workMode ? 'Ask, or change something.' : 'Ask your notes.';
+  let description = workMode
+    ? 'Nana can search and read your notes and boards, answer from them, and make the changes you ask for.'
+    : 'Nana can search and read your notes and boards, then answer from what it finds.';
 
   if (target?.isPrivate) {
     title = 'Ask about something else.';
     description = `This ${privateNoun} stays private and will not be attached. Nana can still search your other notes and boards.`;
   } else if (target?.type === 'document') {
-    title = 'Ask about this note.';
-    description = 'Nana can read this note when it needs to. Ask for a summary, a decision, or the next step.';
+    title = workMode ? 'Work on this note.' : 'Ask about this note.';
+    description = workMode
+      ? 'Nana can read this note, answer questions, and make the change you ask for.'
+      : 'Nana can read this note when it needs to. Ask for a summary, a decision, or the next step.';
   } else if (target?.type === 'board') {
-    title = 'Ask about this board.';
-    description = 'Nana can read this board and its tasks. Ask what is moving, blocked, or next.';
+    title = workMode ? 'Work on this board.' : 'Ask about this board.';
+    description = workMode
+      ? 'Nana can read this board and its tasks, answer questions, and make the task changes you ask for.'
+      : 'Nana can read this board and its tasks. Ask what is moving, blocked, or next.';
   } else if (target?.type === 'folder') {
-    title = 'Ask about this folder.';
-    description = 'Nana can list this folder and read the notes inside it.';
+    title = workMode ? 'Work in this folder.' : 'Ask about this folder.';
+    description = workMode
+      ? 'Nana can list this folder and read or change what is inside it when you ask.'
+      : 'Nana can list this folder and read the notes inside it.';
   }
 
   return (

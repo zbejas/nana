@@ -16,7 +16,13 @@ import {
 import { createChatTools } from "./tools";
 import { ChatRunRecorder } from "./tools/recorder";
 import { resolveChatContext, contextSystemNote } from "./context";
-import { attachChatEditMessage, listChatEdits, undoChatEdit } from "./edits";
+import {
+    attachChatEditMessage,
+    cancelChatEdit,
+    confirmChatEdit,
+    listChatEdits,
+    undoChatEdit,
+} from "./edits";
 import {
     ChatStreamState,
     doneEvent,
@@ -65,13 +71,15 @@ const TOOL_SYSTEM_INSTRUCTION = [
  * is guidance rather than the security boundary.
  */
 const EDIT_SYSTEM_INSTRUCTION = [
-    "You may edit notes and boards, but only when the user asked you to.",
+    "Work mode can read and change the signed-in user's notes, boards, tasks, and folders, but only when the user asked you to.",
     "Read the note or board first and pass the current revision or versionToken to every note edit.",
     "Use edit_note for section-scoped body changes; never replace a whole note.",
+    "You may create folders, notes, boards, and tasks; rename and move folders, notes, and boards; and archive or restore boards. A folder or parent must be visible; never create or move into a private folder.",
+    "Delete tools only prepare a confirmation card. They do not delete anything. Never say a deletion happened until the user confirms it, and never ask the user to confirm in prose instead of using the tool.",
     "If a tool returns conflict, read the record again and retry; never retry blindly.",
-    "Do not delete, archive, share, publish, move between folders or boards, change privacy, or change board columns or assignees who cannot access the board.",
+    "Do not share, publish, move a task to another board, change privacy, or change board columns or assignees who cannot access the board.",
     "After a successful note write, say what changed and that the user can undo it from chat.",
-    "After a board or task write, report the board/task and the changed fields.",
+    "After a board, task, or folder write, report what was created or changed.",
 ].join(" ");
 
 /**
@@ -161,6 +169,20 @@ export async function handleChat(req: Request): Promise<Response> {
             if (!editId || editId.includes("/")) return jsonError("Missing edit ID", 400);
             const result = await undoChatEdit({ authHeader, userId }, editId);
             return jsonOk(result);
+        }
+
+        if (path.startsWith("/api/chat/edits/") && path.endsWith("/confirm") && req.method === "POST") {
+            const editId = path.slice("/api/chat/edits/".length, -"/confirm".length);
+            if (!editId || editId.includes("/")) return jsonError("Missing edit ID", 400);
+            const edit = await confirmChatEdit({ authHeader, userId }, editId);
+            return jsonOk({ edit });
+        }
+
+        if (path.startsWith("/api/chat/edits/") && path.endsWith("/cancel") && req.method === "POST") {
+            const editId = path.slice("/api/chat/edits/".length, -"/cancel".length);
+            if (!editId || editId.includes("/")) return jsonError("Missing edit ID", 400);
+            const edit = await cancelChatEdit({ authHeader, userId }, editId);
+            return jsonOk({ edit });
         }
 
         // ── GET /api/chat/conversations/{id}/edits ───────────────────

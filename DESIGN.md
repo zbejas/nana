@@ -101,9 +101,9 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 ### Sidebar
 
-- Brand is the rabbit-note mark at 32px, plus the “Nana” wordmark and “Your workspace”. The wordmark starts on the navigation label line, and the mark anchors the sidebar edge. The sidebar, auth cover, and favicon use the transparent, tightly cropped mark (cream on dark, ink on light); the graphite app tile is used in About, public pages, install surfaces, and PWA any/maskable/monochrome icons.
+- Brand is the rabbit-note mark at 32px, plus the “Nana” wordmark and “Your workspace”. The wordmark starts on the navigation label line, and the mark anchors the sidebar edge. The sidebar and auth cover use the transparent, tightly cropped mark (cream on dark, ink on light). The favicon uses the cream mark on dark and the graphite app tile on light, so a dark rabbit never sits on a light tab. The graphite app tile is used in About, public pages, install surfaces, and PWA any/maskable/monochrome icons.
 - A full-width inverted `ink` **New** button sits under the brand and opens a Note/Board menu. It is global chrome, not the contextual primary action; page-level primary actions take `signal-bright`.
-- Primary navigation rows are 32px with 6px radius. The active row is `surface` with a hairline and an ember icon; inactive rows are transparent with muted icons. There are no inverted navigation chips.
+- Primary navigation rows are 32px with 6px radius. The active row is `surface` with a hairline and an ember icon; inactive rows are transparent with muted icons. There are no inverted navigation chips. Chat is not a navigation row; it opens from the top-bar Chat button and Cmd/Ctrl+J.
 - Section labels are 11.5px medium muted: “Recent”, “Library”.
 - The Library tree lists root notes and root boards, then folders; an expanded folder lists its notes and boards with the same 20px row rhythm. Notes use the document glyph, boards the four-column glyph, private boards keep the warning lock, and public boards take the success share glyph. The Library header carries New folder, New note, New board, and Archived boards actions.
 - The profile bar stays at the bottom with avatar, name, email, and settings.
@@ -152,8 +152,8 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 `/chat` uses the shared `PageHeader` and an 800px reading column, with a collapsible history panel.
 
-- Header: shared masthead, title `Chat` or the conversation title, a model/status meta line, New chat, and History.
-- Empty state: 26/30px “Ask your notes.”, one supporting sentence, and four prompt cards in a 2×2 grid. Prompt cards have a neutral icon tile, 13px medium text, and an arrow that darkens on hover.
+- Header: shared masthead, title `Chat` or the conversation title, a model/status meta line, Work/Ask, New chat, and History. The dock also has a left-edge resize handle and persists its width.
+- Empty state: 26/30px “Ask, or change something.” in Work, one supporting sentence, and four prompt cards in a 2×2 grid. Prompt cards have a neutral icon tile, 13px medium text, and an arrow that darkens on hover.
 - Composer: a 10px-radius `surface` shell with a 1px border, a textarea, an 11px hint, and a `signal-bright` send button (44px on touch, 36px on desktop). Focus is an ember border plus a soft 4px ring.
 - Assistant answers are document text at 14.5px / 1.75, max 68ch, preceded by a 20px neutral “N” tile and “Nana”. User messages are right-aligned `surface-raised` blocks with a 10px radius and 3px bottom-right corner.
 - Tool activity is one neutral pill with an ember dot while running and a success dot when done. No source cards or attachments.
@@ -174,10 +174,11 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 `/document/:id` is a writing desk.
 
-- Header: 22px title input on desktop (17px on mobile), saving/unsaved text, Write/Split/Read segmented control, publish, overflow, and close. There is no rule above the title. On mobile the header actions are 44px targets; Hide header lives in the overflow menu.
+- Header: 22px title input on desktop (17px on mobile), saving/unsaved text, Editor/Source/Split segmented control, fullscreen, publish, overflow, and close. There is no rule above the title. On mobile the header actions are 44px targets; Hide header lives in the overflow menu. Fullscreen expands the writing/reading surface to the available route width and persists across documents.
 - Tags sit on a second rule with neutral outline pills.
-- The writing surface is a 10px `surface` panel inside `canvas`, max 920px for Write/Read and 1240px for Split. Text and preview use 15px / 1.75 with 24–40px inner padding.
-- The raw Markdown editor uses the sans face, not mono. The preview headings are forced to the sans face by the MDEditor overrides.
+- The writing surface is a 10px `surface` panel inside `canvas`, max 920px for Editor/Source and 1240px for Split. Rendered text and source use 15px / 1.75 with 24–40px inner padding.
+- The raw Markdown editor uses the sans face, not mono. Rendered headings are forced to the sans face by the MDEditor overrides.
+- GitHub-style alerts use alert-only semantic tokens: Note blue, Tip green, Important purple, Warning amber, and Caution red. They are the deliberate exception to Graphite's one-accent rule because readers recognise the GitHub convention. Alerts are flat callouts with a 3px semantic left rule, a soft fill, and an uppercase label; the tokens are separate from `signal`, `success`, `warning`, and `danger`.
 - The footer is a fixed status bar at the bottom of the content area: left offset matches the sidebar or rail, right edge flush, `canvas-deep`, with word count, reading time, characters, attachments, and updated time.
 
 ### Auth and onboarding
@@ -264,7 +265,7 @@ Rules:
 - **The auth cover is intentionally theme-invariant.** It uses `cover` tokens, not `canvas` or `ink`. Reusing `canvas` there makes the cover flip to light in the light theme and breaks the first-screen composition.
 - **Page-level cards never carry a shadow.** Only dialogs, sheets, side panels, menus, toasts, and the install banner use `shadow-float`.
 - **One family, no mono metadata.** UI counts, dates, percentages, and priorities use Geist with `tabular-nums`. `font-mono` is reserved for code, ids, and URLs.
-- **The rabbit is not a 24px chrome glyph.** The rabbit-note app tile and wordmark lead the shell; the favicon uses the tight, transparent mark, and the full mascot stays in About, public pages, the install prompt, and the app icons so it is never an indistinct blob.
+- **The rabbit is not a 24px chrome glyph.** The rabbit-note app tile and wordmark lead the shell; the dark-theme favicon uses the tight, transparent cream mark, the light-theme favicon uses the graphite tile, and the full mascot stays in About, public pages, the install prompt, and the app icons so it is never an indistinct blob.
 
 ## Related docs
 

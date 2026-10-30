@@ -48,6 +48,12 @@ export const sidebarOpenAtom = atomWithStorage<boolean>(
  */
 export const sidebarResizingAtom = atom(false);
 
+/** Tracks if the chat dock is being resized so layout transitions stay off. */
+export const chatDockResizingAtom = atom(false);
+
+/** Hide the workspace chrome while writing. Persisted across documents. */
+export const editorFullscreenAtom = atomWithStorage<boolean>('nana-editor-fullscreen', false);
+
 /**
  * Controls which document is currently selected for editing
  */

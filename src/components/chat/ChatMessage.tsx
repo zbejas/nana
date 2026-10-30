@@ -18,6 +18,8 @@ import type { ChatUiMessage } from '../../lib/chat/types';
 interface ChatMessageProps {
   message: ChatUiMessage;
   onUndoEdit: (id: string) => void;
+  onConfirmDelete: (id: string) => void;
+  onCancelDelete: (id: string) => void;
 }
 
 function userContextLabel(message: ChatUiMessage): string | null {
@@ -32,7 +34,12 @@ function UserContextIcon({ type }: { type: 'document' | 'board' | 'folder' }) {
 }
 
 /** One turn. User copy is plain text; answers render sanitized Markdown. */
-export function ChatMessage({ message, onUndoEdit }: ChatMessageProps) {
+export function ChatMessage({
+  message,
+  onUndoEdit,
+  onConfirmDelete,
+  onCancelDelete,
+}: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
   if (message.role === 'user') {
@@ -130,7 +137,13 @@ export function ChatMessage({ message, onUndoEdit }: ChatMessageProps) {
       ) : null}
 
       {message.edits?.map((edit) => (
-        <ChatEditCard key={edit.id} edit={edit} onUndo={onUndoEdit} />
+        <ChatEditCard
+          key={edit.id}
+          edit={edit}
+          onUndo={onUndoEdit}
+          onConfirm={onConfirmDelete}
+          onCancel={onCancelDelete}
+        />
       ))}
 
       {!message.streaming && (hasContent || message.edits?.length || toolCount > 0) && (

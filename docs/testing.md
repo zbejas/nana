@@ -132,7 +132,7 @@ Do not point the test stack at real data. The entrypoint deletes and recreates i
 | 3/4 Hooks + routes | `hooks/` + `routes/` | Hooks and custom routes after bootstrap; admin tests restore global settings when done. |
 | 4/4 Bun API | `api/` | Routes, export, chat, tools, typed REST, browser facade, and MCP after PocketBase is seeded. |
 
-The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000028_kanban_hardening.js` applied. There is no separate "apply migration" step in a test file.
+The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000029_chat_actions.js` applied. There is no separate "apply migration" step in a test file.
 
 On failure the entrypoint prints the tail of both server logs. On success it reports per-phase and total duration.
 
@@ -291,10 +291,12 @@ Rules:
 
 | Area | Assertions |
 | --- | --- |
-| Registry | Ask mode omits every write tool and keeps `list_tasks`; edit mode registers the full write allowlist. |
+| Registry | Ask mode omits every write tool and keeps `list_tasks`; Work mode registers the full write allowlist, including folder/note/board move, rename, and archive tools. |
 | Context | Server-resolved titles; foreign, private, and private-folder contexts return `404`; wrong type is `400`. |
-| Notes | `create_note` stamps `last_edit_source: "ai"`/`last_edited_by: "Nana"`; `append_note` and `edit_note` carry untouched content through and snapshot the old version; stale revisions return `conflict`; missing/ambiguous anchors abort; private notes and private-folder notes return `not_found`. |
-| Boards/tasks | Board creation, task create/update/move, archived-board conflict, invalid status, foreign task `not_found`, and `actor_type: "ai"` task activity. |
+| Notes | `create_note` stamps `last_edit_source: "ai"`/`last_edited_by: "Nana"`; `append_note` and `edit_note` carry untouched content through and snapshot the old version; stale revisions return `conflict`; missing/ambiguous anchors abort; private notes and private-folder notes return `not_found`; `move_note` changes the folder and refuses a private destination. |
+| Folders | Create, rename, and move a folder; the parent relation is persisted. |
+| Boards/tasks | Board creation, board rename/move/archive/restore, folder creation, task create/update/move, archived-board conflict, invalid status, foreign task `not_found`, and `actor_type: "ai"` task activity. |
+| Delete approval | A delete tool creates `pending` and leaves the target untouched; confirm trashes the target; cancel leaves it untouched; another user cannot confirm. |
 | Cards/undo | Edit rows list oldest first; only the conversation owner can read or undo; created-note undo trashes and repeated undo is a no-op; note-edit undo restores the snapshot and repeated undo does not bump the revision again. |
 
 The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), named/legacy SSE encoding (`tests/unit/chat-stream.test.ts`), route context derivation (`tests/unit/chat-context.test.ts`), version tokens (`tests/unit/chat-version-token.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), and API key token/scope helpers (`tests/unit/api-key-scope.test.ts`).

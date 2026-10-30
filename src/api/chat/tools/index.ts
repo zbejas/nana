@@ -21,6 +21,10 @@ import {
     type ReadBoardResult,
 } from "./boards";
 import {
+    listFoldersForChat,
+    listFoldersInputSchema,
+} from "./folders";
+import {
     listBoardTasks,
     listTasksInputSchema,
     readTask,
@@ -35,24 +39,54 @@ import {
     appendNoteTool,
     createBoardInputSchema,
     createBoardTool,
+    createFolderInputSchema,
+    createFolderTool,
     createNoteInputSchema,
     createNoteTool,
     createTaskInputSchema,
     createTaskTool,
+    deleteBoardInputSchema,
+    deleteBoardTool,
+    deleteFolderInputSchema,
+    deleteFolderTool,
+    deleteNoteInputSchema,
+    deleteNoteTool,
+    deleteTaskInputSchema,
+    deleteTaskTool,
     editNoteInputSchema,
     editNoteTool,
+    moveBoardInputSchema,
+    moveBoardTool,
+    moveFolderInputSchema,
+    moveFolderTool,
+    moveNoteInputSchema,
+    moveNoteTool,
     moveTaskInputSchema,
     moveTaskTool,
+    renameFolderInputSchema,
+    renameFolderTool,
+    updateBoardInputSchema,
+    updateBoardTool,
     updateNoteInputSchema,
     updateNoteTool,
     updateTaskInputSchema,
     updateTaskTool,
     type AppendNoteInput,
     type CreateBoardInput,
+    type CreateFolderInput,
     type CreateNoteInput,
     type CreateTaskInput,
+    type DeleteBoardInput,
+    type DeleteFolderInput,
+    type DeleteNoteInput,
+    type DeleteTaskInput,
     type EditNoteInput,
+    type MoveBoardInput,
+    type MoveFolderInput,
+    type MoveNoteInput,
     type MoveTaskInput,
+    type RenameFolderInput,
+    type UpdateBoardInput,
     type UpdateNoteInput,
     type UpdateTaskInput,
 } from "./writes";
@@ -125,8 +159,9 @@ function isOk(value: unknown): value is { ok: true } {
 /**
  * Build the workspace tools for one authenticated user.
  *
- * Ask mode registers reads only. Edit mode adds the note/task write tools; the
- * private lock and author scoping still run inside every executor.
+ * Ask mode registers reads only. Work (edit) mode adds the folder, note, board,
+ * and task write tools; the private lock and author scoping still run inside
+ * every executor.
  */
 export function createChatTools(context: ToolContext, options: ChatToolOptions = {}): ToolSet {
     const recorder = options.recorder ?? new ChatRunRecorder();
@@ -167,6 +202,16 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
             ),
         }),
 
+        list_folders: tool({
+            description:
+                "List every folder visible to the signed-in user with id, name, parent id, and public/private flags. " +
+                "Use this before moving a note, board, or folder so you pass a real folder id.",
+            inputSchema: listFoldersInputSchema,
+            execute: instrument<{}, Awaited<ReturnType<typeof listFoldersForChat>>>(
+                "list_folders",
+                () => listFoldersForChat(context),
+            ),
+        }),
         list_boards: tool({
             description:
                 "List the signed-in user's active boards with open/done/total task counts and " +
@@ -238,10 +283,39 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
 
     const write = { context, recorder, conversationId: options.conversationId };
     const writeTools: ToolSet = {
+        create_folder: tool({
+            description:
+                "Create a folder owned by the signed-in user. A parent must be a visible folder. " +
+                "Use only when the user asked for a new folder.",
+            inputSchema: createFolderInputSchema,
+            execute: instrument<CreateFolderInput, Awaited<ReturnType<typeof createFolderTool>>>(
+                "create_folder",
+                (input) => createFolderTool(write, input),
+            ),
+        }),
+        rename_folder: tool({
+            description:
+                "Rename a visible folder owned by the signed-in user. Use it when the user asks to rename a folder.",
+            inputSchema: renameFolderInputSchema,
+            execute: instrument<RenameFolderInput, Awaited<ReturnType<typeof renameFolderTool>>>(
+                "rename_folder",
+                (input) => renameFolderTool(write, input),
+            ),
+        }),
+        move_folder: tool({
+            description:
+                "Move a visible folder under another visible folder, or to the workspace root with parentId null. " +
+                "Use it to reorganize folders. A folder cannot move inside itself.",
+            inputSchema: moveFolderInputSchema,
+            execute: instrument<MoveFolderInput, Awaited<ReturnType<typeof moveFolderTool>>>(
+                "move_folder",
+                (input) => moveFolderTool(write, input),
+            ),
+        }),
         create_note: tool({
             description:
-                "Create a note owned by the signed-in user. Use only when the user asked you to write. " +
-                "Never create a note in a private folder.",
+                "Create a note owned by the signed-in user. Use the optional folder id for a visible folder. " +
+                "Use only when the user asked you to write. Never create a note in a private folder.",
             inputSchema: createNoteInputSchema,
             execute: instrument<CreateNoteInput, Awaited<ReturnType<typeof createNoteTool>>>(
                 "create_note",
@@ -271,11 +345,21 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
         }),
         update_note: tool({
             description:
-                "Update only a note's title or tags. Use edit_note for body content. Requires the current revision or versionToken.",
+                "Rename a note or change its tags. Use edit_note for body content. Requires the current revision or versionToken.",
             inputSchema: updateNoteInputSchema,
             execute: instrument<UpdateNoteInput, Awaited<ReturnType<typeof updateNoteTool>>>(
                 "update_note",
                 (input) => updateNoteTool(write, input),
+            ),
+        }),
+        move_note: tool({
+            description:
+                "Move a visible note into a visible folder, or to the workspace root with folderId null. " +
+                "Use it to organize notes; it does not edit title, tags, or body.",
+            inputSchema: moveNoteInputSchema,
+            execute: instrument<MoveNoteInput, Awaited<ReturnType<typeof moveNoteTool>>>(
+                "move_note",
+                (input) => moveNoteTool(write, input),
             ),
         }),
         create_board: tool({
@@ -285,6 +369,26 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
             execute: instrument<CreateBoardInput, Awaited<ReturnType<typeof createBoardTool>>>(
                 "create_board",
                 (input) => createBoardTool(write, input),
+            ),
+        }),
+        update_board: tool({
+            description:
+                "Rename a visible board, update its description, or archive/restore it with archived true/false. " +
+                "Use only when the user asked to change the board itself.",
+            inputSchema: updateBoardInputSchema,
+            execute: instrument<UpdateBoardInput, Awaited<ReturnType<typeof updateBoardTool>>>(
+                "update_board",
+                (input) => updateBoardTool(write, input),
+            ),
+        }),
+        move_board: tool({
+            description:
+                "Move a visible board into a visible folder, or to the workspace root with folderId null. " +
+                "Use it to organize boards; it does not change the board's name or description.",
+            inputSchema: moveBoardInputSchema,
+            execute: instrument<MoveBoardInput, Awaited<ReturnType<typeof moveBoardTool>>>(
+                "move_board",
+                (input) => moveBoardTool(write, input),
             ),
         }),
         create_task: tool({
@@ -314,6 +418,46 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
             execute: instrument<MoveTaskInput, Awaited<ReturnType<typeof moveTaskTool>>>(
                 "move_task",
                 (input) => moveTaskTool(write, input),
+            ),
+        }),
+        delete_note: tool({
+            description:
+                "Request deletion of a visible note by moving it to trash. This only creates a confirmation card; " +
+                "the note is not deleted until the user confirms. Never say it was deleted before confirmation.",
+            inputSchema: deleteNoteInputSchema,
+            execute: instrument<DeleteNoteInput, Awaited<ReturnType<typeof deleteNoteTool>>>(
+                "delete_note",
+                (input) => deleteNoteTool(write, input),
+            ),
+        }),
+        delete_task: tool({
+            description:
+                "Request permanent deletion of a visible task. This only creates a confirmation card; " +
+                "the task is not deleted until the user confirms. Never say it was deleted before confirmation.",
+            inputSchema: deleteTaskInputSchema,
+            execute: instrument<DeleteTaskInput, Awaited<ReturnType<typeof deleteTaskTool>>>(
+                "delete_task",
+                (input) => deleteTaskTool(write, input),
+            ),
+        }),
+        delete_folder: tool({
+            description:
+                "Request moving a visible folder subtree to trash. Boards inside are rehomed to the root by the " +
+                "workspace. This only creates a confirmation card; never say it was deleted before confirmation.",
+            inputSchema: deleteFolderInputSchema,
+            execute: instrument<DeleteFolderInput, Awaited<ReturnType<typeof deleteFolderTool>>>(
+                "delete_folder",
+                (input) => deleteFolderTool(write, input),
+            ),
+        }),
+        delete_board: tool({
+            description:
+                "Request permanent deletion of an archived visible board. This only creates a confirmation card; " +
+                "the board is not deleted until the user confirms. An active board must be archived first.",
+            inputSchema: deleteBoardInputSchema,
+            execute: instrument<DeleteBoardInput, Awaited<ReturnType<typeof deleteBoardTool>>>(
+                "delete_board",
+                (input) => deleteBoardTool(write, input),
             ),
         }),
     };

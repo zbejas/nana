@@ -16,7 +16,7 @@ import { history } from '@milkdown/kit/plugin/history';
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
 import { upload, uploadConfig } from '@milkdown/kit/plugin/upload';
 import { $prose, $view } from '@milkdown/kit/utils';
-import { Fragment, Slice } from '@milkdown/kit/prose/model';
+import { Fragment, Slice, type Node as ProseNode } from '@milkdown/kit/prose/model';
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view';
 import { prism } from '@milkdown/plugin-prism';
@@ -224,6 +224,61 @@ function taskListClickPlugin() {
  * plugin debounces `markdownUpdated` by 200ms, which can lose the last
  * keystrokes when the user switches to Read or closes the editor immediately.
  */
+const ALERT_TYPES = ["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"] as const;
+const ALERT_PLUGIN_KEY = new PluginKey<DecorationSet>("NANA_GITHUB_ALERTS");
+
+function alertDecorations(doc: ProseNode): DecorationSet {
+  const decorations: Decoration[] = [];
+
+  doc.descendants((node: ProseNode, pos: number) => {
+    if (node.type.name !== "blockquote") return;
+    const first = node.firstChild;
+    if (!first || first.type.name !== "paragraph") return;
+
+    const text = first.textContent as string;
+    const match = /^(\s*)\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i.exec(text);
+    if (!match) return;
+
+    const type = (match[2] ?? "").toUpperCase();
+    if (!ALERT_TYPES.includes(type as typeof ALERT_TYPES[number])) return;
+
+    const alertType = type.toLowerCase();
+    decorations.push(Decoration.node(pos, pos + node.nodeSize, {
+      class: `nana-alert nana-alert-${alertType}`,
+      "data-alert-label": alertType.charAt(0).toUpperCase() + alertType.slice(1),
+    }));
+
+    // The marker is source syntax, not reading copy. Keep it in the document
+    // so serialization round-trips, but hide it in both read and write mode.
+    const markerLength = match[0].length;
+    const markerFrom = pos + 2;
+    if (markerLength > 0 && markerFrom + markerLength <= pos + 1 + first.nodeSize) {
+      decorations.push(Decoration.inline(markerFrom, markerFrom + markerLength, {
+        class: "nana-alert-marker",
+      }));
+    }
+  });
+
+  return DecorationSet.create(doc, decorations);
+}
+
+/** Render GitHub blockquote alerts as Graphite callouts without changing source. */
+function githubAlertPlugin() {
+  return $prose(
+    () =>
+      new Plugin({
+        key: ALERT_PLUGIN_KEY,
+        state: {
+          init: (_config, state) => alertDecorations(state.doc),
+          apply: (tr, previous) => tr.docChanged ? alertDecorations(tr.doc) : previous,
+        },
+        props: {
+          decorations: (state) => ALERT_PLUGIN_KEY.getState(state),
+        },
+      }),
+  );
+}
+
 function documentChangePlugin(onDocChangeRef: { current: ((markdown: string) => void) | undefined }) {
   return $prose(
     (ctx) =>
@@ -310,6 +365,7 @@ export async function createMilkdownEditor(options: CreateMilkdownEditorOptions)
   });
 
   editor.use([...commonmark, ...gfm, ...history, ...cursor, listener, ...prism]);
+  editor.use(githubAlertPlugin());
   editor.use(legacyImageView);
   editor.use(legacyLinkPlugin());
   editor.use(placeholderPlugin(options.placeholderRef));

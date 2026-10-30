@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAtom } from 'jotai';
 import {
@@ -10,8 +10,11 @@ import { SegmentedControl, Sheet, cn } from '../ui';
 import {
   chatDockHistoryOpenAtom,
   chatDockOpenAtom,
+  chatDockResizingAtom,
   sidebarOpenAtom,
 } from '../../state/atoms';
+import { CHAT_HISTORY_WIDTH, MIN_CHAT_DOCK_WIDTH } from '../../lib/settings';
+import { ChatDockResizeHandle } from './ChatDockResizeHandle';
 import { NanaMark } from './NanaMark';
 import { ChatHistory } from './ChatHistory';
 import { ChatThread } from './ChatThread';
@@ -25,17 +28,25 @@ import {
 } from '../../lib/chat/store';
 import { useChatViewportHeight, useIsMobileChat } from '../../lib/chat/viewport';
 
+interface ChatDockProps {
+  /** Total dock width. Includes the history column when it is open. */
+  width: number;
+  /** Maximum dock width at the current viewport size. */
+  maxWidth: number;
+}
+
 /**
  * The one persistent chat surface. Mounted in AppContent outside the keyed
  * route tree, so changing pages never unmounts the conversation or stream.
  */
-export function ChatDock() {
+export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobileChat();
   const [open, setOpen] = useAtom(chatDockOpenAtom);
   const [historyOpen, setHistoryOpen] = useAtom(chatDockHistoryOpenAtom);
   const [sidebarOpen, setSidebarOpen] = useAtom(sidebarOpenAtom);
+  const [resizing, setResizing] = useAtom(chatDockResizingAtom);
   const conversationIdAtom = useChatStore((snapshot) => snapshot.conversationId);
   const mode = useChatStore((snapshot) => snapshot.mode);
   const status = useChatStore((snapshot) => snapshot.status);
@@ -53,7 +64,13 @@ export function ChatDock() {
   const isChatRoute = location.pathname.startsWith('/chat');
   const visible = open && !isChatRoute;
   const viewportHeight = useChatViewportHeight(isMobile && visible);
-  const dockWidth = historyOpen && !isMobile ? 656 : 400;
+  const historyVisible = historyOpen && !isMobile;
+  const historyWidth = historyVisible ? CHAT_HISTORY_WIDTH : 0;
+  const baseWidth = Math.max(MIN_CHAT_DOCK_WIDTH, width - historyWidth);
+  const maxBaseWidth = Math.max(MIN_CHAT_DOCK_WIDTH, maxWidth - historyWidth);
+
+  const handleResizeStart = useCallback(() => setResizing(true), [setResizing]);
+  const handleResizeEnd = useCallback(() => setResizing(false), [setResizing]);
 
   useEffect(() => {
     if (!mounted.current) {
@@ -180,6 +197,7 @@ export function ChatDock() {
   return (
     <>
       <aside
+        id="nana-chat-dock"
         ref={panelRef}
         role="dialog"
         aria-modal="false"
@@ -199,10 +217,18 @@ export function ChatDock() {
               bottom: 'var(--mobile-navbar-height, calc(4.5rem + env(safe-area-inset-bottom)))',
             }),
           }
-          : { width: `${dockWidth}px` }}
+          : { width: `${width}px`, ...(resizing ? { transition: 'none' } : {}) }}
       >
+        {!isMobile && visible && (
+          <ChatDockResizeHandle
+            width={baseWidth}
+            maxWidth={maxBaseWidth}
+            onResizeStart={handleResizeStart}
+            onResizeEnd={handleResizeEnd}
+          />
+        )}
         <div className="flex h-full min-h-0 w-full">
-          {historyOpen && !isMobile && (
+          {historyVisible && (
             <div className="hidden w-64 shrink-0 flex-col border-r border-line bg-canvas-deep md:flex">
               <ChatHistory
                 activeConversationId={conversationIdAtom}
@@ -244,8 +270,8 @@ export function ChatDock() {
                   value={mode}
                   onChange={setChatMode}
                   options={[
+                    { value: 'edit', label: 'Work', title: 'Work — Nana can read and change folders, notes, boards, and tasks' },
                     { value: 'ask', label: 'Ask', title: 'Ask — Nana only reads notes and boards' },
-                    { value: 'edit', label: 'Edit', title: 'Edit — Nana can change notes and boards' },
                   ]}
                 />
                 <div className="ml-auto flex items-center gap-0.5">

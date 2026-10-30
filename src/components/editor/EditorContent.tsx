@@ -19,13 +19,13 @@ interface EditorContentProps {
   viewMode: ViewMode;
   onDropFiles?: (event: DragEvent<HTMLDivElement>) => void;
   aiEdit?: EditorAiEdit | null;
+  fullscreen?: boolean;
 }
 
 /**
- * The document editor surface. `text` is the CodeMirror source, `wysiwyg` is
- * Milkdown, `split` shows both, and `preview` is Milkdown in read-only mode.
- * All four keep Markdown as the storage format and emit through
- * `onContentChange`.
+ * The document editor surface. `wysiwyg` is the rendered Milkdown editor,
+ * `text` is the CodeMirror source, and `split` shows both. All three keep
+ * Markdown as the storage format and emit through `onContentChange`.
  */
 export function EditorContent({
   content,
@@ -34,6 +34,7 @@ export function EditorContent({
   viewMode,
   onDropFiles,
   aiEdit = null,
+  fullscreen = false,
 }: EditorContentProps) {
   const isSplitMode = viewMode === 'split';
   const editorPlaceholder = readOnly ? '' : 'Start writing…';
@@ -57,7 +58,9 @@ export function EditorContent({
 
   return (
     <div
-      className="flex h-full min-h-0 flex-1 overflow-hidden bg-canvas px-2.5 py-2.5 md:px-5 md:py-4"
+      className={`flex h-full min-h-0 flex-1 overflow-hidden bg-canvas ${
+        fullscreen ? 'p-0' : 'px-2.5 py-2.5 md:px-5 md:py-4'
+      }`}
       onDropCapture={(event) => {
         // CodeMirror and ProseMirror try to read dropped files as text.
         // Attachment drops belong to the document editor's upload handler.
@@ -68,8 +71,10 @@ export function EditorContent({
       }}
     >
       <div
-        className={`relative mx-auto flex h-full min-h-0 w-full flex-col overflow-hidden rounded-panel border border-line bg-surface ${
-          isSplitMode ? 'max-w-[1240px]' : 'max-w-[920px]'
+        className={`relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface ${
+          fullscreen
+            ? 'max-w-none rounded-none border-0'
+            : `mx-auto rounded-panel border border-line ${isSplitMode ? 'max-w-[1240px]' : 'max-w-[920px]'}`
         }`}
       >
         {viewMode === 'text' && (
@@ -97,16 +102,16 @@ export function EditorContent({
           />
         )}
 
-        {(viewMode === 'wysiwyg' || viewMode === 'preview') && (
+        {viewMode === 'wysiwyg' && (
           <NanaMarkdownEditor
             value={content}
             onChange={onContentChange}
-            readOnly={readOnly || viewMode === 'preview'}
+            readOnly={readOnly}
             placeholder={editorPlaceholder}
             ariaLabel="Document content"
             className="scrollbar-autohide h-full min-h-0 flex-1"
-            showToolbar={viewMode !== 'preview'}
-            enableSlash={viewMode !== 'preview'}
+            showToolbar
+            enableSlash
             onEditorReady={handleEditorReady}
           />
         )}

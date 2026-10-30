@@ -34,17 +34,31 @@ const tones = {
 export function Toast({ message, type = 'error', onClose, durationMs = 3000 }: ToastProps) {
   const [isExiting, setIsExiting] = useState(false);
   const closingRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  const exitTimerRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    return () => {
+      if (exitTimerRef.current !== null) window.clearTimeout(exitTimerRef.current);
+    };
+  }, []);
+
+  // Keep the timer independent of the callback identity. ToastHost passes a
+  // fresh onClose closure on every render; depending on it would restart the
+  // countdown each time the editor re-rendered and the toast would never leave.
   const closeToast = useCallback(() => {
     if (closingRef.current) return;
 
     closingRef.current = true;
     setIsExiting(true);
-
-    window.setTimeout(() => {
-      onClose();
+    exitTimerRef.current = window.setTimeout(() => {
+      onCloseRef.current();
     }, 180);
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
     if (durationMs <= 0) return;

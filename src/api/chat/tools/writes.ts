@@ -4,14 +4,17 @@ import { createLogger } from "../../../lib/logger";
 import { applySectionEdits, MarkdownSectionError, type AppliedSectionEdit, type MarkdownEditOperation } from "../../../lib/markdown/sections";
 import { pbGet, queryString, type PBListResponse, type ToolContext } from "../../pocketbase/client";
 import { loadAiVisibility, noteIsLocked } from "../../workspace/privacy";
-import { createBoard, getBoard } from "../../workspace/boards";
+import { createBoard, getBoard, moveBoard, updateBoard } from "../../workspace/boards";
+import { createFolder, listFolders, updateFolder } from "../../workspace/folders";
 import {
     createNote,
     editNoteRecord,
+    getNote,
+    moveNote,
     type NoteSnapshot,
 } from "../../workspace/notes";
-import { createTask, moveTask, updateTask } from "../../workspace/tasks";
-import type { TaskDto } from "../../workspace/types";
+import { createTask, getTask, moveTask, updateTask } from "../../workspace/tasks";
+import type { FolderDto, TaskDto } from "../../workspace/types";
 import { failureFromError } from "./errors";
 import { recordChatEdit } from "../edits";
 import type { ChatRunRecorder } from "./recorder";
@@ -93,9 +96,73 @@ export const updateNoteInputSchema = z.object({
     message: "Provide a title or tags. Note content is changed with edit_note.",
 });
 
+export const createFolderInputSchema = z.object({
+    name: z.string().min(1).max(160),
+    parentId: z.string().min(1).max(64).optional().describe("Optional parent folder id; omit for the root."),
+});
+
+export const moveNoteInputSchema = z.object({
+    noteId: recordId.describe("The visible note id to move."),
+    folderId: z.string().max(64).nullable().describe("Destination folder id, or null for the workspace root."),
+    summary: summarySchema.optional(),
+});
+
+export const renameFolderInputSchema = z.object({
+    folderId: recordId.describe("The visible folder id to rename."),
+    name: z.string().min(1).max(160),
+    summary: summarySchema.optional(),
+});
+
+export const moveFolderInputSchema = z.object({
+    folderId: recordId.describe("The visible folder id to move."),
+    parentId: z.string().max(64).nullable().describe("New parent folder id, or null for the workspace root."),
+    summary: summarySchema.optional(),
+});
+
 export const createBoardInputSchema = z.object({
     name: z.string().min(1).max(120),
     description: z.string().max(10_000).optional(),
+    folder: z.string().min(1).max(64).optional().describe("Optional folder id; omit for the workspace root."),
+});
+
+export const updateBoardInputSchema = z.object({
+    boardId: recordId.describe("The visible board id to update."),
+    name: z.string().min(1).max(120).optional(),
+    description: z.string().max(10_000).optional(),
+    archived: z.boolean().optional().describe("Archive the board, or restore it with false."),
+    summary: summarySchema.optional(),
+}).refine((value) => (
+    value.name !== undefined
+    || value.description !== undefined
+    || value.archived !== undefined
+), {
+    message: "Provide a name, description, or archive state.",
+});
+
+export const moveBoardInputSchema = z.object({
+    boardId: recordId.describe("The visible board id to move."),
+    folderId: z.string().max(64).nullable().describe("Destination folder id, or null for the workspace root."),
+    summary: summarySchema.optional(),
+});
+
+export const deleteNoteInputSchema = z.object({
+    noteId: recordId.describe("The visible note id to move to trash."),
+    summary: summarySchema.optional(),
+});
+
+export const deleteTaskInputSchema = z.object({
+    taskId: recordId.describe("The visible task id to delete permanently."),
+    summary: summarySchema.optional(),
+});
+
+export const deleteFolderInputSchema = z.object({
+    folderId: recordId.describe("The visible folder id to move to trash."),
+    summary: summarySchema.optional(),
+});
+
+export const deleteBoardInputSchema = z.object({
+    boardId: recordId.describe("The archived board id to delete permanently."),
+    summary: summarySchema.optional(),
 });
 
 const prioritySchema = z.enum(["low", "medium", "high", "urgent"]);
@@ -133,10 +200,20 @@ export type CreateNoteInput = z.input<typeof createNoteInputSchema>;
 export type AppendNoteInput = z.input<typeof appendNoteInputSchema>;
 export type EditNoteInput = z.input<typeof editNoteInputSchema>;
 export type UpdateNoteInput = z.input<typeof updateNoteInputSchema>;
+export type CreateFolderInput = z.input<typeof createFolderInputSchema>;
+export type MoveNoteInput = z.input<typeof moveNoteInputSchema>;
+export type RenameFolderInput = z.input<typeof renameFolderInputSchema>;
+export type MoveFolderInput = z.input<typeof moveFolderInputSchema>;
 export type CreateBoardInput = z.input<typeof createBoardInputSchema>;
+export type UpdateBoardInput = z.input<typeof updateBoardInputSchema>;
+export type MoveBoardInput = z.input<typeof moveBoardInputSchema>;
 export type CreateTaskInput = z.input<typeof createTaskInputSchema>;
 export type UpdateTaskInput = z.input<typeof updateTaskInputSchema>;
 export type MoveTaskInput = z.input<typeof moveTaskInputSchema>;
+export type DeleteNoteInput = z.input<typeof deleteNoteInputSchema>;
+export type DeleteTaskInput = z.input<typeof deleteTaskInputSchema>;
+export type DeleteFolderInput = z.input<typeof deleteFolderInputSchema>;
+export type DeleteBoardInput = z.input<typeof deleteBoardInputSchema>;
 
 export interface ChatWriteToolResult {
     ok: true;
@@ -148,6 +225,9 @@ export interface ChatWriteToolResult {
         available: boolean;
         editId: string | null;
     };
+    /** Present on delete requests; the target is untouched until confirmed. */
+    pending?: boolean;
+    actionId?: string;
     revision?: number;
     versionToken?: string;
     [key: string]: unknown;
@@ -199,12 +279,23 @@ function targetFor(type: ChatEditTarget["type"], id: string, title: string, boar
     return {
         type,
         id,
-        title: truncate(title || (type === "document" ? "Untitled note" : type === "board" ? "Untitled board" : "Untitled task"), 200),
+        title: truncate(
+            title || (type === "document"
+                ? "Untitled note"
+                : type === "board"
+                    ? "Untitled board"
+                    : type === "folder"
+                        ? "Untitled folder"
+                        : "Untitled task"),
+            200,
+        ),
         url: type === "document"
             ? `/document/${id}`
-            : type === "task"
-                ? boardId ? `/board/${boardId}?task=${id}` : "/board"
-                : `/board/${id}`,
+            : type === "folder"
+                ? `/folders/${id}`
+                : type === "task"
+                    ? boardId ? `/board/${boardId}?task=${id}` : "/board"
+                    : `/board/${id}`,
     };
 }
 
@@ -234,6 +325,8 @@ async function persistEdit(
         afterRevision?: number;
         afterUpdated?: string;
         undoKind: ChatEditUndoKind;
+        status?: "pending" | "applied";
+        kind?: "create" | "edit" | "delete";
     },
 ): Promise<string | null> {
     if (!write.conversationId) return null;
@@ -253,6 +346,8 @@ async function persistEdit(
             afterRevision: input.afterRevision,
             afterUpdated: input.afterUpdated,
             undoKind: input.undoKind,
+            status: input.status,
+            kind: input.kind,
         });
         write.recorder.addEdit(edit);
         return edit.id;
@@ -321,6 +416,11 @@ async function loadEditableNote(
             updated: record.updated,
         }),
     };
+}
+
+async function loadVisibleFolder(context: ToolContext, folderId: string): Promise<FolderDto | null> {
+    const folders = await listFolders(context, "ai");
+    return folders.find((folder) => folder.id === folderId) ?? null;
 }
 
 function snapshotOf(note: EditableNote): NoteSnapshot {
@@ -459,6 +559,131 @@ export async function createNoteTool(
             summary,
             changed,
             undo: { kind: "trash", available: editId !== null, editId },
+        };
+    } catch (error) {
+        return failureFromError(error);
+    }
+}
+
+export async function createFolderTool(
+    write: WriteContext,
+    input: CreateFolderInput | unknown,
+): Promise<ChatWriteResult> {
+    const parsed = createFolderInputSchema.safeParse(input);
+    if (!parsed.success) {
+        return { ok: false, code: "invalid_input", message: "The folder details were not valid." };
+    }
+
+    try {
+        const folder = await createFolder(aiContext(write.context), "ai", {
+            name: parsed.data.name,
+            parentId: parsed.data.parentId ?? null,
+        });
+        const summary = `Created folder “${truncate(folder.name, 120)}”.`;
+        const changed: ChatEditChanges = { fields: ["name"] };
+        const editId = await persistEdit(write, {
+            tool: "create_folder",
+            targetType: "folder",
+            targetId: folder.id,
+            targetTitle: folder.name,
+            summary,
+            changed,
+            undoKind: "none",
+            kind: "create",
+        });
+        return {
+            ok: true,
+            target: targetFor("folder", folder.id, folder.name),
+            summary,
+            changed,
+            undo: { kind: "none", available: false, editId },
+        };
+    } catch (error) {
+        return failureFromError(error);
+    }
+}
+
+export async function renameFolderTool(
+    write: WriteContext,
+    input: RenameFolderInput | unknown,
+): Promise<ChatWriteResult> {
+    const parsed = renameFolderInputSchema.safeParse(input);
+    if (!parsed.success) {
+        return { ok: false, code: "invalid_input", message: "The folder details were not valid." };
+    }
+
+    try {
+        const folder = await loadVisibleFolder(write.context, parsed.data.folderId);
+        if (!folder) {
+            return { ok: false, code: "not_found", message: "That folder was not found." };
+        }
+        const updated = await updateFolder(aiContext(write.context), "ai", folder.id, {
+            name: parsed.data.name,
+        });
+        const summary = parsed.data.summary?.trim()
+            || `Renamed folder “${truncate(folder.name, 120)}” to “${truncate(updated.name, 120)}”.`;
+        const changed: ChatEditChanges = { fields: ["name"] };
+        const editId = await persistEdit(write, {
+            tool: "rename_folder",
+            targetType: "folder",
+            targetId: updated.id,
+            targetTitle: updated.name,
+            summary,
+            changed,
+            undoKind: "none",
+            kind: "edit",
+        });
+        return {
+            ok: true,
+            target: targetFor("folder", updated.id, updated.name),
+            summary,
+            changed,
+            undo: { kind: "none", available: false, editId },
+        };
+    } catch (error) {
+        return failureFromError(error);
+    }
+}
+
+export async function moveFolderTool(
+    write: WriteContext,
+    input: MoveFolderInput | unknown,
+): Promise<ChatWriteResult> {
+    const parsed = moveFolderInputSchema.safeParse(input);
+    if (!parsed.success) {
+        return { ok: false, code: "invalid_input", message: "The folder move details were not valid." };
+    }
+
+    try {
+        const folder = await loadVisibleFolder(write.context, parsed.data.folderId);
+        if (!folder) {
+            return { ok: false, code: "not_found", message: "That folder was not found." };
+        }
+        const parentId = parsed.data.parentId?.trim() || null;
+        const updated = await updateFolder(aiContext(write.context), "ai", folder.id, {
+            parentId,
+        });
+        const summary = parsed.data.summary?.trim()
+            || (parentId
+                ? `Moved folder “${truncate(updated.name, 120)}” into another folder.`
+                : `Moved folder “${truncate(updated.name, 120)}” to the workspace root.`);
+        const changed: ChatEditChanges = { fields: ["parent"] };
+        const editId = await persistEdit(write, {
+            tool: "move_folder",
+            targetType: "folder",
+            targetId: updated.id,
+            targetTitle: updated.name,
+            summary,
+            changed,
+            undoKind: "none",
+            kind: "edit",
+        });
+        return {
+            ok: true,
+            target: targetFor("folder", updated.id, updated.name),
+            summary,
+            changed,
+            undo: { kind: "none", available: false, editId },
         };
     } catch (error) {
         return failureFromError(error);
@@ -688,6 +913,48 @@ export async function updateNoteTool(
     }
 }
 
+export async function moveNoteTool(
+    write: WriteContext,
+    input: MoveNoteInput | unknown,
+): Promise<ChatWriteResult> {
+    const parsed = moveNoteInputSchema.safeParse(input);
+    if (!parsed.success) {
+        return { ok: false, code: "invalid_input", message: "The note move details were not valid." };
+    }
+
+    try {
+        const note = await getNote(write.context, "ai", parsed.data.noteId);
+        const folderId = parsed.data.folderId?.trim() || null;
+        const updated = await moveNote(aiContext(write.context), "ai", note.id, folderId);
+        const summary = parsed.data.summary?.trim()
+            || (folderId
+                ? `Moved note “${truncate(updated.title, 120)}” into a folder.`
+                : `Moved note “${truncate(updated.title, 120)}” to the workspace root.`);
+        const changed: ChatEditChanges = { fields: ["folder"] };
+        const editId = await persistEdit(write, {
+            tool: "move_note",
+            targetType: "document",
+            targetId: updated.id,
+            targetTitle: updated.title,
+            summary,
+            changed,
+            undoKind: "none",
+            kind: "edit",
+        });
+        write.recorder.addSource({ type: "document", id: updated.id, title: updated.title });
+
+        return {
+            ok: true,
+            target: targetFor("document", updated.id, updated.title),
+            summary,
+            changed,
+            undo: { kind: "none", available: false, editId },
+        };
+    } catch (error) {
+        return failureFromError(error);
+    }
+}
+
 // ── Boards and tasks ─────────────────────────────────────────────────
 
 export async function createBoardTool(
@@ -703,6 +970,7 @@ export async function createBoardTool(
         const board = await createBoard(aiContext(write.context), "ai", {
             name: parsed.data.name,
             description: parsed.data.description ?? "",
+            folderId: parsed.data.folder ?? null,
         });
         const summary = `Created board “${truncate(board.name, 100)}”.`;
         const changed: ChatEditChanges = { fields: ["name", "description"] };
@@ -719,6 +987,108 @@ export async function createBoardTool(
         return {
             ok: true,
             target: targetFor("board", board.id, board.name),
+            summary,
+            changed,
+            undo: { kind: "none", available: false, editId },
+        };
+    } catch (error) {
+        return failureFromError(error);
+    }
+}
+
+export async function updateBoardTool(
+    write: WriteContext,
+    input: UpdateBoardInput | unknown,
+): Promise<ChatWriteResult> {
+    const parsed = updateBoardInputSchema.safeParse(input);
+    if (!parsed.success) {
+        return { ok: false, code: "invalid_input", message: "The board update details were not valid." };
+    }
+
+    try {
+        const board = await getBoard(write.context, "ai", parsed.data.boardId);
+        const fields: string[] = [];
+        if (parsed.data.name !== undefined) fields.push("name");
+        if (parsed.data.description !== undefined) fields.push("description");
+        if (parsed.data.archived !== undefined) fields.push("archived");
+
+        const updated = await updateBoard(aiContext(write.context), "ai", board.id, {
+            ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+            ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+            ...(parsed.data.archived !== undefined ? { archived: parsed.data.archived } : {}),
+        });
+
+        let summary = parsed.data.summary?.trim();
+        if (!summary) {
+            if (parsed.data.archived === true) {
+                summary = `Archived board “${truncate(updated.name, 100)}”.`;
+            } else if (parsed.data.archived === false) {
+                summary = `Restored board “${truncate(updated.name, 100)}”.`;
+            } else if (parsed.data.name !== undefined) {
+                summary = `Renamed board “${truncate(board.name, 100)}” to “${truncate(updated.name, 100)}”.`;
+            } else {
+                summary = `Updated board “${truncate(updated.name, 100)}”.`;
+            }
+        }
+
+        const changed: ChatEditChanges = { fields };
+        const editId = await persistEdit(write, {
+            tool: "update_board",
+            targetType: "board",
+            targetId: updated.id,
+            targetTitle: updated.name,
+            summary,
+            changed,
+            undoKind: "none",
+            kind: "edit",
+        });
+        write.recorder.addSource({ type: "board", id: updated.id, title: updated.name });
+
+        return {
+            ok: true,
+            target: targetFor("board", updated.id, updated.name),
+            summary,
+            changed,
+            undo: { kind: "none", available: false, editId },
+        };
+    } catch (error) {
+        return failureFromError(error);
+    }
+}
+
+export async function moveBoardTool(
+    write: WriteContext,
+    input: MoveBoardInput | unknown,
+): Promise<ChatWriteResult> {
+    const parsed = moveBoardInputSchema.safeParse(input);
+    if (!parsed.success) {
+        return { ok: false, code: "invalid_input", message: "The board move details were not valid." };
+    }
+
+    try {
+        const board = await getBoard(write.context, "ai", parsed.data.boardId);
+        const folderId = parsed.data.folderId?.trim() || null;
+        const updated = await moveBoard(aiContext(write.context), "ai", board.id, folderId);
+        const summary = parsed.data.summary?.trim()
+            || (folderId
+                ? `Moved board “${truncate(updated.name, 100)}” into a folder.`
+                : `Moved board “${truncate(updated.name, 100)}” to the workspace root.`);
+        const changed: ChatEditChanges = { fields: ["folder"] };
+        const editId = await persistEdit(write, {
+            tool: "move_board",
+            targetType: "board",
+            targetId: updated.id,
+            targetTitle: updated.name,
+            summary,
+            changed,
+            undoKind: "none",
+            kind: "edit",
+        });
+        write.recorder.addSource({ type: "board", id: updated.id, title: updated.name });
+
+        return {
+            ok: true,
+            target: targetFor("board", updated.id, updated.name),
             summary,
             changed,
             undo: { kind: "none", available: false, editId },
@@ -897,6 +1267,162 @@ export async function moveTaskTool(
             undo: { kind: "none", available: false, editId },
             status: task.status,
         };
+    } catch (error) {
+        return failureFromError(error);
+    }
+}
+
+async function requestDelete(
+    write: WriteContext,
+    input: {
+        tool: "delete_note" | "delete_task" | "delete_folder" | "delete_board";
+        targetType: "document" | "task" | "folder" | "board";
+        targetId: string;
+        targetTitle: string;
+        targetBoardId?: string;
+        summary: string;
+    },
+): Promise<ChatWriteResult> {
+    if (!write.conversationId) {
+        return {
+            ok: false,
+            code: "unavailable",
+            message: "A confirmation card needs an active conversation.",
+        };
+    }
+
+    const editId = await persistEdit(write, {
+        tool: input.tool,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        targetTitle: input.targetTitle,
+        targetBoardId: input.targetBoardId,
+        summary: input.summary,
+        changed: {},
+        undoKind: "none",
+        status: "pending",
+        kind: "delete",
+    });
+    if (!editId) {
+        return {
+            ok: false,
+            code: "unavailable",
+            message: "The delete confirmation could not be created. Try again.",
+        };
+    }
+
+    return {
+        ok: true,
+        target: targetFor(input.targetType, input.targetId, input.targetTitle, input.targetBoardId),
+        summary: input.summary,
+        changed: {},
+        undo: { kind: "none", available: false, editId },
+        pending: true,
+        actionId: editId,
+    };
+}
+
+export async function deleteNoteTool(
+    write: WriteContext,
+    input: DeleteNoteInput | unknown,
+): Promise<ChatWriteResult> {
+    const parsed = deleteNoteInputSchema.safeParse(input);
+    if (!parsed.success) {
+        return { ok: false, code: "invalid_input", message: "The note id was not valid." };
+    }
+
+    const note = await loadEditableNote(write.context, parsed.data.noteId);
+    if ("ok" in note) return note;
+
+    return requestDelete(write, {
+        tool: "delete_note",
+        targetType: "document",
+        targetId: note.id,
+        targetTitle: note.title,
+        summary: parsed.data.summary?.trim()
+            || `Move note “${truncate(note.title, 120)}” to trash.`,
+    });
+}
+
+export async function deleteTaskTool(
+    write: WriteContext,
+    input: DeleteTaskInput | unknown,
+): Promise<ChatWriteResult> {
+    const parsed = deleteTaskInputSchema.safeParse(input);
+    if (!parsed.success) {
+        return { ok: false, code: "invalid_input", message: "The task id was not valid." };
+    }
+
+    try {
+        const task = await getTask(write.context, "ai", parsed.data.taskId);
+        return requestDelete(write, {
+            tool: "delete_task",
+            targetType: "task",
+            targetId: task.id,
+            targetTitle: task.title,
+            targetBoardId: task.boardId,
+            summary: parsed.data.summary?.trim()
+                || `Delete task “${truncate(task.title, 120)}” permanently.`,
+        });
+    } catch (error) {
+        return failureFromError(error);
+    }
+}
+
+export async function deleteFolderTool(
+    write: WriteContext,
+    input: DeleteFolderInput | unknown,
+): Promise<ChatWriteResult> {
+    const parsed = deleteFolderInputSchema.safeParse(input);
+    if (!parsed.success) {
+        return { ok: false, code: "invalid_input", message: "The folder id was not valid." };
+    }
+
+    try {
+        const folders = await listFolders(write.context, "ai");
+        const folder = folders.find((candidate) => candidate.id === parsed.data.folderId);
+        if (!folder) {
+            return { ok: false, code: "not_found", message: "That folder was not found." };
+        }
+        return requestDelete(write, {
+            tool: "delete_folder",
+            targetType: "folder",
+            targetId: folder.id,
+            targetTitle: folder.name,
+            summary: parsed.data.summary?.trim()
+                || `Move folder “${truncate(folder.name, 120)}” to trash.`,
+        });
+    } catch (error) {
+        return failureFromError(error);
+    }
+}
+
+export async function deleteBoardTool(
+    write: WriteContext,
+    input: DeleteBoardInput | unknown,
+): Promise<ChatWriteResult> {
+    const parsed = deleteBoardInputSchema.safeParse(input);
+    if (!parsed.success) {
+        return { ok: false, code: "invalid_input", message: "The board id was not valid." };
+    }
+
+    try {
+        const board = await getBoard(write.context, "ai", parsed.data.boardId);
+        if (!board.archived) {
+            return {
+                ok: false,
+                code: "conflict",
+                message: "Archive the board before deleting it.",
+            };
+        }
+        return requestDelete(write, {
+            tool: "delete_board",
+            targetType: "board",
+            targetId: board.id,
+            targetTitle: board.name,
+            summary: parsed.data.summary?.trim()
+                || `Delete archived board “${truncate(board.name, 120)}” permanently.`,
+        });
     } catch (error) {
         return failureFromError(error);
     }

@@ -104,6 +104,21 @@
   --danger: #ff7b72;
   --danger-soft: rgb(255 123 114 / 0.12);
   --on-danger: #200a08;
+  --alert-note: #58a6ff;
+  --alert-note-soft: rgb(56 139 253 / 0.12);
+  --alert-note-border: rgb(56 139 253 / 0.35);
+  --alert-tip: #3fb950;
+  --alert-tip-soft: rgb(63 185 80 / 0.12);
+  --alert-tip-border: rgb(63 185 80 / 0.35);
+  --alert-important: #ab7df8;
+  --alert-important-soft: rgb(171 125 248 / 0.12);
+  --alert-important-border: rgb(171 125 248 / 0.35);
+  --alert-warning: #d29922;
+  --alert-warning-soft: rgb(210 153 34 / 0.12);
+  --alert-warning-border: rgb(210 153 34 / 0.35);
+  --alert-caution: #f85149;
+  --alert-caution-soft: rgb(248 81 73 / 0.12);
+  --alert-caution-border: rgb(248 81 73 / 0.35);
   --scrim: rgb(0 0 0 / 0.66);
   --float-shadow:
     0 16px 48px -16px rgb(0 0 0 / 0.7),
@@ -144,6 +159,21 @@
   --danger: #b42318;
   --danger-soft: rgb(180 35 24 / 0.08);
   --on-danger: #ffffff;
+  --alert-note: #0969da;
+  --alert-note-soft: #ddf4ff;
+  --alert-note-border: #54aeff;
+  --alert-tip: #1a7f37;
+  --alert-tip-soft: #dafbe1;
+  --alert-tip-border: #4ac26b;
+  --alert-important: #8250df;
+  --alert-important-soft: #fbefff;
+  --alert-important-border: #c297ff;
+  --alert-warning: #9a6700;
+  --alert-warning-soft: #fff8c5;
+  --alert-warning-border: #d4a72c;
+  --alert-caution: #cf222e;
+  --alert-caution-soft: #ffebe9;
+  --alert-caution-border: #ff8182;
   --scrim: rgb(20 20 18 / 0.36);
   --float-shadow:
     0 16px 48px -20px rgb(20 20 18 / 0.18),
@@ -263,46 +293,6 @@ body.public-route-active {
 @layer components {
   .markdown-alert {
     @apply my-4 rounded-control border p-4;
-  }
-
-  .markdown-alert-note {
-    @apply border-signal/40 bg-signal-soft;
-  }
-
-  .markdown-alert-note .markdown-alert-title {
-    @apply mb-2 flex items-center gap-2 font-semibold text-signal;
-  }
-
-  .markdown-alert-tip {
-    @apply border-success/35 bg-success-soft;
-  }
-
-  .markdown-alert-tip .markdown-alert-title {
-    @apply mb-2 flex items-center gap-2 font-semibold text-success;
-  }
-
-  .markdown-alert-important {
-    @apply border-line-strong bg-surface-sunken;
-  }
-
-  .markdown-alert-important .markdown-alert-title {
-    @apply mb-2 flex items-center gap-2 font-semibold text-ink-secondary;
-  }
-
-  .markdown-alert-warning {
-    @apply border-warning/35 bg-warning-soft;
-  }
-
-  .markdown-alert-warning .markdown-alert-title {
-    @apply mb-2 flex items-center gap-2 font-semibold text-warning;
-  }
-
-  .markdown-alert-caution {
-    @apply border-danger/35 bg-danger-soft;
-  }
-
-  .markdown-alert-caution .markdown-alert-title {
-    @apply mb-2 flex items-center gap-2 font-semibold text-danger;
   }
 
   .markdown-alert p:last-child {
@@ -744,6 +734,79 @@ body.public-route-active {
 .wmde-markdown blockquote {
   border-left-color: var(--line-strong) !important;
   color: var(--ink-secondary) !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* GitHub-style alerts in MarkdownPreview                              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * @uiw/react-markdown-preview ships GitHub's blue/purple alert palette in an
+ * unlayered stylesheet. Use alert-only tokens for the GitHub convention:
+ * blue Note, green Tip, purple Important, amber Warning, and red Caution.
+ * These rules sit outside @layer components so they win the cascade without
+ * !important; the rest of Graphite keeps its single ember accent.
+ */
+.wmde-markdown .markdown-alert {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--radius-control, 6px);
+  padding: 0.85rem 1rem;
+  background: var(--surface-sunken);
+}
+
+.wmde-markdown .markdown-alert .markdown-alert-title {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.78em;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-note {
+  border-left-color: var(--alert-note-border);
+  background: var(--alert-note-soft);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--alert-note);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-tip {
+  border-left-color: var(--alert-tip-border);
+  background: var(--alert-tip-soft);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--alert-tip);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-important {
+  border-left-color: var(--alert-important-border);
+  background: var(--alert-important-soft);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--alert-important);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-warning {
+  border-left-color: var(--alert-warning-border);
+  background: var(--alert-warning-soft);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--alert-warning);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-caution {
+  border-left-color: var(--alert-caution-border);
+  background: var(--alert-caution-soft);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--alert-caution);
 }
 
 /* ------------------------------------------------------------------ */

@@ -127,7 +127,7 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 1. Browser posts to `/api/chat/send` with the user token, `message`, `mode`, and optional `conversationId`, `context`, and `regenerate`.
 2. `verifyAuth()` validates the token. A context, if present, is resolved server-side from `{ type, id }` with ownership, trash, and private-lock checks; the title is loaded from PocketBase, not trusted from the client. `fetchAIConfig()` reads `settings.ai_config` with the server superuser token.
 3. Bun creates a `conversations` record when needed, then appends the user turn with its resolved `context` to `messages`. `regenerate: true` trims the prior exchange first.
-4. `createChatTools()` builds `list_notes`, `read_note`, `list_boards`, `read_board`, `list_tasks`, and `read_task` using the caller's `Authorization` header and the AI visibility lock. In `mode: "edit"` it also builds the note/board/task write tools.
+4. `createChatTools()` builds `list_notes`, `read_note`, `list_boards`, `read_board`, `list_tasks`, and `read_task` using the caller's `Authorization` header and the AI visibility lock. In `mode: "edit"` it also builds the create/update tools and confirm-first delete tools for folders, notes, boards, and tasks.
 5. `streamText()` runs with `stopWhen(stepCountIs(8))`; reads use PocketBase on demand, and writes go through `src/api/workspace/` with `actor: "ai"`. Note updates add revision checks and `published: true`; board and task writes use the normal ownership, archive, and status guards.
 6. The stream pump emits named SSE events (`text`, `reasoning`, `tool`, `sources`, `edit`, `done`, `error`) and, for mode-less requests, legacy AI-SDK chunks. After the model stream ends it persists the assistant text, reasoning, terminal tool names/statuses, sources, stopped flag, and model name as a `messages` row; appending touches the conversation so it sorts to the top.
 7. Applied writes persist server-owned `chat_edits` rows and emit `edit` cards. Title generation runs in the background for a new, non-stopped conversation with no stream error.
@@ -166,7 +166,7 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 | Typed REST read/write | API client → `/api/v1` → Elysia handler → workspace service (`surface: "user"`) → PB REST with user token → JSON |
 | MCP tool call | MCP client → `POST /mcp` → per-request MCP server → workspace service (`surface: "ai"`) → PB REST with user token → tool result |
 | Chat read | Browser → `/api/chat/send` (`mode: "ask"`) → `streamText` + read tools → PB REST with user token → named SSE |
-| Chat edit | Browser → `/api/chat/send` (`mode: "edit"`, context) → workspace services with `actor: "ai"` + revision/private checks → PB revision/version hooks → `chat_edits` → edit SSE card + undo route |
+| Chat edit | Browser → `/api/chat/send` (`mode: "edit"`, context) → workspace services with `actor: "ai"` + revision/private checks → PB revision/version hooks → `chat_edits` → edit SSE card + undo route; deletes create pending rows confirmed via `/api/chat/edits/:id/confirm` |
 | Export | Browser → `/api/export` → resolve documents/folders → download attachments → Markdown or ZIP |
 | Public share | Public page → `/api/v1/public/*` → PB validates token, expiry, privacy, archive state, and attachment sharing |
 | Version check | About tab → `/api/app/version` → cached GitHub Releases lookup |
@@ -217,7 +217,7 @@ Production detection is deliberate: Bun treats the app as production only when `
 - **The browser facade is an allowlist, not a proxy.** It forwards only allowlisted collections and routes, never system/schema/log/backup/superuser paths, and never injects a superuser token.
 - **PocketBase is loopback-only.** The container entrypoint binds `127.0.0.1:8090`; `/pb` returns `404`. Do not publish `8090` or add a pass-through proxy back to PocketBase.
 - **The superuser token belongs to configuration, credential exchange, and server-owned audit rows.** `fetchAIConfig()`, the rate limiter, API key lookup/exchange, and `chat_edits` persistence use it; chat tool workspace calls, REST, and MCP must use the caller's token.
-- **Chat writes are mode-gated; MCP has its own write surface.** Ask mode exposes reads only. Edit-mode writes go through `src/api/workspace/` with a user token, `X-Nana-Actor: ai`, `chat_edits`, and note revision checks; MCP has a separate tool list and destructive-tool design.
+- **Chat writes are mode-gated; MCP has its own write surface.** Ask mode exposes reads only. Work-mode writes go through `src/api/workspace/` with a user token, `X-Nana-Actor: ai`, `chat_edits`, and note revision checks; deletes are confirm-first; MCP has a separate tool list and destructive-tool design.
 - **Chat note edits are section-scoped and revision-checked.** `read_note` returns `revision` and `versionToken`; the note update tools pass one back. A stale value returns `conflict`. `src/lib/markdown/sections.ts` carries untouched sections through instead of replacing the whole note.
 - **`published: true` is a version request.** Chat note update tools set it so PocketBase snapshots the pre-edit state, then the hook resets it. It does not publish the note. `create_note` starts a new revision instead.
 - **Private means hidden from AI, not from the owner.** `/api/v1` is the owner surface and intentionally returns private notes, boards, and folder contents. Only chat and MCP apply `loadAiVisibility()`.
@@ -235,7 +235,7 @@ Production detection is deliberate: Bun treats the app as production only when `
 - **Board summaries count tasks from one query.** `listBoardSummaries()` includes boards with no tasks; don't replace it with per-board requests.
 - **`useDocumentData()` runs once.** It is called at `AppContent` and nowhere else; board pages own their own task state.
 - **Rate limits apply before the workspace surfaces.** `/api/v1`, `/docs`, and `/mcp` pass through `checkRateLimit()` at the Bun edge. REST and MCP requests get a 60-second Bun request ceiling; workspace PocketBase calls default to 30 seconds. Chat note/board reads pass an 8-second signal; task reads and chat writes use the 30-second default.
-- **Migrations run on container boot.** The entrypoint runs `PB_MIGRATING=1 pocketbase migrate up` before starting either process; a fresh test database therefore includes the current migration head (`0000028`).
+- **Migrations run on container boot.** The entrypoint runs `PB_MIGRATING=1 pocketbase migrate up` before starting either process; a fresh test database therefore includes the current migration head (`0000029`).
 
 ## Related docs
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useSetAtom } from 'jotai';
+import { useAtom, useSetAtom } from 'jotai';
 import { EditorHeader } from './editor/EditorHeader';
 import { EditorTags } from './editor/EditorTags';
 import { EditorContent, type EditorAiEdit } from './editor/EditorContent';
@@ -17,7 +17,7 @@ import { getDocument } from '../lib/documents';
 import type { ChatUiEdit } from '../lib/chat/types';
 import { exportDocument } from '../lib/export';
 import { useToasts } from '../state/hooks';
-import { chatDockOpenAtom, refreshTriggerAtom } from '../state/atoms';
+import { chatDockOpenAtom, editorFullscreenAtom, refreshTriggerAtom } from '../state/atoms';
 
 export function DocumentEditor() {
   const {
@@ -76,6 +76,7 @@ export function DocumentEditor() {
   const [searchParams, setSearchParams] = useSearchParams();
   const setRefreshTrigger = useSetAtom(refreshTriggerAtom);
   const setChatDockOpen = useSetAtom(chatDockOpenAtom);
+  const [fullscreen, setFullscreen] = useAtom(editorFullscreenAtom);
   const { showToast } = useToasts();
   const sharePanel = useSharePanel();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -283,6 +284,8 @@ export function DocumentEditor() {
             onDelete={handleDelete}
             onAskNana={() => setChatDockOpen(true)}
             askNanaDisabled={urlDocumentId === 'new' || Boolean(isTrashDocument)}
+            fullscreen={fullscreen}
+            onToggleFullscreen={() => setFullscreen((value) => !value)}
           />
         </div>
 
@@ -318,6 +321,7 @@ export function DocumentEditor() {
             viewMode={effectiveViewMode}
             onDropFiles={handleDrop}
             aiEdit={aiEdit}
+            fullscreen={fullscreen}
           />
         </div>
       </div>

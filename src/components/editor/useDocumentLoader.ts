@@ -164,7 +164,6 @@ export function useDocumentLoader({
                 if (currentDoc && updatedDoc.updated !== currentDoc.updated) {
                     logger.info('Document updated remotely, reloading', { id: urlDocumentId });
                     onSaveRef.current(updatedDoc);
-                    onShowToastRef.current('Document updated remotely', 'info');
                 } else {
                     logger.debug('Skipping real-time update - no timestamp change');
                 }
@@ -207,7 +206,6 @@ export function useDocumentLoader({
                     if (currentDoc && latestDoc.updated !== currentDoc.updated && !currentlyHasUnsavedChanges) {
                         logger.info('Document updated while tab was inactive, reloading', { id: urlDocumentId });
                         onSave(latestDoc);
-                        onShowToast('Document updated', 'info');
                     }
                 } catch (err: any) {
                     // Silently fail - don't disrupt user if check fails

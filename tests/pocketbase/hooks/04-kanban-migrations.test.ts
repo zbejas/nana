@@ -138,7 +138,7 @@ describe("kanban migrations", () => {
         );
         broken.close();
 
-        await migrate("down", "1");
+        await migrate("down", "2");
         await migrate("up");
     }, 120_000);
 
@@ -202,7 +202,7 @@ describe("kanban migrations", () => {
         db.close();
 
         // Re-run 0026 up so the share is materialized, then roll it back.
-        await migrate("down", "3");
+        await migrate("down", "4");
         await migrate("up");
 
         const up = new Database(join(dataDir, "data.db"));
@@ -211,7 +211,7 @@ describe("kanban migrations", () => {
         ).toBeGreaterThan(0);
         up.close();
 
-        await migrate("down", "3");
+        await migrate("down", "4");
         const down = new Database(join(dataDir, "data.db"));
         expect(
             query<{ count: number }>(down, "SELECT COUNT(*) AS count FROM access_grants WHERE document = ?", [DOCUMENT_ID])[0]!.count,

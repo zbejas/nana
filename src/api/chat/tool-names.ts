@@ -7,6 +7,7 @@
  */
 
 export const CHAT_READ_TOOL_NAMES = [
+    "list_folders",
     "list_notes",
     "read_note",
     "list_boards",
@@ -16,14 +17,24 @@ export const CHAT_READ_TOOL_NAMES = [
 ] as const;
 
 export const CHAT_WRITE_TOOL_NAMES = [
+    "create_folder",
+    "rename_folder",
+    "move_folder",
     "create_note",
     "append_note",
     "edit_note",
     "update_note",
+    "move_note",
     "create_board",
+    "update_board",
+    "move_board",
     "create_task",
     "update_task",
     "move_task",
+    "delete_note",
+    "delete_task",
+    "delete_folder",
+    "delete_board",
 ] as const;
 
 /** Persisted activity allowlist. Adding a tool requires extending this list. */

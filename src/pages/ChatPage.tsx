@@ -114,7 +114,11 @@ export function ChatPage() {
         <PageShell scroll="content" className="flex-1" contentClassName="desktop-page-content-enter">
           <PageHeader
             title={conversation?.title || 'Chat'}
-            description={conversationId ? 'Grounded in your workspace.' : 'Ask your notes and boards.'}
+            description={conversationId
+              ? 'Grounded in your workspace.'
+              : mode === 'edit'
+                ? 'Ask, or tell Nana what to change.'
+                : 'Ask your notes and boards.'}
             meta={
               <span className="inline-flex items-center gap-1.5">
                 <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} aria-hidden="true" />
@@ -128,8 +132,8 @@ export function ChatPage() {
                   value={mode}
                   onChange={setChatMode}
                   options={[
+                    { value: 'edit', label: 'Work', title: 'Work — Nana can read and change folders, notes, boards, and tasks' },
                     { value: 'ask', label: 'Ask', title: 'Ask — Nana only reads notes and boards' },
-                    { value: 'edit', label: 'Edit', title: 'Edit — Nana can change notes and boards' },
                   ]}
                 />
                 <Button variant="secondary" icon={<PlusIcon />} onClick={newChat}>

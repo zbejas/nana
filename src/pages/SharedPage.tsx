@@ -28,6 +28,7 @@ import {
   SegmentedControl,
 } from '../components/ui';
 import { SharedItemRow } from '../components/sharing/SharedItemRow';
+import { ChatHeaderButton } from '../components/chat/ChatHeaderButton';
 import {
   SHARED_TABS,
   filterSharedItems,
@@ -131,6 +132,7 @@ export function SharedPage() {
             )}
           </>
         }
+        actions={<ChatHeaderButton />}
       />
 
       <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">

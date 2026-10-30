@@ -9,6 +9,7 @@ import { FolderViewList } from '../components/folder-view/FolderViewList';
 import { FolderViewGrid } from '../components/folder-view/FolderViewGrid';
 import { useFolderViewState } from '../components/folder-view/useFolderViewState';
 import { SharePanel, useSharePanel } from '../components/sharing';
+import { ChatHeaderButton } from '../components/chat/ChatHeaderButton';
 import {
   TrashIcon,
   GlobeAltIcon,
@@ -173,19 +174,22 @@ export function FolderViewPage() {
             </>
           }
           actions={
-            canModify ? (
-              <>
-                <Button variant="secondary" icon={<FolderPlusIcon />} onClick={() => void handleAddFolder()}>
-                  New folder
-                </Button>
-                <Button variant="secondary" icon={<ViewColumnsIcon />} onClick={() => void handleOpenCreateBoard()}>
-                  New board
-                </Button>
-                <Button variant="primary" icon={<DocumentPlusIcon />} onClick={() => void handleAddDocument()}>
-                  New note
-                </Button>
-              </>
-            ) : undefined
+            <>
+              {canModify && (
+                <>
+                  <Button variant="secondary" icon={<FolderPlusIcon />} onClick={() => void handleAddFolder()}>
+                    New folder
+                  </Button>
+                  <Button variant="secondary" icon={<ViewColumnsIcon />} onClick={() => void handleOpenCreateBoard()}>
+                    New board
+                  </Button>
+                  <Button variant="primary" icon={<DocumentPlusIcon />} onClick={() => void handleAddDocument()}>
+                    New note
+                  </Button>
+                </>
+              )}
+              <ChatHeaderButton />
+            </>
           }
         />
 

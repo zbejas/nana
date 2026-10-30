@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAtomValue, useSetAtom } from 'jotai';
-import { chatDockOpenAtom } from '../../state/atoms';
 import type { RecordModel } from '../../lib/record-model';
 import {
   ChevronRightIcon,
   FolderIcon,
   ClockIcon,
-  ChatBubbleLeftRightIcon,
   Bars3Icon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -27,7 +24,6 @@ interface CompactSidebarProps {
 const viewItems = [
   { key: 'timeline', label: 'Timeline', path: '/timeline', icon: ClockIcon },
   { key: 'folders', label: 'Folders', path: '/folders', icon: FolderIcon },
-  { key: 'chat', label: 'Chat', path: '/chat', icon: ChatBubbleLeftRightIcon },
 ];
 
 function isPathActive(currentPath: string, path: string): boolean {
@@ -47,27 +43,18 @@ export function CompactSidebar({
 }: CompactSidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const chatDockOpen = useAtomValue(chatDockOpenAtom);
-  const setChatDockOpen = useSetAtom(chatDockOpenAtom);
   const mobileNavRef = useRef<HTMLElement>(null);
   const avatarRef = useRef<HTMLButtonElement>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   const avatarUrl = user.avatar ? pb.files.getURL(user, user.avatar) : null;
-  const onChatRoute = location.pathname.startsWith('/chat');
 
   const openView = (item: (typeof viewItems)[number]) => {
-    if (item.key === 'chat') {
-      if (onChatRoute) return;
-      setChatDockOpen((open) => !open);
-      return;
-    }
     navigate(item.path);
   };
 
   const viewIsActive = (item: (typeof viewItems)[number]) =>
-    isPathActive(location.pathname, item.path)
-    || (item.key === 'chat' && chatDockOpen && !onChatRoute);
+    isPathActive(location.pathname, item.path);
 
   useEffect(() => {
     const updateMobileNavHeight = () => {
@@ -129,7 +116,6 @@ export function CompactSidebar({
                 title={item.label}
                 aria-label={item.label}
                 aria-current={isPathActive(location.pathname, item.path) ? 'page' : undefined}
-                aria-pressed={item.key === 'chat' ? chatDockOpen : undefined}
               >
                 <Icon className="h-[1.15rem] w-[1.15rem]" />
               </button>
@@ -175,7 +161,7 @@ export function CompactSidebar({
         }`}
         aria-label="Primary"
       >
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-3 gap-1">
           <button
             onClick={onToggleExpanded}
             className={`${itemClass(false)} h-14`}
@@ -196,7 +182,6 @@ export function CompactSidebar({
                 className={`${itemClass(isActive)} h-14`}
                 aria-label={item.label}
                 aria-current={isPathActive(location.pathname, item.path) ? 'page' : undefined}
-                aria-pressed={item.key === 'chat' ? chatDockOpen : undefined}
               >
                 <Icon className={`h-5 w-5 ${isActive ? 'text-signal' : ''}`} />
                 <span className="leading-none">{item.label}</span>

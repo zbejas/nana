@@ -31,7 +31,7 @@
 Nana is for people who want their notes, documents, AI tools, and attachments in one place without handing the whole stack to a third-party service.
 
 - Self-hosted by default. Your data stays on your server.
-- Markdown-first editing with live preview and attachments.
+- Markdown-first editing with a rendered editor, source, and split view, plus attachments.
 - Multiple kanban boards with custom columns, labels, assignees, comments, and board/list/calendar views.
 - Built-in AI chat that reads and edits notes and boards, with section-level undo.
 - A first-class Elysia `/api/v1` API with self-hosted Scalar docs, plus an MCP endpoint for external AI clients.
@@ -43,9 +43,9 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 
 | | |
 |---|---|
-| **Markdown editor** | Live preview, rich formatting, and attachment support. |
+| **Markdown editor** | Rendered Editor, Source, and Split views, rich formatting, and attachment support. |
 | **Boards** | Multiple kanbans with custom columns, drag-and-drop, board/list/calendar views, labels, assignees, subtasks, relations, comments, note import, folders, private boards, public read-only links, an archive, and permanent delete for archived boards. |
-| **AI chat** | Ask about your notes and boards, or switch to Edit mode to create and update notes, boards, and tasks. Note edits are section-scoped and undoable; destructive, sharing, and privacy changes stay out of chat. |
+| **AI chat** | Work is the default: ask about your notes and boards, or ask Nana to create, rename, and move folders, notes, and boards, manage tasks, and archive/restore boards. Ask is the read-only lock. Deletes require an explicit confirmation card; sharing and privacy changes stay out of chat. |
 | **API and MCP** | Reach the same workspace from your own tools with a JSON API and a stateless MCP endpoint. Private records stay hidden from AI. |
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline of recent notes and boards. |
 | **Sharing** | Share notes, boards, and folders with other people at view, comment, or edit access, or publish a public read-only link with optional expiration. |

@@ -10,7 +10,15 @@ const MIN_SIDEBAR_WIDTH = 240;
 const MAX_SIDEBAR_WIDTH = 420;
 const DEFAULT_SIDEBAR_WIDTH = 288;
 
+// The chat dock includes its optional 256px history column. Keep the total
+// within a usable range so the editor and board routes never collapse.
+const MIN_CHAT_DOCK_WIDTH = 320;
+const MAX_CHAT_DOCK_WIDTH = 720;
+const DEFAULT_CHAT_DOCK_WIDTH = 400;
+const CHAT_HISTORY_WIDTH = 256;
+
 const SIDEBAR_WIDTH_STORAGE_KEY = 'nana-sidebar-width';
+const CHAT_DOCK_WIDTH_STORAGE_KEY = 'nana-chat-dock-width';
 const AUTO_SAVE_DELAY_STORAGE_KEY = 'nana-auto-save-delay';
 const DEFAULT_HOMEPAGE_STORAGE_KEY = 'nana-default-homepage';
 const LAST_NON_DOCUMENT_ROUTE_STORAGE_KEY = 'nana-last-non-document-route';
@@ -68,6 +76,56 @@ export function useSidebarWidth() {
 
     return width;
 }
+
+// ===== CHAT DOCK SETTINGS =====
+
+export function getChatDockWidth(): number {
+    try {
+        const stored = localStorage.getItem(CHAT_DOCK_WIDTH_STORAGE_KEY);
+        if (stored) {
+            const width = parseInt(stored, 10);
+            if (!isNaN(width) && width >= MIN_CHAT_DOCK_WIDTH && width <= MAX_CHAT_DOCK_WIDTH) {
+                return width;
+            }
+        }
+    } catch (error) {
+        log.error('Failed to read chat dock width from localStorage', error);
+    }
+    return DEFAULT_CHAT_DOCK_WIDTH;
+}
+
+export function setChatDockWidth(width: number): void {
+    try {
+        const clampedWidth = Math.max(MIN_CHAT_DOCK_WIDTH, Math.min(MAX_CHAT_DOCK_WIDTH, width));
+        localStorage.setItem(CHAT_DOCK_WIDTH_STORAGE_KEY, clampedWidth.toString());
+        window.dispatchEvent(new CustomEvent('chat-dock-width-change', { detail: clampedWidth }));
+    } catch (error) {
+        log.error('Failed to save chat dock width to localStorage', error);
+    }
+}
+
+export function useChatDockWidth() {
+    const [width, setWidth] = React.useState(() => getChatDockWidth());
+
+    React.useEffect(() => {
+        const handleChange = (event: Event) => {
+            const customEvent = event as CustomEvent<number>;
+            setWidth(customEvent.detail);
+        };
+
+        window.addEventListener('chat-dock-width-change', handleChange);
+        return () => window.removeEventListener('chat-dock-width-change', handleChange);
+    }, []);
+
+    return width;
+}
+
+export {
+    MIN_CHAT_DOCK_WIDTH,
+    MAX_CHAT_DOCK_WIDTH,
+    DEFAULT_CHAT_DOCK_WIDTH,
+    CHAT_HISTORY_WIDTH,
+};
 
 // ===== AUTO SAVE DELAY =====
 

@@ -44,7 +44,7 @@ Authorization: Bearer <nana_api_key>
 | `src/api/chat/stream.ts` | Named SSE events, legacy AI-SDK chunks, and stream accumulation. |
 | `src/api/chat/edits.ts` | `chat_edits` recording, edit-card listing, and undo. |
 | `src/api/chat/tool-names.ts` | Persisted read/write chat tool allowlists. |
-| `src/api/chat/tools/` | Read tools plus edit-mode write tools for notes, boards, and tasks. |
+| `src/api/chat/tools/` | Read tools plus Work-mode create, rename, move, archive/restore, and confirm-first delete tools for folders, notes, boards, and tasks. |
 | `src/api/export/` | Markdown and ZIP export. |
 | `src/api/app-version.ts` | Cached GitHub Releases lookup. |
 | `src/lib/pocketbase.ts` | Browser client over `/api/v1`; preserves the small `pb.collection` / `pb.authStore` / `pb.files` surface the SPA uses. |
@@ -395,13 +395,13 @@ Requires auth. Request:
 }
 ```
 
-- `mode` is `"ask"` or `"edit"`; omit it for `"ask"`. Ask registers only read tools. Edit adds note, board, and task write tools.
+- `mode` is `"ask"` or `"edit"`; omit it for the safe read-only default. The UI's Work mode sends `"edit"` and is the default there; Ask sends `"ask"`. Edit adds create, rename, move, and update tools for folders, notes, boards, and tasks; boards can be archived/restored, and deletes use a pending confirmation card.
 - `context` is optional and accepts only `{ type: "document" | "board" | "folder", id }`. Bun resolves the title, ownership, trash state, and private lock with the caller's token, then persists `messages.context` with the resolved title on the user message. A missing, foreign, trashed, private, or hidden record is `404`; a malformed type/id is `400`; an unreadable visibility snapshot is `503`. Client-supplied titles and bodies are ignored.
 - Omit `conversationId` to create a conversation. The first message seeds the title; a background title call refines it after the first reply when the stream is not stopped and has no error.
 - `regenerate: true` trims the previous user/assistant exchange before re-sending.
 - There is no `documentIds` field and no attachment payload. Context is metadata only; tools read notes, boards, and tasks on demand.
 - Chat history sends only role and content. Stored reasoning, tool activity, sources, context metadata, and model metadata stay out of the prompt; the resolved context contributes a short system note.
-- In edit mode, writes go through the workspace services with the caller's token and `X-Nana-Actor: ai`; note edits carry revision checks. Chat has no delete, archive/restore, move-between-folders/boards, publish, share, privacy, column, or label tools. See [`ai.md`](ai.md) for the write contract.
+- In edit mode, writes go through the workspace services with the caller's token and `X-Nana-Actor: ai`; note edits carry revision checks. Tools cover creating, renaming, moving, and updating folders, notes, boards, and tasks; boards can be archived and restored. Delete tools create a pending card; `POST /api/chat/edits/:id/confirm` executes it with the caller's token. Chat has no publish, share, privacy, board-column, or label tools, and it cannot move a task to another board. See [`ai.md`](ai.md) for the write contract.
 
 The response is an SSE stream with these headers:
 
@@ -455,11 +455,14 @@ Conversation list/view/rename/delete are author-scoped by PocketBase rules. Bun 
 | --- | --- | --- |
 | `/api/chat/conversations/:id/edits` | GET | `{ edits }`, oldest first. |
 | `/api/chat/edits/:id/undo` | POST | `{ edit, alreadyUndone }`. |
+| `/api/chat/edits/:id/confirm` | POST | `{ edit }`; executes a pending delete with the caller's token. |
+| `/api/chat/edits/:id/cancel` | POST | `{ edit }`; cancels a pending delete without a write. |
 
-An edit card carries `id`, `conversationId`, `messageId`, `target { type, id, title, url }`, `tool`, `summary`, `status`, `actorType: "ai"`, `actorLabel`, `changed { sections?, fields? }`, `undo { kind, available }`, and timestamps. `status` is `applied`, `undone`, or `failed`; `undo.kind` is `trash`, `restore`, or `none`.
+An edit card carries `id`, `conversationId`, `messageId`, `target { type, id, title, url }`, `tool`, `summary`, `status`, `actorType: "ai"`, `actorLabel`, `changed { sections?, fields? }`, `undo { kind, available }`, and timestamps. Target types are `document`, `board`, `task`, and `folder`. `status` is `pending`, `applied`, `undone`, `cancelled`, or `failed`; `undo.kind` is `trash`, `restore`, or `none`.
 
 - Both routes require the conversation owner. Another user's conversation or edit returns `404`, matching a missing record.
-- `create_note` undo moves the created note to trash. `append_note`, `edit_note`, and `update_note` undo restore the pre-edit snapshot. Board and task edits have `undo.kind: "none"` and `available: false`; undoing one returns `409`.
+- `create_note` undo moves the created note to trash. `append_note`, `edit_note`, and `update_note` undo restore the pre-edit snapshot.
+- Pending delete cards are created by `delete_note`, `delete_task`, `delete_folder`, and `delete_board`. The confirm route re-checks ownership and visibility, then executes the workspace delete; cancel only changes the audit row status. Board and task edits have `undo.kind: "none"` and `available: false`; undoing one returns `409`.
 - Note-edit undo is revision-aware. If the note changed after Nana's edit, the route returns `409` instead of overwriting newer work. Created-note undo trashes the target without a revision check. A second undo of a successful edit returns `alreadyUndone: true` and does not apply the edit twice.
 - A note-edit undo with no saved revision or snapshot returns `409`. An applied non-AI audit row returns `409`; only Nana edits are undoable from chat.
 
@@ -654,7 +657,7 @@ Folder response includes `rootFolder`, `folders`, `documents`, `boards`, and `en
 - **MCP is POST-only and stateless.** There is no session to continue. Every request authenticates, builds a server, handles one payload, and closes the transport.
 - **MCP tool failures are model-facing, not HTTP failures.** An `isError` text result still returns `200`; only auth, parse, and transport failures return HTTP errors.
 - **Chat context is metadata, not retrieval.** `POST /api/chat/send` accepts only `{ type, id }` and resolves the title server-side. There are no `documentIds` or attachments; extra request fields are ignored.
-- **Chat mode gates writes.** Ask mode has only the read tools. Edit mode adds the note/board/task write tools. The mode lives in the request and the tool registry, not in the prompt.
+- **Chat mode gates writes.** Ask mode has only the read tools. Work (`edit`) adds create, rename, move, and update tools, board archive/restore, and confirm-first deletes. The mode lives in the request and the tool registry, not in the prompt.
 - **Chat note edits require a revision.** `read_note` returns `revision` and `versionToken`; the note update tools pass one back. A stale value is a `conflict` tool result, not a silent overwrite.
 - **`published: true` is a version request.** Chat note update tools set it so the PocketBase hook snapshots the old state, then the hook resets it. `create_note` starts a new revision instead. It does not make the note public.
 - **`chat_edits` is server-owned.** It has no public create/update/delete rules. Bun writes it after checking conversation ownership; board/task cards are informational and cannot be undone.
