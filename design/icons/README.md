@@ -105,8 +105,8 @@ Three cream note cards standing as kanban columns, sharing a baseline. The middl
 A landscape note card with two long ears rising from behind it; the rabbit's face is cut into the paper; the top-right corner is folded in ember. The rabbit is the note, not a character holding one.
 
 - Best for: the install prompt, About, empty states, and marketing where the mark can be 48px or larger.
-- Small-size behaviour: the v4 favicon keeps the eyes and nose, thickens the ears, narrows the card, and enlarges the fold so the 16px raster still reads as a rabbit and a note.
-- Watch out: the wide card still softens the ear silhouette at 16px, so the favicon is a separate 16px-first drawing rather than a scaled master. The app/PWA icons keep the full 512 master.
+- Small-size behaviour: the favicon is the rescaled 512 master. The face survives as a soft pair of eyes and nose; the ears are thinner at 16px than a dedicated glyph, but the character stays consistent.
+- Watch out: a separate thick-ear/big-eye favicon was explored and rejected because it read as a different, uncanny character. Do not replace the master with a 16px redraw unless the silhouette is unmistakably the same rabbit.
 
 ## Ranking
 
