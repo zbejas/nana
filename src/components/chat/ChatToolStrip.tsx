@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
-import type { ChatUiTool } from '../../lib/chat/types';
+import { ChatEditCard } from './ChatEditCard';
+import type { ChatUiEdit, ChatUiTool } from '../../lib/chat/types';
 
 interface ChatToolStripProps {
   tools: ChatUiTool[];
+  edits?: ChatUiEdit[];
   streaming?: boolean;
+  onUndoEdit?: (id: string) => void;
+  onConfirmDelete?: (id: string) => void;
+  onCancelDelete?: (id: string) => void;
 }
 
 interface ToolMeta {
@@ -103,22 +108,46 @@ function summarize(tools: ChatUiTool[]): string {
 function toolSentence(tool: ChatUiTool): string {
   const meta = metaFor(tool.name);
   if (tool.title) return `${meta.verb} “${tool.title}”`;
+  if (tool.name === 'list_folders') return 'Checked your folders';
   if (tool.name === 'list_notes') return 'Searched your notes';
   if (tool.name === 'list_boards') return 'Checked your boards';
   if (tool.name === 'read_note') return 'Read a note';
   if (tool.name === 'read_board') return 'Read a board';
-  return tool.name.startsWith('create_') || tool.name.startsWith('edit_') || tool.name.startsWith('update_')
-    ? `${meta.verb} a ${meta.noun}`
-    : 'Checked the workspace';
+  if (tool.name.startsWith('create_') || tool.name.startsWith('edit_') || tool.name.startsWith('update_') || tool.name.startsWith('rename_')) {
+    return `${meta.verb} a ${meta.noun}`;
+  }
+  return 'Checked the workspace';
+}
+
+function editSummary(edits: ChatUiEdit[]): string {
+  const pending = edits.filter((edit) => edit.status === 'pending').length;
+  const applied = edits.filter((edit) => edit.status === 'applied').length;
+  if (pending > 0) return `${pending} change${pending === 1 ? '' : 's'} need confirmation`;
+  if (applied > 0) return `${applied} change${applied === 1 ? '' : 's'} applied`;
+  return `${edits.length} change${edits.length === 1 ? '' : 's'}`;
 }
 
 /** Compact, expandable tool activity. Never shows raw inputs or outputs. */
-export function ChatToolStrip({ tools, streaming = false }: ChatToolStripProps) {
+export function ChatToolStrip({
+  tools,
+  edits = [],
+  streaming = false,
+  onUndoEdit,
+  onConfirmDelete,
+  onCancelDelete,
+}: ChatToolStripProps) {
   const [expanded, setExpanded] = useState(false);
+  const urgentEdit = edits.some(
+    (edit) => edit.status === 'pending' || edit.status === 'failed' || edit.status === 'conflict',
+  );
   const running = [...tools].reverse().find((tool) => tool.status === 'running');
   const runningKey = running ? `${running.id ?? running.name}:${running.name}` : null;
   const [elapsed, setElapsed] = useState(0);
   const startedAt = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (urgentEdit) setExpanded(true);
+  }, [urgentEdit]);
 
   useEffect(() => {
     if (!streaming || !runningKey) {
@@ -136,17 +165,24 @@ export function ChatToolStrip({ tools, streaming = false }: ChatToolStripProps) 
     return () => window.clearInterval(timer);
   }, [runningKey, streaming]);
 
-  if (tools.length === 0) return null;
+  if (tools.length === 0 && edits.length === 0) return null;
 
-  const failed = tools.some((tool) => tool.status === 'error');
+  const failed = tools.some((tool) => tool.status === 'error')
+    || edits.some((edit) => edit.status === 'failed' || edit.status === 'conflict');
+  const pending = edits.some((edit) => edit.status === 'pending');
   const dotClass = running
     ? 'animate-pulse bg-signal'
-    : failed
-      ? 'bg-danger'
-      : 'bg-success';
+    : pending
+      ? 'bg-warning'
+      : failed
+        ? 'bg-danger'
+        : 'bg-success';
   const summary = running
     ? `${runningLabel(running)}${elapsed >= 8 ? ` · Still working… ${elapsed}s` : elapsed >= 3 ? ` · ${elapsed}s` : ''}`
-    : summarize(tools);
+    : tools.length > 0
+      ? summarize(tools)
+      : editSummary(edits);
+  const canExpand = edits.length > 0 || tools.length > 1;
 
   return (
     <div className="mb-3" role="status" aria-live="polite">
@@ -155,7 +191,7 @@ export function ChatToolStrip({ tools, streaming = false }: ChatToolStripProps) 
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} aria-hidden="true" />
           <span className="truncate">{summary}</span>
         </span>
-        {tools.length > 1 && (
+        {canExpand && (
           <button
             type="button"
             onClick={() => setExpanded((value) => !value)}
@@ -171,7 +207,7 @@ export function ChatToolStrip({ tools, streaming = false }: ChatToolStripProps) 
         )}
       </div>
 
-      {expanded && tools.length > 0 && (
+      {expanded && (
         <ul className="mt-1.5 space-y-0.5 border-l border-line pl-3 text-[11.5px] text-ink-muted">
           {tools.map((tool, index) => (
             <li key={`${tool.id ?? tool.name}:${index}`} className="flex items-center gap-2">
@@ -182,6 +218,19 @@ export function ChatToolStrip({ tools, streaming = false }: ChatToolStripProps) 
                 aria-hidden="true"
               />
               <span className="truncate">{toolSentence(tool)}</span>
+            </li>
+          ))}
+          {tools.length > 0 && edits.length > 0 && (
+            <li className="my-1 h-px bg-line" aria-hidden="true" />
+          )}
+          {edits.map((edit) => (
+            <li key={edit.id}>
+              <ChatEditCard
+                edit={edit}
+                onUndo={(id) => onUndoEdit?.(id)}
+                onConfirm={(id) => onConfirmDelete?.(id)}
+                onCancel={(id) => onCancelDelete?.(id)}
+              />
             </li>
           ))}
         </ul>

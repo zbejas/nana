@@ -10,7 +10,6 @@ import {
 } from '@heroicons/react/24/outline';
 import { MarkdownPreview } from '../MarkdownPreview';
 import { NanaMark } from './NanaMark';
-import { ChatEditCard } from './ChatEditCard';
 import { ChatSources } from './ChatSources';
 import { ChatToolStrip } from './ChatToolStrip';
 import { chatContextTypeLabel } from '../../lib/chat/context';
@@ -86,10 +85,15 @@ export function ChatMessage({
   }
 
   const toolCount = message.tools?.length ?? 0;
+  const editCount = message.edits?.length ?? 0;
   const hasReasoning = Boolean(message.reasoning);
   const editing = message.edits?.some((edit) => edit.status === 'applying') ?? false;
   const hasContent = Boolean(message.content.trim());
-  const showThinking = message.streaming && !hasContent && !hasReasoning && toolCount === 0;
+  const showThinking = message.streaming
+    && !hasContent
+    && !hasReasoning
+    && toolCount === 0
+    && editCount === 0;
 
   const copy = () => {
     void navigator.clipboard.writeText(message.content).then(() => {
@@ -111,7 +115,16 @@ export function ChatMessage({
         )}
       </div>
 
-      {toolCount > 0 && <ChatToolStrip tools={message.tools ?? []} streaming={message.streaming} />}
+      {(toolCount > 0 || editCount > 0) && (
+        <ChatToolStrip
+          tools={message.tools ?? []}
+          edits={message.edits ?? []}
+          streaming={message.streaming}
+          onUndoEdit={onUndoEdit}
+          onConfirmDelete={onConfirmDelete}
+          onCancelDelete={onCancelDelete}
+        />
+      )}
 
       {hasReasoning && (
         <details
@@ -135,16 +148,6 @@ export function ChatMessage({
           )}
         </details>
       )}
-
-      {message.edits?.map((edit) => (
-        <ChatEditCard
-          key={edit.id}
-          edit={edit}
-          onUndo={onUndoEdit}
-          onConfirm={onConfirmDelete}
-          onCancel={onCancelDelete}
-        />
-      ))}
 
       {hasContent ? (
         <div className="chat-answer break-words text-[14.5px] leading-[1.75] text-ink">
