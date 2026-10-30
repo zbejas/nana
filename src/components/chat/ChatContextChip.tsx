@@ -54,7 +54,7 @@ export function ChatContextChip({ target, onRemove }: ChatContextChipProps) {
         <summary className="inline-flex cursor-pointer list-none items-center text-[11px] text-ink-muted transition-colors hover:text-ink-secondary [&::-webkit-details-marker]:hidden">
           What Nana can see
         </summary>
-        <div className="absolute bottom-full left-0 z-30 mb-1.5 w-[17rem] rounded-panel border border-line bg-surface-raised px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary shadow-float">
+        <div className="absolute bottom-full left-1/2 z-30 mb-1.5 w-[17rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-panel border border-line bg-surface-raised px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary shadow-float">
           {target.isPrivate ? (
             <p>
               This {noun} is private. Nana cannot read private notes, boards, or folders, so the
