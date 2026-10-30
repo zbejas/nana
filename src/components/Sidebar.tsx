@@ -356,36 +356,36 @@ export function Sidebar() {
               </div>
             </div>
 
-            <div className="mt-3 flex items-center gap-2">
-              <button
-                ref={newButtonRef}
-                type="button"
-                onClick={() => setNewMenuOpen((open) => !open)}
-                aria-haspopup="menu"
-                aria-expanded={newMenuOpen}
-                className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control bg-ink px-3 text-[13px] font-medium text-canvas transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal"
-              >
-                <PlusIcon className="h-4 w-4" aria-hidden="true" />
-                New
-                <ChevronDownIcon className="ml-auto h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={handleChatClick}
-                aria-label="Chat"
-                aria-pressed={chatRoute || chatDockOpen}
-                aria-expanded={chatDockOpen}
-                title="Chat"
-                className={`flex h-9 shrink-0 items-center gap-1.5 rounded-control border px-2.5 text-[12.5px] font-medium transition-colors ${
-                  chatRoute || chatDockOpen
-                    ? 'border-signal/40 bg-signal-soft text-signal'
-                    : 'border-line bg-surface text-ink-secondary hover:border-line-strong hover:bg-surface-raised hover:text-ink'
-                }`}
-              >
-                <ChatBubbleLeftRightIcon className="h-4 w-4" aria-hidden="true" />
-                <span>Chat</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleChatClick}
+              aria-label="Chat"
+              aria-pressed={chatRoute || chatDockOpen}
+              aria-expanded={chatDockOpen}
+              title="Chat"
+              className={`mt-3 flex h-9 w-full items-center gap-2 rounded-control border px-3 text-[13px] font-medium transition-colors ${
+                chatRoute || chatDockOpen
+                  ? 'border-signal/40 bg-signal-soft text-signal'
+                  : 'border-signal/20 bg-signal-soft/30 text-signal hover:border-signal/30 hover:bg-signal-soft/60'
+              }`}
+            >
+              <ChatBubbleLeftRightIcon className="h-4 w-4" aria-hidden="true" />
+              <span>Chat</span>
+              <span className="ml-auto hidden text-[10.5px] font-normal text-ink-muted md:inline">Cmd J</span>
+            </button>
+
+            <button
+              ref={newButtonRef}
+              type="button"
+              onClick={() => setNewMenuOpen((open) => !open)}
+              aria-haspopup="menu"
+              aria-expanded={newMenuOpen}
+              className="mt-2 flex h-9 w-full items-center gap-2 rounded-control bg-ink px-3 text-[13px] font-medium text-canvas transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal"
+            >
+              <PlusIcon className="h-4 w-4" aria-hidden="true" />
+              New
+              <ChevronDownIcon className="ml-auto h-3.5 w-3.5" aria-hidden="true" />
+            </button>
           </div>
 
           <nav className="px-2 pb-2" aria-label="Primary">

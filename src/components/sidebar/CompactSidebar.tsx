@@ -100,6 +100,13 @@ export function CompactSidebar({
         : 'border-transparent text-ink-muted hover:bg-surface/70 hover:text-ink'
     }`;
 
+  const chatRailClass = (active: boolean) =>
+    `flex h-10 w-10 items-center justify-center rounded-[10px] border transition-colors ${
+      active
+        ? 'border-signal/45 bg-signal-soft text-signal'
+        : 'border-signal/20 bg-signal-soft/30 text-signal hover:border-signal/35 hover:bg-signal-soft/60'
+    }`;
+
   return (
     <>
       <aside
@@ -118,6 +125,17 @@ export function CompactSidebar({
         </button>
 
         <div className="flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={toggleChat}
+            className={chatRailClass(chatActive)}
+            title="Chat"
+            aria-label="Chat"
+            aria-pressed={chatActive}
+          >
+            <ChatBubbleLeftRightIcon className="h-[1.15rem] w-[1.15rem]" />
+          </button>
+          <div className="mx-auto my-1 h-px w-8 bg-line" aria-hidden="true" />
           {viewItems.map((item) => {
             const Icon = item.icon;
             const isActive = viewIsActive(item);
@@ -135,16 +153,6 @@ export function CompactSidebar({
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={toggleChat}
-            className={railItemClass(chatActive)}
-            title="Chat"
-            aria-label="Chat"
-            aria-pressed={chatActive}
-          >
-            <ChatBubbleLeftRightIcon className="h-[1.15rem] w-[1.15rem]" />
-          </button>
         </div>
 
         <div className="mt-auto flex flex-col items-center gap-2">
