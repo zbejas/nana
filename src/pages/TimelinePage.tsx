@@ -294,7 +294,7 @@ export function TimelinePage() {
   );
 
   return (
-    <PageShell contentClassName="desktop-page-content-enter">
+    <PageShell contentClassName="desktop-page-content-enter timeline-page">
       <PageHeader
           eyebrow="Library"
           title="Timeline"
@@ -304,7 +304,7 @@ export function TimelinePage() {
               <Button
                 ref={calendarTriggerRef}
                 variant="secondary"
-                className="xl:hidden"
+                className="timeline-dates-trigger"
                 icon={<CalendarDaysIcon />}
                 onClick={toggleCalendar}
                 aria-expanded={isCalendarOpen}
@@ -327,9 +327,9 @@ export function TimelinePage() {
           }
         />
 
-        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_20rem] lg:gap-10">
+        <div className="timeline-layout">
           <main className="min-w-0">
-            <div className="mb-4 xl:hidden">{searchField}</div>
+            <div className="timeline-main-search mb-4">{searchField}</div>
 
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <SegmentedControl
@@ -359,7 +359,7 @@ export function TimelinePage() {
 
             <div
               ref={calendarPopupRef}
-              className={`overflow-hidden transition-all duration-200 ease-out xl:hidden ${
+              className={`timeline-calendar-popup overflow-hidden transition-all duration-200 ease-out ${
                 isCalendarOpen ? "mb-4 max-h-[36rem] opacity-100" : "mb-0 max-h-0 opacity-0"
               }`}
             >
@@ -378,6 +378,26 @@ export function TimelinePage() {
                   error={calendarError}
                 />
               </Card>
+            </div>
+
+            <div className="timeline-compact-summary mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-panel border border-line bg-surface px-4 py-3 text-[11.5px] text-ink-muted">
+              <span className="font-semibold text-ink-muted">In this view</span>
+              <span>
+                <span className="font-medium tabular-nums text-ink">{counts.documents}</span> notes
+              </span>
+              <span>
+                <span className="font-medium tabular-nums text-ink">{counts.boards}</span> boards
+              </span>
+              <span>
+                <span className="font-medium tabular-nums text-ink">{folders.length}</span> folders
+              </span>
+              <button
+                type="button"
+                onClick={() => navigate('/board/archive')}
+                className="ml-auto font-medium text-signal transition-colors hover:text-signal-strong"
+              >
+                Archived boards →
+              </button>
             </div>
 
             {isLoading ? (
@@ -553,7 +573,7 @@ export function TimelinePage() {
             )}
           </main>
 
-          <aside className="hidden xl:block">
+          <aside className="timeline-aside">
             <div className="sticky top-0 space-y-4">
               {searchField}
 

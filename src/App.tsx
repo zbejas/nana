@@ -100,7 +100,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function AppContent() {
   const { user } = useAuth();
   const setInitialLoadDone = useSetAtom(initialLoadDoneAtom);
-  const { isOpen: sidebarOpen, isResizing: sidebarResizing } = useSidebar();
+  const { isOpen: sidebarOpen, isResizing: sidebarResizing, toggle: toggleSidebar } = useSidebar();
   const { reset } = useDocumentEditor();
   const location = useLocation();
   const sidebarWidth = useSidebarWidth();
@@ -374,9 +374,13 @@ function AppContent() {
           </Suspense>
         </div>
       </div>
-      {shouldShowSidebar && isMobile && (
+      {shouldShowSidebar && !shouldDockSidebar && (
         <div
-          className={`md:hidden fixed inset-0 z-[45] bg-scrim pointer-events-none transition-opacity duration-200 ease-in-out ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}
+          className={`lg:hidden fixed inset-0 z-[45] bg-scrim transition-opacity duration-200 ease-in-out ${
+            sidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+          }`}
+          onClick={toggleSidebar}
+          aria-hidden="true"
         />
       )}
       {shouldShowInstallPrompt && <InstallBanner />}

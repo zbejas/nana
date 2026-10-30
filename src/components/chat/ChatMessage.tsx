@@ -76,7 +76,7 @@ export function ChatMessage({
   return (
     <div className="mb-9 w-full min-w-0">
       <div className="mb-2.5 flex items-center gap-2">
-        <NanaMark size={20} />
+        <NanaMark size={28} />
         <span className="text-[11.5px] font-medium text-ink-secondary">Nana</span>
         {editing && (
           <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-signal">

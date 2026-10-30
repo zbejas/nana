@@ -11,7 +11,7 @@ export function NanaMark({ size = 20, className }: NanaMarkProps) {
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-[5px] border border-line bg-surface-sunken',
+        'inline-flex shrink-0 items-center justify-center rounded-[6px] border border-line bg-surface-sunken',
         className,
       )}
       style={{ width: size, height: size }}
@@ -22,7 +22,7 @@ export function NanaMark({ size = 20, className }: NanaMarkProps) {
         alt=""
         draggable={false}
         className="object-contain"
-        style={{ width: Math.max(12, size - 6), height: Math.max(12, size - 6) }}
+        style={{ width: Math.max(14, size - 4), height: Math.max(14, size - 4) }}
       />
     </span>
   );

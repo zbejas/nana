@@ -166,7 +166,7 @@ export function FolderViewGrid({
   onDrop,
 }: FolderViewGridProps) {
   return (
-    <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 sm:p-4 lg:grid-cols-4 xl:grid-cols-5">
+    <div className="folder-view-grid gap-3 p-3 sm:p-4">
       {pendingCreate && (
         <InlineNameCard
           value={pendingCreate.name}

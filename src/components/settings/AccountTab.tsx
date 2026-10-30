@@ -162,7 +162,7 @@ export function AccountTab({ user }: AccountTabProps) {
   return (
     <div className="space-y-5">
       <Card className="p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="settings-account-head flex flex-col gap-4 sm:flex-row sm:items-center">
           <div className="flex min-w-0 flex-1 items-center gap-4">
             <div className="relative shrink-0">
               <Avatar src={avatarUrl} name={displayName} size="xl" />
@@ -215,7 +215,7 @@ export function AccountTab({ user }: AccountTabProps) {
           </Button>
         </div>
 
-        <dl className="mt-6 grid grid-cols-1 gap-5 border-t border-line pt-5 sm:grid-cols-3">
+        <dl className="settings-account-grid mt-6 grid grid-cols-1 gap-5 border-t border-line pt-5 sm:grid-cols-3">
           <div>
             <dt className="eyebrow">Display name</dt>
             <dd className="mt-1.5 text-sm text-ink">{user.name || 'Not set'}</dd>

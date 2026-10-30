@@ -824,6 +824,128 @@ body.public-route-active {
 }
 
 /* ------------------------------------------------------------------ */
+/* Responsive content in Timeline                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The timeline is the route most exposed to the sidebar + chat dock
+ * combination. Viewport `xl` is not enough: a 1354px window can leave the
+ * route with ~570px once both panels are open, and a 20rem calendar leaves
+ * the feed too narrow to read. Decide from the route content itself.
+ */
+.timeline-page {
+  container-type: inline-size;
+}
+
+.folder-view-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+}
+
+.archive-board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+}
+
+/*
+ * The split editor keeps source and preview side by side only while each pane
+ * is wide enough to read. With the sidebar and chat dock open the route can be
+ * ~570px, so stack the panes instead of forcing two ~285px columns.
+ */
+.nana-split-shell {
+  container-type: inline-size;
+}
+
+@container (max-width: 760px) {
+  .nana-split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .nana-split-pane {
+    border-right: 0;
+  }
+
+  .nana-split-pane:first-child {
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+.timeline-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 1.5rem;
+}
+
+.timeline-aside {
+  display: none;
+}
+
+@container (min-width: 820px) {
+  .timeline-layout {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    gap: 2.5rem;
+  }
+
+  .timeline-aside {
+    display: block;
+  }
+
+  .timeline-main-search,
+  .timeline-calendar-popup,
+  .timeline-dates-trigger,
+  .timeline-compact-summary {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Responsive content in Settings                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Settings can sit beside both the sidebar and the chat dock. Viewport
+ * breakpoints are the wrong signal there: the viewport may be wide while the
+ * route content is only a few hundred pixels. Use the content itself as the
+ * container so the navigation, profile row, and metadata stack before they
+ * become cramped.
+ */
+.settings-layout-shell {
+  container-type: inline-size;
+}
+
+@container (max-width: 760px) {
+  .settings-layout {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .settings-nav {
+    width: 100%;
+  }
+
+  .settings-nav-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.375rem;
+  }
+
+  .settings-account-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-account-head > button {
+    width: 100%;
+  }
+
+  .settings-account-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Chat dock                                                           */
 /* ------------------------------------------------------------------ */
 

@@ -48,6 +48,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const [sidebarOpen, setSidebarOpen] = useAtom(sidebarOpenAtom);
   const [resizing, setResizing] = useAtom(chatDockResizingAtom);
   const conversationIdAtom = useChatStore((snapshot) => snapshot.conversationId);
+  const conversation = useChatStore((snapshot) => snapshot.conversation);
   const mode = useChatStore((snapshot) => snapshot.mode);
   const status = useChatStore((snapshot) => snapshot.status);
   const statusLoading = useChatStore((snapshot) => snapshot.statusLoading);
@@ -242,10 +243,13 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <header className="shrink-0 border-b border-line">
               <div className="flex items-center gap-2 px-3 pt-[max(0.625rem,env(safe-area-inset-top))]">
-                <NanaMark size={24} />
+                <NanaMark size={32} />
                 <div className="min-w-0">
-                  <h2 className="text-[14px] font-semibold leading-none tracking-[-0.015em] text-ink">
-                    Nana
+                  <h2
+                    className="truncate text-[14px] font-semibold leading-none tracking-[-0.015em] text-ink"
+                    title={conversation?.title || 'Chat'}
+                  >
+                    {conversation?.title?.trim() || 'Chat'}
                   </h2>
                   <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[10.5px] text-ink-muted" title={status?.provider ?? undefined}>
                     <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDot}`} aria-hidden="true" />

@@ -95,7 +95,7 @@ export function BoardArchivePage() {
           }
         />
       ) : isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2" aria-label="Loading archived boards" aria-busy="true">
+        <div className="archive-board-grid gap-4" aria-label="Loading archived boards" aria-busy="true">
           {[0, 1].map((index) => (
             <div key={index} className="rounded-panel border border-line bg-surface p-5">
               <div className="h-4 w-40 animate-pulse rounded bg-surface-raised" />
@@ -113,7 +113,7 @@ export function BoardArchivePage() {
           />
         </div>
       ) : (
-        <div className="grid gap-4 pb-2 md:grid-cols-2">
+        <div className="archive-board-grid gap-4 pb-2">
             {archived.map((board) => {
               const restoring = restoringId === board.id;
               const archivedDate = formatRelativeDate(board.updated);

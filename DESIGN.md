@@ -119,7 +119,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 ### Timeline
 
-`/timeline` is a 2-column reading view: a notes-and-boards feed and a 20rem utility rail.
+`/timeline` is a 2-column reading view when the route content has room: a notes-and-boards feed and a 20rem utility rail. The split is driven by a container query, not the viewport, so opening the chat dock collapses it to the feed with the calendar behind the **Dates** action.
 
 - Feed cards are 10px panels on `surface` with a hairline. Note cards carry a title, one-line metadata, a three-line plain-text preview, tags, and reading statistics. Board cards carry a board icon, title, updated/folder metadata, a description preview, and open/done counts. Both card types expose the same overflow button, right-click menu, and touch long-press menu; board menus include Share. There is no hover rail and no rendered Markdown inside a card; note previews are stripped to text so the title never repeats.
 - Group labels use a 12.5px semibold label, a rule, and a plain numeric count.
@@ -155,7 +155,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 - Header: shared masthead, title `Chat` or the conversation title, a model/status meta line, Work/Ask, New chat, and History. The dock also has a left-edge resize handle and persists its width.
 - Empty state: 26/30px “Ask, or change something.” in Work, one supporting sentence, and four prompt cards in a 2×2 grid. Prompt cards have a neutral icon tile, 13px medium text, and an arrow that darkens on hover.
 - Composer: a 10px-radius `surface` shell with a 1px border, a textarea, an 11px hint, and a `signal-bright` send button (44px on touch, 36px on desktop). Focus is an ember border plus a soft 4px ring.
-- Assistant answers are document text at 14.5px / 1.75, max 68ch, preceded by a 20px neutral “N” tile and “Nana”. User messages are right-aligned `surface-raised` blocks with a 10px radius and 3px bottom-right corner.
+- Assistant answers are document text at 14.5px / 1.75, max 68ch, preceded by a 28px rabbit tile and “Nana”; the dock header mark is 32px. User messages are right-aligned `surface-raised` blocks with a 10px radius and 3px bottom-right corner.
 - Tool activity is one neutral pill with an ember dot while running and a success dot when done. No source cards or attachments.
 - Reasoning is a collapsible details block with a 13px muted body and a left rule.
 - History is a 16rem right panel with a neutral New chat action and a `signal-soft` active row. There is no accent rail beside the row.
@@ -265,7 +265,7 @@ Rules:
 - **The auth cover is intentionally theme-invariant.** It uses `cover` tokens, not `canvas` or `ink`. Reusing `canvas` there makes the cover flip to light in the light theme and breaks the first-screen composition.
 - **Page-level cards never carry a shadow.** Only dialogs, sheets, side panels, menus, toasts, and the install banner use `shadow-float`.
 - **One family, no mono metadata.** UI counts, dates, percentages, and priorities use Geist with `tabular-nums`. `font-mono` is reserved for code, ids, and URLs.
-- **The rabbit is not a 24px chrome glyph.** The rabbit-note app tile and wordmark lead the shell; the dark-theme favicon uses the tight, transparent cream mark, the light-theme favicon uses the graphite tile, and the full mascot stays in About, public pages, the install prompt, and the app icons so it is never an indistinct blob.
+- **The rabbit is not a tiny chrome glyph.** The rabbit-note app tile and wordmark lead the shell; chat identity marks are 28–32px, the dark-theme favicon uses the tight, transparent cream mark, the light-theme favicon uses the graphite tile, and the full mascot stays in About, public pages, the install prompt, and the app icons so it is never an indistinct blob.
 
 ## Related docs
 

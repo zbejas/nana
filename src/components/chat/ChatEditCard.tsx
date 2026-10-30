@@ -111,7 +111,7 @@ export function ChatEditCard({ edit, onUndo, onConfirm, onCancel }: ChatEditCard
   return (
     <div className="mt-3 overflow-hidden rounded-panel border border-line bg-surface">
       <div className="flex items-start gap-2.5 px-3 py-2.5">
-        <NanaMark size={18} className="mt-0.5" />
+        <NanaMark size={24} className="mt-0.5" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="inline-flex min-w-0 items-center gap-1.5 text-[12.5px] font-medium text-ink">

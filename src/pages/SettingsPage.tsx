@@ -72,9 +72,10 @@ export function SettingsPage() {
         description="Your account, how Nana feels, and the instance behind it."
       />
 
-      <div className="flex max-w-[1100px] flex-col gap-6 lg:flex-row lg:gap-10">
-          <nav aria-label="Settings sections" className="shrink-0 lg:w-44">
-            <div className="grid grid-cols-2 gap-1.5 pb-2 lg:flex lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-0">
+      <div className="settings-layout-shell">
+        <div className="settings-layout flex max-w-[1100px] flex-col gap-6 lg:flex-row lg:gap-10">
+          <nav aria-label="Settings sections" className="settings-nav shrink-0 lg:w-44">
+            <div className="settings-nav-list grid grid-cols-2 gap-1.5 pb-2 lg:flex lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-0">
               {TABS.filter((item) => !item.adminOnly || isAdmin).map((item) => {
                 const Icon = item.icon;
                 const active = activeTab === item.key;
@@ -98,13 +99,14 @@ export function SettingsPage() {
             </div>
           </nav>
 
-          <div key={`${activeTab}:${workspaceSection}`} className="settings-tab-content-enter min-w-0 flex-1">
+          <div key={`${activeTab}:${workspaceSection}`} className="settings-content settings-tab-content-enter min-w-0 flex-1">
             {activeTab === 'account' && <AccountTab user={user} />}
             {activeTab === 'api-keys' && <ApiKeysTab />}
             {activeTab === 'preferences' && <PreferencesTab />}
             {activeTab === 'admin' && <WorkspaceTab section={workspaceSection} />}
             {activeTab === 'about' && <AboutTab />}
           </div>
+        </div>
       </div>
     </PageShell>
   );

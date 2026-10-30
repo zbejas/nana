@@ -72,36 +72,38 @@ export function NanaSplitMarkdownEditor({
   }, [sourceView, wysiwygView]);
 
   return (
-    <div className={`nana-split grid h-full min-h-0 grid-cols-2 ${className ?? ''}`}>
-      <section className="nana-split-pane flex min-h-0 min-w-0 flex-col border-r border-line bg-surface">
-        <div className="flex h-[38px] shrink-0 items-center border-b border-line px-4 text-[11px] font-medium text-ink-muted">
-          Markdown
-        </div>
-        <div className="nana-split-source relative min-h-0 flex-1 overflow-hidden">
-          <NanaSourceEditor
+    <div className={`nana-split-shell h-full min-h-0 ${className ?? ''}`}>
+      <div className="nana-split grid h-full min-h-0 grid-cols-2">
+        <section className="nana-split-pane flex min-h-0 min-w-0 flex-col border-r border-line bg-surface">
+          <div className="flex h-[38px] shrink-0 items-center border-b border-line px-4 text-[11px] font-medium text-ink-muted">
+            Markdown
+          </div>
+          <div className="nana-split-source relative min-h-0 flex-1 overflow-hidden">
+            <NanaSourceEditor
+              value={value}
+              onChange={onChange}
+              readOnly={readOnly}
+              placeholder={readOnly ? '' : placeholder}
+              ariaLabel={`${ariaLabel} Markdown source`}
+              onReady={setSourceView}
+            />
+          </div>
+        </section>
+
+        <section className="nana-split-pane flex min-h-0 min-w-0 flex-col bg-surface">
+          <NanaMarkdownEditor
             value={value}
             onChange={onChange}
             readOnly={readOnly}
-            placeholder={readOnly ? '' : placeholder}
-            ariaLabel={`${ariaLabel} Markdown source`}
-            onReady={setSourceView}
+            placeholder={placeholder}
+            ariaLabel={ariaLabel}
+            enableSlash
+            onViewReady={setWysiwygView}
+            onEditorReady={onEditorReady}
+            className="h-full min-h-0"
           />
-        </div>
-      </section>
-
-      <section className="nana-split-pane flex min-h-0 min-w-0 flex-col bg-surface">
-        <NanaMarkdownEditor
-          value={value}
-          onChange={onChange}
-          readOnly={readOnly}
-          placeholder={placeholder}
-          ariaLabel={ariaLabel}
-          enableSlash
-          onViewReady={setWysiwygView}
-          onEditorReady={onEditorReady}
-          className="h-full min-h-0"
-        />
-      </section>
+        </section>
+      </div>
     </div>
   );
 }
