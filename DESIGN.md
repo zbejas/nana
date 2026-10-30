@@ -174,11 +174,11 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 `/document/:id` is a writing desk.
 
-- Header: 22px title input on desktop (17px on mobile), saving/unsaved text, Editor/Source/Split segmented control, fullscreen, publish, overflow, and close. There is no rule above the title. On mobile the header actions are 44px targets; Hide header lives in the overflow menu. Fullscreen expands the writing/reading surface to the available route width and persists across documents.
+- Header: 22px title input on desktop (17px on mobile), saving/unsaved text, Editor/Source/Split segmented control, AI action, fullscreen, overflow, and close. There is no rule above the title. On mobile the header actions are 44px targets; Share, export, save-version, Hide header, and Move to trash live in the overflow menu. Fullscreen expands the writing/reading surface to the available route width and persists across documents.
 - Tags sit on a second rule with neutral outline pills.
 - The writing surface is a 10px `surface` panel inside `canvas`, max 920px for Editor/Source and 1240px for Split. Rendered text and source use 15px / 1.75 with 24–40px inner padding.
 - The raw Markdown editor uses the sans face, not mono. Rendered headings are forced to the sans face by the MDEditor overrides.
-- GitHub-style alerts use alert-only semantic tokens: Note blue, Tip green, Important purple, Warning amber, and Caution red. They are the deliberate exception to Graphite's one-accent rule because readers recognise the GitHub convention. Alerts are flat callouts with a 3px semantic left rule, a soft fill, and an uppercase label; the tokens are separate from `signal`, `success`, `warning`, and `danger`.
+- GitHub-style alerts use alert-only semantic tokens: Note blue, Tip green, Important purple, Warning amber, and Caution red. They are the deliberate exception to Graphite's one-accent rule because readers recognise the GitHub convention. Alerts are flat callouts with a 3px semantic left rule, a soft fill, and an uppercase label; the tokens are separate from `signal`, `success`, `warning`, and `danger`. Raw `<details>`/`<summary>` blocks render as collapsed disclosure rows in Milkdown and as native details in previews; the tags stay in the Markdown source.
 - The footer is a fixed status bar at the bottom of the content area: left offset matches the sidebar or rail, right edge flush, `canvas-deep`, with word count, reading time, characters, attachments, and updated time.
 
 ### Auth and onboarding

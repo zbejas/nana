@@ -809,6 +809,20 @@ body.public-route-active {
   color: var(--alert-caution);
 }
 
+.wmde-markdown details {
+  margin: 1rem 0;
+}
+
+.wmde-markdown summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.wmde-markdown details[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
 /* ------------------------------------------------------------------ */
 /* Chat dock                                                           */
 /* ------------------------------------------------------------------ */

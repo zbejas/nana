@@ -279,6 +279,148 @@ function githubAlertPlugin() {
   );
 }
 
+const DETAILS_PLUGIN_KEY = new PluginKey<DetailsState>("NANA_GITHUB_DETAILS");
+
+interface DetailsEntry {
+  key: string;
+  summary: string;
+  open: boolean;
+  start: number;
+  blockSize: number;
+  end: number;
+  endSize: number;
+  body: Array<{ pos: number; size: number }>;
+}
+
+interface DetailsState {
+  open: Set<string>;
+  decorations: DecorationSet;
+}
+
+function detailsMarkdown(block: ProseNode): string {
+  const first = block.firstChild;
+  if (first?.type.name === "html") {
+    return String(first.attrs.value ?? first.textContent ?? "");
+  }
+  return block.textContent;
+}
+
+function detailsEntries(doc: ProseNode): DetailsEntry[] {
+  const entries: DetailsEntry[] = [];
+  let pending: Omit<DetailsEntry, "body" | "end" | "endSize"> | null = null;
+  let index = 0;
+
+  doc.forEach((block, offset) => {
+    if (!pending) {
+      const markdown = detailsMarkdown(block);
+      const match = /^\s*<details(\s[^>]*)?>\s*<summary[^>]*>([\s\S]*?)<\/summary>/i.exec(markdown);
+      if (!match) return;
+      const summary = (match[2] ?? "").replace(/<[^>]+>/g, "").trim() || "Details";
+      pending = {
+        key: `${summary}\u0000${index++}`,
+        summary,
+        open: /\bopen\b/i.test(match[1] ?? ""),
+        start: offset,
+        blockSize: block.nodeSize,
+      };
+      return;
+    }
+
+    const markdown = detailsMarkdown(block).trim();
+    if (/^<\/details>\s*$/i.test(markdown)) {
+      entries.push({
+        ...pending,
+        end: offset,
+        endSize: block.nodeSize,
+        body: [],
+      });
+      pending = null;
+    }
+  });
+
+  // A second pass keeps positions and body blocks calculation simple while
+  // allowing nested details blocks to remain ordinary content.
+  return entries.map((entry) => {
+    const body: Array<{ pos: number; size: number }> = [];
+    doc.forEach((block, offset) => {
+      if (offset > entry.start && offset < entry.end) {
+        body.push({ pos: offset, size: block.nodeSize });
+      }
+    });
+    return { ...entry, body };
+  });
+}
+
+function detailsDecorations(doc: ProseNode, openKeys: Set<string>): DecorationSet {
+  const decorations: Decoration[] = [];
+
+  for (const entry of detailsEntries(doc)) {
+    const isOpen = openKeys.has(entry.key);
+    const button = (view: EditorView) => {
+      const element = document.createElement("button");
+      element.type = "button";
+      element.className = "nana-details-summary";
+      element.contentEditable = "false";
+      element.setAttribute("aria-expanded", String(isOpen));
+      element.textContent = entry.summary;
+      element.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        view.dispatch(view.state.tr.setMeta(DETAILS_PLUGIN_KEY, entry.key));
+      });
+      return element;
+    };
+
+    // The raw <details>/<summary> markers stay in the document so Markdown
+    // round-trips, but are replaced visually by the summary widget.
+    decorations.push(Decoration.inline(entry.start + 1, entry.start + entry.blockSize - 1, {
+      class: "nana-details-marker",
+    }));
+    decorations.push(Decoration.widget(entry.start + 1, button, { side: -1 }));
+    decorations.push(Decoration.node(entry.end, entry.end + entry.endSize, {
+      class: "nana-details-close",
+    }));
+
+    for (const block of entry.body) {
+      decorations.push(Decoration.node(block.pos, block.pos + block.size, {
+        class: isOpen ? "nana-details-body nana-details-open" : "nana-details-body nana-details-closed",
+      }));
+    }
+  }
+
+  return DecorationSet.create(doc, decorations);
+}
+
+/** Render raw GitHub-style <details> blocks as native, collapsible callouts. */
+function githubDetailsPlugin() {
+  return $prose(
+    () =>
+      new Plugin<DetailsState>({
+        key: DETAILS_PLUGIN_KEY,
+        state: {
+          init: (_config, state) => {
+            const entries = detailsEntries(state.doc);
+            const open = new Set(entries.filter((entry) => entry.open).map((entry) => entry.key));
+            return { open, decorations: detailsDecorations(state.doc, open) };
+          },
+          apply: (tr, previous) => {
+            const toggled = tr.getMeta(DETAILS_PLUGIN_KEY) as string | undefined;
+            if (!tr.docChanged && !toggled) return previous;
+            const open = new Set(previous.open);
+            if (toggled) {
+              if (open.has(toggled)) open.delete(toggled);
+              else open.add(toggled);
+            }
+            return { open, decorations: detailsDecorations(tr.doc, open) };
+          },
+        },
+        props: {
+          decorations: (state) => DETAILS_PLUGIN_KEY.getState(state)?.decorations ?? null,
+        },
+      }),
+  );
+}
+
 function documentChangePlugin(onDocChangeRef: { current: ((markdown: string) => void) | undefined }) {
   return $prose(
     (ctx) =>
@@ -366,6 +508,7 @@ export async function createMilkdownEditor(options: CreateMilkdownEditorOptions)
 
   editor.use([...commonmark, ...gfm, ...history, ...cursor, listener, ...prism]);
   editor.use(githubAlertPlugin());
+  editor.use(githubDetailsPlugin());
   editor.use(legacyImageView);
   editor.use(legacyLinkPlugin());
   editor.use(placeholderPlugin(options.placeholderRef));

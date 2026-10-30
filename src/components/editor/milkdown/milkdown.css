@@ -646,3 +646,61 @@
     }
   }
 }
+
+/* Details widgets are unlayered so ProseMirror's unlayered widget/p rules do
+   not override their display and spacing. */
+.nana-milkdown .ProseMirror .nana-details-marker,
+.nana-milkdown .ProseMirror .nana-details-close {
+  display: none;
+}
+
+.nana-milkdown .ProseMirror p:has(> .nana-details-summary) {
+  margin: 1rem 0 0.35rem;
+}
+
+.nana-milkdown .ProseMirror .nana-details-summary {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.45rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nana-milkdown .ProseMirror .nana-details-summary::before {
+  content: "▸";
+  flex: none;
+  color: var(--ink-muted);
+  font-size: 0.9em;
+  transition: transform 120ms ease;
+}
+
+.nana-milkdown .ProseMirror .nana-details-summary[aria-expanded="true"]::before {
+  transform: rotate(90deg);
+}
+
+.nana-milkdown .ProseMirror .nana-details-summary:hover {
+  color: var(--signal);
+}
+
+.nana-milkdown .ProseMirror .nana-details-summary:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+}
+
+.nana-milkdown .ProseMirror .nana-details-body {
+  margin: 0.35rem 0 0.7rem;
+  border-left: 2px solid var(--line-strong);
+  padding-left: 0.9rem;
+}
+
+.nana-milkdown .ProseMirror .nana-details-body.nana-details-closed {
+  display: none;
+}
