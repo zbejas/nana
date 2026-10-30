@@ -418,7 +418,7 @@ An assistant message may contain:
 
 The chat surface has two entry points that share one store: the full page at `/chat` and `/chat/:conversationId`, and the persistent right-side dock mounted at the app root. The dock is hidden while the full page is open. The dock sends the open page's `{ type, id }` context at send time; the server resolves the title and applies ownership, trash, and private checks. Opening a private note, board, or folder does not attach context.
 
-The composer uses **Work/Ask**. Work is the default and sends `mode: "edit"`; Ask is the read-only lock and sends `mode: "ask"`. Applied writes render as edit cards with an Undo action where available; delete tools render a pending approval card with explicit confirm/cancel actions. Sources are rendered as links to the notes and boards a read tool returned or a creation produced. Tool activity is a quiet neutral summary; persisted history keeps only names and statuses. See [`frontend.md`](frontend.md) for layout and the [`DESIGN.md`](../DESIGN.md) chat treatment.
+The composer uses **Work/Ask**. Work is the default and sends `mode: "edit"`; Ask is the read-only lock and sends `mode: "ask"`. Applied writes render above the final answer as collapsed edit rows; expanding one shows its details and Undo where available. Delete tools auto-expand a pending approval card with explicit confirm/cancel actions. Sources render as a collapsed `Sources · N` disclosure. Tool activity is a quiet neutral summary with an optional one-line-per-tool expansion; persisted history keeps only names and statuses. See [`frontend.md`](frontend.md) for layout and the [`DESIGN.md`](../DESIGN.md) chat treatment.
 
 ### Security boundaries
 

@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { DocumentTextIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, DocumentTextIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
 import type { ChatSource } from '../../api/chat/types';
 
 interface ChatSourcesProps {
@@ -15,14 +16,26 @@ function sourceHref(source: ChatSource): string | null {
 
 /** Server-provided source links. Nothing is inferred from the answer text. */
 export function ChatSources({ sources = [] }: ChatSourcesProps) {
+  const [expanded, setExpanded] = useState(false);
   const clean = sources.filter((source) => source.title);
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11.5px]">
-      <span className="font-medium text-ink-muted">
-        {clean.length > 0 ? `Sources · ${clean.length}` : 'No note sources'}
-      </span>
-      {clean.length > 0 && (
-        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+    <div className="mt-3 text-[11.5px]">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        className="inline-flex items-center gap-1.5 font-medium text-ink-muted transition-colors hover:text-ink-secondary"
+      >
+        <span>{clean.length > 0 ? `Sources · ${clean.length}` : 'No note sources'}</span>
+        {clean.length > 0 && (
+          <ChevronDownIcon
+            className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          />
+        )}
+      </button>
+      {expanded && clean.length > 0 && (
+        <span className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
           {clean.map((source, index) => {
             const href = sourceHref(source);
             const Icon = source.type === 'board' ? ViewColumnsIcon : DocumentTextIcon;

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ArrowTopRightOnSquareIcon,
   ArrowUturnLeftIcon,
+  ChevronDownIcon,
   DocumentTextIcon,
   FolderIcon,
   ListBulletIcon,
@@ -87,11 +88,20 @@ function sectionLabel(heading: string | null, path: string[]): string {
 /** One applied write or one destructive action waiting for confirmation. */
 export function ChatEditCard({ edit, onUndo, onConfirm, onCancel }: ChatEditCardProps) {
   const [now, setNow] = useState(() => Date.now());
+  const [expanded, setExpanded] = useState(
+    edit.status === 'pending' || edit.status === 'failed' || edit.status === 'conflict',
+  );
   const created = Date.parse(edit.created);
   const deadline = Number.isFinite(created) ? created + 10_000 : 0;
   const isPending = edit.status === 'pending';
   const showCountdown = edit.status === 'applied' && deadline > now;
   const remaining = showCountdown ? Math.max(1, Math.ceil((deadline - now) / 1000)) : 0;
+
+  useEffect(() => {
+    if (edit.status === 'pending' || edit.status === 'failed' || edit.status === 'conflict') {
+      setExpanded(true);
+    }
+  }, [edit.status]);
 
   useEffect(() => {
     if (edit.status !== 'applied' || !Number.isFinite(created) || deadline <= Date.now()) return;
@@ -109,124 +119,140 @@ export function ChatEditCard({ edit, onUndo, onConfirm, onCancel }: ChatEditCard
     : edit.target.url;
 
   return (
-    <div className="mt-3 overflow-hidden rounded-panel border border-line bg-surface">
-      <div className="flex items-start gap-2.5 px-3 py-2.5">
-        <NanaMark size={24} className="mt-0.5" />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="inline-flex min-w-0 items-center gap-1.5 text-[12.5px] font-medium text-ink">
-              <TargetIcon type={edit.target.type} />
-              <span className="max-w-[13rem] truncate" title={edit.target.title}>
-                {edit.target.title}
-              </span>
-            </span>
-            <span
-              className={`inline-flex h-5 items-center gap-1 rounded-[4px] border px-1.5 text-[10.5px] font-medium ${STATUS_CLASS[edit.status]}`}
-            >
-              {edit.status === 'applying' && (
-                <span className="h-1 w-1 animate-pulse rounded-full bg-current" aria-hidden="true" />
-              )}
-              {STATUS_LABEL[edit.status]}
-            </span>
+    <div className="mt-2 overflow-hidden rounded-panel border border-line bg-surface">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        aria-label={expanded ? 'Hide change details' : 'Show change details'}
+        className="flex w-full min-w-0 items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-surface-sunken/50"
+      >
+        <NanaMark size={20} className="shrink-0" />
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="shrink-0 text-ink-muted">
+            <TargetIcon type={edit.target.type} />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[12px] text-ink-secondary">
+            <span className="font-medium text-ink">{edit.target.title}</span>
+            <span className="text-ink-muted"> · {edit.summary}</span>
+          </span>
+        </span>
+        <span
+          className={`inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] border px-1.5 text-[10.5px] font-medium ${STATUS_CLASS[edit.status]}`}
+        >
+          {edit.status === 'applying' && (
+            <span className="h-1 w-1 animate-pulse rounded-full bg-current" aria-hidden="true" />
+          )}
+          {STATUS_LABEL[edit.status]}
+        </span>
+        <ChevronDownIcon
+          className={`h-3.5 w-3.5 shrink-0 text-ink-muted transition-transform ${expanded ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        />
+      </button>
+
+      {expanded && (
+        <div className="border-t border-line">
+          <div className="px-3 py-2.5">
+            <p className="text-[12.5px] leading-relaxed text-ink-secondary">{edit.summary}</p>
+            {isPending && (
+              <p className="mt-1 text-[11.5px] leading-relaxed text-ink-muted">
+                Nothing changes until you confirm.
+              </p>
+            )}
           </div>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-ink-secondary">{edit.summary}</p>
-          {isPending && (
-            <p className="mt-1 text-[11.5px] leading-relaxed text-ink-muted">
-              Nothing changes until you confirm.
+
+          {(sections.length > 0 || fields.length > 0) && (
+            <div className="border-t border-line bg-surface-sunken/60 px-3 py-2">
+              <p className="text-[10.5px] font-medium uppercase tracking-[0.06em] text-ink-muted">
+                {sections.length > 0 ? 'Changed sections' : 'Changed fields'}
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {sections.map((section, index) => (
+                  <li
+                    key={`${section.heading ?? 'section'}:${index}`}
+                    className="flex items-center gap-1.5 text-[11.5px] text-ink-secondary"
+                  >
+                    <span className="h-1 w-1 rounded-full bg-signal/70" aria-hidden="true" />
+                    <span className="truncate">{sectionLabel(section.heading, section.path)}</span>
+                  </li>
+                ))}
+                {fields.map((field) => (
+                  <li key={field} className="flex items-center gap-1.5 text-[11.5px] text-ink-secondary">
+                    <span className="h-1 w-1 rounded-full bg-signal/70" aria-hidden="true" />
+                    <span className="truncate">{field}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {(edit.status === 'failed' || edit.status === 'conflict') && (
+            <p className="border-t border-line px-3 py-2 text-[11.5px] leading-relaxed text-ink-muted">
+              {edit.status === 'conflict'
+                ? 'The record changed while Nana was editing. Re-read it and ask again.'
+                : 'Nana could not apply this change.'}
             </p>
           )}
-        </div>
-      </div>
 
-      {(sections.length > 0 || fields.length > 0) && (
-        <div className="border-t border-line bg-surface-sunken/60 px-3 py-2">
-          <p className="text-[10.5px] font-medium uppercase tracking-[0.06em] text-ink-muted">
-            {sections.length > 0 ? 'Changed sections' : 'Changed fields'}
-          </p>
-          <ul className="mt-1 space-y-0.5">
-            {sections.map((section, index) => (
-              <li
-                key={`${section.heading ?? 'section'}:${index}`}
-                className="flex items-center gap-1.5 text-[11.5px] text-ink-secondary"
+          {edit.undoError && (
+            <p className="border-t border-line px-3 py-2 text-[11.5px] text-danger">{edit.undoError}</p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-2.5 py-1.5">
+            {href ? (
+              <Link
+                to={href}
+                className="inline-flex h-7 items-center gap-1.5 rounded-control px-2 text-[11.5px] font-medium text-ink-secondary transition-colors hover:bg-surface-sunken hover:text-ink"
               >
-                <span className="h-1 w-1 rounded-full bg-signal/70" aria-hidden="true" />
-                <span className="truncate">{sectionLabel(section.heading, section.path)}</span>
-              </li>
-            ))}
-            {fields.map((field) => (
-              <li key={field} className="flex items-center gap-1.5 text-[11.5px] text-ink-secondary">
-                <span className="h-1 w-1 rounded-full bg-signal/70" aria-hidden="true" />
-                <span className="truncate">{field}</span>
-              </li>
-            ))}
-          </ul>
+                <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                {openLabel(edit)}
+              </Link>
+            ) : (
+              <span className="inline-flex h-7 items-center gap-1.5 px-2 text-[11.5px] text-ink-muted">
+                <FolderIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                {openLabel(edit)}
+              </span>
+            )}
+
+            {isPending && (
+              <div className="ml-auto flex items-center gap-1.5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[11.5px]"
+                  disabled={edit.undoing}
+                  onClick={() => onCancel?.(edit.id)}
+                >
+                  {cancelLabel(edit)}
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  className="h-7 px-2.5 text-[11.5px]"
+                  loading={edit.undoing}
+                  onClick={() => onConfirm?.(edit.id)}
+                >
+                  {confirmLabel(edit)}
+                </Button>
+              </div>
+            )}
+
+            {!isPending && edit.status === 'applied' && edit.undo.available && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto h-7 px-2 text-[11.5px]"
+                icon={<ArrowUturnLeftIcon />}
+                loading={edit.undoing}
+                onClick={() => onUndo(edit.id)}
+              >
+                {showCountdown ? `Undo · ${remaining}s` : 'Undo'}
+              </Button>
+            )}
+          </div>
         </div>
       )}
-
-      {(edit.status === 'failed' || edit.status === 'conflict') && (
-        <p className="border-t border-line px-3 py-2 text-[11.5px] leading-relaxed text-ink-muted">
-          {edit.status === 'conflict'
-            ? 'The record changed while Nana was editing. Re-read it and ask again.'
-            : 'Nana could not apply this change.'}
-        </p>
-      )}
-
-      {edit.undoError && (
-        <p className="border-t border-line px-3 py-2 text-[11.5px] text-danger">{edit.undoError}</p>
-      )}
-
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-2.5 py-1.5">
-        {href ? (
-          <Link
-            to={href}
-            className="inline-flex h-7 items-center gap-1.5 rounded-control px-2 text-[11.5px] font-medium text-ink-secondary transition-colors hover:bg-surface-sunken hover:text-ink"
-          >
-            <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" aria-hidden="true" />
-            {openLabel(edit)}
-          </Link>
-        ) : (
-          <span className="inline-flex h-7 items-center gap-1.5 px-2 text-[11.5px] text-ink-muted">
-            <FolderIcon className="h-3.5 w-3.5" aria-hidden="true" />
-            {openLabel(edit)}
-          </span>
-        )}
-
-        {isPending && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[11.5px]"
-              disabled={edit.undoing}
-              onClick={() => onCancel?.(edit.id)}
-            >
-              {cancelLabel(edit)}
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              className="h-7 px-2.5 text-[11.5px]"
-              loading={edit.undoing}
-              onClick={() => onConfirm?.(edit.id)}
-            >
-              {confirmLabel(edit)}
-            </Button>
-          </div>
-        )}
-
-        {!isPending && edit.status === 'applied' && edit.undo.available && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto h-7 px-2 text-[11.5px]"
-            icon={<ArrowUturnLeftIcon />}
-            loading={edit.undoing}
-            onClick={() => onUndo(edit.id)}
-          >
-            {showCountdown ? `Undo · ${remaining}s` : 'Undo'}
-          </Button>
-        )}
-      </div>
     </div>
   );
 }

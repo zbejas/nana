@@ -136,6 +136,16 @@ export function ChatMessage({
         </details>
       )}
 
+      {message.edits?.map((edit) => (
+        <ChatEditCard
+          key={edit.id}
+          edit={edit}
+          onUndo={onUndoEdit}
+          onConfirm={onConfirmDelete}
+          onCancel={onCancelDelete}
+        />
+      ))}
+
       {hasContent ? (
         <div className="chat-answer break-words text-[14.5px] leading-[1.75] text-ink">
           <MarkdownPreview
@@ -160,16 +170,6 @@ export function ChatMessage({
       ) : message.stopped ? (
         <p className="text-[12px] font-medium text-ink-muted">Stopped.</p>
       ) : null}
-
-      {message.edits?.map((edit) => (
-        <ChatEditCard
-          key={edit.id}
-          edit={edit}
-          onUndo={onUndoEdit}
-          onConfirm={onConfirmDelete}
-          onCancel={onCancelDelete}
-        />
-      ))}
 
       {!message.streaming && (hasContent || message.edits?.length || toolCount > 0) && (
         <ChatSources sources={message.sources} />
