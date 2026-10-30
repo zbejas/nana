@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDownIcon } from '@heroicons/react/24/outline';
+import {
+  ChevronDownIcon,
+  DocumentTextIcon,
+  FolderIcon,
+  ListBulletIcon,
+  ViewColumnsIcon,
+} from '@heroicons/react/24/outline';
 import { ChatEditCard } from './ChatEditCard';
 import type { ChatUiEdit, ChatUiTool } from '../../lib/chat/types';
 
@@ -105,18 +111,37 @@ function summarize(tools: ChatUiTool[]): string {
   return parts.join(' · ') || 'Checked the workspace';
 }
 
-function toolSentence(tool: ChatUiTool): string {
+function toolPresentation(tool: ChatUiTool): { primary: string; detail: string; noun: ToolMeta['noun'] } {
   const meta = metaFor(tool.name);
-  if (tool.title) return `${meta.verb} “${tool.title}”`;
-  if (tool.name === 'list_folders') return 'Checked your folders';
-  if (tool.name === 'list_notes') return 'Searched your notes';
-  if (tool.name === 'list_boards') return 'Checked your boards';
-  if (tool.name === 'read_note') return 'Read a note';
-  if (tool.name === 'read_board') return 'Read a board';
-  if (tool.name.startsWith('create_') || tool.name.startsWith('edit_') || tool.name.startsWith('update_') || tool.name.startsWith('rename_')) {
-    return `${meta.verb} a ${meta.noun}`;
+  const title = tool.title?.trim();
+  if (title) return { primary: title, detail: meta.verb, noun: meta.noun };
+  if (tool.name === 'list_folders') return { primary: 'Folders', detail: 'Checked', noun: 'folder' };
+  if (tool.name === 'list_notes') return { primary: 'Notes', detail: 'Searched', noun: 'note' };
+  if (tool.name === 'list_boards') return { primary: 'Boards', detail: 'Checked', noun: 'board' };
+  if (tool.name === 'read_note') return { primary: 'Note', detail: 'Read', noun: 'note' };
+  if (tool.name === 'read_board') return { primary: 'Board', detail: 'Read', noun: 'board' };
+  return {
+    primary: meta.noun === 'note' ? 'Note' : meta.noun === 'board' ? 'Board' : meta.noun === 'task' ? 'Task' : 'Folder',
+    detail: meta.verb,
+    noun: meta.noun,
+  };
+}
+
+function ToolIcon({ noun }: { noun: ToolMeta['noun'] }) {
+  if (noun === 'board') return <ViewColumnsIcon aria-hidden="true" />;
+  if (noun === 'task') return <ListBulletIcon aria-hidden="true" />;
+  if (noun === 'folder') return <FolderIcon aria-hidden="true" />;
+  return <DocumentTextIcon aria-hidden="true" />;
+}
+
+function toolStatus(tool: ChatUiTool): { label: string; className: string } {
+  if (tool.status === 'running') {
+    return { label: 'Running', className: 'border-signal/25 bg-signal-soft text-signal' };
   }
-  return 'Checked the workspace';
+  if (tool.status === 'error') {
+    return { label: 'Failed', className: 'border-danger/25 bg-danger-soft text-danger' };
+  }
+  return { label: 'Done', className: 'border-line bg-surface-sunken text-ink-muted' };
 }
 
 function editSummary(edits: ChatUiEdit[]): string {
@@ -209,17 +234,33 @@ export function ChatToolStrip({
 
       {expanded && (
         <ul className="mt-1.5 space-y-0.5 border-l border-line pl-3 text-[11.5px] text-ink-muted">
-          {tools.map((tool, index) => (
-            <li key={`${tool.id ?? tool.name}:${index}`} className="flex items-center gap-2">
-              <span
-                className={`h-1 w-1 shrink-0 rounded-full ${
-                  tool.status === 'error' ? 'bg-danger' : tool.status === 'running' ? 'bg-signal' : 'bg-success'
-                }`}
-                aria-hidden="true"
-              />
-              <span className="truncate">{toolSentence(tool)}</span>
-            </li>
-          ))}
+          {tools.map((tool, index) => {
+            const presentation = toolPresentation(tool);
+            const status = toolStatus(tool);
+            const dotClass = tool.status === 'error'
+              ? 'bg-danger'
+              : tool.status === 'running'
+                ? 'bg-signal animate-pulse'
+                : 'bg-success';
+            return (
+              <li key={`${tool.id ?? tool.name}:${index}`}>
+                <div className="flex min-w-0 items-center gap-2 rounded-[4px] px-1.5 py-1">
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} aria-hidden="true" />
+                  <span className="shrink-0 text-ink-muted [&>svg]:h-3.5 [&>svg]:w-3.5">
+                    <ToolIcon noun={presentation.noun} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-secondary">
+                    <span className="font-medium text-ink-secondary">{presentation.primary}</span>
+                    <span className="text-ink-muted"> · {presentation.detail}</span>
+                  </span>
+                  <span className={`inline-flex h-5 shrink-0 items-center rounded-[4px] border px-1.5 text-[10.5px] font-medium ${status.className}`}>
+                    {status.label}
+                  </span>
+                  <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                </div>
+              </li>
+            );
+          })}
           {tools.length > 0 && edits.length > 0 && (
             <li className="my-1 h-px bg-line" aria-hidden="true" />
           )}
