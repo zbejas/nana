@@ -8,6 +8,13 @@ require(`${__hooks}/public_sharing_cron.js`);
 require(`${__hooks}/documents/calculate_stats.js`);
 require(`${__hooks}/documents/create_version.js`);
 
+// Board and task hooks
+require(`${__hooks}/boards/seed_columns.js`);
+require(`${__hooks}/boards/column_guards.js`);
+require(`${__hooks}/tasks/lifecycle.js`);
+require(`${__hooks}/tasks/assignee_guard.js`);
+require(`${__hooks}/tasks/record_activity.js`);
+
 // Folder hooks
 
 // Mailer hooks

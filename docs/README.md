@@ -17,6 +17,7 @@ The docs describe **how the code works today**. When code and docs disagree, the
 | [`testing.md`](testing.md) | Unit + Docker integration layers, layout, helpers, conventions | Adding or fixing tests |
 | [`deployment.md`](deployment.md) | Build, Docker, compose, releases, operations | Building, shipping, debugging deploys |
 | [`development.md`](development.md) | Local setup, workflow, common tasks, sharp edges | Beginning implementation |
+| [`plans/kanban-rework.md`](plans/kanban-rework.md) | Active kanban, sharing, and editor rework phases, ownership, and gates | Joining or resuming the rework |
 | [`../PRODUCT.md`](../PRODUCT.md) | Audience, product truth, principles, surfaces | Deciding what belongs in the product |
 | [`../DESIGN.md`](../DESIGN.md) | Graphite tokens, type, components, motion, voice | Building or reviewing UI |
 
