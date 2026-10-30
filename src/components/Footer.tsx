@@ -55,6 +55,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
   const [loading, setLoading] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<DocumentVersion | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const footerRef = useRef<HTMLElement>(null);
   const versionMenuRef = useRef<HTMLDivElement>(null);
   const attachmentsMenuRef = useRef<HTMLDivElement>(null);
   const attachmentsButtonRef = useRef<HTMLButtonElement>(null);
@@ -70,6 +71,31 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
   const { showToast } = useToasts();
 
   const COMPACT_SIDEBAR_WIDTH = 64;
+  useEffect(() => {
+    if (!usePortal || !isDesktop) {
+      window.document.documentElement.style.removeProperty('--nana-footer-height');
+      return;
+    }
+    const footer = footerRef.current;
+    if (!footer) return;
+
+    const update = () => {
+      window.document.documentElement.style.setProperty(
+        '--nana-footer-height',
+        `${Math.ceil(footer.getBoundingClientRect().height)}px`,
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(footer);
+    window.addEventListener('resize', update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', update);
+      window.document.documentElement.style.removeProperty('--nana-footer-height');
+    };
+  }, [isDesktop, usePortal]);
+
   const [isDockedSidebar, setIsDockedSidebar] = useState(
     () => typeof window !== 'undefined' && window.innerWidth >= 1024
   );
@@ -221,6 +247,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
 
   const footer = (
     <footer
+      ref={footerRef}
       className={footerClasses}
       style={{
         left: isDesktop ? `${leftOffset}px` : undefined,

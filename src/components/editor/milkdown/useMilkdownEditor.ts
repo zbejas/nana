@@ -17,6 +17,7 @@ import {
   runEditorAction,
   type EditorToolbarState,
 } from './editorActions';
+import { applyAiMarkdown, type AiChangedSection } from './aiEdits';
 import type { EditorActionId } from './helpers';
 import { normalizeMarkdown } from './helpers';
 
@@ -28,6 +29,12 @@ export interface UseMilkdownEditorOptions {
   ariaLabel?: string;
   enableSlash?: boolean;
   uploadImage?: (file: File) => Promise<string>;
+  aiEdit?: {
+    id: string;
+    previousMarkdown: string;
+    markdown: string;
+    sections: AiChangedSection[];
+  } | null;
   onFocusChange?: (focused: boolean) => void;
   onSlash?: (position: SlashTriggerPosition) => void;
   onReady?: (editor: Editor) => void;
@@ -85,6 +92,7 @@ export function useMilkdownEditor({
   ariaLabel = 'Document content',
   enableSlash = true,
   uploadImage,
+  aiEdit = null,
   onFocusChange,
   onSlash,
   onReady,
@@ -103,6 +111,7 @@ export function useMilkdownEditor({
   const onSlashRef = useRef(onSlash);
   const onReadyRef = useRef(onReady);
   const uploadImageRef = useRef(uploadImage);
+  const lastAiEditRef = useRef<string | null>(null);
   const lastEmittedRef = useRef(normalizeMarkdown(value));
   const lastAppliedRef = useRef(normalizeMarkdown(value));
   const toolbarRef = useRef(toolbar);
@@ -193,17 +202,36 @@ export function useMilkdownEditor({
     const incoming = normalizeMarkdown(value);
     if (incoming === lastAppliedRef.current) return;
 
-    const root = containerRef.current;
-    if (root && root.contains(document.activeElement)) return;
-
     const editor = editorRef.current;
     if (!editor) return;
+
+    const root = containerRef.current;
+    if (root && root.contains(document.activeElement)) return;
 
     lastAppliedRef.current = incoming;
     lastEmittedRef.current = incoming;
     editor.action((ctx) => replaceEditorMarkdown(ctx, incoming));
     refreshToolbar();
   }, [value, ready, refreshToolbar]);
+
+  // AI edits get their own path so the diff still applies when a realtime
+  // update already pushed the new Markdown into the editor. The previous
+  // Markdown is parsed independently; the current doc is never reused as the
+  // "before" snapshot.
+  useEffect(() => {
+    if (!ready || !aiEdit) return;
+    if (lastAiEditRef.current === aiEdit.id) return;
+
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const incoming = normalizeMarkdown(aiEdit.markdown);
+    lastAiEditRef.current = aiEdit.id;
+    lastAppliedRef.current = incoming;
+    lastEmittedRef.current = incoming;
+    applyAiMarkdown(editor, incoming, aiEdit.previousMarkdown, aiEdit.sections);
+    refreshToolbar();
+  }, [aiEdit, ready, refreshToolbar]);
 
   // A pane that was focused while an external value arrived catches up on blur.
   useEffect(() => {

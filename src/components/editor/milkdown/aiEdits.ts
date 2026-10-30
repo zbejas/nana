@@ -1,6 +1,14 @@
-import { editorViewCtx, type Editor } from '@milkdown/kit/core';
+import { editorViewCtx, parserCtx, type Editor } from '@milkdown/kit/core';
 import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model';
-import { replaceEditorMarkdown, setAiHighlights, type AiHighlightRange } from './createEditor';
+import { changedCharacterCount, diffText } from './aiDiff';
+import { normalizeMarkdown } from './helpers';
+import {
+  proseTextMap,
+  replaceEditorMarkdown,
+  setAiDiffHighlights,
+  setAiHighlights,
+  type AiHighlightRange,
+} from './createEditor';
 
 export interface AiChangedSection {
   heading?: string | null;
@@ -103,13 +111,26 @@ function rangesFor(doc: ProseMirrorNode, sections: AiChangedSection[]): AiHighli
 export function applyAiMarkdown(
   editor: Editor,
   markdown: string,
+  previousMarkdown: string,
   sections: AiChangedSection[],
 ): void {
-  editor.action((ctx) => replaceEditorMarkdown(ctx, markdown));
   const view = editor.action((ctx) => ctx.get(editorViewCtx));
+  const beforeDoc = editor.action((ctx) =>
+    ctx.get(parserCtx)(normalizeMarkdown(previousMarkdown)),
+  );
+  const before = beforeDoc ? proseTextMap(beforeDoc) : null;
+  editor.action((ctx) => replaceEditorMarkdown(ctx, markdown));
 
   window.requestAnimationFrame(() => {
     if (view.isDestroyed) return;
-    setAiHighlights(view, rangesFor(view.state.doc, sections));
+    const after = proseTextMap(view.state.doc);
+    const changes = before ? diffText(before.text, after.text) : [];
+    const changedChars = changedCharacterCount(changes);
+    const applied = changes.length > 0
+      && changes.length <= 240
+      && changedChars <= 6_000
+      && setAiDiffHighlights(view, changes, after);
+
+    if (!applied) setAiHighlights(view, rangesFor(view.state.doc, sections), 700);
   });
 }

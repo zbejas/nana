@@ -3,8 +3,9 @@ import type { Editor } from '@milkdown/kit/core';
 import type { EditorView as CodeMirrorView } from '@codemirror/view';
 import type { EditorView as ProseMirrorView } from '@milkdown/kit/prose/view';
 import { NanaMarkdownEditor } from './NanaMarkdownEditor';
-import { NanaSourceEditor } from './NanaSourceEditor';
+import { NanaSourceEditor, type SourceAiDiff } from './NanaSourceEditor';
 import { computeScrollRatio, scrollTopForRatio } from './helpers';
+import type { AiChangedSection } from './aiEdits';
 
 export interface NanaSplitMarkdownEditorProps {
   value: string;
@@ -13,6 +14,13 @@ export interface NanaSplitMarkdownEditorProps {
   placeholder?: string;
   ariaLabel?: string;
   className?: string;
+  aiEdit?: {
+    id: string;
+    previousMarkdown: string;
+    markdown: string;
+    sections: AiChangedSection[];
+  } | null;
+  aiDiff?: SourceAiDiff | null;
   onEditorReady?: (editor: Editor) => void;
 }
 
@@ -29,6 +37,8 @@ export function NanaSplitMarkdownEditor({
   placeholder = 'Start writing…',
   ariaLabel = 'Document content',
   className,
+  aiEdit = null,
+  aiDiff = null,
   onEditorReady,
 }: NanaSplitMarkdownEditorProps) {
   const [sourceView, setSourceView] = useState<CodeMirrorView | null>(null);
@@ -85,6 +95,7 @@ export function NanaSplitMarkdownEditor({
               readOnly={readOnly}
               placeholder={readOnly ? '' : placeholder}
               ariaLabel={`${ariaLabel} Markdown source`}
+              aiDiff={aiDiff}
               onReady={setSourceView}
             />
           </div>
@@ -98,6 +109,7 @@ export function NanaSplitMarkdownEditor({
             placeholder={placeholder}
             ariaLabel={ariaLabel}
             enableSlash
+            aiEdit={aiEdit}
             onViewReady={setWysiwygView}
             onEditorReady={onEditorReady}
             className="h-full min-h-0"

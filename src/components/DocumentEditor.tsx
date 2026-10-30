@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAtom, useSetAtom } from 'jotai';
 import { EditorHeader } from './editor/EditorHeader';
 import { EditorTags } from './editor/EditorTags';
 import { EditorContent, type EditorAiEdit } from './editor/EditorContent';
+import { normalizeMarkdown } from './editor/milkdown/helpers';
 import { ContentSizeWarning } from './editor/ContentSizeWarning';
 import { Footer } from './Footer';
 import { useDocumentEditorState } from './editor/useDocumentEditorState';
@@ -31,6 +32,7 @@ export function DocumentEditor() {
     content,
     setContent,
     setSelectedDocument,
+    remoteContentChangeRef,
     tags,
     setTags,
     setPublished,
@@ -81,10 +83,20 @@ export function DocumentEditor() {
   const sharePanel = useSharePanel();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [aiEdit, setAiEdit] = useState<EditorAiEdit | null>(null);
+  const contentRef = useRef(content);
+  const lastAiEditIdRef = useRef<string | null>(null);
+  contentRef.current = content;
 
   useEffect(() => {
     setAiEdit(null);
+    lastAiEditIdRef.current = null;
   }, [document?.id]);
+
+  useEffect(() => {
+    if (!aiEdit) return;
+    const timer = window.setTimeout(() => setAiEdit(null), 1200);
+    return () => window.clearTimeout(timer);
+  }, [aiEdit]);
 
   useEffect(() => {
     const currentId = document?.id;
@@ -93,20 +105,34 @@ export function DocumentEditor() {
     const handleAiEdit = (event: Event) => {
       const edit = (event as CustomEvent<{ edit?: ChatUiEdit }>).detail?.edit;
       if (!edit || edit.target.type !== 'document' || edit.target.id !== currentId) return;
+      if (lastAiEditIdRef.current === edit.id) return;
+      lastAiEditIdRef.current = edit.id;
 
       const targetId = edit.target.id;
+      const currentMarkdown = contentRef.current;
+      const remoteChange = remoteContentChangeRef.current;
+      const previousMarkdown = remoteChange
+        && normalizeMarkdown(currentMarkdown) === remoteChange.to
+        ? remoteChange.from
+        : currentMarkdown;
+      remoteContentChangeRef.current = null;
       void getDocument(targetId)
         .then((fresh) => {
           if (document?.id !== targetId) return;
-          setSelectedDocument(fresh);
+          // The editor serializes normalized Markdown. Normalize the fetched
+          // copy before putting it into state so the header and the editor do
+          // not alternate between the raw and serialized byte counts.
+          const nextContent = normalizeMarkdown(fresh.content);
+          setSelectedDocument({ ...fresh, content: nextContent });
           setTitle(fresh.title);
-          setContent(fresh.content);
+          setContent(nextContent);
           setTags(fresh.tags || []);
           setPublished(fresh.published);
           setGlobalUnsavedChanges(false);
           setAiEdit({
             id: edit.id,
-            markdown: fresh.content,
+            previousMarkdown,
+            markdown: nextContent,
             sections: (edit.changed.sections ?? []).map((section) => ({
               ...(section.heading ? { heading: section.heading } : {}),
               ...(section.path ? { path: section.path } : {}),
@@ -313,7 +339,10 @@ export function DocumentEditor() {
 
         {!isTrashDocument && <ContentSizeWarning content={content} />}
 
-        <div className="md:flex-1 flex-1 min-h-0 md:pb-12 overflow-hidden">
+        <div
+          className="md:flex-1 flex-1 min-h-0 overflow-hidden"
+          style={isDesktop ? { paddingBottom: 'calc(var(--nana-footer-height, 3rem) + 0.75rem)' } : undefined}
+        >
           <EditorContent
             key={document?.id ?? urlDocumentId ?? 'new'}
             content={content}

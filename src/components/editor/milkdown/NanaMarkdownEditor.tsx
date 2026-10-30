@@ -5,6 +5,7 @@ import { cn } from '../../ui';
 import { NanaEditorToolbar } from './NanaEditorToolbar';
 import { NanaSlashMenu } from './NanaSlashMenu';
 import { useMilkdownEditor } from './useMilkdownEditor';
+import type { AiChangedSection } from './aiEdits';
 import type { EditorActionId } from './helpers';
 import type { SlashTriggerPosition } from './createEditor';
 
@@ -21,6 +22,12 @@ export interface NanaMarkdownEditorProps {
   toolbarOnlyOnFocus?: boolean;
   enableSlash?: boolean;
   uploadImage?: (file: File) => Promise<string>;
+  aiEdit?: {
+    id: string;
+    previousMarkdown: string;
+    markdown: string;
+    sections: AiChangedSection[];
+  } | null;
   onFocusChange?: (focused: boolean) => void;
   onViewReady?: (view: EditorView) => void;
   onEditorReady?: (editor: Editor) => void;
@@ -43,6 +50,7 @@ export function NanaMarkdownEditor({
   toolbarOnlyOnFocus = false,
   enableSlash = true,
   uploadImage,
+  aiEdit = null,
   onFocusChange,
   onViewReady,
   onEditorReady,
@@ -57,6 +65,7 @@ export function NanaMarkdownEditor({
     ariaLabel,
     enableSlash: enableSlash && !readOnly,
     uploadImage,
+    aiEdit,
     onFocusChange,
     onSlash: (position) => setSlashPosition(position),
     onReady: (instance) => {

@@ -21,6 +21,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view';
 import { prism } from '@milkdown/plugin-prism';
 import { rewriteLegacyFileUrl } from '../../../lib/legacy-urls';
+import type { AiTextChange } from './aiDiff';
 import { normalizeMarkdown } from './helpers';
 
 export interface SlashTriggerPosition {
@@ -144,12 +145,162 @@ export interface AiHighlightRange {
   heading?: boolean;
 }
 
+export interface ProseTextSegment {
+  textStart: number;
+  textEnd: number;
+  from: number;
+  to: number;
+}
+
+export interface ProseTextMap {
+  text: string;
+  segments: ProseTextSegment[];
+  textSegments: ProseTextSegment[];
+}
+
+/**
+ * Plain text with a position map. Block boundaries become zero-width newlines
+ * so a paragraph split still diffs as a line change, while text-node offsets
+ * stay addressable as ProseMirror positions.
+ */
+export function proseTextMap(doc: ProseNode): ProseTextMap {
+  let text = '';
+  const segments: ProseTextSegment[] = [];
+  const textSegments: ProseTextSegment[] = [];
+
+  const addSeparator = (pos: number) => {
+    if (text.length === 0 || text.endsWith('\n')) return;
+    segments.push({
+      textStart: text.length,
+      textEnd: text.length + 1,
+      from: pos,
+      to: pos,
+    });
+    text += '\n';
+  };
+
+  const walk = (node: ProseNode, pos: number) => {
+    if (node.isText) {
+      const value = node.text ?? '';
+      if (!value) return;
+      const segment = {
+        textStart: text.length,
+        textEnd: text.length + value.length,
+        from: pos,
+        to: pos + value.length,
+      };
+      text += value;
+      segments.push(segment);
+      textSegments.push(segment);
+      return;
+    }
+
+    node.forEach((child, offset) => {
+      const childPos = pos + 1 + offset;
+      if (child.isBlock && offset > 0) addSeparator(childPos);
+      walk(child, childPos);
+    });
+  };
+
+  walk(doc, 0);
+  return { text, segments, textSegments };
+}
+
+function positionAt(map: ProseTextMap, offset: number): number {
+  if (map.segments.length === 0) return 0;
+  for (let index = 0; index < map.segments.length; index += 1) {
+    const segment = map.segments[index]!;
+    if (offset < segment.textStart) return segment.from;
+    if (offset <= segment.textEnd) {
+      const next = map.segments[index + 1];
+      if (offset === segment.textEnd && next?.textStart === offset) continue;
+      return segment.from + Math.max(0, Math.min(offset - segment.textStart, segment.to - segment.from));
+    }
+  }
+  return map.segments[map.segments.length - 1]!.to;
+}
+
+function scrollToTextPosition(view: EditorView, pos: number): void {
+  if (view.isDestroyed) return;
+  const resolved = view.state.doc.resolve(Math.max(0, Math.min(pos, view.state.doc.content.size)));
+  const blockPos = resolved.depth > 0 ? resolved.before(1) : resolved.pos;
+  const node = view.nodeDOM(blockPos);
+  if (node instanceof HTMLElement) {
+    node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
+/** Set the shared AI decoration timer and clear the visual after `duration`. */
+function scheduleAiDecorationClear(view: EditorView, duration: number): void {
+  const previousTimer = aiHighlightTimers.get(view);
+  if (previousTimer !== undefined) window.clearTimeout(previousTimer);
+
+  const timer = window.setTimeout(() => {
+    aiHighlightTimers.delete(view);
+    if (view.isDestroyed) return;
+    view.dispatch(view.state.tr.setMeta(AI_HIGHLIGHT_KEY, DecorationSet.empty));
+  }, duration);
+  aiHighlightTimers.set(view, timer);
+}
+
+/**
+ * Apply a short inline diff. Inserted text gets a green wash; deleted text is
+ * shown as a red strike-through widget at the new insertion point. The source
+ * document is never changed by these decorations.
+ */
+export function setAiDiffHighlights(
+  view: EditorView,
+  changes: readonly AiTextChange[],
+  map: ProseTextMap,
+  duration = 450,
+): boolean {
+  if (view.isDestroyed || changes.length === 0) return false;
+
+  const decorations: Decoration[] = [];
+  for (const change of changes) {
+    if (change.type === 'insert') {
+      for (const segment of map.textSegments) {
+        const from = Math.max(change.start, segment.textStart);
+        const to = Math.min(change.end, segment.textEnd);
+        if (from >= to) continue;
+        decorations.push(Decoration.inline(
+          segment.from + (from - segment.textStart),
+          segment.from + (to - segment.textStart),
+          { class: 'nana-ai-diff-insert' },
+        ));
+      }
+      continue;
+    }
+
+    const span = document.createElement('span');
+    span.className = 'nana-ai-diff-delete';
+    span.textContent = change.text.length > 600
+      ? `${change.text.slice(0, 600)}…`
+      : change.text;
+    span.setAttribute('aria-hidden', 'true');
+    decorations.push(Decoration.widget(
+      positionAt(map, change.start),
+      span,
+      { side: -1 },
+    ));
+  }
+
+  if (decorations.length === 0) return false;
+
+  view.dispatch(
+    view.state.tr.setMeta(AI_HIGHLIGHT_KEY, DecorationSet.create(view.state.doc, decorations)),
+  );
+  scrollToTextPosition(view, positionAt(map, changes[0]!.start));
+  scheduleAiDecorationClear(view, duration);
+  return true;
+}
+
 /**
  * Applies the AI-edit wash through ProseMirror decorations rather than DOM
  * classes. Milkdown re-renders node DOM after transactions; a class added
  * directly to the DOM can disappear before the user sees it.
  */
-export function setAiHighlights(view: EditorView, ranges: AiHighlightRange[], duration = 2600): void {
+export function setAiHighlights(view: EditorView, ranges: AiHighlightRange[], duration = 700): void {
   if (view.isDestroyed || ranges.length === 0) return;
 
   const decorations = ranges.map((range) =>
@@ -171,15 +322,7 @@ export function setAiHighlights(view: EditorView, ranges: AiHighlightRange[], du
     }
   }
 
-  const previousTimer = aiHighlightTimers.get(view);
-  if (previousTimer !== undefined) window.clearTimeout(previousTimer);
-
-  const timer = window.setTimeout(() => {
-    aiHighlightTimers.delete(view);
-    if (view.isDestroyed) return;
-    view.dispatch(view.state.tr.setMeta(AI_HIGHLIGHT_KEY, DecorationSet.empty));
-  }, duration);
-  aiHighlightTimers.set(view, timer);
+  scheduleAiDecorationClear(view, duration);
 }
 
 function taskListClickPlugin() {

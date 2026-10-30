@@ -16,7 +16,7 @@ import {
 } from '../../lib/settings';
 import { useDocumentLoader } from './useDocumentLoader';
 import { useAutoSave } from './useAutoSave';
-import { isSameMarkdown } from './milkdown/helpers';
+import { isSameMarkdown, normalizeMarkdown } from './milkdown/helpers';
 import { useAttachmentHandlers } from './useAttachmentHandlers';
 import { useDocumentActions } from './useDocumentActions';
 
@@ -47,7 +47,7 @@ export function useDocumentEditorState() {
     const titleInputRef = useRef<HTMLInputElement>(null);
     const [shouldSelectTitle, setShouldSelectTitle] = useState(false);
     const [title, setTitle] = useState(document?.title || initialTitle || '');
-    const [content, setContent] = useState(document?.content || initialContent || '');
+    const [content, setContent] = useState(() => normalizeMarkdown(document?.content || initialContent || ''));
     const [tags, setTags] = useState<string[]>(document?.tags || []);
     const [tagInput, setTagInput] = useState('');
     const [published, setPublished] = useState(document?.published || false);
@@ -65,6 +65,7 @@ export function useDocumentEditorState() {
     const tagsRef = useRef(tags);
     const publishedRef = useRef(published);
     const prevDocumentIdRef = useRef(document?.id);
+    const remoteContentChangeRef = useRef<{ from: string; to: string } | null>(null);
 
     useEffect(() => { titleRef.current = title; }, [title]);
     useEffect(() => { contentRef.current = content; }, [content]);
@@ -222,14 +223,20 @@ export function useDocumentEditorState() {
     // new values, so the intermediate (stale) state never reaches the DOM.
     const [lastSyncedDocId, setLastSyncedDocId] = useState<string | undefined>(document?.id);
     const [lastSyncedSession, setLastSyncedSession] = useState(creationSessionId);
+    // The document record whose values are already reflected in local state.
+    // Same-ID realtime updates arrive through the atom before the local setters,
+    // so dirty comparison must ignore that one committed render.
+    const [syncedDocument, setSyncedDocument] = useState<Document | null>(document);
 
     if (document?.id !== lastSyncedDocId || creationSessionId !== lastSyncedSession) {
         setLastSyncedDocId(document?.id);
         setLastSyncedSession(creationSessionId);
+        setSyncedDocument(document);
+        remoteContentChangeRef.current = null;
 
         if (document) {
             setTitle(document.title || '');
-            setContent(document.content);
+            setContent(normalizeMarkdown(document.content));
             setTags(document.tags || []);
             setPublished(document.published);
         } else {
@@ -264,21 +271,37 @@ export function useDocumentEditorState() {
         // Only handle same-document content updates (ID change is handled above)
         if (document.id !== prevDocumentIdRef.current) {
             prevDocumentIdRef.current = document.id;
+            setSyncedDocument(document);
             return;
         }
+
+        // Mark the record as adopted before the dirty comparison runs. If the
+        // user has local edits, only the baseline moves; their draft is kept.
+        setSyncedDocument(document);
 
         if (hasUnsavedChanges) {
             logger.debug('Skipping realtime state sync - user has unsaved changes');
             return;
         }
 
+        const nextContent = normalizeMarkdown(document.content);
+        if (nextContent !== normalizeMarkdown(content)) {
+            // Keep the pre-realtime draft so an AI-edit event that arrives after
+            // the PocketBase broadcast can still diff against what was on screen.
+            remoteContentChangeRef.current = { from: content, to: nextContent };
+        }
         setTitle(document.title || '');
-        setContent(document.content);
+        setContent(nextContent);
         setTags(document.tags || []);
         setPublished(document.published);
     }, [document, urlDocumentId, hasUnsavedChanges]);
 
     useEffect(() => {
+        // The atom can change one render before the realtime effect adopts it.
+        // Ignoring that intermediate render prevents a one-frame "Unsaved"
+        // flash while the local fields catch up.
+        if (document && document !== syncedDocument) return;
+
         let hasChanges = false;
 
         if (!document) {
@@ -299,7 +322,7 @@ export function useDocumentEditorState() {
 
 
         setGlobalUnsavedChanges(hasChanges);
-    }, [title, content, tags, published, newAttachments, removedAttachments, document, setGlobalUnsavedChanges]);
+    }, [title, content, tags, published, newAttachments, removedAttachments, document, syncedDocument, setGlobalUnsavedChanges]);
 
     const contentStats = useMemo(() => {
         const words = content.trim().split(/\s+/).filter((w) => w.length > 0);
@@ -372,6 +395,7 @@ export function useDocumentEditorState() {
         urlDocumentId,
         document,
         setSelectedDocument,
+        remoteContentChangeRef,
         sidebarOpen,
         sidebarWidth,
         titleInputRef,

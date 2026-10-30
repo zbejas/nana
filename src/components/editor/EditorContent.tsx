@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react';
-import type { Editor } from '@milkdown/kit/core';
+import { useMemo, type DragEvent } from 'react';
 import { NanaMarkdownEditor } from './milkdown/NanaMarkdownEditor';
 import { NanaSourceEditor } from './milkdown/NanaSourceEditor';
 import { NanaSplitMarkdownEditor } from './milkdown/NanaSplitMarkdownEditor';
-import { applyAiMarkdown, type AiChangedSection } from './milkdown/aiEdits';
+import { diffText } from './milkdown/aiDiff';
+import type { AiChangedSection } from './milkdown/aiEdits';
+import { normalizeMarkdown } from './milkdown/helpers';
 import type { ViewMode } from './EditorHeader';
 
 export interface EditorAiEdit {
   id: string;
+  previousMarkdown: string;
   markdown: string;
   sections: AiChangedSection[];
 }
@@ -38,23 +40,14 @@ export function EditorContent({
 }: EditorContentProps) {
   const isSplitMode = viewMode === 'split';
   const editorPlaceholder = readOnly ? '' : 'Start writing…';
-  const editorRef = useRef<Editor | null>(null);
-  const [editorReadyVersion, setEditorReadyVersion] = useState(0);
-
-  useEffect(() => {
-    editorRef.current = null;
-  }, [viewMode]);
-
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor || !aiEdit) return;
-    applyAiMarkdown(editor, aiEdit.markdown, aiEdit.sections);
-  }, [aiEdit, editorReadyVersion]);
-
-  const handleEditorReady = (editor: Editor) => {
-    editorRef.current = editor;
-    setEditorReadyVersion((value) => value + 1);
-  };
+  const sourceAiDiff = useMemo(() => {
+    if (!aiEdit) return null;
+    const changes = diffText(
+      normalizeMarkdown(aiEdit.previousMarkdown),
+      normalizeMarkdown(aiEdit.markdown),
+    );
+    return changes.length > 0 ? { id: aiEdit.id, changes } : null;
+  }, [aiEdit]);
 
   return (
     <div
@@ -86,6 +79,7 @@ export function EditorContent({
               placeholder={editorPlaceholder}
               ariaLabel="Document Markdown source"
               className="h-full"
+              aiDiff={sourceAiDiff}
             />
           </div>
         )}
@@ -98,7 +92,8 @@ export function EditorContent({
             placeholder={editorPlaceholder}
             ariaLabel="Document content"
             className="min-h-0 flex-1"
-            onEditorReady={handleEditorReady}
+            aiEdit={aiEdit}
+            aiDiff={sourceAiDiff}
           />
         )}
 
@@ -112,7 +107,7 @@ export function EditorContent({
             className="scrollbar-autohide h-full min-h-0 flex-1"
             showToolbar
             enableSlash
-            onEditorReady={handleEditorReady}
+            aiEdit={aiEdit}
           />
         )}
       </div>

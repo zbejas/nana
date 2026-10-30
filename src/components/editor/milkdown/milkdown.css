@@ -604,13 +604,55 @@
     }
   }
 
-  /* An AI section edit washes the changed blocks and leaves a short-lived
-     Nana badge on the first heading. The Markdown transaction is instant;
-     only the visual acknowledgement animates. */
+  /* Inline AI diff: green for the new text, red strike-through for the old.
+     Decorations are visual only; the transaction never carries the marks. */
+  .nana-milkdown .ProseMirror .nana-ai-diff-insert,
+  .nana-source .nana-ai-diff-insert {
+    border-radius: 2px;
+    background: var(--success-soft);
+    box-shadow: inset 0 -1px 0 var(--success);
+    color: var(--success);
+    animation: nana-ai-diff-insert 420ms ease-out both;
+  }
+
+  .nana-milkdown .ProseMirror .nana-ai-diff-delete,
+  .nana-source .nana-ai-diff-delete {
+    border-radius: 2px;
+    background: var(--danger-soft);
+    color: var(--danger);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+    user-select: none;
+    white-space: pre-wrap;
+    animation: nana-ai-diff-delete 420ms ease-out both;
+  }
+
+  @keyframes nana-ai-diff-insert {
+    0% {
+      background: var(--success-soft);
+      box-shadow: inset 0 -1px 0 var(--success);
+    }
+    100% {
+      background: transparent;
+      box-shadow: inset 0 -1px 0 transparent;
+    }
+  }
+
+  @keyframes nana-ai-diff-delete {
+    0% {
+      background: var(--danger-soft);
+    }
+    100% {
+      background: transparent;
+    }
+  }
+
+  /* A section-level fallback for rewrites that are too large for an inline
+     diff. It keeps the same short acknowledgement window. */
   .nana-ai-edited {
     position: relative;
     box-shadow: inset 2px 0 0 var(--signal);
-    animation: nana-ai-wash 1.8s ease-out both;
+    animation: nana-ai-wash 700ms ease-out both;
   }
 
   .nana-ai-edited[data-nana-ai-heading='true']::before {
@@ -643,6 +685,13 @@
     .nana-ai-edited {
       animation: none;
       background: var(--signal-soft);
+    }
+
+    .nana-milkdown .ProseMirror .nana-ai-diff-insert,
+    .nana-source .nana-ai-diff-insert,
+    .nana-milkdown .ProseMirror .nana-ai-diff-delete,
+    .nana-source .nana-ai-diff-delete {
+      animation: none;
     }
   }
 }
