@@ -143,7 +143,7 @@ export function TimelineDocumentCard({
           <IconButton
             label="Document actions"
             size="sm"
-            className="h-7 w-7 shrink-0 text-ink-muted"
+            className="timeline-card-action h-7 w-7 shrink-0 text-ink-muted"
             onClick={(event) => {
               event.stopPropagation();
               onOpenItemMenu(event as unknown as MouseEvent<HTMLButtonElement>);

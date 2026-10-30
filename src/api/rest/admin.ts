@@ -8,6 +8,10 @@ import {
     saveRateLimitSettings,
     type RateLimitSettings,
 } from "../rate-limiter";
+import {
+    listCatalogModels,
+    loadModelsDevCatalog,
+} from "../../lib/ai/models-dev";
 import { BrowserAuthError, requireBrowserAdmin } from "./browser/auth";
 
 const log = createLogger("Admin");
@@ -98,5 +102,30 @@ export const adminApi = new Elysia({ name: "nana-admin-api" })
         }
     }, {
         body: RateLimitBody,
+        detail: { hide: true },
+    })
+    .get("/api/v1/admin/ai/models", async ({ request, query }) => {
+        try {
+            await requireBrowserAdmin(request);
+            const catalog = await loadModelsDevCatalog();
+            let models = listCatalogModels(catalog, query.q ?? "", 10_000);
+            if (query.provider) {
+                models = models.filter((model) => model.providerId === query.provider);
+            }
+            return jsonPayload({ models: models.slice(0, 500), source: "models.dev" });
+        } catch (error) {
+            if (error instanceof BrowserAuthError) {
+                return jsonError(error.status, error.message);
+            }
+            log.error("models.dev catalog request failed", {
+                message: error instanceof Error ? error.message : "unknown",
+            });
+            return jsonError(502, "The model catalog is unavailable right now.");
+        }
+    }, {
+        query: t.Object({
+            q: t.Optional(t.String({ maxLength: 120 })),
+            provider: t.Optional(t.String({ maxLength: 80 })),
+        }),
         detail: { hide: true },
     });

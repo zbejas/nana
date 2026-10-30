@@ -12,6 +12,8 @@ import {
   useChatStore,
 } from '../lib/chat/store';
 import { useChatViewportHeight, useIsMobileChat } from '../lib/chat/viewport';
+import { findChatModel } from '../lib/chat/models';
+import { useBackToClose } from '../lib/useBackToClose';
 
 /**
  * Full-page chat for deep links. It shares the dock's store and components, so
@@ -25,11 +27,14 @@ export function ChatPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [historySheetOpen, setHistorySheetOpen] = useState(false);
 
+  useBackToClose(isMobile && historySheetOpen, () => setHistorySheetOpen(false));
+
   const conversation = useChatStore((snapshot) => snapshot.conversation);
   const storeConversationId = useChatStore((snapshot) => snapshot.conversationId);
   const initialConversationId = useRef<string | null>(conversationId ? null : storeConversationId);
   const mode = useChatStore((snapshot) => snapshot.mode);
   const status = useChatStore((snapshot) => snapshot.status);
+  const selectedModelId = useChatStore((snapshot) => snapshot.selectedModelId);
   const statusLoading = useChatStore((snapshot) => snapshot.statusLoading);
   const statusError = useChatStore((snapshot) => snapshot.statusError);
 
@@ -65,10 +70,13 @@ export function ChatPage() {
   }, [conversationId, storeConversationId, navigate]);
 
   const newChat = () => {
+    const fromSheet = historySheetOpen;
     startNewConversation();
     setShowHistory(false);
     setHistorySheetOpen(false);
-    navigate('/chat');
+    // The sheet owns a synthetic history entry; replace it so Back does not
+    // land on the sheet's URL before the previous conversation.
+    navigate('/chat', fromSheet ? { replace: true } : undefined);
   };
 
   const openHistory = () => {
@@ -77,12 +85,15 @@ export function ChatPage() {
   };
 
   const selectConversation = (id: string) => {
+    const fromSheet = historySheetOpen;
     setHistorySheetOpen(false);
-    navigate(`/chat/${id}`);
+    navigate(`/chat/${id}`, fromSheet ? { replace: true } : undefined);
   };
 
+  const selectedModel = findChatModel(status, selectedModelId);
   let statusText = 'Assistant';
   if (status?.configured === false) statusText = 'Not configured';
+  else if (selectedModel) statusText = selectedModel.label;
   else if (status?.model) statusText = status.model;
   else if (statusLoading) statusText = 'Checking status…';
   else if (statusError) statusText = 'Status unavailable';
@@ -111,7 +122,7 @@ export function ChatPage() {
         className="relative flex h-full overflow-hidden bg-canvas"
         style={isMobile && viewportHeight ? { height: `${viewportHeight}px` } : undefined}
       >
-        <PageShell scroll="content" className="flex-1" contentClassName="desktop-page-content-enter">
+        <PageShell scroll="content" className="chat-page flex-1" contentClassName="desktop-page-content-enter">
           <PageHeader
             title={conversation?.title || 'Chat'}
             description={conversationId
@@ -131,13 +142,19 @@ export function ChatPage() {
                   label="Chat mode"
                   value={mode}
                   onChange={setChatMode}
+                  className="chat-mode-control"
                   options={[
                     { value: 'edit', label: 'Work', title: 'Work — Nana can read and change folders, notes, boards, and tasks' },
                     { value: 'ask', label: 'Ask', title: 'Ask — Nana only reads notes and boards' },
                   ]}
                 />
-                <Button variant="secondary" icon={<PlusIcon />} onClick={newChat}>
-                  New chat
+                <Button
+                  variant="secondary"
+                  icon={<PlusIcon />}
+                  onClick={newChat}
+                  aria-label="New chat"
+                >
+                  <span className="hidden min-[400px]:inline">New chat</span>
                 </Button>
                 <IconButton
                   label="Chat history"

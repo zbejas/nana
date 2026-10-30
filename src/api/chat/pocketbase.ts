@@ -2,14 +2,16 @@ import { serverConfig } from "../../lib/config";
 import { getSuperuserToken, invalidateSuperuserToken } from "./superuser";
 import { sanitizeHtml } from "../../lib/sanitize";
 import type { AIConfig } from "../../lib/ai/types";
-import type {
-    PBConversation,
-    PBMessage,
-    ChatContext,
-    ChatMessage,
-    ChatSource,
-    ChatToolActivity,
-    PBListResponse,
+import {
+    sanitizeAttachmentRef,
+    type PBConversation,
+    type PBMessage,
+    type ChatAttachmentRef,
+    type ChatContext,
+    type ChatMessage,
+    type ChatSource,
+    type ChatToolActivity,
+    type PBListResponse,
 } from "./types";
 import { CHAT_TOOL_NAMES } from "./tool-names";
 
@@ -41,11 +43,25 @@ export async function pbFetchWithToken<T>(
     return pbFetch<T>(path, authHeader, options);
 }
 
+/**
+ * Upload a multipart form with the caller's token. The browser runtime sets
+ * the multipart boundary, so this helper must not add a JSON content type.
+ */
+export async function pbFetchFormWithToken<T>(
+    path: string,
+    authHeader: string,
+    form: FormData,
+    options?: Omit<RequestInit, "body" | "headers">,
+): Promise<T> {
+    return pbFetch<T>(path, authHeader, { ...options, method: options?.method ?? "POST", body: form });
+}
+
 async function pbFetch<T>(path: string, authHeader: string, options?: RequestInit): Promise<T> {
+    const isForm = typeof FormData !== "undefined" && options?.body instanceof FormData;
     const response = await fetch(`${POCKETBASE_URL}${path}`, {
         ...options,
         headers: {
-            "Content-Type": "application/json",
+            ...(isForm ? {} : { "Content-Type": "application/json" }),
             Authorization: authHeader,
             ...options?.headers,
         },
@@ -155,6 +171,22 @@ function sanitizeContext(value: unknown): ChatContext | undefined {
     return { type: candidate.type, id: candidate.id, title: title || "Untitled" };
 }
 
+function sanitizeAttachments(value: unknown): ChatAttachmentRef[] {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set<string>();
+    const attachments: ChatAttachmentRef[] = [];
+
+    for (const entry of value) {
+        const attachment = sanitizeAttachmentRef(entry);
+        if (!attachment || seen.has(attachment.id)) continue;
+        seen.add(attachment.id);
+        attachments.push(attachment);
+        if (attachments.length >= 20) break;
+    }
+
+    return attachments;
+}
+
 function sanitizeSources(value: unknown): ChatSource[] {
     if (!Array.isArray(value)) return [];
     const seen = new Set<string>();
@@ -208,6 +240,9 @@ async function sanitizeMessage(msg: ChatMessage): Promise<ChatMessage> {
 
     const context = sanitizeContext(msg.context);
     if (context) sanitized.context = context;
+
+    const attachments = sanitizeAttachments(msg.attachments);
+    if (attachments.length > 0) sanitized.attachments = attachments;
 
     const sources = sanitizeSources(msg.sources);
     if (sources.length > 0) sanitized.sources = sources;
@@ -329,6 +364,7 @@ export async function appendMessage(
             ...(sanitizedMessage.model ? { model: sanitizedMessage.model } : {}),
             ...(sanitizedMessage.tools?.length ? { tools: sanitizedMessage.tools } : {}),
             ...(sanitizedMessage.context ? { context: sanitizedMessage.context } : {}),
+            ...(sanitizedMessage.attachments?.length ? { attachments: sanitizedMessage.attachments } : {}),
             ...(sanitizedMessage.sources?.length ? { sources: sanitizedMessage.sources } : {}),
             ...(sanitizedMessage.stopped ? { stopped: true } : {}),
             position,
@@ -365,6 +401,8 @@ export async function getConversationMessages(
             if (tools.length > 0) message.tools = tools;
             const context = sanitizeContext(row.context);
             if (context) message.context = context;
+            const attachments = sanitizeAttachments(row.attachments);
+            if (attachments.length > 0) message.attachments = attachments;
             const sources = sanitizeSources(row.sources);
             if (sources.length > 0) message.sources = sources;
             if (row.stopped === true) message.stopped = true;

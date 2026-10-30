@@ -119,6 +119,7 @@ export function NanaEditorToolbar({ toolbar, onAction, onLink, onLinkStart, onLi
     <div
       role="toolbar"
       aria-label="Formatting"
+      data-nana-editor-toolbar={compact ? 'compact' : 'full'}
       className={cn(
         'relative flex min-w-0 shrink-0 flex-wrap items-center gap-0 border-b border-line bg-surface px-1.5 py-1.5',
         compact && 'gap-0',

@@ -271,6 +271,7 @@ export function DocumentEditor() {
             readOnly={isTrashDocument}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
+            isMobile={!isDesktop}
             onCancel={handleCancel}
             onPublish={handlePublish}
             publishing={publishing}

@@ -126,14 +126,16 @@ export function CalendarView({ tasks, columns, onOpenTask }: CalendarViewProps) 
           {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'} in view
         </span>
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hidden h-8 md:inline-flex lg:hidden"
-            onClick={() => setUnscheduledOpen(true)}
-          >
-            Unscheduled {unscheduled.length}
-          </Button>
+          <span className="hidden md:inline-flex lg:hidden">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8"
+              onClick={() => setUnscheduledOpen(true)}
+            >
+              Unscheduled {unscheduled.length}
+            </Button>
+          </span>
           <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-muted">
             <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-hidden="true" />
             Today

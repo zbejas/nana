@@ -88,6 +88,14 @@ describe("kanban migrations", () => {
         return db.query(sql).all(...(params as never[])) as T[];
     }
 
+    /** Number of applied migrations at or above a version, for head-agnostic rollbacks. */
+    function appliedAtOrAbove(version: number): number {
+        const db = new Database(join(dataDir, "data.db"));
+        const applied = query<{ file: string }>(db, "SELECT file FROM _migrations").map((row) => row.file);
+        db.close();
+        return applied.filter((name) => /^\d{7}_/.test(name) && Number(name.slice(0, 7)) >= version).length;
+    }
+
     beforeAll(async () => {
         if (!existsSync(PB_BIN)) {
             throw new Error(`PocketBase binary not found at ${PB_BIN}`);
@@ -138,7 +146,7 @@ describe("kanban migrations", () => {
         );
         broken.close();
 
-        await migrate("down", "2");
+        await migrate("down", String(appliedAtOrAbove(28)));
         await migrate("up");
     }, 120_000);
 
@@ -202,7 +210,7 @@ describe("kanban migrations", () => {
         db.close();
 
         // Re-run 0026 up so the share is materialized, then roll it back.
-        await migrate("down", "4");
+        await migrate("down", String(appliedAtOrAbove(26)));
         await migrate("up");
 
         const up = new Database(join(dataDir, "data.db"));
@@ -211,7 +219,7 @@ describe("kanban migrations", () => {
         ).toBeGreaterThan(0);
         up.close();
 
-        await migrate("down", "4");
+        await migrate("down", String(appliedAtOrAbove(26)));
         const down = new Database(join(dataDir, "data.db"));
         expect(
             query<{ count: number }>(down, "SELECT COUNT(*) AS count FROM access_grants WHERE document = ?", [DOCUMENT_ID])[0]!.count,
@@ -342,18 +350,7 @@ describe("kanban migrations", () => {
     test("0025 down drops the comments task index before the column", async () => {
         // Revert 0028..0025 only. 0023/0024 and the comments collection must
         // still exist, otherwise the index/column removal is not exercised.
-        const db = new Database(join(dataDir, "data.db"));
-        const applied = new Set(query<{ file: string }>(db, "SELECT file FROM _migrations").map((row) => row.file));
-        db.close();
-        let steps = 1;
-        for (const name of [
-            "0000028_kanban_hardening.js",
-            "0000027_chat_edits.js",
-            "0000026_sharing_repair.js",
-        ]) {
-            if (applied.has(name)) steps += 1;
-        }
-        await migrate("down", String(steps));
+        await migrate("down", String(appliedAtOrAbove(25)));
 
         const after = new Database(join(dataDir, "data.db"));
         const collections = query<{ name: string }>(after, "SELECT name FROM _collections").map((row) => row.name);

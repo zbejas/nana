@@ -10,12 +10,13 @@ const POCKETBASE_URL = serverConfig.pocketbaseUrl;
  * Get a PocketBase file token for downloading protected attachments.
  * Uses the user's auth token to obtain a short-lived file token.
  */
-export async function getFileToken(authHeader: string): Promise<string> {
+export async function getFileToken(authHeader: string, signal?: AbortSignal): Promise<string> {
     const response = await fetch(`${POCKETBASE_URL}/api/files/token`, {
         method: "POST",
         headers: {
             "Authorization": authHeader,
         },
+        signal,
     });
 
     if (!response.ok) {

@@ -17,20 +17,25 @@ interface MenuSurfaceProps {
  */
 export function MenuSurface({ open, onClose, position, children, className, ariaLabel }: MenuSurfaceProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
 
+    previousFocus.current = document.activeElement as HTMLElement | null;
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
       }
     };
 
     const handlePointerDown = (event: PointerEvent) => {
       if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
-        onClose();
+        onCloseRef.current();
       }
     };
 
@@ -45,8 +50,19 @@ export function MenuSurface({ open, onClose, position, children, className, aria
       document.removeEventListener('keydown', handleKeyDown, true);
       document.removeEventListener('pointerdown', handlePointerDown, true);
       window.cancelAnimationFrame(frame);
+      const restore = previousFocus.current;
+      const active = document.activeElement;
+      // Only restore when focus is still on the menu (or nowhere). A menu item
+      // may have opened a dialog or another surface that now owns focus.
+      if (
+        restore &&
+        document.contains(restore) &&
+        (!active || active === document.body || panelRef.current?.contains(active))
+      ) {
+        restore.focus({ preventScroll: true });
+      }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open || typeof document === 'undefined') return null;
 

@@ -5,6 +5,7 @@ import {
   ClipboardIcon,
   DocumentTextIcon,
   FolderIcon,
+  PhotoIcon,
   ViewColumnsIcon,
 } from '@heroicons/react/24/outline';
 import { MarkdownPreview } from '../MarkdownPreview';
@@ -13,6 +14,7 @@ import { ChatEditCard } from './ChatEditCard';
 import { ChatSources } from './ChatSources';
 import { ChatToolStrip } from './ChatToolStrip';
 import { chatContextTypeLabel } from '../../lib/chat/context';
+import { formatChatFileSize } from '../../lib/chat/attachments';
 import type { ChatUiMessage } from '../../lib/chat/types';
 
 interface ChatMessageProps {
@@ -53,9 +55,32 @@ export function ChatMessage({
             <span className="truncate">{context}</span>
           </span>
         )}
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-[10px] rounded-br-[3px] bg-surface-raised px-4 py-3 text-[14px] leading-[1.6] text-ink sm:max-w-[78%]">
-          {message.content}
-        </div>
+        {message.attachments && message.attachments.length > 0 && (
+          <div className="mb-1.5 flex max-w-[85%] flex-wrap justify-end gap-1.5 sm:max-w-[78%]">
+            {message.attachments.map((attachment) => (
+              <span
+                key={attachment.id}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-control border border-line bg-surface px-2 py-1 text-[11px] text-ink-secondary"
+                title={`${attachment.name} · ${formatChatFileSize(attachment.size)}`}
+              >
+                {attachment.kind === 'image' ? (
+                  <PhotoIcon className="h-3.5 w-3.5 shrink-0 text-ink-muted" aria-hidden="true" />
+                ) : (
+                  <DocumentTextIcon className="h-3.5 w-3.5 shrink-0 text-ink-muted" aria-hidden="true" />
+                )}
+                <span className="max-w-[12rem] truncate">{attachment.name}</span>
+                <span className="shrink-0 tabular-nums text-ink-muted">
+                  {formatChatFileSize(attachment.size)}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
+        {message.content && (
+          <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-[10px] rounded-br-[3px] bg-surface-raised px-4 py-3 text-[14px] leading-[1.6] text-ink sm:max-w-[78%]">
+            {message.content}
+          </div>
+        )}
       </div>
     );
   }

@@ -633,6 +633,38 @@ body.public-route-active {
     background: transparent;
   }
 
+  /*
+   * The workspace drawer is a hard edge. Keep its scrollbar against that edge
+   * instead of inheriting the global 10px track with an inset thumb.
+   */
+  .sidebar-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    border: 0;
+    border-radius: 999px 0 0 999px;
+    background: transparent;
+    background-clip: border-box;
+  }
+
+  .sidebar-scroll:hover::-webkit-scrollbar-thumb,
+  .sidebar-scroll.scrolling::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+  }
+
+  @supports not selector(::-webkit-scrollbar) {
+    .sidebar-scroll {
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+    }
+
+    .sidebar-scroll:hover,
+    .sidebar-scroll.scrolling {
+      scrollbar-color: var(--line-strong) transparent;
+    }
+  }
+
   .eyebrow,
   .meta {
     font-family: var(--font-sans);
@@ -961,5 +993,91 @@ body[data-chat-dock-open="true"] > footer {
 @media (max-width: 767px) {
   body[data-chat-dock-open="true"] > footer {
     right: 0 !important;
+  }
+
+  /*
+   * Touch pass: keep the desktop density, but give the primary mobile
+   * controls a practical 44px hit area.
+   */
+  .sidebar-library-actions button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .sidebar-library button {
+    min-height: 44px;
+  }
+
+  .sidebar-library button[aria-label] {
+    min-width: 44px;
+  }
+
+  .sidebar-library .group > button:first-child {
+    padding-right: 3rem;
+  }
+
+  .timeline-card-action {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .timeline-page header button {
+    min-height: 44px;
+  }
+
+  .timeline-page header button[aria-label] {
+    min-width: 44px;
+  }
+
+  .timeline-filter-segments button {
+    min-height: 44px;
+    padding-inline: 0.75rem;
+  }
+
+  .calendar-filter-panel button {
+    min-height: 44px;
+  }
+
+  .calendar-filter-panel button[aria-label]:not(.calendar-day) {
+    min-width: 44px;
+  }
+
+  .calendar-filter-panel .calendar-day {
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .chat-mode-control button {
+    min-height: 44px;
+    padding-inline: 0.8rem;
+  }
+
+  .chat-page header button {
+    min-height: 44px;
+  }
+
+  .chat-page header button[aria-label] {
+    min-width: 44px;
+  }
+
+  [data-nana-editor-toolbar="full"] button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* A 320px phone cannot fit a readable title beside five editor actions. */
+@media (max-width: 360px) {
+  .editor-header-row {
+    flex-wrap: wrap;
+  }
+
+  .editor-header-title-group {
+    flex-basis: 100%;
+  }
+
+  .editor-header-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }

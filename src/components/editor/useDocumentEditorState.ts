@@ -198,12 +198,16 @@ export function useDocumentEditorState() {
     const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode());
     const [headerVisible, setHeaderVisible] = useState(true);
     const headerExpanded = isDesktop || headerVisible;
+    // Split is a desktop-only surface. Keep the stored preference untouched
+    // while the phone shows the rendered editor, and never expose a toggle
+    // step that would land on the inaccessible split state.
+    const effectiveViewMode: ViewMode = !isDesktop && viewMode === 'split' ? 'wysiwyg' : viewMode;
 
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('editorViewMode', viewMode);
-        }
-    }, [viewMode]);
+        if (typeof window === 'undefined') return;
+        if (!isDesktop && viewMode === 'split') return;
+        localStorage.setItem('editorViewMode', viewMode);
+    }, [viewMode, isDesktop]);
 
     useEffect(() => {
         const handleResizeDesktop = () => setIsDesktop(window.innerWidth >= 768);
@@ -390,7 +394,7 @@ export function useDocumentEditorState() {
         hasUnsavedChanges,
         isDesktop,
         MOBILE_EDITOR_HEIGHT,
-        viewMode,
+        viewMode: effectiveViewMode,
         setViewMode,
         headerVisible,
         setHeaderVisible,

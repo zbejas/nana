@@ -154,9 +154,9 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 - Header: shared masthead, title `Chat` or the conversation title, a model/status meta line, Work/Ask, New chat, and History. The dock also has a left-edge resize handle and persists its width.
 - Empty state: 26/30px “Ask, or change something.” in Work, one supporting sentence, and four prompt cards in a 2×2 grid. Prompt cards have a neutral icon tile, 13px medium text, and an arrow that darkens on hover.
-- Composer: a 10px-radius `surface` shell with a 1px border, a textarea, an 11px hint, and a `signal-bright` send button (44px on touch, 36px on desktop). Focus is an ember border plus a soft 4px ring.
-- Assistant answers are document text at 14.5px / 1.75, max 68ch, preceded by a 28px rabbit tile and “Nana”; the dock header mark is 32px. User messages are right-aligned `surface-raised` blocks with a 10px radius and 3px bottom-right corner.
-- Tool activity is one neutral pill with an ember dot while running and a success dot when done. No source cards or attachments.
+- Composer: a 10px-radius `surface` shell with a 1px border, a textarea, an 11px hint, a compact model pill, an attach control, and a `signal-bright` send button (44px on touch, 36px on desktop). Focus is an ember border plus a soft 4px ring.
+- Assistant answers are document text at 14.5px / 1.75, max 68ch, preceded by a 28px rabbit tile and “Nana”; the dock header mark is 32px. User messages are right-aligned `surface-raised` blocks with a 10px radius and 3px bottom-right corner. Titles are plain text; no emoji.
+- Tool activity is one neutral pill with an ember dot while running and a success dot when done. User attachments are compact outline chips above the bubble; they are not source cards.
 - Reasoning is a collapsible details block with a 13px muted body and a left rule.
 - History is a 16rem right panel with a neutral New chat action and a `signal-soft` active row. There is no accent rail beside the row.
 

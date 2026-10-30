@@ -63,6 +63,7 @@ import {
   MenuSurface,
   PageHeader,
   PageShell,
+  cn,
 } from '../components/ui';
 import { BoardView as BoardLanes } from '../components/board/BoardView';
 import { BoardToolbar } from '../components/board/BoardToolbar';
@@ -1031,11 +1032,12 @@ export function BoardPage() {
     <PageShell
       width="wide"
       scroll={editOpen ? 'page' : 'content'}
-      contentClassName="desktop-page-content-enter"
+      className="board-page"
+      contentClassName="desktop-page-content-enter board-page-content"
     >
       <PageHeader
         back={{ label: 'Timeline', onClick: () => navigate('/timeline') }}
-        className={editOpen || !boardReady ? undefined : '!mb-0'}
+        className={cn('board-page-header', !editOpen && boardReady && '!mb-0')}
         title={
           board ? (
             <span className="inline-flex min-w-0 items-center gap-2.5">
@@ -1324,7 +1326,7 @@ export function BoardPage() {
               onOpenShortcuts={() => setShortcutsOpen(true)}
             />
 
-            <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-muted">
+            <div className="board-page-hint mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-muted">
               {view === 'board' && (
                 <>
                   <span className="md:hidden">Swipe between columns · Tap a card to open.</span>
@@ -1349,7 +1351,7 @@ export function BoardPage() {
                     Add the first task to a lane, or bring a note in as a task. Columns are editable in board settings.
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="board-onboarding-actions flex shrink-0 items-center gap-1.5">
                   <Button variant="secondary" size="sm" icon={<DocumentPlusIcon />} onClick={() => setImportOpen(true)}>
                     Import note
                   </Button>

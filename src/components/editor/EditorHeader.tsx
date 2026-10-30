@@ -10,6 +10,8 @@ interface EditorHeaderProps {
   readOnly?: boolean;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
+  /** Phones expose Editor and Source only; split stays a desktop surface. */
+  isMobile?: boolean;
   onCancel: () => void;
   onPublish: () => void;
   publishing: boolean;
@@ -33,6 +35,7 @@ export function EditorHeader({
   readOnly = false,
   viewMode,
   onViewModeChange,
+  isMobile = false,
   onCancel,
   onPublish,
   publishing,
@@ -52,17 +55,19 @@ export function EditorHeader({
   const editorOption = { value: 'wysiwyg' as const, label: 'Editor', icon: <PencilSquareIcon className="h-3.5 w-3.5" /> };
   const sourceOption = { value: 'text' as const, label: 'Source', icon: <CodeBracketIcon className="h-3.5 w-3.5" /> };
   const splitOption = { value: 'split' as const, label: 'Split', icon: <ViewColumnsIcon className="h-3.5 w-3.5" /> };
-  const nextView = viewMode === 'wysiwyg' ? 'text' : viewMode === 'text' ? 'split' : 'wysiwyg';
-  const mobileViewLabel = viewMode === 'wysiwyg'
-    ? 'Switch to source view'
-    : viewMode === 'text'
-      ? 'Switch to split view'
-      : 'Switch to editor view';
+  const nextView: ViewMode = isMobile
+    ? viewMode === 'text'
+      ? 'wysiwyg'
+      : 'text'
+    : viewMode === 'wysiwyg' ? 'text' : viewMode === 'text' ? 'split' : 'wysiwyg';
+  const mobileViewLabel = viewMode === 'text'
+    ? 'Switch to editor view'
+    : 'Switch to source view';
 
   return (
-    <div className="border-b border-line bg-canvas">
-      <div className="flex items-center gap-2 px-3 py-2.5 sm:px-5">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+    <div className="editor-header border-b border-line bg-canvas">
+      <div className="editor-header-row flex items-center gap-2 px-3 py-2.5 sm:px-5">
+        <div className="editor-header-title-group flex min-w-0 flex-1 items-center gap-3">
           <input
             ref={titleInputRef}
             type="text"
@@ -76,18 +81,27 @@ export function EditorHeader({
             className="min-w-0 flex-1 rounded-[4px] border-none bg-transparent px-1 -mx-1 text-[17px] font-semibold leading-tight tracking-[-0.025em] text-ink placeholder:text-ink-muted focus-visible:bg-surface-raised sm:text-[22px]"
           />
           {autoSaving ? (
-            <span className="hidden shrink-0 items-center gap-1.5 text-[11.5px] text-ink-muted sm:flex">
+            <span
+              className="flex shrink-0 items-center gap-1.5 text-[11.5px] text-ink-muted"
+              aria-label="Saving document"
+              title="Saving document"
+            >
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal" />
-              Saving
+              <span className="hidden sm:inline">Saving</span>
             </span>
           ) : hasUnsavedChanges ? (
-            <span className="hidden shrink-0 text-[11.5px] font-medium text-warning sm:block">
-              Unsaved
+            <span
+              className="flex shrink-0 items-center gap-1.5 text-[11.5px] font-medium text-warning"
+              aria-label="Unsaved changes"
+              title="Unsaved changes"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+              <span className="hidden sm:inline">Unsaved</span>
             </span>
           ) : null}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="editor-header-actions flex shrink-0 items-center gap-1">
           <span className="md:hidden">
             <IconButton
               label={mobileViewLabel}
@@ -95,7 +109,7 @@ export function EditorHeader({
               className="h-11 w-11 sm:h-8 sm:w-8"
               onClick={() => onViewModeChange(nextView)}
             >
-              {viewMode === 'wysiwyg' ? <CodeBracketIcon /> : viewMode === 'text' ? <ViewColumnsIcon /> : <PencilSquareIcon />}
+              {viewMode === 'text' ? <PencilSquareIcon /> : <CodeBracketIcon />}
             </IconButton>
           </span>
           <span className="hidden md:inline-flex">

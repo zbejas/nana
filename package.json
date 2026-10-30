@@ -14,6 +14,7 @@
     "test:docker": "docker compose -f docker/compose.test.yml up --build --abort-on-container-exit --exit-code-from nana-test"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3",
     "@ai-sdk/google": "^3.0.64",
     "@ai-sdk/openai": "^3.0.53",
     "@codemirror/commands": "^6.11.1",

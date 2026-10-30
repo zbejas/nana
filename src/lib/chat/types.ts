@@ -11,6 +11,8 @@ import type {
   ChatSource,
   ChatStatusResponse,
   ChatToolActivity,
+  ChatAttachmentRef,
+  ChatAttachmentKind,
 } from '../../api/chat/types';
 
 export type {
@@ -26,6 +28,8 @@ export type {
   ChatSource,
   ChatStatusResponse,
   ChatToolActivity,
+  ChatAttachmentRef,
+  ChatAttachmentKind,
 };
 
 /** UI-only statuses are layered on top of the persisted edit statuses. */
@@ -56,9 +60,23 @@ export interface ChatUiMessage {
   sources?: ChatSource[];
   edits?: ChatUiEdit[];
   context?: ChatContext | null;
+  attachments?: ChatAttachmentRef[];
   model?: string;
   streaming?: boolean;
   stopped?: boolean;
+}
+
+/** One locally selected file before/while it uploads. */
+export interface PendingChatAttachment {
+  localId: string;
+  file: File;
+  name: string;
+  size: number;
+  mimeType: string;
+  kind: ChatAttachmentKind;
+  status: 'uploading' | 'ready' | 'error';
+  ref?: ChatAttachmentRef;
+  error?: string;
 }
 
 export interface ChatConversation {
@@ -88,6 +106,8 @@ export interface ChatUiState {
   stopping: boolean;
   error: ChatError | null;
   status: ChatStatusResponse | null;
+  /** Selected enabled model for the next message; null uses the server default. */
+  selectedModelId: string | null;
   statusLoading: boolean;
   statusError: string | null;
   conversations: ChatConversation[];

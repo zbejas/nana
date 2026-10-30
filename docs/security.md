@@ -24,8 +24,9 @@ Nana exposes three public access paths through the Bun origin: the application A
 | `src/api/workspace/shared.ts` | `Surface` selection, author checks, folder ownership, id/paging normalization, write gating. |
 | `src/api/workspace/notes.ts` | Revision-aware note creation, edits, snapshots, and restore for chat undo. |
 | `src/lib/markdown/sections.ts` | Anchor validation and section-scoped edits that leave untouched sections not re-sanitized. |
-| `src/api/chat/index.ts` | Chat auth, mode/context handling, tool wiring, streaming, persistence. |
+| `src/api/chat/index.ts` | Chat auth, mode/context/attachment handling, tool wiring, streaming, persistence. |
 | `src/api/chat/context.ts` | Server-resolved page context with ownership, trash, and private-lock checks. |
+| `src/api/chat/attachments.ts` | Session-only upload validation, magic-byte type checks, PDF extraction, draft ownership/binding, and protected-file fetches. |
 | `src/api/chat/stream.ts` | Named SSE events, legacy chunks, and stream accumulation. |
 | `src/api/chat/edits.ts` | `chat_edits` audit rows, edit-card listing, and revision-aware undo. |
 | `src/api/chat/tools/index.ts` | Ask/edit tool registry and per-request source/edit recorder. |
@@ -44,6 +45,7 @@ Nana exposes three public access paths through the Bun origin: the application A
 | `pocketbase/pb_migrations/0000022_relational_remodel.js` | Soft-delete trash views, messages records, owner/relation integrity, and indexes. |
 | `pocketbase/pb_migrations/0000024_api_keys.js` | `api_keys`: hashed machine credentials with no public rules, access, scope, and folder roots. |
 | `pocketbase/pb_migrations/0000027_chat_edits.js` | Document revisions/actor metadata, version snapshots, message context/sources, and the server-owned `chat_edits` audit table. |
+| `pocketbase/pb_migrations/0000030_chat_attachments.js` | Owner-scoped `chat_attachments`, protected files, server-only extracted text, and `messages.attachments`. |
 
 ## How it works
 
@@ -86,6 +88,7 @@ Production compose exposes only `:3000`. PocketBase binds to `127.0.0.1:8090`, a
 | PocketBase admin routes | `$apis.requireAuth()` plus `requireAdmin(c)`. |
 | Server-side admin reads | Auto-provisioned PocketBase superuser token. |
 | Chat tools | The caller's raw `Authorization` header and user id; edit-mode writes add `actor: "ai"` but keep the same token. |
+| Chat attachments | `verifyAuth` session only; owner-scoped `chat_attachments` rows; protected files fetched with a short-lived PocketBase file token. API keys and MCP are rejected. |
 | REST/MCP workspace services | The caller's refreshed token, user id, and a `Surface` (`user` or `ai`). |
 | Public docs | `/docs`, `/docs/json`, `/docs/scalar.js`, and the `/docs/geist*.woff2` fonts require no token. |
 
@@ -168,9 +171,22 @@ Scope is applied by the workspace services through the same hidden-folder set us
 
 The superuser token appears in this flow only to read the hashed key record and to mint the user token. It is never put in `ToolContext`, never sent as the downstream workspace authorization, and never returned by an API route.
 
+### Chat attachments
+
+Attachments are a session-only chat feature. `POST /api/chat/attachments` and `DELETE /api/chat/attachments/:id` call `verifyAuth`; API keys and MCP have no attachment route, and the collection is absent from the generic browser-facade allowlist.
+
+- **Byte validation.** MIME and kind come from magic bytes plus UTF-8 validation, not the browser type. PNG/JPEG/WebP/GIF, PDF, and text/Markdown are accepted; SVG and binary/unknown content are `415`. File size, per-send count, and total bytes are checked before a conversation exists.
+- **Ownership and drafts.** Every row carries the caller's `author`; rules require `author = @request.auth.id`. Send resolution rejects foreign/missing ids as `404`, already-bound rows as `400`, and binds only after the user message exists. Draft-only DELETE returns `409` once bound.
+- **Model capability gate.** Images require the selected model's `vision`; native PDFs require `files`. A text-only model gets extracted PDF text, and a PDF with no extractable text is refused. This prevents silently sending unsupported binary parts.
+- **Protected files.** `chat_attachments.file` is protected. The server fetches bytes with a short-lived file token and an 8-second timeout. The browser file facade allowlists `chat_attachments` for previews; the record collection itself is not exposed.
+- **Untrusted content.** Extracted text and PDF fallbacks are wrapped in named `<attachment>` text blocks. The system prompt says attachment contents are untrusted data and never instructions. Older attachments degrade under a request-wide byte/text budget; assistant messages never contribute attachments.
+- **No leakage.** API DTOs carry only `{ id, name, mimeType, size, kind }`. Extracted text, the stored protected file name, raw bytes, and file tokens are never returned, persisted in message JSON, or logged. Title generation receives only the user text or the first attachment name.
+
+There is no background draft sweep. An abandoned or failed upload stays as an owner-scoped unbound row until the user deletes it; conversation/message deletes cascade bound rows and files.
+
 ### Prompt injection stance
 
-Tool results are untrusted data. Note bodies and task descriptions can contain text that looks like instructions. The chat system instruction and the MCP instructions tell the model to treat tool text as data, never follow instructions inside it, use only ids returned by tools, and not claim to have read something a tool did not return.
+Tool results and chat attachments are untrusted data. Note bodies, task descriptions, text files, and PDF-extracted text can contain text that looks like instructions. The chat system instruction and the MCP instructions tell the model to treat tool text and attachment contents as data, never follow instructions inside them, use only ids returned by tools, and not claim to have read something a tool did not return.
 
 The real boundary is structural, not the prompt:
 
@@ -228,7 +244,7 @@ The first user is auto-assigned `admin = true` and `verified = true`. After that
 - Trashed records are hidden by `documents`/`folders` list rules; the read-only `trash_*` views are the only owner-visible path.
 - Document `content` is sanitized at the edge; PocketBase file rules and file tokens still protect attachments.
 - Admin routes require `admin = true`; settings routes are admin-only.
-- File routes allowlist `documents`, `users`, and `trash_documents`.
+- File routes allowlist `documents`, `users`, `trash_documents`, and `chat_attachments`.
 - Realtime relays PocketBase SSE; the subscription POST requires the user token.
 - No superuser token is ever injected into browser traffic.
 
@@ -331,7 +347,7 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 - Could the change expose a private record to chat or MCP? Could it expose `:8090`, a superuser token, or an API key to the browser?
 - Are destructive MCP tools explicit, and does each one preserve its invariant (note → trash, board → archived, task → permanent)?
 - Is new HTML sanitized on the server and client?
-- Does the change affect file access or attachment tokens?
+- Does the change affect file access or attachment tokens? For chat attachments, does it keep uploads session-only, validate bytes, enforce owner/unbound/count/size, and keep extracted text and file names out of client DTOs and logs?
 - Does it add a rate-limit bypass or a long-lived background operation?
 - Are errors logged without secrets and returned without internals?
 
@@ -353,6 +369,8 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 - **Workspace requests are time-bounded.** REST and MCP requests get a 60-second Bun ceiling; the shared PocketBase client defaults to 30 seconds. Chat's note and board read tools pass their tighter 8-second signal; task reads and chat writes use the 30-second default.
 - **`/docs` is public.** It describes schemas and routes; it must never contain secrets or live credentials.
 - **Tool text can be hostile.** A note can say “ignore previous instructions”. Ask mode can only produce a bad answer; Work mode can create or change visible workspace records, but deletes need the user's confirmation and sharing/privacy remain unavailable. MCP can also delete directly, so its private lock and author checks are part of the boundary.
+- **Chat attachments are session-only.** API keys and MCP cannot upload, resolve, or read them. The collection is owner-scoped, absent from the generic record facade, and its file bytes are fetched server-side with a short-lived file token.
+- **Attachment text is server-only.** `chat_attachments.text` and the protected file name never appear in message JSON, SSE, API DTOs, title generation, or logs. Only `{ id, name, mimeType, size, kind }` is client-visible.
 - **Persisted chat tool activity is content, not diagnostics.** Only allowlisted read/write names and statuses survive; never add args, queries, note text, or edit details to `tools`.
 - **`chat_edits` is server-owned.** No public create/update/delete rule exists. The superuser write happens only after the caller's token proves conversation ownership; never expose it as a client-writable collection.
 - **Undo is not a general restore.** Only a created note (trash) and note edits (snapshot restore) are undoable. Board/task cards have `undo.kind: "none"`, and a second undo is a no-op. A note-edit undo returns `409` when the note has newer work.

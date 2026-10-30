@@ -40,6 +40,7 @@ tests/
     api-key-scope.test.ts
     board-dates.test.ts
     chat-activity.test.ts
+    chat-attachments.test.ts
     chat-context.test.ts
     chat-input-schemas.test.ts
     chat-stream.test.ts
@@ -70,6 +71,7 @@ tests/
     routes/08-board-folder-trash.test.ts
   api/
     api-keys.test.ts
+    chat-attachments.test.ts
     chat-tools.test.ts
     chat-write-tools.test.ts
     chat.test.ts
@@ -132,7 +134,7 @@ Do not point the test stack at real data. The entrypoint deletes and recreates i
 | 3/4 Hooks + routes | `hooks/` + `routes/` | Hooks and custom routes after bootstrap; admin tests restore global settings when done. |
 | 4/4 Bun API | `api/` | Routes, export, chat, tools, typed REST, browser facade, and MCP after PocketBase is seeded. |
 
-The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000029_chat_actions.js` applied. There is no separate "apply migration" step in a test file.
+The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000030_chat_attachments.js` applied. There is no separate "apply migration" step in a test file.
 
 On failure the entrypoint prints the tail of both server logs. On success it reports per-phase and total duration.
 
@@ -256,6 +258,7 @@ Rules:
 | API key create/revoke, hashed storage, session-only management | `tests/api/api-keys.test.ts` |
 | API key access/scope on REST and MCP, read-only tool filtering | `tests/api/api-keys.test.ts` + `tests/unit/api-key-scope.test.ts` |
 | Chat route, mode/context validation, provider validation, conversation persistence, status | `tests/api/chat.test.ts` |
+| Chat attachment upload, magic-byte/type checks, limits, ownership, drafts, binding | `tests/api/chat-attachments.test.ts` + `tests/unit/chat-attachments.test.ts` |
 | Chat read tool, bounds, or scoping | `tests/api/chat-tools.test.ts` + `tests/unit/chat-*` |
 | Chat write tool, revision, edit card, or undo | `tests/api/chat-write-tools.test.ts` + `tests/unit/chat-version-token.test.ts` |
 | Chunked/named chat SSE encoding | `tests/unit/chat-stream.test.ts` |

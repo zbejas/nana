@@ -4,6 +4,7 @@ import { CHAT_EMPTY_RESPONSE_FALLBACK } from '../../api/chat/types';
 import { chatConversationIdAtom } from '../../state/atoms';
 import { pb } from '../pocketbase';
 import { setLastChat } from '../settings';
+import { stripTitleEmoji } from '../ai/title';
 import {
   ChatApiError,
   cancelEdit as cancelEditRequest,
@@ -26,6 +27,7 @@ import type {
   ChatUiMessage,
   ChatUiState,
   ChatUiTool,
+  ChatAttachmentRef,
 } from './types';
 
 const WRITE_TOOL = /^(create|update|edit|append|move|archive|restore)_/;
@@ -47,6 +49,7 @@ function initialState(): ChatUiState {
     stopping: false,
     error: null,
     status: null,
+    selectedModelId: null,
     statusLoading: false,
     statusError: null,
     conversations: [],
@@ -398,7 +401,19 @@ export async function refreshStatus(): Promise<void> {
   try {
     const status = await getChatStatus(auth());
     if (token !== statusToken) return;
-    setState({ status, statusLoading: false, statusError: null });
+    setState((current) => {
+      const models = status.models ?? [];
+      const previous = current.selectedModelId;
+      const valid = previous && models.some((model) => model.id === previous);
+      return {
+        status,
+        selectedModelId: valid
+          ? previous
+          : status.defaultModelId ?? models[0]?.id ?? null,
+        statusLoading: false,
+        statusError: null,
+      };
+    });
   } catch (error) {
     if (token !== statusToken) return;
     if (error instanceof ChatApiError && error.status === 404) {
@@ -412,6 +427,12 @@ export async function refreshStatus(): Promise<void> {
       statusError: error instanceof Error ? error.message : 'Status unavailable.',
     });
   }
+}
+
+export function setChatModel(modelId: string | null): void {
+  if (modelId && !state.status?.models?.some((model) => model.id === modelId)) return;
+  if (state.selectedModelId === modelId) return;
+  setState({ selectedModelId: modelId });
 }
 
 export async function refreshConversations(silent = false): Promise<void> {
@@ -603,6 +624,8 @@ export async function cancelDelete(id: string): Promise<void> {
 
 export interface SendOptions {
   mode?: ChatMode;
+  modelId?: string;
+  attachments?: ChatAttachmentRef[];
   context?: ChatContextInput;
   /** Display only; never sent to the server. */
   contextTitle?: string;
@@ -610,9 +633,11 @@ export interface SendOptions {
 
 export async function sendMessage(text: string, options: SendOptions = {}): Promise<void> {
   const content = text.trim();
-  if (!content || state.active) return;
+  const attachments = options.attachments ?? [];
+  if ((!content && attachments.length === 0) || state.active) return;
 
   const mode = options.mode ?? state.mode;
+  const modelId = options.modelId ?? state.selectedModelId ?? undefined;
   const token = ++streamToken;
   const controller = new AbortController();
   abortController = controller;
@@ -620,6 +645,7 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
   const userMessage: ChatUiMessage = {
     role: 'user',
     content,
+    ...(attachments.length > 0 ? { attachments } : {}),
     ...(options.context
       ? {
         context: {
@@ -644,7 +670,7 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
   });
   emit();
 
-  let retryText = content;
+  let retryText = content || attachments[0]?.name || 'Attachment';
   let errored = false;
   let done = false;
   let stopped = false;
@@ -656,6 +682,8 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
       conversationId: state.conversationId ?? undefined,
       message: content,
       mode,
+      ...(modelId ? { modelId } : {}),
+      ...(attachments.length > 0 ? { attachmentIds: attachments.map((attachment) => attachment.id) } : {}),
       context: options.context,
       signal: controller.signal,
       auth: auth(),
@@ -668,7 +696,7 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
             conversationId,
             conversation: state.conversation ?? {
               id: conversationId,
-              title: content.length > 60 ? `${content.slice(0, 57)}…` : content,
+              title: stripTitleEmoji(content.length > 60 ? `${content.slice(0, 57)}…` : content, 'New chat'),
               created: new Date().toISOString(),
               updated: new Date().toISOString(),
             },

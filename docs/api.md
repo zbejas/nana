@@ -39,8 +39,9 @@ Authorization: Bearer <nana_api_key>
 | `src/api/workspace/privacy.ts` | `loadAiVisibility()`, `aiVisibilityConditions()`, and the record lock helpers. |
 | `src/api/pocketbase/client.ts` | Caller-token PocketBase REST client and status mapping. |
 | `src/api/auth.ts` | `verifyAuth()` and `AuthError`. |
-| `src/api/chat/index.ts` | Chat request parsing, mode/context validation, SSE response, conversation dispatch. |
+| `src/api/chat/index.ts` | Chat request parsing, mode/context/attachment validation, SSE response, conversation dispatch. |
 | `src/api/chat/context.ts` | Server-side document/board/folder context resolution with ownership, trash, and private-lock checks. |
+| `src/api/chat/attachments.ts` | Multipart validation, magic-byte MIME/kind checks, PDF text extraction, draft binding/deletion, and protected-file downloads. |
 | `src/api/chat/stream.ts` | Named SSE events, legacy AI-SDK chunks, and stream accumulation. |
 | `src/api/chat/edits.ts` | `chat_edits` recording, edit-card listing, and undo. |
 | `src/api/chat/tool-names.ts` | Persisted read/write chat tool allowlists. |
@@ -263,6 +264,7 @@ The browser facade is the replacement for `/pb`. It is public-facing Elysia code
 | `GET/PATCH` | `/api/v1/admin/oauth/providers` | admin | OAuth provider config with masked secrets. |
 | `PATCH` | `/api/v1/admin/app-url` | admin | Sync PocketBase `meta.appURL`. |
 | `GET/PATCH` | `/api/v1/admin/rate-limits` | admin | Per-IP request ceilings; `PATCH` persists and reloads the in-memory limiter. |
+| `GET` | `/api/v1/admin/ai/models` | admin | Searchable models.dev catalog for the AI settings picker; optional `q` and `provider`. |
 | `PATCH` | `/api/v1/admin/users/:id` | admin | Update email/name/admin/password. |
 | `POST` | `/api/v1/admin/users/:id/request-email-change` | admin | Send an admin-initiated email change. |
 | `GET` | `/api/v1/public/documents/:token` | public | Public document payload. |
@@ -306,7 +308,7 @@ Browser facade behavior:
 - **Read-only collections.** Version and trash collections accept only reads; writes return `405`.
 - **Query pass-through.** Reads forward PocketBase `filter`, `sort`, `expand`, `fields`, `page`, `perPage`, and `skipTotal`. This preserves the SPA's raw PB queries without exposing arbitrary system collections.
 - **Error shape.** The facade preserves PocketBase's `{ code, message, data }` error envelope and status codes so the client's field-error and auth handling stays intact.
-- **Files.** Only `documents`, `users`, and `trash_documents` file paths are allowlisted. Protected files still require a PocketBase file token or a public-share route.
+- **Files.** Only `documents`, `users`, `trash_documents`, and `chat_attachments` file paths are allowlisted. Protected files still require a PocketBase file token or a public-share route; chat attachment bytes are fetched server-side with the caller's short-lived file token.
 - **Realtime.** The SSE handshake is unauthenticated, like PocketBase; the subscription POST requires the user token. Elysia sets the Bun timeout to `0` for `/api/v1/realtime`.
 
 ### MCP
@@ -368,18 +370,56 @@ At least one document or folder is required. A single document with no attachmen
 
 #### `GET /api/chat/status`
 
-Requires auth. Reports whether a provider/model is configured without exposing keys or base URLs:
+Requires auth. Reports whether an enabled model exists and returns the model picker without exposing keys or base URLs:
 
 ```json
 {
   "configured": true,
   "model": "gpt-4o-mini",
   "provider": "openai",
-  "local": false
+  "local": false,
+  "defaultModelId": "work:gpt-4o-mini",
+  "models": [
+    {
+      "id": "work:gpt-4o-mini",
+      "label": "GPT-4o mini",
+      "model": "gpt-4o-mini",
+      "provider": "Work gateway",
+      "providerKind": "openai",
+      "local": false,
+      "contextWindow": 128000,
+      "maxOutputTokens": null,
+      "vision": true,
+      "files": true,
+      "tools": true,
+      "reasoning": false
+    }
+  ],
+  "limits": {
+    "enabled": false,
+    "maxFiles": 5,
+    "maxFileBytes": 10485760,
+    "maxTotalBytes": 26214400,
+    "maxTextChars": 100000
+  }
 }
 ```
 
-`local` is true for Ollama. A settings-read failure returns `200` with `configured: false` and null model/provider rather than an error.
+`model` is the upstream model id of the effective default; `provider` keeps the legacy provider kind (`openai`, `google`, `anthropic`, or `ollama`); `local` is true for Ollama. `models` contains only enabled models whose connection is enabled; each option's `provider` is the connection name and `providerKind` is its protocol. `defaultModelId` is a canonical `connectionId:modelId`. `limits` is the normalized attachment contract and gates the upload and send routes. API keys, base URLs, and connection objects are never returned. A settings-read failure returns `200` with `configured: false`, null model/provider/default, an empty `models`, and default limits rather than an error.
+
+#### `POST /api/chat/attachments`
+
+Requires a session token (`verifyAuth`; API keys are rejected). Multipart form with one `file` part. Returns `201 { "attachment": { id, name, mimeType, size, kind } }`; extracted text, the protected file name, and raw bytes are never returned.
+
+- Allowed: PNG, JPEG, WebP, and GIF images (SVG is rejected), PDFs, and `text/plain`/Markdown text. Classification uses magic bytes and UTF-8 validation, not the declared `file.type`.
+- Rejected when attachments are disabled (`403 attachments_disabled`), the file exceeds `maxFileBytes` (`413 too_large`), or the type/content is unsupported or mismatched (`415 unsupported_type`).
+- The route is rate limited with the `/api/chat/*` bucket and has a 60-second request timeout. The configured `maxFileBytes` plus a bounded multipart allowance is checked from `Content-Length` before parsing.
+- The row starts as a draft (`conversation` and `message` empty). Send it with `POST /api/chat/send.attachmentIds`; the server binds it after the user message is created.
+- Text files get server-extracted text; PDFs are parsed with pdfjs (200-page, 15-second, `maxTextChars` limits). A scanned/empty PDF keeps the row with empty text.
+
+#### `DELETE /api/chat/attachments/:id`
+
+Requires a session token and owner. Deletes an unbound draft row and its protected file. `204` on success; `404` for another user's or missing id; `409 attachment_in_use` once the row is bound to a message. Conversations and messages cascade their attachment rows when deleted.
 
 #### `POST /api/chat/send`
 
@@ -389,18 +429,24 @@ Requires auth. Request:
 {
   "conversationId": "optional-existing-id",
   "message": "user text",
+  "attachmentIds": ["optional-draft-attachment-id"],
+  "modelId": "optional-enabled-model-id",
   "mode": "ask",
   "context": { "type": "document", "id": "optional-record-id" },
   "regenerate": false
 }
 ```
 
+- `message` may be empty only when `attachmentIds` has at least one id. Ids must match `[A-Za-z0-9]{1,64}`, are deduplicated, and are capped at the configured `maxFiles` (hard ceiling 20).
+- `attachmentIds` reference owner-scoped draft rows from `POST /api/chat/attachments`. The server verifies ownership, unbound state, count, per-file size, total size, and the selected model's `vision`/`files` capabilities before creating a conversation or SSE stream. Invalid/bound/too many ids are `400`; disabled attachments are `403`; size overflow is `413`; unsupported types or model capability failures are `415`; missing or foreign ids are `404`.
+- `modelId` is optional and must be an enabled id from `GET /api/chat/status.models`. Omit it to use `defaultModelId`, then the first enabled model. An explicit unknown or disabled id returns `400` with code `model_not_found` before any conversation or stream work.
 - `mode` is `"ask"` or `"edit"`; omit it for the safe read-only default. The UI's Work mode sends `"edit"` and is the default there; Ask sends `"ask"`. Edit adds create, rename, move, and update tools for folders, notes, boards, and tasks; boards can be archived/restored, and deletes use a pending confirmation card.
 - `context` is optional and accepts only `{ type: "document" | "board" | "folder", id }`. Bun resolves the title, ownership, trash state, and private lock with the caller's token, then persists `messages.context` with the resolved title on the user message. A missing, foreign, trashed, private, or hidden record is `404`; a malformed type/id is `400`; an unreadable visibility snapshot is `503`. Client-supplied titles and bodies are ignored.
-- Omit `conversationId` to create a conversation. The first message seeds the title; a background title call refines it after the first reply when the stream is not stopped and has no error.
+- Omit `conversationId` to create a conversation. The first message seeds the title from the user text or the first attachment name; a background title call refines it after the first reply when the stream is not stopped and has no error. Title generation never receives attachment bytes or extracted text.
 - `regenerate: true` trims the previous user/assistant exchange before re-sending.
-- There is no `documentIds` field and no attachment payload. Context is metadata only; tools read notes, boards, and tasks on demand.
-- Chat history sends only role and content. Stored reasoning, tool activity, sources, context metadata, and model metadata stay out of the prompt; the resolved context contributes a short system note.
+- There is no `documentIds` field. `attachmentIds` is the only file payload; context is metadata only and tools read notes, boards, and tasks on demand.
+- The persisted user message carries sanitized attachment refs. Chat history sends role, content, and attachment content for user messages only. Stored reasoning, tool activity, sources, context metadata, and model metadata stay out of the prompt; the resolved context contributes a short system note.
+- Images become AI SDK image parts (vision required); PDFs become native file parts when the model has `files`, otherwise extracted text (and are rejected if no text); text files become named `<attachment>` text blocks. Older user-message attachments share the request's byte/text budget and degrade to text or an explicit omission marker; assistant attachments are never sent. Attachment contents are untrusted data and the system prompt says not to follow instructions inside them.
 - In edit mode, writes go through the workspace services with the caller's token and `X-Nana-Actor: ai`; note edits carry revision checks. Tools cover creating, renaming, moving, and updating folders, notes, boards, and tasks; boards can be archived and restored. Delete tools create a pending card; `POST /api/chat/edits/:id/confirm` executes it with the caller's token. Chat has no publish, share, privacy, board-column, or label tools, and it cannot move a task to another board. See [`ai.md`](ai.md) for the write contract.
 
 The response is an SSE stream with these headers:
@@ -409,7 +455,8 @@ The response is an SSE stream with these headers:
 | --- | --- |
 | `X-Conversation-Id` | Conversation to continue. |
 | `X-Is-New-Conversation` | `"true"` when a new conversation was created. |
-| `X-Model-Name` | Active model name. |
+| `X-Model-Name` | Upstream model id used for this turn. |
+| `X-Model-Source` | Canonical connection id that supplied the model. |
 | `X-Chat-Mode` | `ask` or `edit`. |
 
 The dock reads named SSE events. Every `data:` payload also carries `type`:
@@ -432,11 +479,14 @@ Chat errors:
 
 | Status | Meaning |
 | --- | --- |
-| `400` | Invalid JSON, empty `message`, invalid `mode`, or malformed `context`. |
+| `400` | Invalid JSON, an empty turn (no text and no attachments), invalid `mode`, malformed `context`, an invalid/bound/too-many attachment id, or an unknown/disabled `modelId` with code `model_not_found`. |
 | `401` | Missing or invalid user token. |
-| `404` | The context record is missing, trashed, foreign, or hidden; or the conversation is missing or foreign. |
+| `403` | Attachments are disabled (`attachments_disabled`). |
+| `404` | The context record is missing, trashed, foreign, or hidden; an attachment id is missing or foreign; or the conversation is missing or foreign. |
+| `413` | An attachment or the combined attachment set exceeds the configured byte cap (`too_large`). |
+| `415` | Unsupported/SVG/mismatched file content, or the selected model lacks the required vision/files capability (`unsupported_model`). |
 | `502` | The provider failed before the SSE stream started; the message is mapped by `getAIErrorMessage()`. Failures after streaming begins arrive as an `error` event. |
-| `503` | `ai_config` is missing, no provider is active, the provider has no model, or the context visibility snapshot could not be loaded. |
+| `503` | `ai_config` is missing, no enabled model (including the legacy active-provider fallback) is configured, or the context visibility snapshot could not be loaded. |
 
 #### Chat conversations
 
@@ -447,7 +497,7 @@ Chat errors:
 | `/api/chat/conversations/:id` | PATCH | `{ conversation }`; body `{ title }`, trimmed, 1–120 characters. |
 | `/api/chat/conversations/:id` | DELETE | `204` on success. |
 
-Conversation list/view/rename/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, then writes each turn to the `messages` collection. Every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. `GET /api/chat/conversations/:id` returns `{ conversation, messages }`, with messages ordered by `position` and sanitized on read. Messages may carry `context`, `sources`, and `stopped` metadata; see [`ai.md`](ai.md) for the persisted shapes.
+Conversation list/view/rename/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, then writes each turn to the `messages` collection. Every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. `GET /api/chat/conversations/:id` returns `{ conversation, messages }`, with messages ordered by `position` and sanitized on read. Messages may carry `context`, `attachments`, `sources`, and `stopped` metadata; attachment refs contain only `{ id, name, mimeType, size, kind }`. See [`ai.md`](ai.md) for the persisted shapes.
 
 #### Chat edits and undo
 
@@ -471,6 +521,8 @@ An edit card carries `id`, `conversationId`, `messageId`, `target { type, id, ti
 `GET /api/v1/admin/rate-limits` returns `{ rateLimits, defaults, scopes }` for the signed-in admin. `rateLimits` is `{ enabled, apiPerMinute, otherPerMinute }`; `defaults` carries the two default ceilings; `scopes` lists the route groups each ceiling covers.
 
 `PATCH /api/v1/admin/rate-limits` accepts the full `{ enabled, apiPerMinute, otherPerMinute }` object, validates positive integers up to 1,000,000, persists `settings.rate_limits`, and reloads the in-memory limiter in the same request. Both routes require the PocketBase admin flag: a missing or invalid token returns `401`, a valid non-admin token returns `403`, schema failures return `422`, and an unreachable settings store returns `502`. The admin routes are hidden from the public OpenAPI document.
+
+`GET /api/v1/admin/ai/models` is an admin-only, read-only models.dev proxy. It accepts optional `q` (max 120 characters) and `provider` (models.dev provider id), returns at most 500 chat-capable models with limits and capability flags, and keeps a six-hour server-side cache with ETag revalidation. It never returns keys or writes provider state; first-load failure returns `502`.
 
 `POST /api/admin/rate-limits/reload` is the legacy admin-only reload hook. It takes no body and returns `{ success: true, config }` with the legacy `pbMaxPerMinute` and `appMaxPerMinute` keys. The settings UI uses the `/api/v1` endpoint, so the separate reload is no longer required.
 
@@ -546,6 +598,7 @@ PocketBase's standard collection endpoints under `/api/collections/...` are inte
 | `settings` | `/api/v1/records/settings` | Admin-only key/value store. |
 | `trash_documents`, `trash_folders` | `/api/v1/records/trash_*` | Readable but not writable; mutations go through `/api/v1/trash/:action`. |
 | `conversations` | none | Server-side chat only; `/api/chat/conversations`. |
+| `chat_attachments` | none | Chat upload/send routes only; protected previews go through `/api/v1/files/chat_attachments/...`. |
 
 #### Board records
 

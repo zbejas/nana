@@ -1,3 +1,4 @@
+import { sanitizeAttachmentRef, type ChatAttachmentRef } from '../../api/chat/types';
 import type {
   ChatEditChanges,
   ChatEditSection,
@@ -6,6 +7,12 @@ import type {
   ChatSource,
   ChatStatusResponse,
 } from '../../api/chat/types';
+import type {
+  AIChatAttachmentSettings,
+  AIChatModelOption,
+  AIProviderKind,
+} from '../ai/types';
+import { cleanChatTitle } from '../ai/title';
 import type {
   ChatConversation,
   ChatError,
@@ -36,6 +43,8 @@ export interface SendChatInput {
   conversationId?: string;
   message: string;
   mode: ChatMode;
+  modelId?: string;
+  attachmentIds?: string[];
   context?: { type: 'document' | 'board' | 'folder'; id: string };
   regenerate?: boolean;
   signal?: AbortSignal;
@@ -93,7 +102,7 @@ function normalizeConversation(value: unknown): ChatConversation | null {
   if (!id) return null;
   return {
     id,
-    title: stringValue(record.title, record.name) || 'Untitled chat',
+    title: cleanChatTitle(stringValue(record.title, record.name) || 'Untitled chat', 'Untitled chat'),
     created: stringValue(record.created),
     updated: stringValue(record.updated, record.created),
     pending_edits: numberValue(record.pending_edits, record.pendingEdits),
@@ -411,6 +420,8 @@ export async function streamChat(input: SendChatInput, handlers: SendChatHandler
       conversationId: input.conversationId || undefined,
       message: input.message,
       mode: input.mode,
+      ...(input.modelId ? { modelId: input.modelId } : {}),
+      ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
       ...(input.context ? { context: input.context } : {}),
       ...(input.regenerate ? { regenerate: true } : {}),
     }),
@@ -495,6 +506,44 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
+function isProviderKind(value: string): value is AIProviderKind {
+  return value === 'openai' || value === 'google' || value === 'anthropic' || value === 'ollama';
+}
+
+function normalizeStatusModel(value: unknown): AIChatModelOption | null {
+  const record = asRecord(value);
+  const id = stringValue(record.id);
+  const model = stringValue(record.model, record.modelId);
+  if (!id || !model) return null;
+  const rawKind = stringValue(record.providerKind, record.kind);
+  return {
+    id,
+    label: stringValue(record.label, record.name) || model,
+    model,
+    provider: stringValue(record.provider, record.providerName) || 'AI',
+    providerKind: isProviderKind(rawKind) ? rawKind : 'openai',
+    local: record.local === true,
+    contextWindow: numberValue(record.contextWindow) ?? null,
+    maxOutputTokens: numberValue(record.maxOutputTokens) ?? null,
+    vision: record.vision === true,
+    files: record.files === true,
+    tools: record.tools !== false,
+    reasoning: record.reasoning === true,
+  };
+}
+
+function normalizeStatusLimits(value: unknown): AIChatAttachmentSettings | undefined {
+  const record = asRecord(value);
+  if (Object.keys(record).length === 0) return undefined;
+  return {
+    enabled: record.enabled === true,
+    maxFiles: numberValue(record.maxFiles) ?? 5,
+    maxFileBytes: numberValue(record.maxFileBytes) ?? 10 * 1024 * 1024,
+    maxTotalBytes: numberValue(record.maxTotalBytes) ?? 25 * 1024 * 1024,
+    maxTextChars: numberValue(record.maxTextChars) ?? 100_000,
+  };
+}
+
 export async function getChatStatus(auth: ChatAuth): Promise<ChatStatusResponse> {
   const response = await fetch(`${CHAT_BASE}/status`, { headers: authHeaders(auth) });
   if (response.status === 404) {
@@ -508,12 +557,54 @@ export async function getChatStatus(auth: ChatAuth): Promise<ChatStatusResponse>
     throw errorFromResponse(response.status, data);
   }
   const record = asRecord(data);
+  const models = Array.isArray(record.models)
+    ? record.models
+      .map(normalizeStatusModel)
+      .filter((model): model is AIChatModelOption => Boolean(model))
+    : [];
+  const defaultModelId = stringValue(record.defaultModelId) || null;
+  const limits = normalizeStatusLimits(record.limits);
   return {
     configured: record.configured !== false && record.ready !== false,
     model: stringValue(record.model, record.modelName, record.activeModel) || null,
     provider: stringValue(record.provider, record.providerName) || null,
     local: record.local === true,
+    defaultModelId,
+    ...(models.length ? { models } : {}),
+    ...(limits ? { limits } : {}),
   };
+}
+
+/** Upload one draft attachment; the server classifies and extracts it. */
+export async function uploadChatAttachment(
+  file: File,
+  auth: ChatAuth,
+): Promise<ChatAttachmentRef> {
+  const form = new FormData();
+  form.append('file', file);
+  const response = await fetch(`${CHAT_BASE}/attachments`, {
+    method: 'POST',
+    headers: authHeaders(auth),
+    body: form,
+  });
+  const data = await readJson(response);
+  if (!response.ok) throw errorFromResponse(response.status, data);
+  const record = asRecord(data);
+  const attachment = sanitizeAttachmentRef(record.attachment ?? data);
+  if (!attachment) throw new ChatApiError('The uploaded attachment was not readable.', 502);
+  return attachment;
+}
+
+/** Delete a draft that has not been bound to a message. */
+export async function deleteChatAttachment(id: string, auth: ChatAuth): Promise<void> {
+  const response = await fetch(`${CHAT_BASE}/attachments/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authHeaders(auth),
+  });
+  if (!response.ok && response.status !== 404) {
+    const data = await readJson(response);
+    throw errorFromResponse(response.status, data);
+  }
 }
 
 export async function listConversations(auth: ChatAuth): Promise<ChatConversation[]> {
@@ -577,12 +668,19 @@ export async function loadConversation(auth: ChatAuth, id: string): Promise<Load
         ...(message.context && typeof message.context === 'object'
           ? { context: message.context as ChatUiMessage['context'] }
           : {}),
+        ...(Array.isArray(message.attachments)
+          ? {
+            attachments: message.attachments
+              .map((attachment) => sanitizeAttachmentRef(attachment))
+              .filter((attachment): attachment is ChatAttachmentRef => Boolean(attachment)),
+          }
+          : {}),
         ...(stringValue(message.model) ? { model: stringValue(message.model) } : {}),
         ...(message.stopped === true ? { stopped: true } : {}),
         streaming: false,
       };
     })
-    .filter((message) => message.content || message.reasoning || message.tools?.length);
+    .filter((message) => message.content || message.reasoning || message.tools?.length || message.attachments?.length);
 
   // Attach edits to their message; orphaned edits ride on the last answer so a
   // reloaded conversation never loses an undo card.

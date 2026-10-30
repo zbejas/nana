@@ -1,51 +1,91 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOllama } from "ai-sdk-ollama";
-import type { AIConfig, AIProviderKey } from "../../lib/ai/types";
+import { normalizeAIConfig, resolveChatModel } from "../../lib/ai/config";
+import type {
+    AIConfig,
+    AIModelConfig,
+    AIProviderConnection,
+    AIProviderKey,
+    AIProviderKind,
+} from "../../lib/ai/types";
 import type { LanguageModel } from "ai";
 
 /**
  * Create an AI SDK language model instance from the stored AI config.
- * Returns the model for the active provider with the configured activeModel.
- * Throws if no provider is active or no model is configured.
+ *
+ * A v2 model id wins when it is enabled and its connection is enabled. Without
+ * an id the default model is used, then the first enabled model. If no v2
+ * model is usable, the legacy active provider remains the fallback.
  */
-export function getAIModel(config: AIConfig): LanguageModel {
-    const { activeProvider } = config;
+export function getAIModel(config: AIConfig, modelId?: string | null): LanguageModel {
+    const normalized = normalizeAIConfig(config);
+    const resolved = resolveChatModel(normalized, modelId);
 
+    if (resolved) {
+        return createModelForConnection(resolved.connection, resolved.model);
+    }
+
+    const requested = typeof modelId === "string" ? modelId.trim() : "";
+    if (requested) {
+        throw new Error(`AI model not found or disabled: ${requested}`);
+    }
+
+    const { activeProvider } = normalized;
     if (!activeProvider) {
         throw new Error("No AI provider is active. Configure one in Settings → AI.");
     }
 
-    const providerConfig = config.providers[activeProvider];
+    const providerConfig = normalized.providers[activeProvider];
     if (!providerConfig.activeModel) {
         throw new Error(`No model configured for ${activeProvider}. Set a model in Settings → AI.`);
     }
 
-    return createModelForProvider(activeProvider, providerConfig.activeModel, providerConfig.apiKey, providerConfig.baseUrl, providerConfig.thinking);
+    return createModelForProvider(
+        activeProvider,
+        providerConfig.activeModel,
+        providerConfig.apiKey,
+        providerConfig.baseUrl,
+        providerConfig.thinking,
+    );
 }
 
 /**
- * Provider options shared by every OpenAI call.
+ * Provider options shared by chat calls.
  *
- * OpenAI's Responses API stores items server-side by default and replaces
- * earlier reasoning/tool items with `item_reference` objects on later steps.
- * OpenAI-compatible gateways generally implement Chat Completions and only
- * part of Responses, so those references fail with
- * `unknown input item type: "item_reference"` during multi-step tool use.
- * Keeping Responses stateless makes the follow-up request self-contained.
+ * This is intentionally a single seam for provider-specific request options.
+ * Chat Completions, Messages, and generateContent all carry their state in the
+ * request, so none are required today. In particular, OpenAI's old Responses
+ * `store: false` workaround does not apply to the Chat Completions path.
+ * Ollama thinking is applied on the model instance instead.
  */
 export function getAIProviderOptions(
-    provider: AIProviderKey | null,
-): { openai: { store: false } } | undefined {
-    return provider === "openai" ? { openai: { store: false } } : undefined;
+    provider: AIProviderKind | AIProviderKey | null,
+): undefined {
+    void provider;
+    return undefined;
+}
+
+function createModelForConnection(
+    connection: AIProviderConnection,
+    model: AIModelConfig,
+): LanguageModel {
+    return createModelForProvider(
+        connection.kind,
+        model.modelId,
+        connection.apiKey,
+        connection.baseUrl,
+        model.thinking,
+    );
 }
 
 function createModelForProvider(
-    provider: AIProviderKey,
+    provider: AIProviderKind,
     model: string,
     apiKey: string,
     baseUrl: string,
-    thinking: boolean
+    thinking: boolean,
 ): LanguageModel {
     switch (provider) {
         case "openai": {
@@ -53,7 +93,8 @@ function createModelForProvider(
                 apiKey: apiKey || undefined,
                 ...(baseUrl ? { baseURL: baseUrl } : {}),
             });
-            return openai(model);
+            // Chat Completions is the compatible path for custom OpenAI hosts.
+            return openai.chat(model);
         }
 
         case "google": {
@@ -61,7 +102,15 @@ function createModelForProvider(
                 apiKey: apiKey || undefined,
                 ...(baseUrl ? { baseURL: baseUrl } : {}),
             });
-            return google(model);
+            return google.chat(model);
+        }
+
+        case "anthropic": {
+            const anthropic = createAnthropic({
+                apiKey: apiKey || undefined,
+                ...(baseUrl ? { baseURL: baseUrl } : {}),
+            });
+            return anthropic.chat(model);
         }
 
         case "ollama": {
@@ -74,7 +123,7 @@ function createModelForProvider(
                     },
                 } : {}),
             });
-            return ollama(model, { think: thinking });
+            return ollama.chat(model, { think: thinking });
         }
 
         default:

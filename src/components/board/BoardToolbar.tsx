@@ -5,6 +5,7 @@ import {
   CalendarDaysIcon,
   ChartBarIcon,
   CheckCircleIcon,
+  ChevronRightIcon,
   FunnelIcon,
   ListBulletIcon,
   MagnifyingGlassIcon,
@@ -130,19 +131,24 @@ export function BoardToolbar({
   return (
     <>
       <div className="board-toolbar">
-        <div className="board-view-switcher" role="group" aria-label="Board view">
-          {VIEW_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={view === option.value}
-              onClick={() => onViewChange(option.value)}
-              className="[&>svg]:h-3.5 [&>svg]:w-3.5"
-            >
-              {option.icon}
-              <span>{option.label}</span>
-            </button>
-          ))}
+        <div className="board-view-switcher-shell">
+          <div className="board-view-switcher" role="group" aria-label="Board view">
+            {VIEW_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={view === option.value}
+                onClick={() => onViewChange(option.value)}
+                className="[&>svg]:h-3.5 [&>svg]:w-3.5"
+              >
+                {option.icon}
+                <span>{option.label}</span>
+              </button>
+            ))}
+          </div>
+          <span className="board-view-switcher-cue" aria-hidden="true">
+            <ChevronRightIcon className="h-3.5 w-3.5" />
+          </span>
         </div>
 
         <div className="w-full sm:ml-auto sm:w-auto">
@@ -170,10 +176,11 @@ export function BoardToolbar({
             size="sm"
             className={cn('h-9 px-2', panel === 'filter' && 'bg-surface-raised text-ink')}
             icon={<FunnelIcon />}
+            aria-label={filterCount > 0 ? `Filter tasks, ${filterCount} active` : 'Filter tasks'}
             aria-expanded={panel === 'filter'}
             onClick={(event) => openPanel('filter', event.currentTarget)}
           >
-            Filter
+            <span className="hidden min-[370px]:inline">Filter</span>
             {filterCount > 0 && (
               <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-signal-soft px-1 text-[10px] font-semibold tabular-nums text-signal">
                 {filterCount}
@@ -185,46 +192,52 @@ export function BoardToolbar({
             size="sm"
             className={cn('h-9 px-2', panel === 'sort' && 'bg-surface-raised text-ink')}
             icon={<ArrowsUpDownIcon />}
+            aria-label="Sort tasks"
             aria-expanded={panel === 'sort'}
             onClick={(event) => openPanel('sort', event.currentTarget)}
           >
-            Sort
+            <span className="hidden min-[370px]:inline">Sort</span>
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn('hidden h-9 px-2 sm:inline-flex', panel === 'display' && 'bg-surface-raised text-ink')}
-            icon={<AdjustmentsHorizontalIcon />}
-            aria-expanded={panel === 'display'}
-            onClick={(event) => openPanel('display', event.currentTarget)}
-          >
-            Display
-          </Button>
-          <IconButton
-            label={selectionMode ? 'Exit select mode' : 'Select tasks'}
-            size="md"
-            className={cn(
-              'h-9 w-9 md:hidden',
-              selectionMode && 'bg-signal-soft text-signal',
-              !canSelect && 'hidden',
-            )}
-            aria-pressed={selectionMode}
-            onClick={onToggleSelectionMode}
-          >
-            <CheckCircleIcon />
-          </IconButton>
-          <IconButton
-            label="Keyboard shortcuts"
-            size="md"
-            className="hidden h-9 w-9 md:inline-flex"
-            onClick={onOpenShortcuts}
-          >
-            <QuestionMarkCircleIcon />
-          </IconButton>
+          {!isMobile && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn('h-9 px-2', panel === 'display' && 'bg-surface-raised text-ink')}
+              icon={<AdjustmentsHorizontalIcon />}
+              aria-expanded={panel === 'display'}
+              onClick={(event) => openPanel('display', event.currentTarget)}
+            >
+              Display
+            </Button>
+          )}
+          {canSelect && (
+            <IconButton
+              label={selectionMode ? 'Exit select mode' : 'Select tasks'}
+              size="md"
+              className={cn(
+                'h-9 w-9 md:hidden',
+                selectionMode && 'bg-signal-soft text-signal',
+              )}
+              aria-pressed={selectionMode}
+              onClick={onToggleSelectionMode}
+            >
+              <CheckCircleIcon />
+            </IconButton>
+          )}
+          {!isMobile && (
+            <IconButton
+              label="Keyboard shortcuts"
+              size="md"
+              className="h-9 w-9"
+              onClick={onOpenShortcuts}
+            >
+              <QuestionMarkCircleIcon />
+            </IconButton>
+          )}
         </div>
       </div>
 
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+      <div className="board-toolbar-meta mt-2 flex min-w-0 flex-wrap items-center gap-2">
         <FilterChipRow
           filters={filters}
           columns={columns}

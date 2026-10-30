@@ -289,6 +289,19 @@ const server = serve({
     },
 
     // Chat API endpoints
+    "/api/chat/attachments": async (req): Promise<Response> => {
+      // File parsing and PDF text extraction are finite, but not instant.
+      server.timeout(req, 60);
+      const blocked = await checkRateLimit(req, server);
+      if (blocked) return withSecurityHeaders(blocked);
+      return withSecurityHeaders(await handleChat(req));
+    },
+    "/api/chat/attachments/*": async (req): Promise<Response> => {
+      server.timeout(req, 60);
+      const blocked = await checkRateLimit(req, server);
+      if (blocked) return withSecurityHeaders(blocked);
+      return withSecurityHeaders(await handleChat(req));
+    },
     "/api/chat/send": async (req): Promise<Response> => {
       server.timeout(req, 0);
       const blocked = await checkRateLimit(req, server);

@@ -2,6 +2,7 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -53,6 +54,17 @@ export function SidePanel({
   const titleId = useId();
   const descriptionId = useId();
   const previousFocus = useRef<HTMLElement | null>(null);
+  // The panel is only truly full-width below 640px; from 640px it keeps its
+  // desktop inspector bounded width and stays non-modal.
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 640,
+  );
+
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -80,12 +92,39 @@ export function SidePanel({
     if (!open) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || !closeOnEsc) return;
-      // A centred alert dialog on top owns Escape. Closing the inspector
-      // underneath it would destroy the context the dialog is confirming.
-      if (document.querySelector('[data-dialog-layer]')) return;
-      event.preventDefault();
-      onClose();
+      if (event.key === 'Escape' && closeOnEsc) {
+        // A centred alert dialog on top owns Escape. Closing the inspector
+        // underneath it would destroy the context the dialog is confirming.
+        if (document.querySelector('[data-dialog-layer],[role="menu"]')) return;
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      // Below 640px the panel covers the page, so it behaves as a modal even
+      // though the desktop inspector deliberately leaves the board available.
+      if (!isMobile || event.key !== 'Tab') return;
+      if (document.querySelector('[data-dialog-layer],[role="menu"]')) return;
+
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (element) => element.offsetParent !== null || element === document.activeElement,
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -106,7 +145,7 @@ export function SidePanel({
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('pointerdown', handlePointerDown, true);
     };
-  }, [open, closeOnEsc, closeOnOutside, onClose]);
+  }, [open, closeOnEsc, closeOnOutside, onClose, isMobile]);
 
   if (!open || typeof document === 'undefined') {
     return null;
@@ -116,7 +155,7 @@ export function SidePanel({
     <aside
       ref={panelRef}
       role="dialog"
-      aria-modal="false"
+      aria-modal={isMobile ? 'true' : 'false'}
       aria-label={ariaLabel}
       aria-labelledby={title ? titleId : undefined}
       aria-describedby={description ? descriptionId : undefined}
@@ -145,7 +184,12 @@ export function SidePanel({
             </p>
           )}
         </div>
-        <IconButton label="Close panel" size="md" onClick={onClose} className="-mr-1 -mt-1">
+        <IconButton
+          label="Close panel"
+          size="md"
+          onClick={onClose}
+          className="-mr-1 -mt-1 h-11 w-11 sm:h-9 sm:w-9"
+        >
           <XMarkIcon />
         </IconButton>
       </header>

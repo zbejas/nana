@@ -102,6 +102,27 @@ describe("Chat API", () => {
             const body = await expectJsonError(res, 503);
             expect(body.error?.toLowerCase()).toContain("provider");
         });
+
+        test("rejects an unknown model id before streaming", async () => {
+            const res = await postJson(
+                "/api/chat/send",
+                { message: "hello", modelId: "missing:model" },
+                { Authorization: user.token },
+            );
+
+            await expectStatus(res, 400);
+            const body = await readJson<{ error?: string; code?: string }>(res);
+            expect(body.code).toBe("model_not_found");
+            expect(body.error?.toLowerCase()).toContain("model");
+
+            const empty = await postJson(
+                "/api/chat/send",
+                { message: "hello", modelId: "   " },
+                { Authorization: user.token },
+            );
+            await expectStatus(empty, 400);
+            expect((await readJson<{ code?: string }>(empty)).code).toBe("model_not_found");
+        });
     });
 
     describe("conversations", () => {
@@ -319,13 +340,53 @@ describe("Chat API", () => {
                 model: string | null;
                 provider: string | null;
                 local: boolean;
+                defaultModelId: string | null;
+                models: Array<Record<string, unknown>>;
+                limits: {
+                    enabled: boolean;
+                    maxFiles: number;
+                    maxFileBytes: number;
+                    maxTotalBytes: number;
+                    maxTextChars: number;
+                };
             }>(res);
 
             expect(typeof data.configured).toBe("boolean");
             expect(data.model === null || typeof data.model === "string").toBe(true);
             expect(data.provider === null || typeof data.provider === "string").toBe(true);
             expect(typeof data.local).toBe("boolean");
-            expect(data).not.toHaveProperty("apiKey");
+            expect(data.defaultModelId === null || typeof data.defaultModelId === "string").toBe(true);
+            expect(Array.isArray(data.models)).toBe(true);
+            for (const model of data.models) {
+                expect(typeof model.id).toBe("string");
+                expect(typeof model.label).toBe("string");
+                expect(typeof model.model).toBe("string");
+                expect(typeof model.provider).toBe("string");
+                expect(typeof model.providerKind).toBe("string");
+                expect(typeof model.local).toBe("boolean");
+                expect(typeof model.vision).toBe("boolean");
+                expect(typeof model.files).toBe("boolean");
+                expect(typeof model.tools).toBe("boolean");
+                expect(typeof model.reasoning).toBe("boolean");
+                expect(model).not.toHaveProperty("apiKey");
+                expect(model).not.toHaveProperty("baseUrl");
+            }
+            expect(typeof data.limits.enabled).toBe("boolean");
+            for (const value of [
+                data.limits.maxFiles,
+                data.limits.maxFileBytes,
+                data.limits.maxTotalBytes,
+                data.limits.maxTextChars,
+            ]) {
+                expect(typeof value).toBe("number");
+                expect(Number.isFinite(value)).toBe(true);
+            }
+
+            const serialized = JSON.stringify(data);
+            expect(serialized).not.toContain("apiKey");
+            expect(serialized).not.toContain("baseUrl");
+            expect(data).not.toHaveProperty("connections");
+            expect(data).not.toHaveProperty("providers");
         });
     });
 

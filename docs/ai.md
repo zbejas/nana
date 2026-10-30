@@ -6,7 +6,7 @@ Nana has two AI surfaces. **Chat** (`POST /api/chat/send`) reads and changes the
 
 Both surfaces use the caller's PocketBase token, enforce author scoping, and apply the same **private lock**: private notes, private boards, private folders, and every descendant of a private folder are invisible. The REST API at `/api/v1` is the owner surface and deliberately does not apply that lock. Chat writes only in Work mode, through `src/api/workspace/`, with note revision checks and a server-owned audit row. Delete tools never mutate directly: they create a pending `chat_edits` row that the user must confirm. MCP writes through the same services under its separate authorization design. MCP also accepts a long-lived API key, which can be read-only and limited to the workspace root or selected folder subtrees.
 
-There is no embeddings pipeline, no vector store, and no document attachment flow in either AI surface. Chat tool definitions use the AI SDK's `tool()` / `streamText()` API; MCP uses `@modelcontextprotocol/sdk`. PocketBase remains the authority for note, board, and task access.
+There is no embeddings pipeline and no vector store. Chat accepts per-message attachments (images, PDFs, and text/Markdown) when an admin enables them; MCP has no attachment surface. Chat tool definitions use the AI SDK's `tool()` / `streamText()` API; MCP uses `@modelcontextprotocol/sdk`. PocketBase remains the authority for note, board, task, and attachment access.
 
 ## Key files
 
@@ -26,27 +26,34 @@ There is no embeddings pipeline, no vector store, and no document attachment flo
 | `src/api/chat/tools/recorder.ts` | Per-request source collection and pending edit cards. |
 | `src/api/chat/tools/version.ts` | `noteVersionToken()` and `revisionMatches()` for optimistic concurrency. |
 | `src/api/chat/tools/errors.ts` | Converts workspace `ApiError` values into model-safe tool failures. |
-| `src/api/chat/pocketbase.ts` | `ai_config` read, conversation/message persistence, context/sources/tool sanitization, trimming. |
-| `src/api/chat/providers.ts` | `getAIModel()` maps the active provider to an AI SDK language model. |
+| `src/api/chat/pocketbase.ts` | `ai_config` read, conversation/message persistence, context/attachments/sources/tool sanitization, trimming, multipart PocketBase helper. |
+| `src/api/chat/attachments.ts` | Upload validation (magic bytes), MIME/kind classification, PDF text extraction, draft resolution/binding/deletion, protected-file download, model capability checks. |
+| `src/api/chat/providers.ts` | `getAIModel()` maps an enabled connection/model (or the legacy active provider) to an AI SDK language model; provider options seam. |
+| `src/lib/ai/config.ts` | Pure v1/v2 normalization, model resolution, enabled-model listing, attachment limits, and safe chat status. |
 | `src/api/chat/superuser.ts` | Cached PocketBase superuser token for admin-only settings reads and server-owned `chat_edits` writes. Never passed into `ToolContext`. |
-| `src/api/chat/types.ts` | `ChatSendRequest`, `ChatMode`, `ChatContext`, `ChatMessage`, `ChatEditDto`, `ChatStatusResponse`, empty-response copy. |
+| `src/api/chat/types.ts` | `ChatSendRequest`, `ChatMode`, `ChatContext`, `ChatAttachmentRef`, `ChatMessage`, `ChatEditDto`, `ChatStatusResponse`, empty-response copy. |
 | `src/api/workspace/notes.ts` | `createNote`, `editNoteRecord`, `restoreNoteSnapshot`, and revision-aware note updates. |
 | `src/api/workspace/shared.ts` | `Surface` selection, `assertWritable()`, `visibilityFor()`, relation checks, paging bounds. |
 | `src/api/pocketbase/client.ts` | Caller-token PocketBase client; adds `X-Nana-Actor: ai` when `ToolContext.actor` is `"ai"`. |
 | `src/lib/markdown/sections.ts` | `applySectionEdits()` and `MarkdownSectionError`; anchor validation and section-scoped replacement without re-sanitizing untouched sections. |
-| `src/lib/ai/types.ts` | `AIConfig`, provider defaults, and `DEFAULT_TITLE_PROMPT`. |
-| `src/components/settings/admin/AISettings.tsx` | Admin UI for providers, active model, generation parameters, and prompts. |
+| `src/lib/ai/types.ts` | `AIConfig`, v1/v2 provider and model shapes, provider defaults, attachment defaults, and `DEFAULT_TITLE_PROMPT`. |
+| `src/components/settings/admin/AISettings.tsx` | Admin UI for provider connections, the enabled model catalog, per-model capabilities, attachment limits, and prompts; models.dev search fills metadata. |
 | `src/pages/ChatPage.tsx` | Full-page chat surface; shares the chat store with the dock. |
 | `src/components/chat/ChatDock.tsx` | Persistent right-side chat dock outside the route tree. |
 | `pocketbase/pb_migrations/0000019_remove_embedding_settings.js` | Deletes the obsolete `embedding_config` setting. |
 | `pocketbase/pb_migrations/0000020_boards_in_folders.js` | Adds `boards.folder` and `boards.is_private`, used by the AI visibility lock. |
 | `pocketbase/pb_migrations/0000022_relational_remodel.js` | Adds the `messages` collection and removes the inline conversation JSON field. |
 | `pocketbase/pb_migrations/0000027_chat_edits.js` | Adds document revisions/actor metadata, message context/sources/stopped, version snapshots, and `chat_edits`. |
+| `pocketbase/pb_migrations/0000030_chat_attachments.js` | Adds the owner-scoped `chat_attachments` collection and `messages.attachments`. |
 | `tests/api/chat-tools.test.ts` | Integration coverage for the read tools, scoping, paging, truncation, error mapping, and private fixtures. |
+| `tests/api/chat-attachments.test.ts` | Integration coverage for upload auth, disabled/limit/type rejection, draft ownership/deletion, binding, and sanitized refs. |
 | `tests/api/chat-write-tools.test.ts` | Integration coverage for edit-mode gating, context resolution, writes, revisions, edit cards, and undo. |
-| `tests/api/chat.test.ts` | Integration coverage for chat auth, request validation, conversations, status, and edit routes. |
+| `tests/api/chat.test.ts` | Integration coverage for chat auth, request validation, conversations, status, model selection errors, and edit routes. |
 | `tests/api/mcp.test.ts` | Integration coverage for MCP auth, transport errors, tool results, writes, and the private lock. |
 | `tests/unit/chat-stream.test.ts` | Pure coverage for named SSE events, legacy chunks, and stream accumulation. |
+| `tests/unit/ai-config.test.ts` | Pure coverage for v1/v2 normalization, model resolution, defaults, status options, and attachment limits. |
+| `tests/unit/chat-attachments.test.ts` | Pure coverage for magic-byte detection, SVG/binary rejection, PDF text extraction, limits, capabilities, and sanitized refs. |
+| `tests/unit/ai-providers.test.ts` | Pure coverage for provider model construction, v2 selection, and disabled-model rejection. |
 | `tests/unit/chat-context.test.ts` | Pure coverage for route context derivation, private branches, and the context payload. |
 | `tests/unit/chat-version-token.test.ts` | Pure coverage for note version tokens and revision matching. |
 | `tests/unit/chat-activity.test.ts` | Pure coverage for tool-activity summarization and status precedence. |
@@ -59,38 +66,77 @@ There is no embeddings pipeline, no vector store, and no document attachment flo
 
 ### Configuration
 
-AI settings live in the admin-only `settings` record with key `ai_config`:
+AI settings live in the admin-only `settings` record with key `ai_config`. The stored shape may be the original v1 form, the v2 form, or v2 with the legacy fields retained for older screens:
 
 ```json
 {
+  "version": 2,
   "activeProvider": "openai",
   "systemPrompt": "",
   "titlePrompt": "Generate a short title…",
-  "providers": {
-    "openai": {
+  "connections": [
+    {
+      "id": "work",
+      "name": "Work gateway",
+      "kind": "openai",
+      "baseUrl": "https://gateway.example/v1",
       "apiKey": "…",
-      "baseUrl": "",
-      "activeModel": "gpt-4o-mini",
+      "enabled": true,
+      "catalogProviderId": "openai"
+    }
+  ],
+  "models": [
+    {
+      "id": "work:gpt-4o-mini",
+      "connectionId": "work",
+      "modelId": "gpt-4o-mini",
+      "label": "GPT-4o mini",
+      "enabled": true,
+      "capabilities": { "vision": true, "files": true, "tools": true, "reasoning": false },
+      "contextWindow": 128000,
+      "maxOutputTokens": null,
       "temperature": null,
-      "maxTokens": null,
       "topP": null,
-      "thinking": false
-    },
-    "google": { "…": "same shape" },
-    "ollama": { "…": "same shape, baseUrl defaults to http://localhost:11434" }
+      "thinking": false,
+      "metadataSource": "models.dev"
+    }
+  ],
+  "defaultModelId": "work:gpt-4o-mini",
+  "attachments": {
+    "enabled": false,
+    "maxFiles": 5,
+    "maxFileBytes": 10485760,
+    "maxTotalBytes": 26214400,
+    "maxTextChars": 100000
+  },
+  "providers": {
+    "openai": { "apiKey": "…", "baseUrl": "", "activeModel": "gpt-4o-mini", "temperature": null, "maxTokens": null, "topP": null, "thinking": false },
+    "google": { "…": "same legacy shape" },
+    "ollama": { "…": "same legacy shape, baseUrl defaults to http://localhost:11434" }
   }
 }
 ```
 
-`fetchAIConfig()` reads it with the cached superuser token. Chat workspace tools, REST, and MCP never use that token; server-owned `chat_edits` rows are the deliberate exception.
+`src/lib/ai/config.ts` normalizes both versions before use:
+
+- With v2 `connections` or `models`, those arrays are authoritative. Connections with duplicate ids or unknown kinds are dropped; models with a missing connection, duplicate `connectionId:modelId`, or no model id are dropped. Numeric limits are clamped.
+- Without v2 arrays, each legacy provider becomes a connection, and each non-empty `providers.*.activeModel` becomes a model. Only the previously active provider's model stays enabled and becomes the default.
+- Model ids are canonical `connectionId:modelId`. `defaultModelId` is remapped to the canonical id; a missing, orphaned, or disabled default falls through to the first enabled model.
+- An enabled model also requires its connection to be enabled. `configured` is true only when at least one such model exists.
+- `attachments` is normalized to conservative defaults and clamped. It gates `POST /api/chat/attachments` and `POST /api/chat/send`: `enabled`, `maxFiles` (1–20), `maxFileBytes` (1 KiB–50 MiB), `maxTotalBytes` (at least `maxFileBytes`, up to 100 MiB), and `maxTextChars` (1,000–1,000,000). Disabled means the upload route returns `403` and a send carrying ids is refused.
+
+`fetchAIConfig()` reads the record with the cached superuser token. Chat workspace tools, REST, and MCP never use that token; server-owned `chat_edits` rows are the deliberate exception.
 
 | Provider | Package | Notes |
 | --- | --- | --- |
-| OpenAI | `@ai-sdk/openai` | Optional custom base URL. Responses calls use `store: false`, so multi-step tool turns are self-contained and compatible gateways do not receive `item_reference` items. |
-| Google | `@ai-sdk/google` | Optional custom base URL. |
-| Ollama | `ai-sdk-ollama` | Optional API key for remote instances; `thinking` maps to the Ollama `think` option. |
+| OpenAI / compatible | `@ai-sdk/openai` | `createOpenAI({ apiKey, baseURL }).chat(modelId)` so custom gateways use Chat Completions. Optional base URL. No `store` option is sent; that workaround only applied to the old Responses path. |
+| Google | `@ai-sdk/google` | Optional custom base URL; `createGoogleGenerativeAI().chat(modelId)`. |
+| Anthropic | `@ai-sdk/anthropic` | Optional custom base URL; `createAnthropic().chat(modelId)`. |
+| Ollama | `ai-sdk-ollama` | Optional API key for remote instances; `thinking` maps to the Ollama `think` option on the selected model. |
 
-`getAIModel()` throws when `activeProvider` is null or the active provider has no model. `handleSend()` turns that into a `503` before streaming starts. `GET /api/chat/status` reports `{ configured, model, provider, local }` without exposing keys or base URLs.
+`getAIModel(config, modelId?)` resolves an enabled v2 model and its connection; without an id it uses the default, then the first enabled model. If no v2 model is usable it falls back to the legacy `activeProvider`/`activeModel`. An explicit unknown or disabled id throws instead of silently falling back. `handleSend()` turns an unknown/disabled requested id into a `400` with code `model_not_found` before creating a conversation or opening a stream, and a missing usable model into `503`.
+
+`GET /api/chat/status` returns `{ configured, model, provider, local, defaultModelId, models, limits }`. `models` contains only enabled models and carries `id`, `label`, `model`, `provider` (connection name), `providerKind`, `local`, `contextWindow`, `maxOutputTokens`, and the four capability flags. `limits` is the normalized attachment contract. Keys, base URLs, and connection internals are never returned.
 
 ### AI visibility lock
 
@@ -123,15 +169,63 @@ The lock is structural, not prompt-based. The system instruction for chat and th
 ### Chat request flow
 
 1. `POST /api/chat/send` calls `verifyAuth(req)` and keeps the raw `Authorization` header.
-2. Bun parses `{ conversationId?, message, mode, context?, regenerate? }`. `message` is required and trimmed. `mode` defaults to `"ask"`; anything other than `"ask"` or `"edit"` returns `400`.
+2. Bun parses `{ conversationId?, message, attachmentIds?, modelId?, mode, context?, regenerate? }`. `message` is trimmed and may be empty only when `attachmentIds` contains at least one id. Ids must be unique-safe `[A-Za-z0-9]{1,64}` values; the hard count ceiling is 20. `mode` defaults to `"ask"`; anything other than `"ask"` or `"edit"` returns `400`. `modelId` is optional and names an id from `GET /api/chat/status.models`.
 3. If `context` is present, it must be `{ type: "document" | "board" | "folder", id }`. `resolveChatContext()` loads the record with the caller's token, checks ownership, trash state, and the private lock, and resolves the display title from PocketBase. A missing or malformed context is `400`; a foreign, trashed, private, or hidden one is `404`; an unavailable visibility snapshot is `503`. The client cannot supply a title or body.
-4. `fetchAIConfig()` loads `ai_config`; `getAIModel()` builds the language model. Generation parameters from the active provider are passed to `streamText()`. OpenAI Responses calls include `providerOptions.openai.store = false`; stored reasoning and tool items never round-trip through the provider, and compatible gateways receive a self-contained follow-up request instead of `item_reference` items.
-5. Without a `conversationId`, Bun creates a conversation titled from the first message and writes the user message with its resolved `context`. With one, it appends the user message; `regenerate: true` first trims the previous user/assistant pair.
-6. History is loaded and reduced to `{ role, content }`. Stored reasoning, tool activity, sources, context metadata, and model metadata are never sent back to the model. The resolved page context contributes a short system note instead.
-7. `buildSystemPrompt()` appends the fixed read contract to the admin `systemPrompt`, adds the edit contract in edit mode, and adds the page-context note when a context was resolved.
-8. `createChatTools({ authHeader, userId }, { mode, recorder, conversationId })` builds the read-tool set, plus the write-tool set only in edit mode.
-9. `streamText()` runs with `stopWhen: stepCountIs(8)`, `maxRetries: 1`, and the request/abort signal. The stream pump emits named SSE events, records sources and applied edits, and persists the assistant message after the model stream ends.
-10. The stream pump persists the assistant row itself, links any edit cards to it, then emits `done`; it does not rely on an AI SDK `onFinish` callback. Title generation is fire-and-forget for a new, non-stopped conversation without a stream error.
+4. `fetchAIConfig()` loads `ai_config`, `normalizeAIConfig()` produces the v2 view, and `resolveChatModel()` picks the requested model, the default, or the first enabled model. An explicit unknown/disabled id is `400 model_not_found`; no usable model is `503`. Generation parameters (`temperature`, `maxOutputTokens`, `topP`) come from the selected model, and Ollama thinking is applied on its model instance. The old OpenAI Responses `store: false` workaround is not sent on the Chat Completions path.
+5. When `attachmentIds` are present, `resolveAttachments()` verifies the caller owns every draft row, none is already bound, the count and byte caps pass, and the selected model supports the kinds. Images require `capabilities.vision`; a PDF requires `capabilities.files` or non-empty server-extracted text. Failures return `400`, `403`, `404`, `413`, or `415` before any conversation or stream is created.
+6. Without a `conversationId`, Bun creates a conversation titled from the user text or the first attachment name and writes the user message with its resolved `context` and attachment refs. With one, it appends the user message; `regenerate: true` first trims the previous user/assistant pair. Draft rows are then bound to the new message with both `conversation` and `message`.
+7. History is loaded and reduced to `{ role, content }` plus attachment content for user messages only. Stored reasoning, tool activity, sources, context metadata, and model metadata are never sent back to the model. The resolved page context contributes a short system note instead.
+8. `buildSystemPrompt()` appends the fixed read contract to the admin `systemPrompt`, adds the attachment-untrusted instruction when any message carries attachments, adds the edit contract in edit mode, and adds the page-context note when a context was resolved.
+9. `createChatTools({ authHeader, userId }, { mode, recorder, conversationId })` builds the read-tool set, plus the write-tool set only in edit mode.
+10. `streamText()` runs with `stopWhen: stepCountIs(8)`, `maxRetries: 1`, and the request/abort signal. The selected model's upstream id is returned in `X-Model-Name`, its connection id in `X-Model-Source`, and the assistant row persists `model` as the upstream id. The stream pump emits named SSE events, records sources and applied edits, and persists the assistant message after the model stream ends.
+11. The stream pump persists the assistant row itself, links any edit cards to it, then emits `done`; it does not rely on an AI SDK `onFinish` callback. Title generation is fire-and-forget for a new, non-stopped conversation without a stream error, and uses the same selected model. It receives the user text or the first attachment name only; attachment bytes and extracted text are never passed to the title call.
+
+### Chat attachments
+
+Chat attachments are session-only. `POST /api/chat/attachments` accepts one multipart `file`; `DELETE /api/chat/attachments/:id` removes a draft. API keys and MCP never reach either route. The upload route uses `verifyAuth`, the `/api/chat/*` rate limiter, and a 60-second request timeout. PocketBase stores one owner-scoped `chat_attachments` row with a protected file.
+
+Allowed uploads:
+
+| Kind | Accepted | Model content |
+| --- | --- | --- |
+| `image` | PNG, JPEG, WebP, GIF. SVG is rejected. | AI SDK `ImagePart`; requires `capabilities.vision`. |
+| `pdf` | `%PDF-` magic bytes. | Native `FilePart` (`application/pdf`) when `capabilities.files`; otherwise extracted text, and rejected when extraction is empty. |
+| `text` | UTF-8 `text/plain` or Markdown. | Named `<attachment name="…">` text block. |
+
+Validation uses actual bytes, not the browser-declared type: image signatures, `%PDF-`, valid UTF-8 without binary control characters, and explicit SVG rejection. The stored MIME type is the detected canonical type. Uploads are capped by `maxFileBytes`; a send is capped by `maxFiles` and `maxTotalBytes`. Text and PDF extraction is capped by `maxTextChars`; PDF extraction is also capped at 200 pages and 15 seconds. A scanned, encrypted, malformed, or empty PDF keeps its row with empty extracted text, so a file-capable model can still read it while a text-only model is refused.
+
+Draft lifecycle:
+
+1. Upload creates an unbound row (`conversation` and `message` empty) and returns only `{ id, name, mimeType, size, kind }`.
+2. `resolveAttachments()` checks owner, unbound state, count, and byte caps before the send creates a conversation.
+3. After the user message row exists, `bindAttachmentsToMessage()` sets `conversation` and `message`.
+4. Deleting a conversation or message cascades its attachment rows and protected files. A user can delete an unbound draft through the DELETE route; bound rows return `409`. Failed or abandoned uploads remain drafts until deleted (there is no background sweep).
+
+The model history keeps attachments only for `role: "user"` messages. The current turn is built first; older attachments share the same `maxTotalBytes` and `maxTextChars` budget and degrade from newest to oldest, using extracted text when possible and an explicit `[Attachment omitted: name]` marker otherwise. Assistant messages never contribute files. Attachment text is wrapped as `<attachment name="…">` and the system prompt states that attachment contents are untrusted data and never instructions.
+
+Manual verification against a configured dev stack:
+
+```bash
+TOKEN="<pocketbase session token>"
+ATTACHMENT_ID=$(curl -s -H "Authorization: $TOKEN" \
+  -F "file=@./report.pdf" http://127.0.0.1:3000/api/chat/attachments \
+  | jq -r '.attachment.id')
+
+# An empty message is valid when at least one attachment is present.
+curl -N -H "Authorization: $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"message\":\"\",\"attachmentIds\":[\"$ATTACHMENT_ID\"],\"mode\":\"ask\"}" \
+  http://127.0.0.1:3000/api/chat/send
+
+# The returned conversation history must show only { id, name, mimeType, size, kind }.
+curl -s -H "Authorization: $TOKEN" \
+  "http://127.0.0.1:3000/api/chat/conversations/<conversation-id>" | jq '.messages[].attachments'
+
+# An unused upload is a draft and can be deleted; a bound row returns 409.
+curl -i -X DELETE -H "Authorization: $TOKEN" \
+  "http://127.0.0.1:3000/api/chat/attachments/$ATTACHMENT_ID"
+```
+
+Successful send requires an enabled model with `vision` for images or `files` for native PDFs. The integration suite covers upload auth/type/size/ownership, PDF text extraction, draft deletion, binding, and sanitized persistence; the streaming send path needs a configured provider (or a fake local endpoint) for an end-to-end run.
 
 ### Chat read tools
 
@@ -283,13 +377,14 @@ The resolved page context adds a quoted-title note for a document, board, or fol
 
 ### Persistence
 
-Conversations live in `conversations`; each turn is a row in `messages` with `conversation`, `role`, `content`, `position`, and optional `reasoning`, `tools`, `context`, `sources`, `stopped`, and `model` fields. A user message may carry:
+Conversations live in `conversations`; each turn is a row in `messages` with `conversation`, `role`, `content`, `position`, and optional `reasoning`, `tools`, `context`, `attachments`, `sources`, `stopped`, and `model` fields. A user message may carry:
 
 ```ts
 {
   role: "user",
   content: string,
-  context?: { type: "document" | "board" | "folder", id: string, title: string }
+  context?: { type: "document" | "board" | "folder", id: string, title: string },
+  attachments?: Array<{ id: string, name: string, mimeType: string, size: number, kind: "image" | "pdf" | "text" }>
 }
 ```
 
@@ -307,7 +402,7 @@ An assistant message may contain:
 }
 ```
 
-- `sanitizeMessage()` runs `sanitizeHtml()` on content and allowlists context, sources, tools, and the stopped flag before persistence.
+- `sanitizeMessage()` runs `sanitizeHtml()` on content and allowlists context, attachment refs, sources, tools, and the stopped flag before persistence. Attachment refs never carry extracted text, the stored file name, or raw bytes.
 - The assistant `sources` array is built from records read tools actually returned; successful `create_note`, `create_board`, and `create_task` also add the new note or board. It is not model output.
 - Appending writes a `messages` row with the next `position` and touches the conversation's `updated` timestamp so the sidebar order stays current.
 - `getConversationMessages()` paginates and returns rows ordered by `position,created`.
@@ -316,7 +411,7 @@ An assistant message may contain:
 - Older stored messages may still contain extra fields; they are tolerated on read, but only the allowlisted fields are written back.
 - Applied writes are persisted as `chat_edits` rows. The row is server-owned, linked to the conversation and later to the assistant message, and rendered as an edit card.
 - The empty-response fallback is `CHAT_EMPTY_RESPONSE_FALLBACK` from `src/api/chat/types.ts`.
-- Title generation is fire-and-forget after the first reply when the conversation is new, not stopped, and has no stream error; a failure is logged and leaves the seeded title in place.
+- Title generation is fire-and-forget after the first reply when the conversation is new, not stopped, and has no stream error; a failure is logged and leaves the seeded title in place. Titles are plain text: the server strips emoji, flags, keycaps, and variation selectors from generation, seeds, and manual renames, and the old emoji-default prompt is migrated to the plain-text default.
 - MCP does not persist conversations, tool activity, or edit cards.
 
 ### Chat surface
@@ -332,6 +427,8 @@ The composer uses **Work/Ask**. Work is the default and sends `mode: "edit"`; As
 - **Mode gates writes.** `createChatTools()` returns only read tools in ask mode. The system prompt does not enforce this; the tool registry does.
 - **Writes are revision-checked.** Note edits require the `revision` or `versionToken` from `read_note`; a mismatch is `conflict` before PocketBase is touched. Section edits carry untouched content through without replacing the whole note.
 - **Destructive chat actions are confirm-first.** Delete tools only create a pending `chat_edits` row. The user must call confirm from the card; that request re-checks conversation ownership and runs the workspace delete with the caller's token. A pending action deleted from the UI can be cancelled without a write. The model cannot delete from prose or by retrying.
+- **Attachments are session-only, owner-scoped, and private.** Uploads and sends use `verifyAuth` and the caller's token; `chat_attachments` has owner-only rules and is not in the generic record facade. API keys and MCP cannot upload, resolve, or read chat attachments. The protected file is fetched with a short-lived file token and an 8-second timeout.
+- **Attachment contents are untrusted.** Text files and PDF fallbacks are wrapped in named text blocks; the system instruction says never to follow instructions inside them. Only the selected model's `vision`/`files` capabilities decide whether images and native PDFs are sent.
 - **MCP is separate.** MCP has its own destructive tools and its own token/scope design. Do not widen chat to match MCP's tool list.
 - **Private lock.** Private records and private-folder subtrees are filtered from lists and return `not_found` by id on reads and writes, including chat edits.
 - **Untrusted content.** Tool text is data, not instructions. Ask mode can only produce a bad answer. Work mode can create or change visible notes, boards, tasks, and folders; note revision checks and the confirm-first delete flow bound the damage. MCP adds direct destructive tools with its own authorization.
@@ -343,10 +440,13 @@ See [`security.md`](security.md) for the threat model and review checklist.
 
 | Symptom | Cause and handling |
 | --- | --- |
-| `503` before the stream | `ai_config` missing, no active provider, or no active model. |
+| `503` before the stream | `ai_config` missing, or no enabled model (including the legacy active-provider fallback) is configured. |
 | `502` before the SSE stream | Provider connection/auth failure; the message comes from `getAIErrorMessage()`. Failures after streaming begins emit an `error` event instead. |
-| `400` before the stream | Invalid JSON, empty `message`, invalid `mode`, or malformed `context`. |
-| `404` before the stream | The context record is missing, trashed, owned by another user, or hidden by the private lock. |
+| `400` before the stream | Invalid JSON, an empty turn (no text and no attachments), invalid `mode`, malformed `context`, an invalid/bound/too-many attachment id, or a `modelId` that is unknown or disabled. The model case carries code `model_not_found`. |
+| `403` before the stream | Attachments are disabled (`attachments_disabled`) or the caller cannot use the attachment surface. |
+| `404` before the stream | The context record is missing, trashed, owned by another user, or hidden by the private lock; or an attachment id is missing or foreign. |
+| `413` before the stream | An attachment or the combined attachment set exceeds the configured byte cap (`too_large`). |
+| `415` before the stream | The file type is unsupported, SVG, mismatched with its bytes, or the selected model lacks the vision/files capability required by an attachment (`unsupported_model`). |
 | `503` before the stream for context | The visibility snapshot could not be loaded; the workspace is unavailable. |
 | Empty assistant text | Replaced with the fixed fallback; a new conversation still gets a title attempt. |
 | `unauthorized` tool result | The tool received no token. Chat itself rejects invalid tokens with `401` before tools run, but a token that expires mid-turn can make PocketBase answer as a guest; list results may be empty rather than an error. Re-check the session if a request unexpectedly returns nothing. |
@@ -367,6 +467,9 @@ Tool logs contain the tool name, duration, and result count only. Inputs, output
 ## Gotchas & invariants
 
 - **The superuser token is for configuration, credential exchange, and server-owned audit rows.** Chat tools, REST, and MCP must use `context.authHeader`; API key lookup and `chat_edits` persistence are the server-side exceptions. Swapping `getSuperuserToken()` into `ToolContext` would expose every user's notes and boards.
+- **`src/lib/ai/config.ts` owns config compatibility.** Do not read `connections`/`models` directly from `ai_config`, and do not add a second v1 fallback in a route. Normalization clamps values, drops orphaned/duplicate models, and maps `defaultModelId` to the canonical `connectionId:modelId`.
+- **Model pickers and send use the same resolution.** `GET /api/chat/status.models` lists enabled models only (connection must also be enabled); `POST /api/chat/send` rejects an explicit unknown/disabled `modelId` with `400 model_not_found` instead of silently using another model.
+- **Status and error payloads never carry credentials.** `/api/chat/status` exposes connection names and model ids but not API keys or base URLs; `X-Model-Source` carries a connection id, never a secret.
 - **Chat writes are mode-gated, not prompt-gated.** Ask mode must return exactly the read tool set. Adding a write tool to `readTools` bypasses the mode gate even if the prompt says not to write.
 - **Write tools belong in `src/api/chat/tools/writes.ts` and go through `src/api/workspace/`.** Do not add direct PocketBase writes to a chat executor; revision checks, private lock, sanitization, and actor stamping live in the services.
 - **Note edits are revision-checked twice.** The tool checks `expectedRevision` against the read note, then `editNoteRecord()` re-checks `revision` and `versionToken`. A stale write returns `conflict`; it never overwrites newer work.
@@ -396,6 +499,11 @@ Tool logs contain the tool name, duration, and result count only. Inputs, output
 - **Streaming statuses are not persisted.** The client may show `running`; only terminal `success`/`error` reaches the conversation record.
 - **`stepCountIs(8)` is deliberate.** Reducing it to the SDK default breaks list → read and multi-step edit sequences. Raising it multiplies PocketBase reads.
 - **Tool text is untrusted input.** Ask mode's read-only scope makes the worst case a bad answer. Work mode and MCP are real mutation surfaces, so the private lock, revision checks, and the pending-delete confirmation are part of the security boundary.
+- **Attachment validation is byte-first.** Do not trust `File.type` or the file name; `detectAttachment()` checks image/PDF magic, UTF-8 text validity, and rejects SVG. The stored MIME type is canonical.
+- **Attachment text never leaves the server.** `chat_attachments.text` and the protected file name are internal. API DTOs carry only `{ id, name, mimeType, size, kind }`; `messages.attachments` is sanitized on read and write.
+- **Attachment drafts are not messages.** An unbound row can be deleted; a bound row follows its message and conversation through cascades. There is no background draft sweep, so a failed upload may leave a draft until the user deletes it.
+- **History attachments share one budget.** The current turn wins; older user turns degrade newest-to-oldest to extracted text or an omission marker. Assistant messages never contribute attachments.
+- **Title generation is text-only.** It receives the user text or the first attachment name, never bytes or extracted text.
 
 ## Related docs
 

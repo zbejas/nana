@@ -16,7 +16,7 @@ export function ChatHeaderButton({ className = '' }: ChatHeaderButtonProps) {
 
   return (
     <IconButton
-      label={open ? 'Close chat' : 'Open chat'}
+      label={open ? 'Hide chat' : 'Open chat'}
       size="md"
       aria-pressed={open}
       onClick={() => setOpen((value) => !value)}

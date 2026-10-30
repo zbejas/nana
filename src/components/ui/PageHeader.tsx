@@ -51,12 +51,18 @@ export function PageHeader({
             {title}
           </h1>
           {description && (
-            <p className="mt-2 max-w-[62ch] text-[14px] leading-relaxed text-ink-secondary">
+            <p
+              data-page-description=""
+              className="mt-2 max-w-[62ch] text-[14px] leading-relaxed text-ink-secondary"
+            >
               {description}
             </p>
           )}
           {meta && (
-            <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-ink-muted">
+            <div
+              data-page-meta=""
+              className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-ink-muted"
+            >
               {meta}
             </div>
           )}

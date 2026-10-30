@@ -334,6 +334,7 @@ export function TimelinePage() {
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <SegmentedControl
                 size="sm"
+                className="timeline-filter-segments"
                 label="Show in timeline"
                 value={feedFilter}
                 onChange={setFeedFilter}

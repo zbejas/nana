@@ -1,8 +1,10 @@
-import { useEffect, useId, useRef, type RefObject } from 'react';
-import { PaperAirplaneIcon, StopIcon } from '@heroicons/react/24/outline';
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
+import { PaperClipIcon, PaperAirplaneIcon, StopIcon } from '@heroicons/react/24/outline';
 import { ChatContextChip } from './ChatContextChip';
+import { ChatAttachmentTray } from './ChatAttachmentTray';
+import { CHAT_ATTACHMENT_ACCEPT } from '../../lib/chat/attachments';
 import type { ChatContextTarget } from '../../lib/chat/context';
-import type { ChatMode } from '../../lib/chat/types';
+import type { ChatMode, PendingChatAttachment } from '../../lib/chat/types';
 
 export const CHAT_MESSAGE_LIMIT = 12_000;
 const WARN_AT = CHAT_MESSAGE_LIMIT - 1_500;
@@ -20,6 +22,15 @@ interface ChatComposerProps {
   onRemoveContext: () => void;
   onRestoreContext: () => void;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
+  /** Model selector or other compact control in the composer toolbar. */
+  modelControl?: ReactNode;
+  attachments?: PendingChatAttachment[];
+  attachmentsEnabled?: boolean;
+  uploadingAttachments?: boolean;
+  attachmentError?: string | null;
+  attachmentWarning?: string | null;
+  onAddFiles?: (files: FileList | null) => void;
+  onRemoveAttachment?: (localId: string) => void;
 }
 
 export function ChatComposer({
@@ -35,13 +46,29 @@ export function ChatComposer({
   onRemoveContext,
   onRestoreContext,
   textareaRef,
+  modelControl,
+  attachments = [],
+  attachmentsEnabled = false,
+  uploadingAttachments = false,
+  attachmentError = null,
+  attachmentWarning = null,
+  onAddFiles,
+  onRemoveAttachment,
 }: ChatComposerProps) {
   const localRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const ref = textareaRef ?? localRef;
   const id = useId();
   const tooLong = value.length > CHAT_MESSAGE_LIMIT;
   const nearLimit = value.length >= WARN_AT;
-  const canSend = value.trim().length > 0 && !tooLong && !streaming;
+  const hasReadyAttachments = attachments.some(
+    (attachment) => attachment.status === 'ready' && attachment.ref,
+  );
+  const canSend = (value.trim().length > 0 || hasReadyAttachments)
+    && !tooLong
+    && !streaming
+    && !uploadingAttachments
+    && !attachmentWarning;
 
   useEffect(() => {
     const el = ref.current;
@@ -64,6 +91,15 @@ export function ChatComposer({
           <div className="px-2 pb-1 pt-1.5">
             <ChatContextChip target={target} onRemove={onRemoveContext} />
           </div>
+        )}
+
+        {attachmentsEnabled && (
+          <ChatAttachmentTray
+            attachments={attachments}
+            error={attachmentError}
+            warning={attachmentWarning}
+            onRemove={(localId) => onRemoveAttachment?.(localId)}
+          />
         )}
 
         <label htmlFor={id} className="sr-only">
@@ -92,6 +128,32 @@ export function ChatComposer({
                 Attach page
               </button>
             )}
+            {attachmentsEnabled && (
+              <>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  multiple
+                  accept={CHAT_ATTACHMENT_ACCEPT}
+                  className="sr-only"
+                  onChange={(event) => {
+                    onAddFiles?.(event.target.files);
+                    event.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={streaming || uploadingAttachments}
+                  aria-label="Attach files"
+                  title="Attach files"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-line bg-surface text-ink-muted transition-colors hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 sm:h-8 sm:w-8"
+                >
+                  <PaperClipIcon className="h-[1.05rem] w-[1.05rem]" aria-hidden="true" />
+                </button>
+              </>
+            )}
+            {modelControl}
             {nearLimit ? (
               <span
                 className={`select-none text-[11px] tabular-nums ${tooLong ? 'text-danger' : 'text-warning'}`}

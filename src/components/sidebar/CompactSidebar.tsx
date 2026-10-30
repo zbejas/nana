@@ -55,6 +55,9 @@ export function CompactSidebar({
 
   const viewIsActive = (item: (typeof viewItems)[number]) =>
     isPathActive(location.pathname, item.path);
+  // Shared, Chat, Settings, and the document reader live behind the drawer.
+  // Mark Menu active there instead of leaving the bottom bar with no selection.
+  const menuActive = !viewItems.some((item) => viewIsActive(item));
 
   useEffect(() => {
     const updateMobileNavHeight = () => {
@@ -164,8 +167,9 @@ export function CompactSidebar({
         <div className="grid grid-cols-3 gap-1">
           <button
             onClick={onToggleExpanded}
-            className={`${itemClass(false)} h-14`}
+            className={`${itemClass(menuActive)} h-14`}
             aria-label={isExpanded ? "Close menu" : "Open menu"}
+            aria-current={menuActive && !isExpanded ? 'page' : undefined}
           >
             {isExpanded ? <XMarkIcon className="h-5 w-5" /> : <Bars3Icon className="h-5 w-5" />}
             <span className="leading-none">Menu</span>

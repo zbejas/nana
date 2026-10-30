@@ -59,6 +59,7 @@ import { TaskRelations } from './TaskRelations';
 import { TaskActivity } from './TaskActivity';
 import { TaskComments } from './TaskComments';
 import { formatRelativeDate } from './dates';
+import { useIsMobile } from './TaskQuickPickers';
 import {
   formatTaskNumber,
   isSubtaskTask,
@@ -89,6 +90,9 @@ export interface TaskPanelProps {
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'missing' | 'error';
 type HeaderPicker = 'status' | 'more' | null;
+
+const FOCUSABLE =
+  'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -130,6 +134,7 @@ export function TaskPanel({
   const { showToast } = useToasts();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const isMobile = useIsMobile();
 
   const [task, setTask] = useState<Task | null>(null);
   const [board, setBoard] = useState<Board | null>(null);
@@ -640,17 +645,44 @@ export function TaskPanel({
     if (!open) return;
 
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      if (document.querySelector('[data-dialog-layer]')) return;
-      const target = event.target;
-      if (target instanceof Element && target.closest('[data-panel-popover]')) return;
-      event.preventDefault();
-      void closeRef.current();
+      if (event.key === 'Escape') {
+        if (document.querySelector('[data-dialog-layer],[role="menu"]')) return;
+        const target = event.target;
+        if (target instanceof Element && target.closest('[data-panel-popover]')) return;
+        event.preventDefault();
+        void closeRef.current();
+        return;
+      }
+
+      // At phone widths the panel is full-screen; keep Tab inside it. On
+      // desktop it stays a non-modal inspector beside the board.
+      if (!isMobile || event.key !== 'Tab') return;
+      if (document.querySelector('[data-dialog-layer],[data-panel-popover],[role="menu"]')) return;
+
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (element) => element.offsetParent !== null || element === document.activeElement,
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open]);
+  }, [open, isMobile]);
 
   // ── Optimistic property updates ─────────────────────────────────
   const patchTask = async (
@@ -836,7 +868,7 @@ export function TaskPanel({
       <aside
         ref={panelRef}
         role="dialog"
-        aria-modal="false"
+        aria-modal={isMobile ? 'true' : 'false'}
         aria-label={panelLabel}
         aria-busy={loadState === 'loading' || undefined}
         tabIndex={-1}

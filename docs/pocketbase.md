@@ -69,7 +69,7 @@ Groups:
 
 ### Migrations
 
-Files are sequential and zero-padded. **The next migration is `0000030_<description>.js`.**
+Files are sequential and zero-padded. **The next migration is `0000031_<description>.js`.**
 
 | Migration | Purpose |
 | --- | --- |
@@ -102,6 +102,7 @@ Files are sequential and zero-padded. **The next migration is `0000030_<descript
 | `0000027_chat_edits.js` | Document revisions/actor metadata, message context/sources/stopped, version snapshots, and `chat_edits`. |
 | `0000028_kanban_hardening.js` | Repairs missing columns, counters, completion, comments index, and hardened collection rules for existing databases. |
 | `0000029_chat_actions.js` | Adds `pending`/`cancelled` chat action statuses and the `folder` edit target. |
+| `0000030_chat_attachments.js` | Adds owner-scoped `chat_attachments` with a protected file and `messages.attachments`. |
 
 Use the migration API, not `module.exports`:
 
@@ -129,7 +130,7 @@ Rules:
 - Guard additions/removals so retries are idempotent.
 - Never rename an existing migration. `bootstrap.js` contains a temporary compatibility hook that rewrites old filenames in the `_migrations` table.
 - For data migrations, use `findRecordsByFilter` and tolerate missing records when the schema may not be seeded yet.
-- Migrations are append-only; start the next one at `0000030`.
+- Migrations are append-only; start the next one at `0000031`.
 - View collections reject `SELECT *`; list explicit columns. When a source field is added, update the view query in the same migration.
 
 ### Collections
@@ -147,7 +148,8 @@ Rules:
 | `task_relations` | Task graph | `source`, `target`, `type` (`subtask|blocks|related`). |
 | `task_activity` | Task audit | Task, board, actor, actor type/label, type, JSON data. Server writes only. |
 | `conversations` | Chat threads | Author-scoped title, timestamps, rolling summary. |
-| `messages` | Chat messages | Role, content, reasoning/model metadata, tool activity, context, sources, stopped, position. |
+| `messages` | Chat messages | Role, content, reasoning/model metadata, tool activity, context, attachment refs, sources, stopped, position. |
+| `chat_attachments` | Chat attachment drafts and bound files | Owner-scoped protected file, name/MIME/size/kind, optional conversation/message, server-extracted text. |
 | `shares` | Owner-managed direct grants | One row per resource/user; created and updated by the sharing route layer. |
 | `access_grants` | Materialized direct + inherited grants | Read-only to the grantee; lets collection rules resolve folder inheritance without recursion. |
 | `comments` | Internal comment storage | Targets `document`, `board`, or `task`; custom routes enforce target access and moderation; no public collection rules. |
@@ -180,6 +182,9 @@ Rules:
 | `task_activity` | `task` / `board` | `tasks` / `boards` | yes | yes | Audit rows die with the task/board. |
 | `comments` | `document` / `board` / `task` | matching record | no | yes | Exactly one target is expected; custom routes enforce it. |
 | `chat_edits` | `conversation` / `message` | conversations / messages | yes / no | yes / yes | AI edit cards and undo; messages die with the conversation. |
+| `chat_attachments` | `author` | `users` | yes | yes | Owner; deleting the user removes their attachment rows and files. |
+| `chat_attachments` | `conversation` | `conversations` | no | yes | Bound rows die with the conversation. |
+| `chat_attachments` | `message` | `messages` | no | yes | Bound rows die with the message. |
 | `conversations` | `author` | `users` | yes | yes | Conversations and messages follow the user. |
 | `messages` | `conversation` | `conversations` | yes | yes | Messages die with the conversation. |
 
@@ -390,12 +395,34 @@ Version history is surfaced in the editor's version preview and restore UI. Vers
 | `model` | Text | Optional model identifier, max 120. |
 | `tools` | JSON | Sanitized tool names and terminal statuses. |
 | `context` | JSON | Optional page metadata `{ type, id, title }` on a user message. |
+| `attachments` | JSON | Optional safe attachment refs `{ id, name, mimeType, size, kind }` on a user message. |
 | `sources` | JSON | Optional server-collected note/board links on an assistant message. |
 | `stopped` | Bool | True when the user stopped the stream before it finished. |
 | `position` | Number | Display order, minimum 0. Zero is valid, so the field is not `required`. |
 | `created` | Autodate | Managed by PocketBase. |
 
 Rules are `@request.auth.id != '' && conversation.author = @request.auth.id` for all operations. Appending a message also touches the conversation so `updated` drives the sidebar order. `trimLastExchange` deletes the newest assistant run and the preceding user turn.
+
+#### Chat attachments
+
+`chat_attachments` stores one protected file per row. It starts unbound (`conversation` and `message` empty) and is bound to the user message after `POST /api/chat/send` persists it.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `author` | Relation → `users` | Required, `cascadeDelete: true`, max 1. |
+| `conversation` | Relation → `conversations` | Optional, `cascadeDelete: true`, max 1. |
+| `message` | Relation → `messages` | Optional, `cascadeDelete: true`, max 1. |
+| `file` | File | Required, protected, max 1, max 50 MB. |
+| `name` | Text | Required, max 255; display name only. |
+| `mime_type` | Text | Required, max 120; canonical detected type. |
+| `size` | Number | Required, minimum 0. |
+| `kind` | Select | Required: `image`, `pdf`, or `text`. |
+| `text` | Text | Server-extracted text, max 1,000,000 chars; never returned to clients. |
+| `created` | Autodate | Managed by PocketBase. |
+
+Indexes: `idx_chat_attachments_author_message` on `(author, message)` and `idx_chat_attachments_conversation` on `(conversation)`.
+
+Rules are `@request.auth.id != '' && author = @request.auth.id` for list, view, create, update, and delete. Only the chat upload route creates rows; the DELETE route removes unbound drafts. Files are protected and fetched with a short-lived PocketBase file token. Deleting a message or conversation cascades its rows and files through the optional relations; there is no background draft sweep, so an abandoned upload stays as an unbound row until the owner deletes it.
 
 ### User-to-user sharing
 
@@ -474,7 +501,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 
 ### Adding backend behavior
 
-1. Add or update the schema in a new migration (`0000030+`).
+1. Add or update the schema in a new migration (`0000031+`).
 2. Add hooks/routes under the relevant `pb_hooks/` directory.
 3. Require the new module from `index.pb.js` (or from a parent module that is already required).
 4. Use `requireAdmin(c)`, `parseRequestBody(c)`, `escapeHtml()`, and `sanitizeUrl()` from `utils.js`; admin route catch blocks should return `sendError(c, err, fallbackMessage)` so known failures keep 400/401/403/404.
@@ -504,7 +531,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 - **API keys are hashed, not encrypted.** `key_hash` is SHA-256 of the full `nana_…` secret. Never add the plaintext, a reversible encoding, or the hash to an API response. The hash lookup uses the superuser only after the key itself is presented.
 - **`api_keys` has no public rules.** It is server-managed on purpose. Do not add it to the browser facade allowlist or expose it through a collection route.
 - **API keys cascade with the user.** `api_keys.author` uses `cascadeDelete: true`; `api_keys.folders` does not cascade from folders, so a deleted scope root grants nothing.
-- **The next migration is `0000030`.** `0000029_chat_actions` is the current head; never edit an applied migration in place.
+- **The next migration is `0000031`.** `0000030_chat_attachments` is the current head; never edit an applied migration in place.
 
 ## Related docs
 

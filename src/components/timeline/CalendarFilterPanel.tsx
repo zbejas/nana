@@ -58,7 +58,7 @@ export function CalendarFilterPanel({
     : 'All time';
 
   return (
-    <div>
+    <div className="calendar-filter-panel">
       <div className="mb-4 flex items-center justify-between gap-2">
         <p className="text-[13px] font-semibold text-ink">
           {visibleMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
@@ -104,7 +104,7 @@ export function CalendarFilterPanel({
             <button
               key={toDateString(day)}
               onClick={() => onDayClick(day)}
-              className={`relative h-9 rounded-[8px] text-[12px] tabular-nums transition-colors ${
+              className={`calendar-day relative h-9 rounded-[8px] text-[12px] tabular-nums transition-colors ${
                 isSelected
                   ? 'bg-signal-bright font-semibold text-on-signal'
                   : inRange

@@ -2,6 +2,8 @@
  * Types for the chat API — request/response shapes and PocketBase record interfaces.
  */
 
+import type { AIChatAttachmentSettings, AIChatModelOption } from "../../lib/ai/types";
+
 /** Status shown for one tool invocation. */
 export type ChatToolStatus = "running" | "success" | "error";
 
@@ -29,6 +31,59 @@ export interface ChatSource {
     title: string;
 }
 
+/** The server-classified attachment kind. SVG and other formats are rejected. */
+export type ChatAttachmentKind = "image" | "pdf" | "text";
+
+/**
+ * Safe attachment metadata returned by the chat API. Extracted text and the
+ * stored file name are deliberately absent; both stay server-side.
+ */
+export interface ChatAttachmentRef {
+    id: string;
+    name: string;
+    mimeType: string;
+    size: number;
+    kind: ChatAttachmentKind;
+}
+
+const ATTACHMENT_KINDS = new Set<ChatAttachmentKind>(["image", "pdf", "text"]);
+
+/**
+ * Reduce a stored/PocketBase attachment shape to the safe client DTO. Unknown
+ * fields, the protected file name, and extracted text are always dropped.
+ */
+export function sanitizeAttachmentRef(value: unknown): ChatAttachmentRef | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const source = value as Record<string, unknown>;
+
+    const id = typeof source.id === "string" ? source.id.trim() : "";
+    if (!/^[A-Za-z0-9]{1,64}$/.test(id)) return null;
+
+    const kind = source.kind;
+    if (typeof kind !== "string" || !ATTACHMENT_KINDS.has(kind as ChatAttachmentKind)) return null;
+
+    const rawName = typeof source.name === "string" ? source.name : "";
+    const name = rawName
+        .replace(/[\\/\u0000-\u001f\u007f]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 255) || "Attachment";
+
+    const rawMime = typeof source.mimeType === "string"
+        ? source.mimeType
+        : typeof source.mime_type === "string"
+            ? source.mime_type
+            : "";
+    const mimeType = rawMime.trim().toLowerCase().slice(0, 120);
+    if (!mimeType) return null;
+
+    const rawSize = source.size;
+    const size = typeof rawSize === "number" ? rawSize : Number(rawSize);
+    if (!Number.isFinite(size) || size < 0) return null;
+
+    return { id, name, mimeType, size, kind: kind as ChatAttachmentKind };
+}
+
 /** Fixed copy persisted when the model produces no final text. */
 export const CHAT_EMPTY_RESPONSE_FALLBACK =
     "I couldn't finish that answer. Try asking again, or narrow it to a specific note or board.";
@@ -45,8 +100,12 @@ export interface ChatToolActivity {
 export interface ChatSendRequest {
     /** Existing conversation ID, or omit to create a new one */
     conversationId?: string;
-    /** The user's message text */
+    /** The user's message text. May be empty when attachments are present. */
     message: string;
+    /** Uploaded draft attachment ids, in display order. */
+    attachmentIds?: string[];
+    /** Enabled model id from `GET /api/chat/status`; omitted uses the default. */
+    modelId?: string;
     /** `ask` (read-only, default) or `edit` (note/board write tools) */
     mode?: ChatMode;
     /** The page the user is viewing. Title and content are resolved server-side. */
@@ -67,6 +126,8 @@ export interface ChatMessage {
     model?: string;
     /** Page context attached to a user message. */
     context?: ChatContext;
+    /** Server-validated file metadata attached to a user message. */
+    attachments?: ChatAttachmentRef[];
     /** Server-collected note/board links attached to an assistant message. */
     sources?: ChatSource[];
     /** True when the user stopped the stream before it finished. */
@@ -92,9 +153,27 @@ export interface PBMessage {
     model?: string;
     tools?: ChatToolActivity[];
     context?: ChatContext | null;
+    attachments?: ChatAttachmentRef[] | null;
     sources?: ChatSource[] | null;
     stopped?: boolean;
     position: number;
+    created: string;
+}
+
+/** PocketBase chat_attachments record. `text` and `file` never leave the server. */
+export interface PBChatAttachment {
+    id: string;
+    collectionId?: string;
+    collectionName?: string;
+    author: string;
+    conversation?: string;
+    message?: string;
+    file?: string | string[];
+    name: string;
+    mime_type: string;
+    size: number;
+    kind: ChatAttachmentKind;
+    text?: string;
     created: string;
 }
 
@@ -175,10 +254,14 @@ export interface PBChatEdit {
     updated: string;
 }
 
-/** GET /api/chat/status response. Never contains credentials or base URLs. */
+/** GET /api/chat/status response. Never contains credentials, base URLs, or model connection internals. */
 export interface ChatStatusResponse {
     configured: boolean;
     model: string | null;
     provider: string | null;
     local: boolean;
+    /** New multi-model fields stay optional so older clients keep compiling. */
+    defaultModelId?: string | null;
+    models?: AIChatModelOption[];
+    limits?: AIChatAttachmentSettings;
 }

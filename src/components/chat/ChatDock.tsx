@@ -27,6 +27,8 @@ import {
   useChatStore,
 } from '../../lib/chat/store';
 import { useChatViewportHeight, useIsMobileChat } from '../../lib/chat/viewport';
+import { findChatModel } from '../../lib/chat/models';
+import { useBackToClose } from '../../lib/useBackToClose';
 
 interface ChatDockProps {
   /** Total dock width. Includes the history column when it is open. */
@@ -34,6 +36,9 @@ interface ChatDockProps {
   /** Maximum dock width at the current viewport size. */
   maxWidth: number;
 }
+
+const FOCUSABLE =
+  'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 /**
  * The one persistent chat surface. Mounted in AppContent outside the keyed
@@ -51,6 +56,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const conversation = useChatStore((snapshot) => snapshot.conversation);
   const mode = useChatStore((snapshot) => snapshot.mode);
   const status = useChatStore((snapshot) => snapshot.status);
+  const selectedModelId = useChatStore((snapshot) => snapshot.selectedModelId);
   const statusLoading = useChatStore((snapshot) => snapshot.statusLoading);
   const statusError = useChatStore((snapshot) => snapshot.statusError);
   const editing = useChatStore((snapshot) => snapshot.editing);
@@ -61,6 +67,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const previousFocus = useRef<HTMLElement | null>(null);
   const mounted = useRef(false);
   const lastConversationAtom = useRef<string | null>(null);
+  const previousPathRef = useRef(location.pathname);
 
   const isChatRoute = location.pathname.startsWith('/chat');
   const visible = open && !isChatRoute;
@@ -81,11 +88,26 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     if (visible) setFocusSignal((value) => value + 1);
   }, [visible]);
 
+  // The dock is a side panel on desktop but a full-screen surface on mobile.
+  // Persisting it across a route change on a phone hides the new page, so a
+  // real pathname change closes it. Mounting on an open route keeps it open.
+  useEffect(() => {
+    if (previousPathRef.current === location.pathname) return;
+    previousPathRef.current = location.pathname;
+    if (!isMobile) return;
+    setOpen(false);
+    setHistoryOpen(false);
+    setHistorySheetOpen(false);
+  }, [isMobile, location.pathname, setHistoryOpen, setOpen]);
+
   // A full-width mobile dock and the sidebar overlay cannot both own the
   // screen. Opening the dock dismisses the navigation drawer.
   useEffect(() => {
     if (isMobile && visible && sidebarOpen) setSidebarOpen(false);
   }, [isMobile, visible, sidebarOpen, setSidebarOpen]);
+
+  // Back should dismiss the history sheet before it leaves the page.
+  useBackToClose(isMobile && historySheetOpen, () => setHistorySheetOpen(false));
 
   useEffect(() => {
     if (open) {
@@ -139,6 +161,39 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [visible, setOpen]);
 
+  // On phones the dock covers the page. Keep Tab inside it; nested sheets,
+  // dialogs, and menus own their own focus while they are on top.
+  useEffect(() => {
+    if (!isMobile || !visible) return;
+
+    const handleTab = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      if (document.querySelector('[data-dialog-layer],[role="menu"]')) return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (element) => element.offsetParent !== null || element === document.activeElement,
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleTab, true);
+    return () => document.removeEventListener('keydown', handleTab, true);
+  }, [isMobile, visible]);
+
   // Mirror the store's write activity into the shared editor presence API.
   useEffect(() => {
     if (!editing) {
@@ -183,8 +238,10 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     setFocusSignal((value) => value + 1);
   };
 
+  const selectedModel = findChatModel(status, selectedModelId);
   let statusText = 'Assistant';
   if (status?.configured === false) statusText = 'Not configured';
+  else if (selectedModel) statusText = selectedModel.label;
   else if (status?.model) statusText = status.model;
   else if (statusLoading) statusText = 'Checking status…';
   else if (statusError) statusText = 'Status unavailable';
@@ -201,7 +258,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
         id="nana-chat-dock"
         ref={panelRef}
         role="dialog"
-        aria-modal="false"
+        aria-modal={isMobile && visible ? 'true' : 'false'}
         aria-label="Nana chat"
         aria-hidden={!visible}
         inert={!visible}
@@ -251,7 +308,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
                   >
                     {conversation?.title?.trim() || 'Chat'}
                   </h2>
-                  <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[10.5px] text-ink-muted" title={status?.provider ?? undefined}>
+                  <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[10.5px] text-ink-muted" title={selectedModel?.provider ?? status?.provider ?? undefined}>
                     <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDot}`} aria-hidden="true" />
                     <span className="truncate">{statusText}</span>
                   </p>
@@ -271,6 +328,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
                 <SegmentedControl
                   label="Chat mode"
                   size="sm"
+                  className="chat-mode-control"
                   value={mode}
                   onChange={setChatMode}
                   options={[

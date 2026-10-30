@@ -2,7 +2,7 @@ import { Elysia } from "elysia";
 import { BrowserAuthError, jsonError, requireBrowserAuth } from "./auth";
 import { forwardToPocketBase } from "./proxy";
 
-const FILE_COLLECTIONS = new Set(["documents", "users", "trash_documents"]);
+const FILE_COLLECTIONS = new Set(["documents", "users", "trash_documents", "chat_attachments"]);
 
 function optionalToken(req: Request): string | undefined {
     const header = req.headers.get("authorization");

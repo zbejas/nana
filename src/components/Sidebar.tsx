@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -59,6 +59,9 @@ import { BrandMark } from "./BrandMark";
 
 const noopLoadFolderDocuments = async (_folderId: string, _isTrash?: boolean) => {};
 
+const FOCUSABLE =
+  'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
 const NAV_ITEMS = [
   { key: 'timeline', label: 'Timeline', path: '/timeline', icon: ClockIcon },
   { key: 'folders', label: 'Folders', path: '/folders', icon: FolderIcon },
@@ -84,6 +87,8 @@ export function Sidebar() {
   const [isCreatingBoard, setIsCreatingBoard] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const newButtonRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   const folders = useAtomValue(foldersAtom);
   const rootDocuments = useAtomValue(rootDocumentsAtom);
@@ -112,6 +117,59 @@ export function Sidebar() {
     sidebarActions: { toggle, prepareForNavigation },
     dataHook: { expandedFolders, toggleFolder },
   });
+
+  // Below 768px the full sidebar is a drawer, not the docked rail. Give it
+  // dialog semantics: focus moves inside, Tab stays inside, Escape closes.
+  // Nested menus and confirm dialogs keep their own keyboard handling.
+  useEffect(() => {
+    if (!isMobile || !isOpen) return;
+
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const frame = window.requestAnimationFrame(() => {
+      (closeButtonRef.current ?? sidebarRef.current)?.focus({ preventScroll: true });
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('[data-dialog-layer],[role="menu"]')) return;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        toggle();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+      const root = sidebarRef.current;
+      if (!root) return;
+      const focusable = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (element) => element.offsetParent !== null || element === document.activeElement,
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        root.focus();
+        return;
+      }
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === root)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', handleKeyDown, true);
+      if (previousFocus && document.contains(previousFocus)) {
+        previousFocus.focus({ preventScroll: true });
+      }
+    };
+  }, [isMobile, isOpen, toggle]);
 
   const recentDocuments = useMemo(() => allRecentDocuments.slice(0, 3), [allRecentDocuments]);
   const rootBoards = useMemo(() => boards.filter((board) => !board.folder), [boards]);
@@ -208,6 +266,10 @@ export function Sidebar() {
       />
 
       <aside
+        ref={sidebarRef}
+        role={isMobile && isOpen ? 'dialog' : undefined}
+        aria-modal={isMobile && isOpen ? 'true' : undefined}
+        tabIndex={isMobile ? -1 : undefined}
         className="fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden border-r border-line bg-canvas-deep"
         style={{
           width: isMobile ? '100%' : `${sidebarWidth}px`,
@@ -253,7 +315,7 @@ export function Sidebar() {
                   reset();
                   handleViewNavigation('/timeline');
                 }}
-                className="-ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-control text-left md:min-h-0"
+                className="ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-control text-left md:min-h-0"
                 aria-label="Nana home"
               >
                 <BrandMark className="h-8 w-8 shrink-0" />
@@ -268,6 +330,7 @@ export function Sidebar() {
               </button>
               <div className="ml-auto flex items-center gap-0.5">
                 <IconButton
+                  ref={closeButtonRef}
                   label={isMobile ? 'Close menu' : 'Collapse sidebar'}
                   size={isMobile ? 'md' : 'sm'}
                   onClick={toggle}
@@ -318,7 +381,7 @@ export function Sidebar() {
             onContextMenu={(event, documentId) => handleContextMenu(event, 'document', { documentId })}
           />
 
-          <div className="flex-1 overflow-y-auto scrollbar-autohide pb-3" style={{ scrollbarGutter: 'stable' }}>
+          <div className="sidebar-scroll flex-1 overflow-y-auto pb-3" style={{ scrollbarGutter: 'stable' }}>
             {isDataLoading ? (
               <div className="flex items-center justify-center py-8">
                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-ink-muted/30 border-t-signal" />
@@ -333,7 +396,7 @@ export function Sidebar() {
                 />
 
                 <section className="px-3 pt-5" aria-label="Files">
-                  <div className="flex items-center gap-1 px-2 pb-1.5">
+                  <div className="sidebar-library-actions flex items-center gap-1 px-2 pb-1.5">
                     <p className="flex-1 text-[11.5px] font-medium text-ink-muted">Library</p>
                     <IconButton
                       label="New folder"
@@ -369,7 +432,7 @@ export function Sidebar() {
                     </IconButton>
                   </div>
 
-                  <div className="space-y-px">
+                  <div className="sidebar-library space-y-px">
                     <RootLibrarySection
                       documents={rootDocuments}
                       boards={rootBoards}
