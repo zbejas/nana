@@ -19,7 +19,6 @@ export async function createDocument(data: CreateDocumentData): Promise<Document
             slug: generateSlug(normalizedTitle),
             content: sanitizedContent,
             tags: data.tags || [],
-            published: data.published || false,
             author: pb.authStore.record?.id,
         };
 
@@ -69,10 +68,6 @@ export async function updateDocument(
 
         if (data.revision !== undefined) {
             formData.append('revision', String(data.revision));
-        }
-
-        if (data.published !== undefined) {
-            formData.append('published', String(data.published));
         }
 
         if (data.is_public !== undefined) {
@@ -560,19 +555,10 @@ export async function getTimelineDocumentsByDateRange(options?: {
 // Get document statistics
 export async function getDocumentStats(documentId: string) {
     const document = await getDocument(documentId);
-    const versions = await pb.collection('document_versions').getList(
-        1,
-        1000,
-        {
-            filter: `document="${documentId}"`,
-            sort: '-version_number',
-        }
-    );
 
     return {
         word_count: document.word_count,
         reading_time: document.reading_time,
-        total_versions: versions.totalItems,
         created: document.created,
         updated: document.updated,
         tags_count: document.tags?.length ?? 0,

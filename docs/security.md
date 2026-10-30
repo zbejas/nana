@@ -16,6 +16,8 @@ Nana exposes three public access paths through the Bun origin: the application A
 | `src/api/rest/index.ts` | Elysia routes, request validation, OpenAPI docs, error mapping, browser facade mount. |
 | `src/api/rest/browser/` | Browser facade: auth, allowlisted records, files, realtime relay, trash, admin, public shares. |
 | `src/api/rest/browser/records.ts` | Collection allowlist, author injection, relation ownership, document sanitization. |
+| `src/api/rest/browser/versions.ts` | Session-authenticated, owner-only version history, detail, save, and restore routes. |
+| `src/api/versioning/` | Per-note git store, note locking, owner-scoped document reads, and body-only restore. |
 | `src/api/mcp/index.ts` | MCP server, tool registration, auth-before-work, stateless transport, `isError` results. |
 | `src/index.ts` | CSP, security headers, route registration, rate-limit checks. |
 | `src/api/rate-limiter.ts` | Per-IP rate limiting from `settings.rate_limits`. |
@@ -44,7 +46,8 @@ Nana exposes three public access paths through the Bun origin: the application A
 | `pocketbase/pb_migrations/0000020_boards_in_folders.js` | Board folder relation, private flag, and author/folder index. |
 | `pocketbase/pb_migrations/0000022_relational_remodel.js` | Soft-delete trash views, messages records, owner/relation integrity, and indexes. |
 | `pocketbase/pb_migrations/0000024_api_keys.js` | `api_keys`: hashed machine credentials with no public rules, access, scope, and folder roots. |
-| `pocketbase/pb_migrations/0000027_chat_edits.js` | Document revisions/actor metadata, version snapshots, message context/sources, and the server-owned `chat_edits` audit table. |
+| `pocketbase/pb_migrations/0000027_chat_edits.js` | Document revisions/actor metadata, message context/sources, and the server-owned `chat_edits` audit table. |
+| `pocketbase/pb_migrations/0000032_remove_document_versions.js` | Drops the legacy version snapshot store and `documents.published`; version history moves to the server-side git store. |
 | `pocketbase/pb_migrations/0000030_chat_attachments.js` | Owner-scoped `chat_attachments`, protected files, server-only extracted text, and `messages.attachments`. |
 | `pocketbase/pb_migrations/0000031_message_usage.js` | Adds final-step token accounting to assistant messages; contains no note or attachment content. |
 
@@ -120,12 +123,12 @@ Chat writes are a real mutation surface, not an extension of the read prompt. Th
 | Mode gate | `createChatTools()` returns the read set in `ask`; the write tools exist only in `edit`. The tool registry, not the system prompt, decides. |
 | Delete approval | Delete tools write only a `pending` `chat_edits` row. `POST /api/chat/edits/:id/confirm` verifies the conversation owner, then executes the workspace delete with the caller's token; `/cancel` writes nothing. The model has no direct delete path. |
 | Caller token | Write tools call `src/api/workspace/` with `context.authHeader` and `context.userId`; the superuser token is never in `ToolContext`. |
-| Actor stamp | `actor: "ai"` adds `X-Nana-Actor: ai`. The revision guard and task activity hooks stamp `last_edited_by`/`last_edit_source`, version `source`/`actor_label`, and task `actor_type` as Nana. |
+| Actor stamp | `actor: "ai"` adds `X-Nana-Actor: ai`. The revision guard and task activity hooks stamp `last_edited_by`/`last_edit_source` and task `actor_type` as Nana. |
 | Revision | `read_note` returns `revision` and `versionToken`. Note edits require one of them; a mismatch returns `conflict` before PocketBase is touched. The PocketBase revision guard re-checks the submitted revision. |
 | Section edits | `append_note` and `edit_note` use `src/lib/markdown/sections.ts`. Fragments are sanitized, untouched sections are not re-sanitized, and a missing or ambiguous anchor aborts the whole edit. |
-| Version snapshot | Note update tools send `published: true` as the version-request flag. The PocketBase hook snapshots the old title/content/tags/folder/privacy with `source: "ai"` and `actor_label: "Nana"`, then resets the flag. `create_note` starts a new revision instead. |
-| Audit | `chat_edits` has no create/update/delete rules. Bun writes the row with the server credential only after the caller's token proves ownership of the conversation. Its `operations` JSON may carry the pre-edit note snapshot used as an undo fallback, so the collection stays server-only. |
-| Undo | A created note is trashed; note edits restore the pre-edit snapshot. Board/task edits have no undo. Note-edit undo returns `409` if newer work exists; a successful undo is idempotent on repeat. |
+| Version history | Manual-only. Only an explicit `POST /api/v1/documents/:id/versions` commits the current note state. Chat note writes never create versions or set a version-request flag. |
+| Audit | `chat_edits` has no create/update/delete rules. Bun writes the row with the server credential only after the caller's token proves ownership of the conversation. Its `operations.before` field carries the pre-edit note snapshot used for undo, so the collection stays server-only. |
+| Undo | A created note is trashed; note edits restore the pre-edit snapshot from `chat_edits.operations.before`. Board/task edits have no undo. Note-edit undo returns `409` if newer work exists; a successful undo is idempotent on repeat. |
 | Confirm-first deletes | Delete tools create a pending `chat_edits` row only. The explicit confirm route re-checks ownership and visibility, then runs the workspace delete with the caller token. Chat has no direct share, publish, privacy, column, or label tool; moving and archive/restore stay behind the workspace services. |
 
 A failed `chat_edits` write does not fail the workspace mutation; the edit card is omitted and the model still sees success. A failed revision check, private-lock check, archived-board check, or invalid section anchor fails before the workspace write. Chat accepts PocketBase user session tokens only; `nana_…` API keys are rejected, so key scope never applies to chat.
@@ -309,6 +312,20 @@ Never render raw user HTML without sanitization. If you add a new Markdown/HTML 
 - Documents and folders soft-delete (`deleted_at`) instead of disappearing; normal list/view rules filter them out, and permanent delete is a superuser/internal route.
 - Another user's board, task, folder, note, or private record returns `404` through PocketBase or the workspace services, not a list of forbidden ids.
 
+### Version history
+
+Version history is a session-only browser-facade surface:
+
+- All four `/api/v1/documents/:id/versions` routes require a valid session JWT. API keys are rejected, like the rest of the browser facade.
+- Every request loads the note with the caller's token and requires the caller to own it. A missing, foreign, or trashed note returns the same `404`; versions never reveal another user's note id.
+- Version ids are opaque commit ids. The response exposes no repository path, branch, SHA label, or git metadata beyond the opaque `id`.
+- Save and restore require the current `documents.revision`. A stale revision returns `409` before any repository or document write.
+- Restore commits the current state first, then writes only the Markdown body through the revision-aware note patch. Title, tags, folder, privacy, sharing, and attachments are untouched.
+- Repositories live under `pb_data/versioning/` and are never served statically. Trash keeps them; permanent note and folder deletes remove them after PocketBase confirms the hard delete. A cleanup failure is logged and does not fail the delete response.
+- The store builds paths only from validated note ids and runs git with argument arrays, never a shell string. The repository root is a trusted server path, not request input.
+
+Do not expose an unauthenticated version route or add version history to MCP/chat tools; both are AI surfaces with their own scoping and are intentionally outside this owner-only surface.
+
 ### Public shares
 
 Public sharing is separate from collection rules and from the AI private lock:
@@ -325,8 +342,9 @@ Public sharing is separate from collection rules and from the AI private lock:
 
 Never commit or expose:
 
-- `pocketbase/pb_data/` (SQLite DB, attachments, credentials).
+- `pocketbase/pb_data/` (SQLite DB, attachments, version repositories, credentials).
 - `pocketbase/pb_data/superuser_credentials.json`.
+- `pocketbase/pb_data/versioning/` — bare git repositories containing every saved note version.
 - API key plaintext. `api_keys` stores only a prefix and a SHA-256 hash.
 - AI provider API keys (`settings.ai_config`).
 - SMTP/OAuth credentials.

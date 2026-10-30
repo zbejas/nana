@@ -238,7 +238,7 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
             tags: ["Notes"],
             operationId: "updateNote",
             summary: "Update a note",
-            description: "Partial update. Send `folderId: \"\"` or `null` to move the note to the workspace root. Attachments, publishing, and versions are not managed by this endpoint.",
+            description: "Partial update. Send `folderId: \"\"` or `null` to move the note to the workspace root. Attachments are not managed by this endpoint.",
         },
     })
     .delete("/notes/:id", ({ workspace, params }) => deleteNote(workspace, "user", params.id), {

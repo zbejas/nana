@@ -87,7 +87,6 @@ export interface CreateNoteOptions {
     tags?: string[];
     folder?: string;
     is_private?: boolean;
-    published?: boolean;
     public_share_token?: string;
     public_expires_at?: string;
     share_attachments?: boolean;
@@ -215,14 +214,6 @@ export async function superuserUpdate(
 export async function superuserDelete(collection: string, id: string): Promise<void> {
     const token = await getSuperuserToken();
     await pbDelete(token, collection, id);
-}
-
-/** Publish a note so the document hook creates a version. */
-export async function publishNote(user: TestUser, noteId: string, content?: string): Promise<TestRecord> {
-    return pbUpdate<TestRecord>(user.token, "documents", noteId, {
-        ...(content === undefined ? {} : { content }),
-        published: true,
-    });
 }
 
 export interface CreateConversationOptions {

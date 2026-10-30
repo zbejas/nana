@@ -227,7 +227,7 @@ export const apiOpenApiConfig = {
             {
                 name: "Notes",
                 description:
-                    "Markdown notes and their metadata. Note bodies are sanitized, versioned on publish, and moved to trash rather than deleted immediately.",
+                    "Markdown notes and their metadata. Note bodies are sanitized and moved to trash rather than deleted immediately.",
             },
             {
                 name: "Boards",

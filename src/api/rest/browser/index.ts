@@ -5,6 +5,7 @@ import { browserFileRoutes } from "./files";
 import { browserRealtimeRoutes } from "./realtime";
 import { browserRecordRoutes } from "./records";
 import { browserSharingRoutes } from "./sharing";
+import { browserVersionRoutes } from "./versions";
 
 /**
  * The browser-facing /api/v1 surface.
@@ -21,4 +22,5 @@ export const browserApi = new Elysia({ name: "nana-browser-api" })
     .use(browserFileRoutes)
     .use(browserRealtimeRoutes)
     .use(browserExtraRoutes)
-    .use(browserSharingRoutes);
+    .use(browserSharingRoutes)
+    .use(browserVersionRoutes);

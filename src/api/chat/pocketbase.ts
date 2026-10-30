@@ -10,6 +10,7 @@ import {
     type ChatAttachmentRef,
     type ChatContext,
     type ChatMessage,
+    type ChatPart,
     type ChatSource,
     type ChatToolActivity,
     type PBListResponse,
@@ -149,6 +150,71 @@ function sanitizeTools(value: unknown): ChatToolActivity[] {
     return [...byName.values()];
 }
 
+const MAX_PART_TEXT_CHARS = 100_000;
+const MAX_PARTS = 200;
+
+function cleanPartText(value: unknown): string {
+    if (typeof value !== "string") return "";
+    return value.replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 200);
+}
+
+/**
+ * Persist the ordered turn timeline without trusting model/provider shapes.
+ * Text is sanitized, tool names/statuses are allowlisted, and no raw tool
+ * inputs, outputs, or errors survive.
+ */
+async function sanitizeParts(value: unknown): Promise<ChatPart[]> {
+    if (!Array.isArray(value)) return [];
+
+    const parts: ChatPart[] = [];
+    for (const entry of value) {
+        if (parts.length >= MAX_PARTS) break;
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+        const source = entry as Record<string, unknown>;
+
+        if (source.type === "text" || source.type === "reasoning") {
+            const raw = typeof source.text === "string" ? source.text.slice(0, MAX_PART_TEXT_CHARS) : "";
+            if (!raw) continue;
+            const text = await sanitizeHtml(raw);
+            if (!text) continue;
+            parts.push({ type: source.type, text });
+            continue;
+        }
+
+        if (source.type === "tool") {
+            const name = typeof source.name === "string" ? source.name : "";
+            if (!ALLOWED_TOOLS.has(name)) continue;
+            const rawId = typeof source.id === "string" ? source.id : "";
+            const id = /^[A-Za-z0-9_-]{1,128}$/.test(rawId) ? rawId : undefined;
+            const title = cleanPartText(source.title);
+            const rawTargetType = source.targetType;
+            const targetType = rawTargetType === "document" || rawTargetType === "board" || rawTargetType === "folder"
+                ? rawTargetType
+                : undefined;
+            const rawTargetId = typeof source.targetId === "string" ? source.targetId : "";
+            const targetId = /^[A-Za-z0-9]{1,64}$/.test(rawTargetId) ? rawTargetId : undefined;
+            parts.push({
+                type: "tool",
+                name,
+                status: source.status === "success" ? "success" : "error",
+                ...(id ? { id } : {}),
+                ...(title ? { title } : {}),
+                ...(targetType ? { targetType } : {}),
+                ...(targetId ? { targetId } : {}),
+            });
+            continue;
+        }
+
+        if (source.type === "edit") {
+            const editId = typeof source.editId === "string" ? source.editId : "";
+            if (!/^[A-Za-z0-9]{1,64}$/.test(editId)) continue;
+            parts.push({ type: "edit", editId });
+        }
+    }
+
+    return parts;
+}
+
 /**
  * Context is metadata only. The title is resolved server-side, and ids/types
  * are allowlisted so a crafted message cannot persist arbitrary HTML or fields.
@@ -237,6 +303,11 @@ async function sanitizeMessage(msg: ChatMessage): Promise<ChatMessage> {
     const tools = sanitizeTools(msg.tools);
     if (tools.length > 0) {
         sanitized.tools = tools;
+    }
+
+    const parts = await sanitizeParts(msg.parts);
+    if (parts.length > 0) {
+        sanitized.parts = parts;
     }
 
     const context = sanitizeContext(msg.context);
@@ -367,6 +438,7 @@ export async function appendMessage(
             ...(sanitizedMessage.reasoning ? { reasoning: sanitizedMessage.reasoning } : {}),
             ...(sanitizedMessage.model ? { model: sanitizedMessage.model } : {}),
             ...(sanitizedMessage.tools?.length ? { tools: sanitizedMessage.tools } : {}),
+            ...(sanitizedMessage.parts?.length ? { parts: sanitizedMessage.parts } : {}),
             ...(sanitizedMessage.context ? { context: sanitizedMessage.context } : {}),
             ...(sanitizedMessage.attachments?.length ? { attachments: sanitizedMessage.attachments } : {}),
             ...(sanitizedMessage.sources?.length ? { sources: sanitizedMessage.sources } : {}),
@@ -399,11 +471,17 @@ export async function getConversationMessages(
 
         for (const row of result.items) {
             if (row.role !== "user" && row.role !== "assistant") continue;
-            const message: ChatMessage = { role: row.role, content: row.content || "" };
+            const message: ChatMessage = {
+                ...(row.id ? { id: row.id } : {}),
+                role: row.role,
+                content: row.content || "",
+            };
             if (typeof row.reasoning === "string" && row.reasoning) message.reasoning = row.reasoning;
             if (typeof row.model === "string" && row.model) message.model = row.model;
             const tools = sanitizeTools(row.tools);
             if (tools.length > 0) message.tools = tools;
+            const parts = await sanitizeParts(row.parts);
+            if (parts.length > 0) message.parts = parts;
             const context = sanitizeContext(row.context);
             if (context) message.context = context;
             const attachments = sanitizeAttachments(row.attachments);

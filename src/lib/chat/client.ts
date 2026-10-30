@@ -11,6 +11,7 @@ import type {
   ChatMode,
   ChatSource,
   ChatStatusResponse,
+  ChatPart,
 } from '../../api/chat/types';
 import type {
   AIChatAttachmentSettings,
@@ -317,6 +318,30 @@ function normalizeTool(raw: Record<string, unknown>, fallbackName?: string): Cha
           : {}),
     ...(targetIdValue ? { targetId: targetIdValue } : {}),
   };
+}
+
+function normalizeParts(value: unknown): ChatPart[] {
+  if (!Array.isArray(value)) return [];
+  const parts: ChatPart[] = [];
+  for (const item of value) {
+    const record = asRecord(item);
+    const type = stringValue(record.type);
+    if (type === 'text' || type === 'reasoning') {
+      const text = stringValue(record.text);
+      if (text) parts.push({ type, text });
+      continue;
+    }
+    if (type === 'tool') {
+      const tool = normalizeTool({ ...record, type: 'tool' }, 'tool');
+      if (tool) parts.push({ type: 'tool', ...tool });
+      continue;
+    }
+    if (type === 'edit') {
+      const editId = stringValue(record.editId, record.id);
+      if (/^[A-Za-z0-9]{1,64}$/.test(editId)) parts.push({ type: 'edit', editId });
+    }
+  }
+  return parts;
 }
 
 function normalizeStreamError(raw: unknown): ChatError {
@@ -678,6 +703,7 @@ export async function loadConversation(auth: ChatAuth, id: string): Promise<Load
               .filter((tool): tool is ChatUiTool => Boolean(tool)),
           }
           : {}),
+        ...(Array.isArray(message.parts) ? { parts: normalizeParts(message.parts) } : {}),
         ...(Array.isArray(message.sources) ? { sources: normalizeSources(message.sources) } : {}),
         ...(message.context && typeof message.context === 'object'
           ? { context: message.context as ChatUiMessage['context'] }
@@ -695,7 +721,7 @@ export async function loadConversation(auth: ChatAuth, id: string): Promise<Load
         streaming: false,
       };
     })
-    .filter((message) => message.content || message.reasoning || message.tools?.length || message.attachments?.length);
+    .filter((message) => message.content || message.reasoning || message.tools?.length || message.parts?.length || message.attachments?.length);
 
   // Attach edits to their message; orphaned edits ride on the last answer so a
   // reloaded conversation never loses an undo card.

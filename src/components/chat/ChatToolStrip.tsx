@@ -174,6 +174,12 @@ export function ChatToolStrip({
     if (urgentEdit) setExpanded(true);
   }, [urgentEdit]);
 
+  // While a turn is running, keep the calls visible as they arrive. This is the
+  // live, hierarchical view; once the answer finishes the user can collapse it.
+  useEffect(() => {
+    if (streaming && tools.length > 1) setExpanded(true);
+  }, [streaming, tools.length]);
+
   useEffect(() => {
     if (!streaming || !runningKey) {
       startedAt.current = null;

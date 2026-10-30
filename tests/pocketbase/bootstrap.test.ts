@@ -72,7 +72,6 @@ describe("PocketBase bootstrap", () => {
         const token = await authenticateSuperuser();
         const collections = [
             "documents",
-            "document_versions",
             "trash_documents",
         ];
 
@@ -90,5 +89,29 @@ describe("PocketBase bootstrap", () => {
             expect(contentField).toBeDefined();
             expect(contentField?.maxSize).toBeGreaterThan(5 * 1024 * 1024);
         }
+    });
+
+    test("legacy document version storage and the publish flag are removed", async () => {
+        const token = await authenticateSuperuser();
+
+        const versionsRes = await pbRequest("/collections/document_versions", {
+            headers: { Authorization: token },
+        });
+        await expectStatus(versionsRes, 404, "read removed document_versions schema");
+
+        const documentsRes = await pbRequest("/collections/documents", {
+            headers: { Authorization: token },
+        });
+        await expectStatus(documentsRes, 200, "read documents schema");
+        const documents = await readJson<{ fields: Array<{ name: string }> }>(documentsRes);
+        expect(documents.fields.some((field) => field.name === "published")).toBe(false);
+
+        const trashRes = await pbRequest("/collections/trash_documents", {
+            headers: { Authorization: token },
+        });
+        await expectStatus(trashRes, 200, "read trash_documents schema");
+        const trash = await readJson<{ viewQuery?: string }>(trashRes);
+        expect(typeof trash.viewQuery).toBe("string");
+        expect(trash.viewQuery).not.toContain("published");
     });
 });

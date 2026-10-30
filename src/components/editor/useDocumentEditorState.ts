@@ -50,7 +50,6 @@ export function useDocumentEditorState() {
     const [content, setContent] = useState(() => normalizeMarkdown(document?.content || initialContent || ''));
     const [tags, setTags] = useState<string[]>(document?.tags || []);
     const [tagInput, setTagInput] = useState('');
-    const [published, setPublished] = useState(document?.published || false);
     const [saving, setSaving] = useState(false);
     const [publishing, setPublishing] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -63,14 +62,12 @@ export function useDocumentEditorState() {
     const titleRef = useRef(title);
     const contentRef = useRef(content);
     const tagsRef = useRef(tags);
-    const publishedRef = useRef(published);
     const prevDocumentIdRef = useRef(document?.id);
     const remoteContentChangeRef = useRef<{ from: string; to: string } | null>(null);
 
     useEffect(() => { titleRef.current = title; }, [title]);
     useEffect(() => { contentRef.current = content; }, [content]);
     useEffect(() => { tagsRef.current = tags; }, [tags]);
-    useEffect(() => { publishedRef.current = published; }, [published]);
 
     const showToast = useCallback((message: string, type: 'error' | 'success' | 'info' = 'info') => {
         showAppToast(message, type);
@@ -119,7 +116,6 @@ export function useDocumentEditorState() {
         title,
         content,
         tags,
-        published,
         newAttachments,
         removedAttachments,
         autoSaveDelayMs: autoSaveDelay,
@@ -145,7 +141,6 @@ export function useDocumentEditorState() {
         title,
         content,
         tags,
-        published,
         newAttachments,
         removedAttachments,
         folderId,
@@ -238,12 +233,10 @@ export function useDocumentEditorState() {
             setTitle(document.title || '');
             setContent(normalizeMarkdown(document.content));
             setTags(document.tags || []);
-            setPublished(document.published);
         } else {
             setTitle(initialTitle || '');
             setContent(initialContent || '');
             setTags([]);
-            setPublished(false);
         }
         setNewAttachments([]);
         setRemovedAttachments([]);
@@ -293,7 +286,6 @@ export function useDocumentEditorState() {
         setTitle(document.title || '');
         setContent(nextContent);
         setTags(document.tags || []);
-        setPublished(document.published);
     }, [document, urlDocumentId, hasUnsavedChanges]);
 
     useEffect(() => {
@@ -314,7 +306,6 @@ export function useDocumentEditorState() {
             hasChanges =
                 normalizedTitle !== document.title ||
                 !isSameMarkdown(content.trim(), document.content.trim()) ||
-                published !== document.published ||
                 JSON.stringify(tags) !== JSON.stringify(document.tags || []) ||
                 newAttachments.length > 0 ||
                 removedAttachments.length > 0;
@@ -322,7 +313,7 @@ export function useDocumentEditorState() {
 
 
         setGlobalUnsavedChanges(hasChanges);
-    }, [title, content, tags, published, newAttachments, removedAttachments, document, syncedDocument, setGlobalUnsavedChanges]);
+    }, [title, content, tags, newAttachments, removedAttachments, document, syncedDocument, setGlobalUnsavedChanges]);
 
     const contentStats = useMemo(() => {
         const words = content.trim().split(/\s+/).filter((w) => w.length > 0);
@@ -405,11 +396,9 @@ export function useDocumentEditorState() {
         setContent,
         tags,
         setTags,
-        setPublished,
         setGlobalUnsavedChanges,
         tagInput,
         setTagInput,
-        published,
         saving,
         publishing,
         loading,

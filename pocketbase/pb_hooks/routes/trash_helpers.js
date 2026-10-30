@@ -1,8 +1,8 @@
 /// <reference path="../../pb_data/types.d.ts" />
 
 // Shared soft-delete helpers for documents and folders. Trash is a state, not
-// a second copy: records keep their id, attachments, versions, and relations
-// while `deleted_at` is set, and permanently deleting a folder relies on the
+// a second copy: records keep their id, attachments, and relations while
+// `deleted_at` is set, and permanently deleting a folder relies on the
 // relation cascades declared in migration 0000022.
 
 function getAuthUserId(c) {
@@ -211,7 +211,7 @@ function restoreDocumentById(documentId, userId) {
   }
 }
 
-/** Permanently delete an already-trashed document and its versions. */
+/** Permanently delete an already-trashed document. */
 function permanentlyDeleteDocumentById(documentId, userId) {
   const document = $app.findRecordById("documents", documentId)
   assertOwned(document, userId, "Document")
@@ -347,8 +347,8 @@ function permanentlyDeleteFolderTree(folderId, userId) {
   const movedBoardIds = rehomeBoardsFromFolderIds(folderIds)
   syncSharing(movedBoardIds.map((id) => ({ type: "board", id })))
 
-  // Cascades delete child folders, documents, and versions. Clear optional
-  // task links first because tasks deliberately do not cascade.
+  // Cascades delete child folders and documents. Clear optional task links
+  // first because tasks deliberately do not cascade.
   for (const id of folderIds) {
     const documents = $app.findRecordsByFilter(
       "documents",

@@ -497,6 +497,7 @@ function createChatStream(options: ChatStreamOptions): ReadableStream<Uint8Array
 
             const drainEdits = () => {
                 for (const edit of options.recorder.drainEdits()) {
+                    state.addEdit(edit);
                     enqueue(editEvent(edit));
                 }
             };
@@ -595,6 +596,7 @@ function createChatStream(options: ChatStreamOptions): ReadableStream<Uint8Array
                 : state.text.trim()
                     ? state.text
                     : CHAT_EMPTY_RESPONSE_FALLBACK;
+            const parts = state.persistedParts(finalText);
 
             let messageId: string | null = null;
             try {
@@ -603,6 +605,7 @@ function createChatStream(options: ChatStreamOptions): ReadableStream<Uint8Array
                     content: finalText,
                     ...(state.reasoning ? { reasoning: state.reasoning } : {}),
                     ...(tools.length > 0 ? { tools } : {}),
+                    ...(parts.length > 0 ? { parts } : {}),
                     ...(sources.length > 0 ? { sources } : {}),
                     ...(usage ? { usage } : {}),
                     ...(stopped ? { stopped: true } : {}),

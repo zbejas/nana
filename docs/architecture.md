@@ -13,10 +13,11 @@ The system is one deployable with two processes: **Bun** serves the SPA, the app
 | `src/index.ts` | Bun route registration, security headers, PWA assets, `/api/v1` mount, `/pb` 404 guard, graceful shutdown. |
 | `src/frontend.tsx` | React root, Jotai provider, `AuthProvider`, service-worker registration. |
 | `src/App.tsx` | Router, protected routes, layout, mobile navigation, `useDocumentData()` call site, `AddToBoardHost`. |
-| `src/api/` | Server handlers: chat, export, version, auth, rate limiting, static files. |
+| `src/api/` | Server handlers: chat, export, app version, versioning, auth, rate limiting, static files. |
 | `src/api/rest/` | Elysia typed workspace API and browser facade, PocketBase token/API key auth, TypeBox schemas, public OpenAPI and Scalar reference. |
 | `src/api/api-keys/` | API key token format, hashing, superuser lookup, impersonation, and owner key management. |
-| `src/api/rest/browser/` | Browser-only facade: auth, allowlisted records, files, SSE relay, trash, admin, public shares. Session JWT only. |
+| `src/api/rest/browser/` | Browser-only facade: auth, allowlisted records, files, SSE relay, trash, admin, public shares, version history. Session JWT only. |
+| `src/api/versioning/` | Server-side git version store, per-note lock, document reader/patcher, and the version service used by the browser routes. |
 | `src/api/mcp/` | Stateless Streamable HTTP MCP server, tool registration, and per-request transport handling. |
 | `src/api/workspace/` | Shared folder, note, board, and task services used by REST and MCP; `Surface` selection and the AI visibility lock. |
 | `src/api/pocketbase/` | Caller-token PocketBase REST client shared by chat tools, REST services, and MCP. Never accepts the superuser token. |
@@ -32,7 +33,7 @@ The system is one deployable with two processes: **Bun** serves the SPA, the app
 | `src/components/board/` | Board state, dynamic workflow columns, task cards, task detail panel, inline settings, add-to-board host/picker, note import. |
 | `src/components/folder-view/` | Folder contents grid/list, folder state, board rows beside notes, drag targets, board create/edit entry points. |
 | `src/components/file-folder-handling/` | Note, folder, and board drag-and-drop plus the folder/document/board context menus. |
-| `src/lib/documents/` | Document and attachment CRUD, revisions, export helpers, public sharing. |
+| `src/lib/documents/` | Document and attachment CRUD, revisions, version history/restore calls, export helpers, public sharing. |
 | `src/components/editor/milkdown/` | Milkdown WYSIWYG, CodeMirror source/split, toolbar, slash menu, inline editor, AI section highlights. |
 | `src/lib/sharing/` | Session-sharing client for links, access, shared folders, and comments over `/api/v1/sharing`. |
 | `src/components/sharing/` | Owner share panel, permission controls, public-link section, shared rows, and share buttons. |
@@ -60,6 +61,7 @@ Bun :3000 ── src/index.ts
   ├── /api/v1/* ──────────▶ Elysia
   │                          ├── typed workspace ──▶ workspace services ──▶ PB REST (user token)
   │                          ├── browser facade ───▶ allowlists + auth ──▶ PB REST (user token)
+  │                          ├── versions ─────────▶ version service ──▶ git store + PB REST
   │                          └── auth/files/realtime/public/trash/admin ──▶ PB REST
   ├── /pb, /pb/* ─────────▶ 404 (the public PocketBase proxy is gone)
   ├── /docs, /docs/json ──▶ OpenAPI spec + self-hosted Scalar reference (public)
@@ -77,7 +79,7 @@ There is no embedding service, vector store, or background indexer in the topolo
 
 | Process | Owns | Entry point |
 | --- | --- | --- |
-| Bun | SPA serving, application API routes, Elysia `/api/v1`, public OpenAPI docs, MCP endpoint, auth verification, rate limiting, CSP, export, chat/provider orchestration, workspace services, ask/edit chat tools, chat edit audit | `src/index.ts` |
+| Bun | SPA serving, application API routes, Elysia `/api/v1`, public OpenAPI docs, MCP endpoint, auth verification, rate limiting, CSP, export, chat/provider orchestration, workspace services, ask/edit chat tools, chat edit audit, server-side git version history | `src/index.ts` |
 | PocketBase | Data, auth records, API rules, schema, hooks, custom routes, mailers, cron; loopback only | `pocketbase/pb_hooks/index.pb.js` |
 | Browser | React UI, Jotai state, `/api/v1` client calls, SSE chat client, SSE realtime relay | `src/frontend.tsx` |
 | API / MCP clients | JSON requests to `/api/v1` or `/mcp` with a PocketBase user token or a scoped `nana_…` API key; no browser session required | `src/api/rest/`, `src/api/mcp/`, `src/api/api-keys/` |
@@ -128,8 +130,8 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 2. `verifyAuth()` validates the token. A context, if present, is resolved server-side from `{ type, id }` with ownership, trash, and private-lock checks; the title is loaded from PocketBase, not trusted from the client. `fetchAIConfig()` reads `settings.ai_config` with the server superuser token.
 3. Bun creates a `conversations` record when needed, then appends the user turn with its resolved `context` to `messages`. `regenerate: true` trims the prior exchange first.
 4. `createChatTools()` builds `list_notes`, `read_note`, `list_boards`, `read_board`, `list_tasks`, and `read_task` using the caller's `Authorization` header and the AI visibility lock. In `mode: "edit"` it also builds the create/update tools and confirm-first delete tools for folders, notes, boards, and tasks.
-5. `streamText()` runs with `stopWhen(stepCountIs(8))`; reads use PocketBase on demand, and writes go through `src/api/workspace/` with `actor: "ai"`. Note updates add revision checks and `published: true`; board and task writes use the normal ownership, archive, and status guards.
-6. The stream pump emits named SSE events (`text`, `reasoning`, `tool`, `sources`, `edit`, `done`, `error`) and, for mode-less requests, legacy AI-SDK chunks. After the model stream ends it persists the assistant text, reasoning, terminal tool names/statuses, sources, stopped flag, and model name as a `messages` row; appending touches the conversation so it sorts to the top.
+5. `streamText()` runs with `stopWhen(stepCountIs(8))`; reads use PocketBase on demand, and writes go through `src/api/workspace/` with `actor: "ai"`. Note updates add revision checks; board and task writes use the normal ownership, archive, and status guards. AI edits never commit to version history.
+6. The stream pump emits named SSE events (`text`, `reasoning`, `tool`, `sources`, `edit`, `done`, `error`) and, for mode-less requests, legacy AI-SDK chunks. After the model stream ends it persists the assistant text, reasoning, terminal tool names/statuses, the ordered text/tool/edit `parts` timeline, sources, stopped flag, and model name as a `messages` row; appending touches the conversation so it sorts to the top.
 7. Applied writes persist server-owned `chat_edits` rows and emit `edit` cards. Title generation runs in the background for a new, non-stopped conversation with no stream error.
 8. The response carries `X-Conversation-Id`, `X-Is-New-Conversation`, `X-Model-Name`, and `X-Chat-Mode`.
 
@@ -148,8 +150,12 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 
 | Flow | Path |
 | --- | --- |
-| Document save | Browser → `/api/v1/records/documents` (JSON or multipart) → Elysia author/relation/sanitize checks → PB hooks (word count, version snapshot) → response |
-| Document delete | Browser → `/api/v1/trash/move-document` → PB sets `deleted_at`/`deleted_by` and clears sharing; the record, attachments, and versions stay in place |
+| Document save | Browser → `/api/v1/records/documents` (JSON or multipart) → Elysia author/relation/sanitize checks → PB hooks (word count) → response; no version is written |
+| Save version | Browser → `POST /api/v1/documents/:id/versions` → owner check + revision check → git commit of the current note state → `{ created, version }`; identical state returns `created: false` |
+| Version detail | Browser → `GET /api/v1/documents/:id/versions/:versionId` → owner check → git blob read → version fields plus `content` |
+| Restore version | Browser → `POST /api/v1/documents/:id/versions/:versionId/restore` → owner + revision check → git commit of current state → PB patch of the selected Markdown body only → `{ document }` |
+| Document delete | Browser → `/api/v1/trash/move-document` → PB sets `deleted_at`/`deleted_by` and clears sharing; the record, attachments, and its git repository stay in place |
+| Permanent note delete | Browser → `/api/v1/trash/permanent-delete-document` → PB hard-deletes the note and attachments → Bun removes `pb_data/versioning/<noteId>.git` |
 | Trash move | Browser → `/api/v1/trash/move-document` → PB marks the live document deleted; `trash_documents` is a read-only view over it |
 | Trash restore | Browser → `/api/v1/trash/restore-document` → PB clears the soft-delete fields; a note whose folder is trashed is re-rooted |
 | Folder trash | Browser → `/api/v1/trash/move-folder` → PB marks the subtree and its documents, rehomes boards to the root → `{ trashFolderId, movedDocumentIds, movedBoardIds }` |
@@ -166,7 +172,7 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 | Typed REST read/write | API client → `/api/v1` → Elysia handler → workspace service (`surface: "user"`) → PB REST with user token → JSON |
 | MCP tool call | MCP client → `POST /mcp` → per-request MCP server → workspace service (`surface: "ai"`) → PB REST with user token → tool result |
 | Chat read | Browser → `/api/chat/send` (`mode: "ask"`) → `streamText` + read tools → PB REST with user token → named SSE |
-| Chat edit | Browser → `/api/chat/send` (`mode: "edit"`, context) → workspace services with `actor: "ai"` + revision/private checks → PB revision/version hooks → `chat_edits` → edit SSE card + undo route; deletes create pending rows confirmed via `/api/chat/edits/:id/confirm` |
+| Chat edit | Browser → `/api/chat/send` (`mode: "edit"`, context) → workspace services with `actor: "ai"` + revision/private checks → PB revision hooks → `chat_edits` (including `operations.before`) → edit SSE card + undo route; deletes create pending rows confirmed via `/api/chat/edits/:id/confirm`. Chat never writes version history. |
 | Export | Browser → `/api/export` → resolve documents/folders → download attachments → Markdown or ZIP |
 | Public share | Public page → `/api/v1/public/*` → PB validates token, expiry, privacy, archive state, and attachment sharing |
 | Version check | About tab → `/api/app/version` → cached GitHub Releases lookup |
@@ -219,7 +225,7 @@ Production detection is deliberate: Bun treats the app as production only when `
 - **The superuser token belongs to configuration, credential exchange, and server-owned audit rows.** `fetchAIConfig()`, the rate limiter, API key lookup/exchange, and `chat_edits` persistence use it; chat tool workspace calls, REST, and MCP must use the caller's token.
 - **Chat writes are mode-gated; MCP has its own write surface.** Ask mode exposes reads only. Work-mode writes go through `src/api/workspace/` with a user token, `X-Nana-Actor: ai`, `chat_edits`, and note revision checks; deletes are confirm-first; MCP has a separate tool list and destructive-tool design.
 - **Chat note edits are section-scoped and revision-checked.** `read_note` returns `revision` and `versionToken`; the note update tools pass one back. A stale value returns `conflict`. `src/lib/markdown/sections.ts` carries untouched sections through instead of replacing the whole note.
-- **`published: true` is a version request.** Chat note update tools set it so PocketBase snapshots the pre-edit state, then the hook resets it. It does not publish the note. `create_note` starts a new revision instead.
+- **Version history is manual-only and git-backed.** Only an explicit Save version commits the current note state into `pb_data/versioning/<noteId>.git`. Autosave, chat, MCP, and trash moves never commit. Restoring commits the current state first (when it differs from HEAD), then applies only the Markdown body; title, tags, folder, and privacy stay. Permanent delete removes the repository. The UI never exposes commit ids, branches, or git terms.
 - **Private means hidden from AI, not from the owner.** `/api/v1` is the owner surface and intentionally returns private notes, boards, and folder contents. Only chat and MCP apply `loadAiVisibility()`.
 - **MCP tool failures are not HTTP failures.** `POST /mcp` returns `200` with an `isError` text result; only auth, transport, and JSON-RPC errors use HTTP statuses.
 - **`/docs` is public by design.** The API itself is authenticated. The Scalar bundle and Geist fonts are served under `/docs/` from `node_modules` and `src/assets/fonts`, not a CDN.
@@ -228,14 +234,14 @@ Production detection is deliberate: Bun treats the app as production only when `
 - **Deleting an archived board cascades its tasks.** The `tasks.board` relation has `cascadeDelete: true`; notes linked through `tasks.document` stay in the library.
 - **Incoming relations need a request guard.** PocketBase relation rules see the stored record, so `guards/relation_guards.js` checks `folder`, `parent`, `board`, and `document` on create/update. Removing it allows filing a record into another user's folder or linking a foreign/trashed note.
 - **Folder trash rehomes boards.** `boards.folder` uses `cascadeDelete: false`; `move-folder` and permanent folder delete clear the folder pointer instead of deleting boards. `movedBoardIds` reports the rehomed rows from a trash move.
-- **Trash is a soft-delete state.** `documents` and `folders` keep their ids, attachments, and versions while `deleted_at` is set. `trash_documents` and `trash_folders` are read-only views; direct deletes are superuser-only.
-- **Hard-deleting a folder cascades.** `folders.parent` and `documents.folder` cascade, so permanent folder delete removes the subtree, notes, versions, and attachments. Soft delete does not trigger the cascade.
+- **Trash is a soft-delete state.** `documents` and `folders` keep their ids, attachments, and version repositories while `deleted_at` is set; version routes hide a trashed note. `trash_documents` and `trash_folders` are read-only views; direct deletes are superuser-only.
+- **Hard-deleting a folder cascades.** `folders.parent` and `documents.folder` cascade, so permanent folder delete removes the subtree, notes, git repositories, and attachments. Soft delete does not trigger the cascade.
 - **Tasks have no `author`.** Ownership comes from `board.author`; the board relation cascades and the note link does not.
 - **`0000020` adds an optional folder relation without a backfill.** Existing boards stay at the workspace root until someone moves them.
 - **Board summaries count tasks from one query.** `listBoardSummaries()` includes boards with no tasks; don't replace it with per-board requests.
 - **`useDocumentData()` runs once.** It is called at `AppContent` and nowhere else; board pages own their own task state.
 - **Rate limits apply before the workspace surfaces.** `/api/v1`, `/docs`, and `/mcp` pass through `checkRateLimit()` at the Bun edge. REST and MCP requests get a 60-second Bun request ceiling; workspace PocketBase calls default to 30 seconds. Chat note/board reads pass an 8-second signal; task reads and chat writes use the 30-second default.
-- **Migrations run on container boot.** The entrypoint runs `PB_MIGRATING=1 pocketbase migrate up` before starting either process; a fresh test database therefore includes the current migration head (`0000029`).
+- **Migrations run on container boot.** The entrypoint runs `PB_MIGRATING=1 pocketbase migrate up` before starting either process; a fresh test database therefore includes the current migration head (`0000033`).
 
 ## Related docs
 

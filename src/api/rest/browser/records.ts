@@ -18,15 +18,15 @@ import { forwardJson, forwardToPocketBase, readRawBody } from "./proxy";
  * making Elysia the only public edge: collection names are allowlisted,
  * PocketBase system fields and ownership cannot be supplied by the browser,
  * relation ownership is checked before writes, and PocketBase still runs its
- * API rules, guards, hooks, cascades, and version/trash logic.
+ * API rules, guards, hooks, cascades, and trash logic.
  */
 
-const READ_ONLY = new Set(["document_versions", "trash_documents", "trash_folders", "task_relations", "task_activity"]);
+const READ_ONLY = new Set(["trash_documents", "trash_folders", "task_relations", "task_activity"]);
 const ADMIN_ONLY = new Set(["settings"]);
 
 const CREATE_FIELDS: Record<string, Set<string>> = {
     documents: new Set([
-        "title", "slug", "content", "tags", "published", "folder",
+        "title", "slug", "content", "tags", "folder",
         "is_public", "is_private", "share_attachments", "public_share_token",
         "public_expires_at", "attachments",
     ]),
@@ -76,7 +76,7 @@ const ADMIN_USER_UPDATE_FIELDS = new Set([
 
 const ALLOWED_COLLECTIONS = new Set([
     "documents", "folders", "boards", "board_columns", "labels", "tasks",
-    "task_relations", "task_activity", "document_versions",
+    "task_relations", "task_activity",
     "trash_documents", "trash_folders", "users", "settings",
 ]);
 

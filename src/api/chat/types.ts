@@ -96,6 +96,26 @@ export interface ChatToolActivity {
     status: ChatToolStatus;
 }
 
+/** One tool call as it appeared in the assistant turn. */
+export interface ChatToolPart extends ChatToolActivity {
+    type: "tool";
+    /** Optional resolved record title, kept only for display. */
+    title?: string;
+    targetType?: ChatContextType;
+    targetId?: string;
+}
+
+/**
+ * One ordered piece of an assistant turn. Text and tool calls interleave so the
+ * transcript can show what Nana did at the point it happened instead of
+ * collecting every call at the top of the answer.
+ */
+export type ChatPart =
+    | { type: "text"; text: string }
+    | { type: "reasoning"; text: string }
+    | ChatToolPart
+    | { type: "edit"; editId: string };
+
 /**
  * Token accounting for one completed assistant turn. `inputTokens` is the
  * final model step's prompt size, so `totalTokens` approximates the context
@@ -164,12 +184,16 @@ export interface ChatSendRequest {
 
 /** A single chat message shape returned by the chat API. */
 export interface ChatMessage {
+    /** PocketBase message id when loaded from storage. */
+    id?: string;
     role: "user" | "assistant";
     content: string;
     /** Reasoning/thinking tokens from models that support extended thinking */
     reasoning?: string;
     /** Names/statuses of tools used for this response. No inputs or outputs. */
     tools?: ChatToolActivity[];
+    /** Ordered text, reasoning, tool, and edit parts for chronological rendering. */
+    parts?: ChatPart[];
     /** The AI model that generated this message, e.g. "gpt-4o" or "gemma-4:e4b" */
     model?: string;
     /** Page context attached to a user message. */
@@ -202,6 +226,7 @@ export interface PBMessage {
     reasoning?: string;
     model?: string;
     tools?: ChatToolActivity[];
+    parts?: ChatPart[] | null;
     context?: ChatContext | null;
     attachments?: ChatAttachmentRef[] | null;
     sources?: ChatSource[] | null;

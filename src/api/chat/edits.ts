@@ -26,7 +26,6 @@ interface ChatEditOperations {
     changed?: ChatEditChanges;
     operations?: unknown[];
     before?: NoteSnapshot;
-    versionId?: string;
     afterRevision?: number;
     afterUpdated?: string;
     undoKind?: ChatEditUndoKind;
@@ -44,21 +43,12 @@ export interface RecordChatEditInput {
     changed?: ChatEditChanges;
     operations?: unknown[];
     before?: NoteSnapshot;
-    versionId?: string;
     afterRevision?: number;
     afterUpdated?: string;
     undoKind?: ChatEditUndoKind;
     /** Pending actions wait for the user; all other writes are already applied. */
     status?: "pending" | "applied";
     kind?: "create" | "edit" | "delete";
-}
-
-interface PBVersionRecord {
-    id: string;
-    document?: string;
-    version_number?: number;
-    source?: string;
-    snapshot?: unknown;
 }
 
 function parseJsonObject(value: unknown): ChatEditOperations {
@@ -212,7 +202,6 @@ export async function recordChatEdit(
         changed: input.changed ?? {},
         ...(input.operations && input.operations.length > 0 ? { operations: input.operations } : {}),
         ...(input.before ? { before: input.before } : {}),
-        ...(input.versionId ? { versionId: input.versionId } : {}),
         ...(typeof input.afterRevision === "number" ? { afterRevision: input.afterRevision } : {}),
         ...(input.afterUpdated ? { afterUpdated: input.afterUpdated } : {}),
         undoKind: input.undoKind ?? undoKindFor(input.tool, {}),
@@ -296,23 +285,6 @@ export async function listChatEdits(
     return edits;
 }
 
-async function loadVersionSnapshot(
-    authHeader: string,
-    versionId: string,
-    documentId: string,
-): Promise<NoteSnapshot | null> {
-    try {
-        const version = await pbFetchWithToken<PBVersionRecord>(
-            `/api/collections/document_versions/records/${encodeURIComponent(versionId)}`,
-            authHeader,
-        );
-        if (version.document !== documentId) return null;
-        return parseSnapshot(version.snapshot);
-    } catch {
-        return null;
-    }
-}
-
 export interface UndoChatEditResult {
     edit: ChatEditDto;
     alreadyUndone: boolean;
@@ -321,8 +293,8 @@ export interface UndoChatEditResult {
 /**
  * Undo one AI write.
  *
- * A created note goes to trash. A note edit restores the version snapshot the
- * PocketBase hook wrote before the edit. Repeated calls are idempotent: they
+ * A created note goes to trash. A note edit restores the pre-edit snapshot
+ * stored in `chat_edits.operations.before`. Repeated calls are idempotent: they
  * return the current `undone` row instead of restoring twice.
  */
 export async function undoChatEdit(
@@ -364,11 +336,7 @@ export async function undoChatEdit(
             : null;
         if (afterRevision === null) throw conflict("That edit has no saved revision to restore.");
 
-        let snapshot: NoteSnapshot | null = null;
-        if (operations.versionId) {
-            snapshot = await loadVersionSnapshot(context.authHeader, operations.versionId, record.target_id);
-        }
-        if (!snapshot) snapshot = parseSnapshot(operations.before);
+        const snapshot = parseSnapshot(operations.before);
         if (!snapshot) throw conflict("That edit has no saved snapshot to restore.");
 
         await restoreNoteSnapshot(

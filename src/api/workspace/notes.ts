@@ -40,7 +40,6 @@ export interface PBNoteRecord {
     folder?: string;
     is_private?: boolean;
     is_public?: boolean;
-    published?: boolean;
     revision?: number;
     author?: string;
     created?: string;
@@ -61,8 +60,6 @@ export interface NoteEditOptions {
     revision: number;
     /** Optional opaque token returned by read_note. */
     versionToken?: string;
-    /** Set `published: true` so PocketBase snapshots the old state. Default true. */
-    publish?: boolean;
     /** Section edits pre-sanitize the fragments and must not reformat the note. */
     sanitizeContent?: boolean;
 }
@@ -106,7 +103,6 @@ const NOTE_METADATA_FIELDS = [
     "folder",
     "is_private",
     "is_public",
-    "published",
     "revision",
     "word_count",
     "reading_time",
@@ -128,7 +124,6 @@ function toNoteSummary(record: PBNoteRecord): NoteSummaryDto {
         folderId: record.folder || null,
         isPrivate: record.is_private === true,
         isPublic: record.is_public === true,
-        published: record.published === true,
         wordCount: typeof record.word_count === "number" ? record.word_count : 0,
         readingTime: typeof record.reading_time === "number" ? record.reading_time : 0,
         created: record.created || "",
@@ -264,7 +259,6 @@ export async function createNote(
         slug: generateSlug(title) || "untitled",
         content,
         tags: normalizeStringArray(input.tags),
-        published: false,
         author: context.userId,
         is_private: input.isPrivate === true,
     };
@@ -338,8 +332,7 @@ export async function updateNote(
  * The caller must pass the revision (and optionally the version token) it read.
  * A mismatch is a `conflict` before PocketBase is touched. Content is normally
  * sanitized, but section edits pre-sanitize their fragments so untouched
- * sections stay byte-identical. `published: true` makes the PocketBase version
- * hook snapshot the pre-write state; AI writes also carry `X-Nana-Actor: ai`.
+ * sections stay byte-identical. AI writes also carry `X-Nana-Actor: ai`.
  */
 export async function editNoteRecord(
     context: ToolContext,
@@ -410,7 +403,6 @@ export async function editNoteRecord(
     // The migration and revision hook own the actual bump, but sending the
     // revision both enforces optimistic concurrency and unlocks AI writes.
     body.revision = currentRevision;
-    if (options.publish !== false) body.published = true;
 
     const path = `/api/collections/documents/records/${encodeURIComponent(current.id)}`;
     const record = unwrap(await pbRequest<PBNoteRecord>(path, context, { method: "PATCH", body }));
@@ -425,8 +417,7 @@ export async function editNoteRecord(
 
 /**
  * Restore a pre-edit snapshot through the same revision-aware update path.
- * Used by chat undo. The snapshot was persisted by the version hook (and is
- * additionally carried in the chat_edits row as a fallback).
+ * Used by chat undo; the snapshot comes from `chat_edits.operations.before`.
  */
 export async function restoreNoteSnapshot(
     context: ToolContext,
@@ -474,7 +465,6 @@ export async function restoreNoteSnapshot(
         is_private: snapshot.isPrivate === true,
         folder,
         revision: currentRevision,
-        published: true,
     };
 
     const path = `/api/collections/documents/records/${encodeURIComponent(current.id)}`;

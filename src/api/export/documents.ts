@@ -28,7 +28,6 @@ export function documentToMarkdown(doc: PBDocument): string {
         `created: ${new Date(doc.created).toISOString()}`,
         `updated: ${new Date(doc.updated).toISOString()}`,
         doc.tags && doc.tags.length > 0 ? `tags: [${doc.tags.join(", ")}]` : "",
-        `published: ${doc.published}`,
         "---",
     ]
         .filter(Boolean)

@@ -26,8 +26,10 @@ Authorization: Bearer <nana_api_key>
 | --- | --- |
 | `src/index.ts` | Bun route table, Elysia mount, MCP mount, rate-limit checks, security headers, and the 404 guard for the old `/pb` path. |
 | `src/api/rest/index.ts` | Elysia typed workspace routes, REST error mapping, browser facade mount, and self-hosted Scalar assets. |
-| `src/api/rest/browser/` | Browser facade: auth, allowlisted records, files, realtime relay, trash, admin, public shares. |
+| `src/api/rest/browser/` | Browser facade: auth, allowlisted records, files, realtime relay, trash, admin, public shares, version history. |
 | `src/api/rest/browser/records.ts` | Collection allowlist, author injection, relation ownership checks, document sanitization, and PB-shaped errors. |
+| `src/api/rest/browser/versions.ts` | Session-authenticated, owner-only version history, detail, save, and restore routes. |
+| `src/api/versioning/` | Server-side git store, per-note lock, PocketBase document reader/patcher, and version service used by the browser routes. |
 | `src/api/rest/browser/realtime.ts` | SSE relay for `/api/v1/realtime` plus authenticated subscription POSTs. |
 | `src/api/rest/openapi.ts` | OpenAPI document metadata, Scalar configuration, Graphite docs theme, and shared docs paths. |
 | `src/api/rest/responses.ts` | Shared error response schemas used by runtime validation and the OpenAPI document. |
@@ -78,7 +80,7 @@ Authorization: Bearer <nana_api_key>
 `/api/v1` is the **owner surface**. It has three layers:
 
 1. **Typed workspace API** — `/folders`, `/notes`, `/boards`, `/tasks`. These use the workspace services with `surface: "user"`, so the owner sees their private notes, boards, folders, and private-folder contents. The AI visibility lock applies only to chat and MCP.
-2. **Browser facade** — `/auth`, `/records`, `/files`, `/realtime`, `/trash`, `/admin`, `/public`, `/check-users`, `/me`. These keep the PocketBase record/error shape the SPA already understands while Elysia owns the public edge.
+2. **Browser facade** — `/auth`, `/records`, `/files`, `/realtime`, `/trash`, `/admin`, `/public`, `/check-users`, `/me`, and `/documents/:id/versions`. These keep the PocketBase record/error shape the SPA already understands while Elysia owns the public edge.
 3. **Admin settings** — `/admin/rate-limits`. This Bun-native route requires the admin flag, persists `settings.rate_limits` with the server's superuser token, and reloads the in-memory limiter in the same request. It is hidden from the public OpenAPI document.
 
 The workspace and facade layers do not replace PocketBase. They call the loopback PocketBase REST API with the caller's own token; PocketBase still enforces API rules, guards, hooks, relation cascades, soft-delete trash routes, and file protection. The browser facade adds the missing public-edge checks: collection allowlisting, author injection, relation ownership, and note sanitization.
@@ -153,7 +155,7 @@ List endpoints return:
 | DTO | Fields |
 | --- | --- |
 | Folder | `id`, `name`, `parentId`, `isPrivate`, `isPublic`, `created`, `updated`. |
-| Note summary | `id`, `title`, `tags`, `folderId`, `isPrivate`, `isPublic`, `published`, `wordCount`, `readingTime`, `created`, `updated`. |
+| Note summary | `id`, `title`, `tags`, `folderId`, `isPrivate`, `isPublic`, `wordCount`, `readingTime`, `created`, `updated`. |
 | Note | Summary plus `slug` and `content`. |
 | Board | `id`, `name`, `description`, `archived`, `folderId`, `isPrivate`, `created`, `updated`. |
 | Task | `id`, `title`, `description`, `status`, `priority`, `dueDate`, `boardOrder`, `labels`, `noteId`, `boardId`, `created`, `updated`. |
@@ -280,6 +282,10 @@ The browser facade is the replacement for `/pb`. It is public-facing Elysia code
 | `DELETE` | `/api/v1/sharing/links/:id` | owner | Revoke a grant. |
 | `GET/POST` | `/api/v1/sharing/comments` | user | List or create a document/board/task comment. |
 | `PATCH/DELETE` | `/api/v1/sharing/comments/:id` | author/owner | Edit or delete a comment. |
+| `GET` | `/api/v1/documents/:id/versions` | session owner | `200` page of `{ id, document, version_number, change_summary, source_created_at, created }`; query `page`, `perPage` (default 20, max 100); no content. |
+| `GET` | `/api/v1/documents/:id/versions/:versionId` | session owner | `200` version fields plus `content` and optional `metadata`. |
+| `POST` | `/api/v1/documents/:id/versions` | session owner | Body `{ expectedRevision }`; `200 { created, version }`. Commits the current note state; identical state returns `created: false`. |
+| `POST` | `/api/v1/documents/:id/versions/:versionId/restore` | session owner | Body `{ expectedRevision }`; commits the current state if needed, then applies only the selected Markdown body; `200 { document }`. |
 
 ¹ `POST /records/users` is public for first-user onboarding; PocketBase locks public signup after the first account.
 
@@ -295,7 +301,6 @@ Allowed record collections:
 | `labels` | yes | yes | Author-scoped label definitions. |
 | `task_relations` | yes | no | Writes go through typed REST; reads are symmetric. |
 | `task_activity` | yes | no | Server writes only. |
-| `document_versions` | yes | no | Read-only through the facade. |
 | `trash_documents`, `trash_folders` | yes | no | Mutations only through `/trash/:action`. |
 | `users` | yes | self/admin | Self updates exclude `admin`/`verified`; admin routes use the custom admin endpoints. |
 | `settings` | admin | admin | `site_url`, `ai_config`, and `rate_limits`. Use `/api/v1/admin/rate-limits` for rate-limit writes so the limiter reloads. |
@@ -305,11 +310,21 @@ Browser facade behavior:
 - **Author injection.** `author` from the browser is ignored on create and removed on update. The caller's JWT id is used, and PocketBase independently checks ownership.
 - **Relation checks.** Folder parents, board folders, task boards, and task note links are checked against the caller before the upstream write. Unknown or foreign records return `404`.
 - **Sanitization.** Document `content` is sanitized on create and update inside Elysia. Uploaded attachments are still protected by PocketBase file rules.
-- **Read-only collections.** Version and trash collections accept only reads; writes return `405`.
+- **Read-only collections.** Trash collections accept only reads; writes return `405`.
 - **Query pass-through.** Reads forward PocketBase `filter`, `sort`, `expand`, `fields`, `page`, `perPage`, and `skipTotal`. This preserves the SPA's raw PB queries without exposing arbitrary system collections.
 - **Error shape.** The facade preserves PocketBase's `{ code, message, data }` error envelope and status codes so the client's field-error and auth handling stays intact.
 - **Files.** Only `documents`, `users`, `trash_documents`, and `chat_attachments` file paths are allowlisted. Protected files still require a PocketBase file token or a public-share route; chat attachment bytes are fetched server-side with the caller's short-lived file token.
 - **Realtime.** The SSE handshake is unauthenticated, like PocketBase; the subscription POST requires the user token. Elysia sets the Bun timeout to `0` for `/api/v1/realtime`.
+
+#### Version history
+
+The four `/api/v1/documents/:id/versions` routes are browser-facade routes: they require a session token (no `nana_…` API keys), check that the caller owns the note, and hide trashed notes. Their responses use the PocketBase-shaped `{ code, message, data }` error envelope.
+
+- `id` is an opaque version id (a commit id internally). Treat it as a string; do not parse or display it as a record id.
+- List results are newest first and omit content. `page` defaults to 1, `perPage` defaults to 20 and is capped at 100. The response is `{ items, page, perPage, totalItems, totalPages }`.
+- `POST` commits the current note title, content, tags, folder, and privacy. The commit is a no-op when the current state already matches HEAD, so `created: false` means **No changes since the last version**.
+- `POST …/restore` commits the current state first when needed, then writes only the selected Markdown body. Title, tags, folder, and privacy are not restored. The response returns the updated PocketBase-shaped `document`.
+- `expectedRevision` is required on both writes (`400` when missing). A stale revision returns `409`; a missing, foreign, or trashed note/version returns `404`; an unreachable PocketBase returns `502`, and an unexpected git failure returns `500`.
 
 ### MCP
 
@@ -445,7 +460,7 @@ Requires auth. Request:
 - Omit `conversationId` to create a conversation. The first message seeds the title from the user text or the first attachment name; a background title call refines it after the first reply when the stream is not stopped and has no error. Title generation never receives attachment bytes or extracted text.
 - `regenerate: true` trims the previous user/assistant exchange before re-sending.
 - There is no `documentIds` field. `attachmentIds` is the only file payload; context is metadata only and tools read notes, boards, and tasks on demand.
-- The persisted user message carries sanitized attachment refs. Chat history sends role, content, and attachment content for user messages only. Stored reasoning, tool activity, sources, context metadata, and model metadata stay out of the prompt; the resolved context contributes a short system note.
+- The persisted user message carries sanitized attachment refs. Chat history sends role, content, and attachment content for user messages only. Stored reasoning, tool activity, the ordered `parts` timeline, sources, context metadata, and model metadata stay out of the prompt; the resolved context contributes a short system note.
 - Images become AI SDK image parts (vision required); PDFs become native file parts when the model has `files`, otherwise extracted text (and are rejected if no text); text files become named `<attachment>` text blocks. Older user-message attachments share the request's byte/text budget and degrade to text or an explicit omission marker; assistant attachments are never sent. Attachment contents are untrusted data and the system prompt says not to follow instructions inside them.
 - In edit mode, writes go through the workspace services with the caller's token and `X-Nana-Actor: ai`; note edits carry revision checks. Tools cover creating, renaming, moving, and updating folders, notes, boards, and tasks; boards can be archived and restored. Delete tools create a pending card; `POST /api/chat/edits/:id/confirm` executes it with the caller's token. Chat has no publish, share, privacy, board-column, or label tools, and it cannot move a task to another board. See [`ai.md`](ai.md) for the write contract.
 
@@ -473,7 +488,7 @@ The dock reads named SSE events. Every `data:` payload also carries `type`:
 
 A request that omits `mode` also receives legacy AI-SDK UI chunks for text, reasoning, tools, completion, and errors: `text-delta`, `reasoning-delta`, `tool-input-start`, `tool-output-available`/`tool-output-error`, `finish`, `[DONE]`, and `error`. A request that sends `mode` (the dock) receives only the named events. There is no `X-RAG-Sources` header; sources travel as the `sources` event and the persisted `sources` field. There are no embeddings or retrieval metadata.
 
-After the model stream ends, the pump persists the assistant message with `content`, optional `reasoning`, optional `tools`, optional `sources`, optional `usage`, optional `stopped`, and `model`. Persisted tool activity is only `{ name, status }` with `status` `success` or `error`; names are restricted to `CHAT_TOOL_NAMES`. See [`ai.md`](ai.md) for the tool contracts, bounds, and prompt-injection stance.
+After the model stream ends, the pump persists the assistant message with `content`, optional `reasoning`, optional `tools`, optional `parts`, optional `sources`, optional `usage`, optional `stopped`, and `model`. `parts` is the ordered timeline of `{ type: "text" | "reasoning", text }`, `{ type: "tool", name, status, ... }`, and `{ type: "edit", editId }`; it is what lets the UI render a call where it happened. Persisted tool parts keep only `{ name, status }` plus optional safe title/target fields, with `status` `success` or `error`; names are restricted to `CHAT_TOOL_NAMES`, and inputs/outputs are dropped. See [`ai.md`](ai.md) for the tool contracts, bounds, and prompt-injection stance.
 
 Chat errors:
 
@@ -497,7 +512,7 @@ Chat errors:
 | `/api/chat/conversations/:id` | PATCH | `{ conversation }`; body `{ title }`, trimmed, 1–120 characters. |
 | `/api/chat/conversations/:id` | DELETE | `204` on success. |
 
-Conversation list/view/rename/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, then writes each turn to the `messages` collection. Every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. `GET /api/chat/conversations/:id` returns `{ conversation, messages }`, with messages ordered by `position` and sanitized on read. Messages may carry `context`, `attachments`, `sources`, `usage`, and `stopped` metadata; attachment refs contain only `{ id, name, mimeType, size, kind }`. See [`ai.md`](ai.md) for the persisted shapes.
+Conversation list/view/rename/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, then writes each turn to the `messages` collection. Every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. `GET /api/chat/conversations/:id` returns `{ conversation, messages }`, with messages ordered by `position` and sanitized on read. Messages may carry `context`, `attachments`, `sources`, `usage`, `stopped`, and the ordered `parts` timeline; attachment refs contain only `{ id, name, mimeType, size, kind }`. See [`ai.md`](ai.md) for the persisted shapes.
 
 #### Chat edits and undo
 
@@ -566,7 +581,7 @@ All require a user token and ownership checks.
 | --- | --- | --- |
 | `POST /api/trash/move-document` | `{ "documentId": "id" }` | Sets `deleted_at`/`deleted_by` and clears sharing; returns `{ trashDocumentId }`, which equals the document id. |
 | `POST /api/trash/restore-document` | `{ "trashDocumentId": "id" }` | Clears the soft-delete fields; returns `{ documentId, folderId }`. A note whose folder is still trashed is re-rooted. |
-| `POST /api/trash/permanent-delete-document` | `{ "trashDocumentId": "id" }` | Hard-deletes the document, cascades versions, deletes attachments, and clears task `document` links. |
+| `POST /api/trash/permanent-delete-document` | `{ "trashDocumentId": "id" }` | Hard-deletes the document, removes its version repository, deletes attachments, and clears task `document` links. |
 | `POST /api/trash/move-folder` | `{ "folderId": "id" }` | Marks the subtree and its documents deleted, clears sharing, and rehomes boards to the root; returns `{ trashFolderId, movedDocumentIds, movedBoardIds }`. |
 | `POST /api/trash/restore-folder` | `{ "trashFolderId": "id" }` | Clears the subtree and its documents; returns `{ success, folderId, restoredDocumentIds }`. Boards rehomed to the root stay there. |
 | `POST /api/trash/permanent-delete-folder` | `{ "trashFolderId": "id" }` | Rehomes boards, clears task note links, then hard-deletes the subtree through `folders.parent` and `documents.folder` cascades. |
@@ -594,7 +609,6 @@ PocketBase's standard collection endpoints under `/api/collections/...` are inte
 | --- | --- | --- |
 | `users` | `/api/v1/records/users` / `/api/v1/auth/*` | Auth, registration, password reset, email change, OAuth, self profile/avatar. |
 | `folders`, `documents`, `boards`, `tasks` | `/api/v1/records/<collection>` | Author-scoped CRUD with injected ownership and relation checks. |
-| `document_versions` | `/api/v1/records/document_versions` | Read-only. |
 | `settings` | `/api/v1/records/settings` | Admin-only key/value store. |
 | `trash_documents`, `trash_folders` | `/api/v1/records/trash_*` | Readable but not writable; mutations go through `/api/v1/trash/:action`. |
 | `conversations` | none | Server-side chat only; `/api/chat/conversations`. |
@@ -712,7 +726,7 @@ Folder response includes `rootFolder`, `folders`, `documents`, `boards`, and `en
 - **Chat context is metadata, not retrieval.** `POST /api/chat/send` accepts only `{ type, id }` and resolves the title server-side for history. The prompt note contains only the type and id; there are no `documentIds` or attachments; extra request fields are ignored.
 - **Chat mode gates writes.** Ask mode has only the read tools. Work (`edit`) adds create, rename, move, and update tools, board archive/restore, and confirm-first deletes. The mode lives in the request and the tool registry, not in the prompt.
 - **Chat note edits require a revision.** `read_note` returns `revision` and `versionToken`; the note update tools pass one back. A stale value is a `conflict` tool result, not a silent overwrite.
-- **`published: true` is a version request.** Chat note update tools set it so the PocketBase hook snapshots the old state, then the hook resets it. `create_note` starts a new revision instead. It does not make the note public.
+- **Version history is manual-only.** Only `POST /api/v1/documents/:id/versions` commits a version. Autosave, chat writes, and MCP writes never create one. Version detail loads the body separately from the paginated list. `documents.published` and `document_versions` no longer exist; do not reintroduce either.
 - **`chat_edits` is server-owned.** It has no public create/update/delete rules. Bun writes it after checking conversation ownership; board/task cards are informational and cannot be undone.
 - **Sources are event data.** No `X-RAG-Sources` header exists, but new assistant messages do carry server-collected `sources` in the stream and in `messages.sources`. Sources come from content reads and successful writes, not list-only searches. Do not derive sources from model text.
 - **Chat tool errors are model-facing, not HTTP errors.** `list_notes` etc. return `{ ok: false, code, message }` inside the stream; the chat `POST` still succeeds. Undo and other JSON routes do use HTTP statuses, including `409` for newer work.

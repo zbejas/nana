@@ -16,7 +16,6 @@ import {
     createTask,
     createUser,
     getSuperuserToken,
-    publishNote,
     type TestUser,
 } from "../../helpers/factories";
 
@@ -51,15 +50,6 @@ describe("Trash routes", () => {
         const res = await post("/move-folder", { folderId }, token);
         await expectStatus(res, 200, "move folder to trash");
         return (await readJson<{ trashFolderId: string }>(res)).trashFolderId;
-    }
-
-    async function versionsOf(documentId: string) {
-        const page = await pbList<{ id: string; content: string }>(
-            superuserToken,
-            "document_versions",
-            { filter: `document='${documentId}'` },
-        );
-        return page.items;
     }
 
     describe("document lifecycle", () => {
@@ -108,9 +98,8 @@ describe("Trash routes", () => {
             expect(active.items.map((item) => item.id)).toContain(note.id);
         });
 
-        test("permanent delete removes the document, versions, and task links", async () => {
+        test("permanent delete removes the document and clears task links", async () => {
             const note = await createNote(user, { title: "Delete forever", content: "Gone" });
-            await publishNote(user, note.id);
             const board = await createBoard(user);
             const task = await createTask(user, board.id, { document: note.id });
             const trashId = await moveDocument(note.id);
@@ -123,7 +112,6 @@ describe("Trash routes", () => {
 
             expect(await pbRecordExists(superuserToken, "documents", note.id)).toBe(false);
             expect(await pbRecordExists(superuserToken, "trash_documents", trashId)).toBe(false);
-            expect(await versionsOf(note.id)).toEqual([]);
 
             const keptTask = await pbGetRecord<{ document: string }>(
                 superuserToken,
@@ -163,41 +151,6 @@ describe("Trash routes", () => {
                 note.id,
             );
             expect(stillRoot.folder).toBe("");
-        });
-    });
-
-    describe("version preservation", () => {
-        test("versions stay with the soft-deleted document and are hidden from the owner", async () => {
-            const note = await createNote(user, { title: "Versioned", content: "Version 1" });
-            await publishNote(user, note.id, "Version 2");
-
-            expect(await versionsOf(note.id)).toHaveLength(1);
-
-            const trashId = await moveDocument(note.id);
-            expect(await versionsOf(note.id)).toHaveLength(1);
-
-            const asUser = await pbList<{ id: string }>(user.token, "document_versions", {
-                filter: `document='${note.id}'`,
-            });
-            expect(asUser.items).toEqual([]);
-
-            const restoreRes = await post("/restore-document", { trashDocumentId: trashId });
-            const { documentId } = await readJson<{ documentId: string }>(restoreRes);
-            expect(documentId).toBe(note.id);
-            expect(await versionsOf(documentId)).toHaveLength(1);
-        });
-
-        test("permanent delete removes versions", async () => {
-            const note = await createNote(user, { title: "Version delete", content: "v1" });
-            await publishNote(user, note.id, "v2");
-            const trashId = await moveDocument(note.id);
-
-            await expectStatus(
-                await post("/permanent-delete-document", { trashDocumentId: trashId }),
-                200,
-                "delete versioned note",
-            );
-            expect(await versionsOf(note.id)).toEqual([]);
         });
     });
 
@@ -299,11 +252,10 @@ describe("Trash routes", () => {
             expect(await pbRecordExists(superuserToken, "trash_documents", note.id)).toBe(true);
         });
 
-        test("permanent delete removes the tree, its documents, and versions", async () => {
+        test("permanent delete removes the tree and its documents", async () => {
             const folder = await createFolder(user, { name: "Delete folder" });
             const child = await createFolder(user, { name: "Delete child", parent: folder.id });
             const note = await createNote(user, { folder: child.id });
-            await publishNote(user, note.id);
             const trashFolderId = await moveFolder(folder.id);
 
             const deleteRes = await post("/permanent-delete-folder", { trashFolderId });
@@ -313,7 +265,6 @@ describe("Trash routes", () => {
             expect(await pbRecordExists(superuserToken, "folders", folder.id)).toBe(false);
             expect(await pbRecordExists(superuserToken, "folders", child.id)).toBe(false);
             expect(await pbRecordExists(superuserToken, "documents", note.id)).toBe(false);
-            expect(await versionsOf(note.id)).toEqual([]);
         });
 
         test("moving an empty folder succeeds", async () => {

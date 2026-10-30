@@ -33,7 +33,8 @@ export function VersionPreviewModal({
     });
   };
 
-  const wordCount = version.content.split(/\s+/).filter((word) => word.length > 0).length;
+  const content = version.content ?? '';
+  const wordCount = content.split(/\s+/).filter((word) => word.length > 0).length;
 
   const handleRevertConfirm = () => {
     onRevert(version.id);
@@ -42,7 +43,7 @@ export function VersionPreviewModal({
   };
 
   const handleCreateNew = () => {
-    onCreateNew(version.content);
+    onCreateNew(content);
     onClose();
   };
 
@@ -71,7 +72,7 @@ export function VersionPreviewModal({
         }
       >
         <div className="rounded-control border border-line bg-surface-sunken/40 p-5 sm:p-7">
-          <MarkdownPreview content={version.content || ''} />
+          <MarkdownPreview content={content} />
         </div>
       </Dialog>
 

@@ -43,7 +43,6 @@ interface NoteSummaryDto {
     folderId: string | null;
     isPrivate: boolean;
     isPublic: boolean;
-    published: boolean;
     wordCount: number;
     readingTime: number;
     created: string;
@@ -288,6 +287,7 @@ describe("folders and notes", () => {
             isPrivate: false,
         });
         expect(note.content).toContain("Original body");
+        expect(note).not.toHaveProperty("published");
     });
 
     test("updates title, content, and tags", async () => {

@@ -23,8 +23,6 @@ const DOCUMENT_EDIT_FIELDS = {
   content: true,
   attachments: true,
   tags: true,
-  // Version-request flag. The version hook resets it after snapshotting.
-  published: true,
   // Server-managed edit metadata. The revision guard validates the submitted
   // revision and stamps the actor before this guard runs; a grantee must not be
   // rejected for fields the hooks themselves just changed.

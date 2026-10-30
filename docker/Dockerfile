@@ -18,7 +18,7 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 LABEL org.opencontainers.image.title="Nana"
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates wget unzip && \
+    apt-get install -y --no-install-recommends ca-certificates wget unzip git && \
     wget "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_${TARGETARCH}.zip" -O /tmp/pb.zip && \
     mkdir -p /tmp/pb && \
     unzip /tmp/pb.zip -d /tmp/pb && \

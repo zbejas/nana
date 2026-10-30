@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { getDocumentVersions, restoreDocumentVersion, getAttachmentUrls, getAttachmentUrlWithFreshToken, isPdfFile, isTextFile, isViewableFile, type DocumentVersion, type Document } from '../lib/documents';
+import { getDocumentVersion, getDocumentVersions, restoreDocumentVersion, getAttachmentUrls, getAttachmentUrlWithFreshToken, isPdfFile, isTextFile, isViewableFile, type DocumentVersion, type Document } from '../lib/documents';
 import { useToasts } from '../state/hooks';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('Footer');
+const VERSION_PAGE_SIZE = 20;
 import { VersionPreviewModal } from './modals/VersionPreviewModal';
 import { LazyAttachmentViewer } from './modals/LazyAttachmentViewer';
 import {
@@ -52,7 +53,11 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
+  const [versionPage, setVersionPage] = useState(1);
+  const [totalVersions, setTotalVersions] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [loadingMoreVersions, setLoadingMoreVersions] = useState(false);
+  const [loadingVersionId, setLoadingVersionId] = useState<string | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<DocumentVersion | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const footerRef = useRef<HTMLElement>(null);
@@ -135,7 +140,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
     return () => window.document.removeEventListener('mousedown', handleClick);
   }, [openAttachmentMenu]);
 
-  // Load version history
+  // Load version history from the first page every time the panel opens.
   const handleShowVersionHistory = async () => {
     if (!documentId) return;
 
@@ -146,28 +151,78 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
 
     setShowVersionHistory(true);
     setLoading(true);
+    setVersions([]);
+    setTotalVersions(0);
+    setVersionPage(1);
 
     try {
-      const result = await getDocumentVersions(documentId);
+      const result = await getDocumentVersions(documentId, 1, VERSION_PAGE_SIZE);
       setVersions(result.items);
+      setTotalVersions(result.totalItems);
+      setVersionPage(result.page || 1);
     } catch (error) {
       log.error('Failed to load version history', error);
+      showToast('Failed to load version history. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleVersionClick = (version: DocumentVersion) => {
-    setSelectedVersion(version);
-    setShowPreviewModal(true);
-    setShowVersionHistory(false);
+  const handleLoadMoreVersions = async () => {
+    if (!documentId || loadingMoreVersions) return;
+
+    const nextPage = versionPage + 1;
+    setLoadingMoreVersions(true);
+
+    try {
+      const result = await getDocumentVersions(documentId, nextPage, VERSION_PAGE_SIZE);
+      setVersions((previous) => {
+        const loadedIds = new Set(previous.map((version) => version.id));
+        return [
+          ...previous,
+          ...result.items.filter((version) => !loadedIds.has(version.id)),
+        ];
+      });
+      setTotalVersions(result.totalItems);
+      setVersionPage(result.page || nextPage);
+    } catch (error) {
+      log.error('Failed to load more versions', error);
+      showToast('Failed to load more versions. Please try again.', 'error');
+    } finally {
+      setLoadingMoreVersions(false);
+    }
+  };
+
+  const handleVersionClick = async (version: DocumentVersion) => {
+    if (!documentId || loadingVersionId) return;
+
+    setLoadingVersionId(version.id);
+
+    try {
+      // List results omit the body; load the detail before opening the preview.
+      const detail = await getDocumentVersion(documentId, version.id);
+      setSelectedVersion(detail);
+      setShowPreviewModal(true);
+      setShowVersionHistory(false);
+    } catch (error) {
+      log.error('Failed to load version', error);
+      showToast('Failed to load this version. Please try again.', 'error');
+    } finally {
+      setLoadingVersionId(null);
+    }
   };
 
   const handleRevertVersion = async (versionId: string) => {
     if (!documentId) return;
 
+    const revision = document?.revision;
+    if (typeof revision !== 'number') {
+      showToast('Reload the note before restoring a version.', 'error');
+      return;
+    }
+
     try {
-      await restoreDocumentVersion(documentId, versionId);
+      await restoreDocumentVersion(documentId, versionId, revision);
       setShowPreviewModal(false);
       if (onDocumentRestored) {
         onDocumentRestored();
@@ -658,7 +713,8 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                       }}
                       disabled={publishing}
                       className="rounded p-1.5 bg-surface-raised text-ink transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
-                      title={publishing ? 'Publishing...' : 'Publish Version'}
+                      aria-label={publishing ? 'Saving version' : 'Save this version'}
+                      title={publishing ? 'Saving version...' : 'Save this version'}
                     >
                       <BookmarkIcon className="w-4 h-4" />
                     </button>
@@ -675,7 +731,9 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                       <button
                         key={version.id}
                         onClick={() => handleVersionClick(version)}
-                        className="w-full px-4 py-3 hover:bg-surface-raised transition-colors border-b border-line last:border-b-0 text-left"
+                        disabled={loadingVersionId !== null}
+                        aria-busy={loadingVersionId === version.id}
+                        className="w-full px-4 py-3 hover:bg-surface-raised transition-colors border-b border-line last:border-b-0 text-left disabled:cursor-wait disabled:opacity-70"
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-sm font-medium text-ink">
@@ -685,9 +743,22 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
                             {formatDate(version.source_created_at || version.created)}
                           </span>
                         </div>
-                        <p className="text-xs text-ink-secondary">{version.change_summary}</p>
+                        <p className="text-xs text-ink-secondary">
+                          {loadingVersionId === version.id ? 'Loading version…' : version.change_summary}
+                        </p>
                       </button>
                     ))}
+                    {versions.length > 0 && versions.length < totalVersions && (
+                      <div className="border-t border-line p-2">
+                        <button
+                          onClick={handleLoadMoreVersions}
+                          disabled={loadingMoreVersions}
+                          className="w-full rounded-control px-3 py-2 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-raised hover:text-ink disabled:cursor-wait disabled:opacity-60"
+                        >
+                          {loadingMoreVersions ? 'Loading…' : 'Load more'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>,

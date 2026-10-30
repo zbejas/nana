@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { createDocument, updateDocument } from '../../lib/documents';
+import { createDocument, createDocumentVersion, updateDocument } from '../../lib/documents';
 import { createLogger } from '../../lib/logger';
 
 const logger = createLogger('DocActions');
@@ -13,7 +13,6 @@ interface UseDocumentActionsOptions {
     title: string;
     content: string;
     tags: string[];
-    published: boolean;
     newAttachments: File[];
     removedAttachments: string[];
     folderId?: string | null;
@@ -34,7 +33,6 @@ export function useDocumentActions({
     title,
     content,
     tags,
-    published,
     newAttachments,
     removedAttachments,
     folderId,
@@ -94,7 +92,6 @@ export function useDocumentActions({
                     content: content.trim(),
                     tags,
                     revision: document.revision,
-                    published,
                     attachments: newAttachments.length > 0 ? newAttachments : undefined,
                     removeAttachments: removedAttachments.length > 0 ? removedAttachments : undefined,
                 });
@@ -104,7 +101,6 @@ export function useDocumentActions({
                     title: saveTitle,
                     content: content.trim(),
                     tags,
-                    published,
                     folder: folderId || undefined,
                 });
 
@@ -148,7 +144,6 @@ export function useDocumentActions({
         title,
         content,
         tags,
-        published,
         newAttachments,
         removedAttachments,
         document,
@@ -171,7 +166,7 @@ export function useDocumentActions({
         }
 
         if (!document?.id) {
-            onShowToast('Save the document first before publishing', 'error');
+            onShowToast('Save the note first before saving a version', 'error');
             return;
         }
 
@@ -179,30 +174,40 @@ export function useDocumentActions({
         isSavingRef.current = true;
 
         try {
-            // Update with published=true flag
-            // PocketBase hook will create version and reset flag automatically
-            const publishedDocument = await updateDocument(document.id, {
+            // Persist the editor state first, then commit that exact revision.
+            const savedDocument = await updateDocument(document.id, {
                 title: title.trim() || 'Untitled',
                 content: content.trim(),
                 tags,
-                published: true,
+                revision: document.revision,
                 attachments: newAttachments.length > 0 ? newAttachments : undefined,
                 removeAttachments: removedAttachments.length > 0 ? removedAttachments : undefined,
             });
 
-            // Update global state
-            onSave(publishedDocument, { creationSessionId: creationSessionIdRef.current });
+            // Update global state with the save even if the version commit fails.
+            onSave(savedDocument, { creationSessionId: creationSessionIdRef.current });
 
-            onShowToast('Version published successfully', 'success');
+            const revision = savedDocument.revision ?? document.revision;
+            if (typeof revision !== 'number') {
+                throw new Error('Reload the note before saving a version.');
+            }
+
+            const result = await createDocumentVersion(document.id, revision);
+
+            onShowToast(
+                result.created ? 'Version saved' : 'No changes since the last version',
+                result.created ? 'success' : 'info',
+            );
         } catch (err: any) {
-            logger.error('Failed to publish version', { error: err.message });
-            onShowToast(err.message || 'Failed to publish version', 'error');
+            logger.error('Failed to save version', { error: err.message });
+            onShowToast(err.message || 'Failed to save version', 'error');
         } finally {
             onSetPublishing(false);
             isSavingRef.current = false;
         }
     }, [
         document?.id,
+        document?.revision,
         title,
         content,
         tags,

@@ -166,12 +166,15 @@ describe("Chat API", () => {
             await expectStatus(res, 200);
             const data = await readJson<{
                 conversation: { id: string; title: string };
-                messages: Array<{ role: string; content: string }>;
+                messages: Array<{ id: string; role: string; content: string }>;
             }>(res);
 
             expect(data.conversation.id).toBe(conversation.id);
             expect(data.conversation.title).toBe("History");
-            expect(data.messages).toEqual([
+            expect(data.messages.map(({ id, ...message }) => {
+                expect(id).toBeTruthy();
+                return message;
+            })).toEqual([
                 { role: "user", content: "hello" },
                 { role: "assistant", content: "hi" },
             ]);

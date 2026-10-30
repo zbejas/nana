@@ -15,7 +15,7 @@ There is no embeddings pipeline and no vector store. Chat accepts per-message at
 | `src/api/chat/index.ts` | `handleChat()` routing, `POST /api/chat/send`, mode/context validation, system prompt assembly, tool loop, stream pump, persistence, title generation. |
 | `src/api/chat/context.ts` | `resolveChatContext()`: caller-scoped document/board/folder lookup, trash and private-lock checks, resolved title; `contextSystemNote()` adds only the page id to the prompt. |
 | `src/api/chat/model-metadata.ts` | Fills missing model context windows from the cached models.dev catalog for chat status; explicit values always win and nothing is written to `ai_config`. |
-| `src/api/chat/stream.ts` | SSE named events, legacy AI-SDK chunks, and `ChatStreamState` accumulation. |
+| `src/api/chat/stream.ts` | SSE named events, legacy AI-SDK chunks, and `ChatStreamState` accumulation of text, reasoning, tool calls, edits, and the ordered `parts` timeline. |
 | `src/api/chat/edits.ts` | `recordChatEdit()`, `listChatEdits()`, `undoChatEdit()`, edit DTO mapping, and conversation-owner checks. |
 | `src/api/chat/tool-names.ts` | `CHAT_READ_TOOL_NAMES`, `CHAT_WRITE_TOOL_NAMES`, and the persisted `CHAT_TOOL_NAMES` allowlist. |
 | `src/api/chat/tools/index.ts` | `createChatTools()` with ask/edit gating, per-tool instrumentation, and source collection. |
@@ -44,9 +44,11 @@ There is no embeddings pipeline and no vector store. Chat accepts per-message at
 | `pocketbase/pb_migrations/0000019_remove_embedding_settings.js` | Deletes the obsolete `embedding_config` setting. |
 | `pocketbase/pb_migrations/0000020_boards_in_folders.js` | Adds `boards.folder` and `boards.is_private`, used by the AI visibility lock. |
 | `pocketbase/pb_migrations/0000022_relational_remodel.js` | Adds the `messages` collection and removes the inline conversation JSON field. |
-| `pocketbase/pb_migrations/0000027_chat_edits.js` | Adds document revisions/actor metadata, message context/sources/stopped, version snapshots, and `chat_edits`. |
+| `pocketbase/pb_migrations/0000027_chat_edits.js` | Adds document revisions/actor metadata, message context/sources/stopped, and `chat_edits`. |
 | `pocketbase/pb_migrations/0000030_chat_attachments.js` | Adds the owner-scoped `chat_attachments` collection and `messages.attachments`. |
 | `pocketbase/pb_migrations/0000031_message_usage.js` | Adds `messages.usage` for the final-step token accounting used by the context ring. |
+| `pocketbase/pb_migrations/0000032_remove_document_versions.js` | Drops the legacy `document_versions` store and `documents.published`; version history is server-side git from this migration on. |
+| `pocketbase/pb_migrations/0000033_message_parts.js` | Adds `messages.parts`, the ordered text/reasoning/tool/edit timeline used by the transcript. |
 | `tests/api/chat-tools.test.ts` | Integration coverage for the read tools, scoping, paging, truncation, error mapping, and private fixtures. |
 | `tests/api/chat-attachments.test.ts` | Integration coverage for upload auth, disabled/limit/type rejection, draft ownership/deletion, binding, and sanitized refs. |
 | `tests/api/chat-write-tools.test.ts` | Integration coverage for edit-mode gating, context resolution, writes, revisions, edit cards, and undo. |
@@ -178,7 +180,7 @@ The lock is structural, not prompt-based. The system instruction for chat and th
 4. `fetchAIConfig()` loads `ai_config`, `normalizeAIConfig()` produces the v2 view, and `resolveChatModel()` picks the requested model, the default, or the first enabled model. An explicit unknown/disabled id is `400 model_not_found`; no usable model is `503`. Generation parameters (`temperature`, `maxOutputTokens`, `topP`) come from the selected model, and Ollama thinking is applied on its model instance. The old OpenAI Responses `store: false` workaround is not sent on the Chat Completions path.
 5. When `attachmentIds` are present, `resolveAttachments()` verifies the caller owns every draft row, none is already bound, the count and byte caps pass, and the selected model supports the kinds. Images require `capabilities.vision`; a PDF requires `capabilities.files` or non-empty server-extracted text. Failures return `400`, `403`, `404`, `413`, or `415` before any conversation or stream is created.
 6. Without a `conversationId`, Bun creates a conversation titled from the user text or the first attachment name and writes the user message with its resolved `context` and attachment refs. With one, it appends the user message; `regenerate: true` first trims the previous user/assistant pair. Draft rows are then bound to the new message with both `conversation` and `message`.
-7. History is loaded and reduced to `{ role, content }` plus attachment content for user messages only. Stored reasoning, tool activity, sources, context metadata, and model metadata are never sent back to the model. The resolved page context contributes a short system note instead.
+7. History is loaded and reduced to `{ role, content }` plus attachment content for user messages only. Stored reasoning, tool activity, the ordered `parts` timeline, sources, context metadata, and model metadata are never sent back to the model. The resolved page context contributes a short system note instead.
 8. `buildSystemPrompt()` writes the admin `systemPrompt` first, then the fixed base instruction (identity, grounding, bounded tool use, and communication), the read contract, the attachment-untrusted instruction when any message carries attachments, the write contract in edit mode, and the page-context note when a context was resolved. The base and contracts are code-owned; an admin prompt can add voice or policy but cannot remove them.
 9. `createChatTools({ authHeader, userId }, { mode, recorder, conversationId })` builds the read-tool set, plus the write-tool set only in edit mode.
 10. `streamText()` runs with `stopWhen: stepCountIs(8)`, `maxRetries: 1`, and the request/abort signal. The selected model's upstream id is returned in `X-Model-Name`, its connection id in `X-Model-Source`, and the assistant row persists `model` as the upstream id. The stream pump emits named SSE events, records sources and applied edits, persists the assistant message after the model stream ends, and includes the final step's `usage` in the `done` frame and the stored row.
@@ -238,7 +240,7 @@ All chat tools are **caller-scoped**. Notes and boards read directly through Poc
 | Tool | Input | Result |
 | --- | --- | --- |
 | `list_folders` | None. | Every visible folder with id, name, parent id, and privacy/public flags. Hidden folder subtrees are omitted. |
-| `list_notes` | `query` (max 200, titles/tags only), `tag`, `folderId`, `page` (1–1000), `perPage` (1–50), `sort` (`updated`, `created`, `title`). | Note metadata: id, title, tags, dates, word count, reading time, folder, privacy/published flags. Never body text. |
+| `list_notes` | `query` (max 200, titles/tags only), `tag`, `folderId`, `page` (1–1000), `perPage` (1–50), `sort` (`updated`, `created`, `title`). | Note metadata: id, title, tags, dates, word count, reading time, folder, and privacy flag. Never body text. |
 | `read_note` | `noteId`, `offset` (1–100000), `limit` (1–600 lines, default 300). | A line window plus `totalLines`, `hasMore`, `nextOffset`, `truncated`, `clippedLines`, `revision`, and `versionToken`. |
 | `list_boards` | `includeArchived` (default false), `page`, `perPage`. | Boards with open/done/total and per-column task counts. Archived boards only when requested. |
 | `read_board` | `boardId`, optional `column` (`backlog`, `next`, `progress`, `done`), `page`, `perPage`. | Board summary and paged task summaries: title, status, priority, due date, labels, order, note id, 400-character plain-text excerpt. |
@@ -294,12 +296,12 @@ Write bounds and invariants:
 
 1. The tool calls a shared workspace service with the caller's `ToolContext` and `actor: "ai"`; it never calls PocketBase directly for a write and never uses the superuser token.
 2. `src/api/pocketbase/client.ts` sends `X-Nana-Actor: ai` on the request.
-3. Note edits pass the read `revision` and `versionToken` to `editNoteRecord()`. The service re-checks the revision, then sends `revision` and `published: true`.
-4. `published: true` is the version-request flag. The PocketBase version hook snapshots the pre-edit title, content, tags, folder, and privacy, records `source: "ai"` and `actor_label: "Nana"`, then resets the flag. It does not publish or share the note.
+3. Note edits pass the read `revision` and `versionToken` to `editNoteRecord()`. The service re-checks the revision, then updates the document with the caller's token.
+4. AI edits do not create version history. Version history is manual-only: only an explicit **Save version** commits the current note state. Autosave and chat writes never touch it.
 5. The revision guard rejects a stale submitted revision, bumps `documents.revision` on content/title/tag changes, and stamps `last_edited_by: "Nana"` / `last_edit_source: "ai"`.
-6. The write tool records a server-owned `chat_edits` row with the target, tool, summary, changed sections/fields, revision/version metadata, and an optional pre-edit snapshot. The row uses the server credential only after the caller's token has proved ownership of the conversation.
+6. The write tool records a server-owned `chat_edits` row with the target, tool, summary, changed sections/fields, revision metadata, and an optional pre-edit snapshot in `chat_edits.operations.before`. The row uses the server credential only after the caller's token has proved ownership of the conversation.
 7. The recorder emits an `edit` event for the applied write. If audit persistence fails, the workspace write still succeeds and the card is omitted; the tool does not fail after a completed write.
-8. Undo of a created note moves it to trash. Undo of a note edit restores the version snapshot (or the stored fallback snapshot) through the same revision-aware path. Board and task writes have no undo.
+8. Undo of a created note moves it to trash. Undo of a note edit restores the pre-edit data stored in `chat_edits.operations.before` through the same revision-aware path. Board and task writes have no undo.
 
 Chat does **not** expose publish, share, privacy, board-column, or label tools, and it cannot move a task to another board. Delete tools are two-step: the model can only create a pending action, and `POST /api/chat/edits/:id/confirm` executes it after the user clicks the card. A pending action can be cancelled, and confirmation re-checks ownership, visibility, and board/archive rules with the caller's token. Notes, boards, and folders can be moved between visible folders; boards can also be archived and restored.
 
@@ -376,7 +378,7 @@ Work mode (`mode: "edit"`) adds:
 
 ### Persistence
 
-Conversations live in `conversations`; each turn is a row in `messages` with `conversation`, `role`, `content`, `position`, and optional `reasoning`, `tools`, `context`, `attachments`, `sources`, `usage`, `stopped`, and `model` fields. A user message may carry:
+Conversations live in `conversations`; each turn is a row in `messages` with `conversation`, `role`, `content`, `position`, and optional `reasoning`, `tools`, `parts`, `context`, `attachments`, `sources`, `usage`, `stopped`, and `model` fields. A user message may carry:
 
 ```ts
 {
@@ -418,7 +420,7 @@ An assistant message may contain:
 
 The chat surface has two entry points that share one store: the full page at `/chat` and `/chat/:conversationId`, and the persistent right-side dock mounted at the app root. The dock is hidden while the full page is open. The dock sends the open page's `{ type, id }` context automatically at send time; there is no visible chip or dismissal state. The server resolves the record, applies ownership, trash, and private checks, and the prompt receives only the id. Opening a private note, board, or folder, or a page whose privacy lookup is still loading, does not attach context.
 
-The composer uses **Work/Ask**. Work is the default and sends `mode: "edit"`; Ask is the read-only lock and sends `mode: "ask"`. Applied writes render inside the same tool disclosure above the final answer as collapsed rows; expanding one shows its details and Undo where available. Delete tools auto-expand the disclosure and a pending approval row with explicit confirm/cancel actions. Sources render as a collapsed `Sources · N` disclosure. Tool activity is a quiet neutral summary with an optional one-line-per-tool expansion; persisted history keeps only names and statuses. See [`frontend.md`](frontend.md) for layout and the [`DESIGN.md`](../DESIGN.md) chat treatment.
+The composer uses **Work/Ask**. Work is the default and sends `mode: "edit"`; Ask is the read-only lock and sends `mode: "ask"`. Assistant turns persist an ordered `messages.parts` timeline of text, reasoning, tool calls, and edit cards, so the chat UI can render each call where it happened instead of collecting every tool at the top. Consecutive calls group into one quiet disclosure; a running group opens automatically, and single calls are their own rows. Applied writes render at the point the write completed; expanding one shows its details and Undo where available. Delete tools auto-expand with explicit confirm/cancel actions. Sources render as a collapsed `Sources · N` disclosure. Persisted tool parts keep only names, statuses, and safe target titles; inputs and outputs never leave the server. See [`frontend.md`](frontend.md) for layout and the [`DESIGN.md`](../DESIGN.md) chat treatment.
 
 ### Security boundaries
 
@@ -474,8 +476,9 @@ Tool logs contain the tool name, duration, and result count only. Inputs, output
 - **Write tools belong in `src/api/chat/tools/writes.ts` and go through `src/api/workspace/`.** Do not add direct PocketBase writes to a chat executor; revision checks, private lock, sanitization, and actor stamping live in the services.
 - **Note edits are revision-checked twice.** The tool checks `expectedRevision` against the read note, then `editNoteRecord()` re-checks `revision` and `versionToken`. A stale write returns `conflict`; it never overwrites newer work.
 - **Section edits are the only body-edit primitive.** `applySectionEdits()` validates every anchor before the write. Fragments are sanitized first, then written with `sanitizeContent: false` so untouched sections are not re-sanitized. A missing anchor is `invalid_input`; an ambiguous one is `conflict`.
-- **`published: true` is a version request, not publishing.** Chat note update tools set it; the PocketBase hook snapshots the old state and resets the flag. `create_note` starts a new revision instead. It does not create a public share or change `is_public`.
-- **`X-Nana-Actor: ai` is how a write reads as Nana.** It sets `last_edited_by`, `last_edit_source`, version `source`/`actor_label`, and task activity `actor_type`. Do not drop the header or the record will look user-edited.
+- **AI edits never create version history.** Version history is manual-only and lives in the server-side git store. Do not reintroduce a snapshot write or a version-request flag on note updates.
+- **Chat undo uses its own stored snapshot.** Note-edit undo restores the pre-edit title, content, tags, folder, and privacy from `chat_edits.operations.before`; it does not read version history or create a version.
+- **`X-Nana-Actor: ai` is how a write reads as Nana.** It sets `last_edited_by`, `last_edit_source`, and task activity `actor_type`. Do not drop the header or the record will look user-edited.
 - **`chat_edits` is server-owned.** It has no create/update/delete rules. Bun writes it with the superuser credential only after verifying that the caller owns the conversation; never expose a client-writable audit table.
 - **Only note writes are undoable.** `create_note` undo trashes the note; `append_note`/`edit_note`/`update_note` undo restores the pre-edit snapshot. Board and task edit cards have `undo.kind: "none"` and `available: false`.
 - **Undo is idempotent; note-edit undo is conflict-aware.** A second undo of a successful edit returns `alreadyUndone: true` without applying twice. A note-edit undo returns `409` if the note has a newer revision or `updated` timestamp; created-note undo trashes the target without a revision check.

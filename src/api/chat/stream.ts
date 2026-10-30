@@ -1,6 +1,7 @@
 import {
     sanitizeChatUsage,
     type ChatEditDto,
+    type ChatPart,
     type ChatSource,
     type ChatToolActivity,
     type ChatToolStatus,
@@ -148,15 +149,29 @@ export function errorEvent(message: string, legacy = true): string {
 export class ChatStreamState {
     text = "";
     reasoning = "";
+    parts: ChatPart[] = [];
     private readonly order: string[] = [];
     private readonly tools = new Map<string, { id: string; name: string; status: ChatToolStatus; error?: string }>();
+    private readonly partIndexes = new Map<string, number>();
 
     addText(delta: string): void {
         this.text += delta;
+        const last = this.parts[this.parts.length - 1];
+        if (last?.type === "text") {
+            last.text += delta;
+        } else {
+            this.parts.push({ type: "text", text: delta });
+        }
     }
 
     addReasoning(delta: string): void {
         this.reasoning += delta;
+        const last = this.parts[this.parts.length - 1];
+        if (last?.type === "reasoning") {
+            last.text += delta;
+        } else {
+            this.parts.push({ type: "reasoning", text: delta });
+        }
     }
 
     addToolStart(id: string, name: string): void {
@@ -164,20 +179,25 @@ export class ChatStreamState {
         const existing = this.tools.get(id);
         if (existing) {
             existing.name = name;
+            const index = this.partIndexes.get(id);
+            const part = index === undefined ? undefined : this.parts[index];
+            if (part?.type === "tool") part.name = name;
             return;
         }
         this.order.push(id);
         this.tools.set(id, { id, name, status: "running" });
+        this.partIndexes.set(id, this.parts.length);
+        this.parts.push({ type: "tool", id, name, status: "running" });
     }
 
     addToolResult(id: string, name: string, ok: boolean, error?: string): void {
         if (!id) return;
         this.addToolStart(id, name);
         const entry = this.tools.get(id);
-        if (!entry) return;
-        if (entry.status === "error") return;
+        if (!entry || entry.status === "error") return;
         entry.status = ok ? "success" : "error";
         if (error) entry.error = error;
+        this.setPartStatus(id, entry.status);
     }
 
     addToolError(id: string, name: string, error: string): void {
@@ -187,6 +207,32 @@ export class ChatStreamState {
         if (!entry) return;
         entry.status = "error";
         entry.error = error;
+        this.setPartStatus(id, "error");
+    }
+
+    addEdit(edit: ChatEditDto): void {
+        if (!edit.id) return;
+        if (this.parts.some((part) => part.type === "edit" && part.editId === edit.id)) return;
+        this.parts.push({ type: "edit", editId: edit.id });
+    }
+
+    /** Finalize a turn for persistence; unfinished calls become failures. */
+    persistedParts(finalText: string): ChatPart[] {
+        const parts = this.parts.map((part): ChatPart => (
+            part.type === "tool" && part.status === "running"
+                ? { ...part, status: "error" }
+                : part
+        ));
+        if (!this.text.trim() && finalText) {
+            parts.push({ type: "text", text: finalText });
+        }
+        return parts;
+    }
+
+    private setPartStatus(id: string, status: ChatToolStatus): void {
+        const index = this.partIndexes.get(id);
+        const part = index === undefined ? undefined : this.parts[index];
+        if (part?.type === "tool") part.status = status;
     }
 
     toolEvents(): ToolEventPayload[] {

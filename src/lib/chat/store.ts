@@ -23,6 +23,7 @@ import type {
   ChatContextInput,
   ChatError,
   ChatMode,
+  ChatPart,
   ChatUiEdit,
   ChatUiMessage,
   ChatUiState,
@@ -30,6 +31,8 @@ import type {
   ChatAttachmentRef,
   ChatUsage,
 } from './types';
+
+type ChatParts = ChatPart[];
 
 const WRITE_TOOL = /^(create|update|edit|append|move|archive|restore)_/;
 
@@ -166,6 +169,28 @@ function updateLastAssistant(
   setState({ messages });
 }
 
+function appendTextPart(parts: ChatParts | undefined, delta: string): ChatParts {
+  const next = [...(parts ?? [])];
+  const last = next[next.length - 1];
+  if (last?.type === 'text') {
+    next[next.length - 1] = { ...last, text: last.text + delta };
+  } else {
+    next.push({ type: 'text', text: delta });
+  }
+  return next;
+}
+
+function appendReasoningPart(parts: ChatParts | undefined, delta: string): ChatParts {
+  const next = [...(parts ?? [])];
+  const last = next[next.length - 1];
+  if (last?.type === 'reasoning') {
+    next[next.length - 1] = { ...last, text: last.text + delta };
+  } else {
+    next.push({ type: 'reasoning', text: delta });
+  }
+  return next;
+}
+
 function upsertTool(tool: ChatUiTool): void {
   updateLastAssistant((message) => {
     const tools = [...(message.tools ?? [])];
@@ -188,7 +213,27 @@ function upsertTool(tool: ChatUiTool): void {
         title: tool.title ?? previous?.title,
       };
     }
-    return { ...message, tools };
+
+    const parts = [...(message.parts ?? [])];
+    const partIndex = tool.id
+      ? parts.findIndex((part) => part.type === 'tool' && part.id === tool.id)
+      : parts.findIndex((part) => part.type === 'tool' && part.name === tool.name && part.status === 'running');
+    if (partIndex === -1) {
+      parts.push({ type: 'tool', ...tool });
+    } else {
+      const previous = parts[partIndex];
+      if (previous?.type === 'tool') {
+        parts[partIndex] = {
+          ...previous,
+          ...tool,
+          id: previous.id ?? tool.id,
+          name: tool.name || previous.name,
+          title: tool.title ?? previous.title,
+        };
+      }
+    }
+
+    return { ...message, tools, parts };
   });
 }
 
@@ -208,7 +253,15 @@ function attachEdit(edit: ChatUiEdit): void {
       const nextEdits = [...messageEdits];
       if (existing === -1) nextEdits.push(edit);
       else nextEdits[existing] = { ...nextEdits[existing], ...edit };
-      messages[i] = { ...message, edits: nextEdits };
+      const nextParts = [...(message.parts ?? [])];
+      if (!nextParts.some((part) => part.type === 'edit' && part.editId === edit.id)) {
+        nextParts.push({ type: 'edit', editId: edit.id });
+      }
+      messages[i] = {
+        ...message,
+        edits: nextEdits,
+        ...(nextParts.length > 0 ? { parts: nextParts } : {}),
+      };
       break;
     }
   }
@@ -244,6 +297,7 @@ function finalizeError(error: ChatError, retryText: string): void {
     && !last.content
     && !last.reasoning
     && !last.tools?.length
+    && !last.parts?.length
     && !last.edits?.length
   ) {
     messages.pop();
@@ -703,13 +757,18 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
       },
       onText: (delta) => {
         if (!current()) return;
-        updateLastAssistant((message) => ({ ...message, content: message.content + delta }));
+        updateLastAssistant((message) => ({
+          ...message,
+          content: message.content + delta,
+          parts: appendTextPart(message.parts, delta),
+        }));
       },
       onReasoning: (delta) => {
         if (!current()) return;
         updateLastAssistant((message) => ({
           ...message,
           reasoning: (message.reasoning ?? '') + delta,
+          parts: appendReasoningPart(message.parts, delta),
         }));
       },
       onTool: (tool) => {

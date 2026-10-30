@@ -12,10 +12,10 @@ The Docker suite runs both layers in an isolated container with a disposable dat
 | --- | --- |
 | `tests/unit/` | Pure-function tests; no server, no PocketBase, no preload. |
 | `tests/pocketbase/bootstrap.test.ts` | First checks on a fresh database: health, credentials, schema limits. |
-| `tests/pocketbase/guards/` | Collection rules and request guards: users, trash views, versions, tasks, boards, relation integrity. |
-| `tests/pocketbase/hooks/` | Document hooks: stats, versions, cascades. |
+| `tests/pocketbase/guards/` | Collection rules and request guards: users, trash views, tasks, boards, relation integrity. |
+| `tests/pocketbase/hooks/` | Document hooks: stats, cascades. |
 | `tests/pocketbase/routes/` | Custom PocketBase routes: trash, admin, public shares, check-users, folder board rehoming. |
-| `tests/api/` | Bun routes plus chat read/write tools, Elysia `/api/v1`, and MCP: version, export, chat, security, static, rest, mcp. |
+| `tests/api/` | Bun routes plus chat read/write tools, Elysia `/api/v1`, MCP, and version history: app version, versions, export, chat, security, static, rest, mcp. |
 | `tests/helpers/setup.ts` | URLs, credentials, auth, signup, unique names. |
 | `tests/helpers/client.ts` | HTTP and PocketBase collection helpers with status assertions. |
 | `tests/helpers/factories.ts` | Isolated users and records for integration files. |
@@ -53,12 +53,12 @@ tests/
     sanitize.test.ts
     tasks-text.test.ts
     timeline-items.test.ts
+    versioning-store.test.ts
   pocketbase/
     bootstrap.test.ts
     guards/
       00-user-guards.test.ts
       01-trash-guards.test.ts
-      02-version-guards.test.ts
       03-task-rules.test.ts
       04-board-rules.test.ts
       05-board-folders.test.ts
@@ -81,6 +81,7 @@ tests/
     security.test.ts
     static.test.ts
     version.test.ts
+    versions.test.ts
 ```
 
 Numeric prefixes in `pocketbase/guards/` preserve the bootstrap ordering. Do not add ordering prefixes elsewhere.
@@ -189,7 +190,6 @@ Integration files share one database but not fixture records.
 | `createFolder(user, opts)` | Folder record; supports `parent` and `is_private`. |
 | `createBoard(user, opts)` | Board record; supports `archived`, `folder`, and `is_private`. |
 | `createTask(user, boardId, opts)` | Task with status, order, labels, due date, and optional note link; ownership comes from the board. |
-| `publishNote(user, id, content?)` | Update with `published: true`, triggering a version. |
 | `superuserUpdate(collection, id, body)` | Share flags and other privileged fixture setup. |
 | `createConversation(user, opts)` | Conversation plus its initial `messages` records. |
 
@@ -266,6 +266,9 @@ Rules:
 | AI private lock, hidden-folder subtrees, filters | `tests/unit/ai-visibility.test.ts` + `tests/unit/api-key-scope.test.ts` + `tests/api/chat-tools.test.ts` + `tests/api/mcp.test.ts` + `tests/api/rest-api.test.ts` |
 | Export format, filename, folder path, attachment | `tests/api/export.test.ts` + `tests/unit/export-documents.test.ts` |
 | Manifest, service worker, icons, SPA fallback | `tests/api/static.test.ts` |
+| Save/list/read/restore version history, dedupe, stale revisions, owner scoping | `tests/api/versions.test.ts` |
+| Git store commit/tree/list/read and note locking | `tests/unit/versioning-store.test.ts` |
+| Version repository cleanup after permanent note/folder delete | `tests/api/versions.test.ts` |
 | New PocketBase hook | `tests/pocketbase/hooks/` |
 | Guard or permission change | `tests/pocketbase/guards/` |
 | New PocketBase route | `tests/pocketbase/routes/` |
@@ -296,13 +299,13 @@ Rules:
 | --- | --- |
 | Registry | Ask mode omits every write tool and keeps `list_tasks`; Work mode registers the full write allowlist, including folder/note/board move, rename, and archive tools. |
 | Context | Server-resolved titles; foreign, private, and private-folder contexts return `404`; wrong type is `400`. |
-| Notes | `create_note` stamps `last_edit_source: "ai"`/`last_edited_by: "Nana"`; `append_note` and `edit_note` carry untouched content through and snapshot the old version; stale revisions return `conflict`; missing/ambiguous anchors abort; private notes and private-folder notes return `not_found`; `move_note` changes the folder and refuses a private destination. |
+| Notes | `create_note` stamps `last_edit_source: "ai"`/`last_edited_by: "Nana"`; `append_note` and `edit_note` carry untouched content through and store the pre-edit snapshot in `chat_edits.operations.before`; stale revisions return `conflict`; missing/ambiguous anchors abort; private notes and private-folder notes return `not_found`; `move_note` changes the folder and refuses a private destination. |
 | Folders | Create, rename, and move a folder; the parent relation is persisted. |
 | Boards/tasks | Board creation, board rename/move/archive/restore, folder creation, task create/update/move, archived-board conflict, invalid status, foreign task `not_found`, and `actor_type: "ai"` task activity. |
 | Delete approval | A delete tool creates `pending` and leaves the target untouched; confirm trashes the target; cancel leaves it untouched; another user cannot confirm. |
 | Cards/undo | Edit rows list oldest first; only the conversation owner can read or undo; created-note undo trashes and repeated undo is a no-op; note-edit undo restores the snapshot and repeated undo does not bump the revision again. |
 
-The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), named/legacy SSE encoding (`tests/unit/chat-stream.test.ts`), route context derivation (`tests/unit/chat-context.test.ts`), version tokens (`tests/unit/chat-version-token.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), and API key token/scope helpers (`tests/unit/api-key-scope.test.ts`).
+The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), named/legacy SSE encoding (`tests/unit/chat-stream.test.ts`), route context derivation (`tests/unit/chat-context.test.ts`), revision tokens (`tests/unit/chat-version-token.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), API key token/scope helpers (`tests/unit/api-key-scope.test.ts`), and the git version store (`tests/unit/versioning-store.test.ts`).
 
 ### REST and MCP coverage
 
@@ -351,6 +354,8 @@ The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.te
 | Realtime | The SSE handshake returns `text/event-stream` and a `PB_CONNECT` frame. |
 | Admin/public | Settings and admin routes are admin-only; public document shares work and private shares return `404`. |
 
+`tests/api/versions.test.ts` exercises git-backed version history through the real browser facade: saving the current note, deduplicating an identical save (`created: false`), listing newest-first with pagination and no body, reading one detail, restoring a body while preserving title/tags/folder/privacy, rejecting stale revisions (`409`), hiding versions from another user, and removing repositories after permanent note and folder deletes. `tests/unit/versioning-store.test.ts` covers the store directly: first commit, tree equality, metadata changes, pagination, detail reads, note locking, and path validation.
+
 `tests/api/security.test.ts` asserts `/pb` and `/pb/*` return `404`, security headers are present, the facade requires a token, and the loopback PocketBase fixture path still works.
 
 `tests/pocketbase/guards/05-board-folders.test.ts` covers the board folder guard and `boards.is_private` field. `tests/pocketbase/guards/06-relation-integrity.test.ts` covers create ownership, immutable authors, folder cycles, foreign/trashed relation targets, message ownership, unique share tokens, and user-deletion blocking. `tests/pocketbase/routes/08-board-folder-trash.test.ts` covers folder trash rehoming, `movedBoardIds`, restore behavior, and permanent-delete preservation of rehomed boards and their tasks.
@@ -385,7 +390,7 @@ The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.te
 - **Protected file downloads need a file token.** `GET /api/v1/files/...` with only an `Authorization` header returns 404. Create one with `POST /api/v1/files/token`, then append `?token=...`.
 - **Expired public shares are disabled on read.** A 404 for an expired token also clears `is_public` and `public_share_token`; assert the stored record, not just the response.
 - **The suite is not mocked.** A unit test does not prove a guard, route, or tool is wired. Add the integration assertion.
-- **The suite starts from an empty database.** It exercises the current schema, not legacy upgrade paths. To verify the `0000018` task-to-board backfill, migrate a disposable data directory to `0000017`, create a user and a boardless task, apply `0000018`, then confirm the task lands on that author's `My board` with its status and order intact. To verify `0000022`, migrate a disposable directory to `0000021`, create a trashed document/folder, a version, and a conversation with messages, apply `0000022`, then confirm the rows are soft-deleted with their original ids, attachments still resolve through the trash view, the conversation messages are records, and `tasks.author`/`document_versions.created_by` are gone.
+- **The suite starts from an empty database.** It exercises the current schema, not legacy upgrade paths. To verify the `0000018` task-to-board backfill, migrate a disposable data directory to `0000017`, create a user and a boardless task, apply `0000018`, then confirm the task lands on that author's `My board` with its status and order intact. To verify `0000022`, migrate a disposable directory to `0000021`, create a trashed document/folder, a legacy version row, and a conversation with messages, apply `0000022`, then confirm the rows are soft-deleted with their original ids, attachments still resolve through the trash view, the conversation messages are records, and `tasks.author`/`document_versions.created_by` are gone. To verify `0000032`, migrate a disposable directory to `0000031`, create a note, apply `0000032`, then confirm `document_versions` and `documents.published` are gone and `trash_documents` still returns trashed notes without the removed column.
 - **The Docker suite applies the full migration head automatically.** The entrypoint runs `migrate up` on a fresh database, so REST, MCP, chat, and trash tests see soft-delete fields, the `messages` collection, the trash views, relation indexes, immutable authors, and the share-token unique indexes without an explicit migration step.
 - **Private fixtures need their owner.** The private-lock tests must read as the owner. A second user seeing `not_found` proves cross-author scoping, not the private lock; use `createUser()` and the owner's token for the private cases.
 - **MCP tests must `POST`.** A `GET /mcp` returns `405`; the test helper must send a JSON-RPC body with the user token and assert the tool result, not an HTTP error, for workspace failures.

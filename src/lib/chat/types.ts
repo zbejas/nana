@@ -11,6 +11,7 @@ import type {
   ChatSource,
   ChatStatusResponse,
   ChatToolActivity,
+  ChatPart,
   ChatAttachmentRef,
   ChatAttachmentKind,
   ChatUsage,
@@ -29,6 +30,7 @@ export type {
   ChatSource,
   ChatStatusResponse,
   ChatToolActivity,
+  ChatPart,
   ChatAttachmentRef,
   ChatAttachmentKind,
   ChatUsage,
@@ -59,6 +61,7 @@ export interface ChatUiMessage {
   content: string;
   reasoning?: string;
   tools?: ChatUiTool[];
+  parts?: ChatPart[];
   sources?: ChatSource[];
   edits?: ChatUiEdit[];
   context?: ChatContext | null;

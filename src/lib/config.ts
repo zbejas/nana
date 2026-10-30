@@ -23,6 +23,11 @@ export const serverConfig = {
     /** PocketBase superuser password (optional — auto-generated if not set) */
     pbSuperuserPassword: isServer ? (process.env.PB_SUPERUSER_PASSWORD || '') : '',
 
+    /** Bare git repositories for note version history (server-side only) */
+    versioningDir: isServer
+        ? (process.env.NANA_VERSIONING_DIR || `${process.cwd()}/pocketbase/pb_data/versioning`)
+        : '',
+
     /** Enable verbose debug logging in production (DEBUG=true) */
     debug: isServer && process.env.DEBUG === 'true',
 

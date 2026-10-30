@@ -1,45 +1,67 @@
 import { pb } from '../pocketbase';
-import type { DocumentVersion } from './types';
+import type {
+    CreateDocumentVersionResult,
+    Document,
+    DocumentVersion,
+} from './types';
 
-// Get version history for a document
+interface VersionPage {
+    items: DocumentVersion[];
+    page: number;
+    perPage: number;
+    totalItems: number;
+    totalPages: number;
+}
+
+// Get version history for a document. List results omit the Markdown body.
 export async function getDocumentVersions(
     documentId: string,
     page = 1,
     perPage = 20
-): Promise<{ items: DocumentVersion[]; totalItems: number }> {
-    const result = await pb.collection('document_versions').getList<DocumentVersion>(
-        page,
-        perPage,
+): Promise<VersionPage> {
+    return await pb.send<VersionPage>(
+        `/documents/${encodeURIComponent(documentId)}/versions?page=${page}&perPage=${perPage}`
+    );
+}
+
+// Get one version, including its Markdown body for the preview.
+export async function getDocumentVersion(
+    documentId: string,
+    versionId: string
+): Promise<DocumentVersion> {
+    return await pb.send<DocumentVersion>(
+        `/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(versionId)}`
+    );
+}
+
+// Commit the current note state as a version.
+export async function createDocumentVersion(
+    documentId: string,
+    expectedRevision: number
+): Promise<CreateDocumentVersionResult> {
+    return await pb.send<CreateDocumentVersionResult>(
+        `/documents/${encodeURIComponent(documentId)}/versions`,
         {
-            filter: `document="${documentId}"`,
-            sort: '-version_number',
+            method: 'POST',
+            body: { expectedRevision },
+        }
+    );
+}
+
+// Restore a version body. The server commits the current state first, then
+// writes only the selected Markdown body; title, tags, folder, and privacy stay.
+export async function restoreDocumentVersion(
+    documentId: string,
+    versionId: string,
+    expectedRevision: number
+): Promise<Document> {
+    const result = await pb.send<{ document: Document }>(
+        `/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(versionId)}/restore`,
+        {
+            method: 'POST',
+            body: { expectedRevision },
         }
     );
 
-    return {
-        items: result.items,
-        totalItems: result.totalItems,
-    };
-}
-
-// Get a specific version
-export async function getDocumentVersion(versionId: string): Promise<DocumentVersion> {
-    return await pb.collection('document_versions').getOne<DocumentVersion>(versionId);
-}
-
-// Restore a document to a specific version
-export async function restoreDocumentVersion(
-    documentId: string,
-    versionId: string
-): Promise<import('./types').Document> {
-    const version = await getDocumentVersion(versionId);
-
-    // Import updateDocument here to avoid circular dependency
-    const { updateDocument } = await import('./crud');
-
-    return await updateDocument(
-        documentId,
-        { content: version.content },
-        `Restored to version ${version.version_number}`
-    );
+    return result.document;
 }

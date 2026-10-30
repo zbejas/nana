@@ -2,7 +2,7 @@ import { z } from "zod";
 import { sanitizeHtml } from "../../../lib/sanitize";
 import { createLogger } from "../../../lib/logger";
 import { applySectionEdits, MarkdownSectionError, type AppliedSectionEdit, type MarkdownEditOperation } from "../../../lib/markdown/sections";
-import { pbGet, queryString, type PBListResponse, type ToolContext } from "../../pocketbase/client";
+import { pbGet, queryString, type ToolContext } from "../../pocketbase/client";
 import { loadAiVisibility, noteIsLocked } from "../../workspace/privacy";
 import { createBoard, getBoard, moveBoard, updateBoard } from "../../workspace/boards";
 import { createFolder, listFolders, updateFolder } from "../../workspace/folders";
@@ -18,7 +18,7 @@ import type { FolderDto, TaskDto } from "../../workspace/types";
 import { failureFromError } from "./errors";
 import { recordChatEdit } from "../edits";
 import type { ChatRunRecorder } from "./recorder";
-import { escapeFilterString, isValidRecordId, truncate } from "./text";
+import { isValidRecordId, truncate } from "./text";
 import { noteVersionToken, revisionMatches } from "./version";
 import type {
     ChatEditChanges,
@@ -264,13 +264,6 @@ interface PBEditableNote {
     author?: string;
 }
 
-interface PBVersionRecord {
-    id: string;
-    document?: string;
-    version_number?: number;
-    snapshot?: unknown;
-}
-
 function aiContext(context: ToolContext): ToolContext {
     return { ...context, actor: "ai" };
 }
@@ -321,7 +314,6 @@ async function persistEdit(
         changed: ChatEditChanges;
         operations?: unknown[];
         before?: NoteSnapshot;
-        versionId?: string;
         afterRevision?: number;
         afterUpdated?: string;
         undoKind: ChatEditUndoKind;
@@ -342,7 +334,6 @@ async function persistEdit(
             changed: input.changed,
             operations: input.operations,
             before: input.before,
-            versionId: input.versionId,
             afterRevision: input.afterRevision,
             afterUpdated: input.afterUpdated,
             undoKind: input.undoKind,
@@ -431,57 +422,6 @@ function snapshotOf(note: EditableNote): NoteSnapshot {
         folder: note.folder,
         isPrivate: note.isPrivate,
     };
-}
-
-async function latestVersionNumber(context: ToolContext, noteId: string): Promise<number | null> {
-    const path = `/api/collections/document_versions/records${queryString({
-        filter: `document="${escapeFilterString(noteId)}"`,
-        sort: "-version_number",
-        perPage: 1,
-        fields: "id,version_number",
-    })}`;
-    const result = await pbGet<PBListResponse<{ version_number?: number }>>(path, context);
-    if (!result.ok) return null;
-    const value = result.items?.[0]?.version_number;
-    return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-/** Find the snapshot PocketBase wrote immediately before this edit. */
-async function findVersionCreated(
-    context: ToolContext,
-    noteId: string,
-    previousNumber: number | null,
-    before: NoteSnapshot,
-): Promise<string | undefined> {
-    const filter = previousNumber === null
-        ? `document="${escapeFilterString(noteId)}"`
-        : `document="${escapeFilterString(noteId)}" && version_number>${previousNumber}`;
-    const path = `/api/collections/document_versions/records${queryString({
-        filter,
-        sort: "-version_number",
-        perPage: 5,
-        fields: "id,document,version_number,snapshot",
-    })}`;
-    const result = await pbGet<PBListResponse<PBVersionRecord>>(path, context);
-    if (!result.ok) return undefined;
-
-    for (const record of result.items ?? []) {
-        if (!record || typeof record.id !== "string" || record.document !== noteId) continue;
-        let snapshot: unknown = record.snapshot;
-        if (typeof snapshot === "string") {
-            try {
-                snapshot = JSON.parse(snapshot) as unknown;
-            } catch {
-                continue;
-            }
-        }
-        if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) continue;
-        const candidate = snapshot as { title?: unknown; content?: unknown };
-        if (candidate.content === before.content && candidate.title === before.title) {
-            return record.id;
-        }
-    }
-    return undefined;
 }
 
 function staleRevisionFailure(): ToolFailure {
@@ -708,7 +648,6 @@ export async function appendNoteTool(
     if (!revisionMatches(parsed.data.expectedRevision, note)) return staleRevisionFailure();
 
     const before = snapshotOf(note);
-    const previousVersion = await latestVersionNumber(write.context, note.id);
 
     try {
         const [operation] = await sanitizeFragments([{ op: "append", markdown: parsed.data.markdown }]);
@@ -723,11 +662,9 @@ export async function appendNoteTool(
                 revision: note.revision,
                 versionToken: note.versionToken,
                 sanitizeContent: false,
-                publish: true,
             },
         );
 
-        const versionId = await findVersionCreated(write.context, note.id, previousVersion, before);
         const summary = parsed.data.summary?.trim()
             || `Added a section at the end of “${truncate(note.title, 100)}”.`;
         const changed: ChatEditChanges = { sections: sectionsFromApplied(applied.changed) };
@@ -740,7 +677,6 @@ export async function appendNoteTool(
             changed,
             operations: [operation],
             before,
-            versionId,
             afterRevision: result.revision,
             afterUpdated: result.note.updated,
             undoKind: "restore",
@@ -778,7 +714,6 @@ export async function editNoteTool(
     if (!revisionMatches(parsed.data.expectedRevision, note)) return staleRevisionFailure();
 
     const before = snapshotOf(note);
-    const previousVersion = await latestVersionNumber(write.context, note.id);
 
     let operations: MarkdownEditOperation[];
     let applied: ReturnType<typeof applySectionEdits>;
@@ -808,11 +743,9 @@ export async function editNoteTool(
                 revision: note.revision,
                 versionToken: note.versionToken,
                 sanitizeContent: false,
-                publish: true,
             },
         );
 
-        const versionId = await findVersionCreated(write.context, note.id, previousVersion, before);
         const summary = parsed.data.summary.trim();
         const changed: ChatEditChanges = { sections: sectionsFromApplied(applied.changed) };
         const editId = await persistEdit(write, {
@@ -824,7 +757,6 @@ export async function editNoteTool(
             changed,
             operations,
             before,
-            versionId,
             afterRevision: result.revision,
             afterUpdated: result.note.updated,
             undoKind: "restore",
@@ -859,7 +791,6 @@ export async function updateNoteTool(
     if (!revisionMatches(parsed.data.expectedRevision, note)) return staleRevisionFailure();
 
     const before = snapshotOf(note);
-    const previousVersion = await latestVersionNumber(write.context, note.id);
     const fields: string[] = [];
     if (parsed.data.title !== undefined) fields.push("title");
     if (parsed.data.tags !== undefined) fields.push("tags");
@@ -876,11 +807,9 @@ export async function updateNoteTool(
             {
                 revision: note.revision,
                 versionToken: note.versionToken,
-                publish: true,
             },
         );
 
-        const versionId = await findVersionCreated(write.context, note.id, previousVersion, before);
         const summary = parsed.data.summary?.trim()
             || `Updated ${fields.join(" and ")} on “${truncate(result.note.title, 100)}”.`;
         const changed: ChatEditChanges = { fields };
@@ -892,7 +821,6 @@ export async function updateNoteTool(
             summary,
             changed,
             before,
-            versionId,
             afterRevision: result.revision,
             afterUpdated: result.note.updated,
             undoKind: "restore",

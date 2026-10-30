@@ -35,7 +35,6 @@ export function DocumentEditor() {
     remoteContentChangeRef,
     tags,
     setTags,
-    setPublished,
     setGlobalUnsavedChanges,
     tagInput,
     setTagInput,
@@ -127,7 +126,6 @@ export function DocumentEditor() {
           setTitle(fresh.title);
           setContent(nextContent);
           setTags(fresh.tags || []);
-          setPublished(fresh.published);
           setGlobalUnsavedChanges(false);
           setAiEdit({
             id: edit.id,
@@ -157,7 +155,6 @@ export function DocumentEditor() {
     document?.id,
     setContent,
     setGlobalUnsavedChanges,
-    setPublished,
     setSelectedDocument,
     setTags,
     setTitle,

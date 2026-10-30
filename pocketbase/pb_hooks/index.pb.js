@@ -7,7 +7,6 @@ require(`${__hooks}/public_sharing_cron.js`);
 // Document hooks
 require(`${__hooks}/documents/calculate_stats.js`);
 require(`${__hooks}/documents/revision_guard.js`);
-require(`${__hooks}/documents/create_version.js`);
 
 // Board and task hooks. Request hooks run in registration order: task guards
 // validate before the lifecycle/activity transaction wrappers, and sharing

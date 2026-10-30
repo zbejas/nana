@@ -49,7 +49,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | **API and MCP** | Reach the same workspace from your own tools with a JSON API and a stateless MCP endpoint. Private records stay hidden from AI. |
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline of recent notes and boards. |
 | **Sharing** | Share notes, boards, and folders with other people at view, comment, or edit access, or publish a public read-only link with optional expiration. |
-| **Version history** | Save snapshots and restore earlier states when needed. |
+| **Version history** | Save a version explicitly, then preview and restore an earlier note body when needed. |
 | **Trash system** | Recover deleted notes and folders intact, including attachments and version history; permanent delete is a separate step. |
 | **Mobile-friendly** | Clean, responsive interface across screen sizes, with dark and light themes. |
 

@@ -270,7 +270,7 @@ describe("create_note", () => {
 });
 
 describe("append_note", () => {
-    test("appends without changing untouched content and snapshots the old version", async () => {
+    test("appends without changing untouched content and records the before snapshot", async () => {
         const before = await readEditorNote(notes.editable.id);
         const result = await appendNoteTool(writeContext(), {
             noteId: notes.editable.id,
@@ -291,16 +291,20 @@ describe("append_note", () => {
         expect(record.last_edit_source).toBe("ai");
         expect(record.last_edited_by).toBe("Nana");
 
-        const versions = await pbList<TestRecord>(owner.token, "document_versions", {
-            filter: `document="${notes.editable.id}"`,
-            sort: "-version_number",
-            perPage: 5,
+        if (!result.undo.editId) throw new Error("missing edit id");
+        const edits = await pbList<TestRecord>(owner.token, "chat_edits", {
+            filter: `id="${result.undo.editId}"`,
+            perPage: 1,
         });
-        const latest = versions.items[0];
-        expect(latest?.source).toBe("ai");
-        expect(latest?.actor_type).toBe("ai");
-        expect(latest?.actor_label).toBe("Nana");
-        expect((latest?.snapshot as { content?: string } | undefined)?.content).toBe(before.content);
+        const rawOperations = edits.items[0]?.operations;
+        const operations = (typeof rawOperations === "string"
+            ? JSON.parse(rawOperations)
+            : rawOperations) as {
+                before?: { content?: string };
+                versionId?: string;
+            };
+        expect(operations.before?.content).toBe(before.content);
+        expect(operations.versionId).toBeUndefined();
     });
 });
 
@@ -399,7 +403,7 @@ describe("edit_note", () => {
 });
 
 describe("update_note", () => {
-    test("changes title and tags only and still versions the old state", async () => {
+    test("changes title and tags only", async () => {
         const before = await readEditorNote(notes.second.id);
         const result = await updateNoteTool(writeContext(), {
             noteId: notes.second.id,

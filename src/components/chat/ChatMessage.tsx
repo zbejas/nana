@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -10,14 +10,45 @@ import { MarkdownPreview } from '../MarkdownPreview';
 import { NanaMark } from './NanaMark';
 import { ChatSources } from './ChatSources';
 import { ChatToolStrip } from './ChatToolStrip';
+import { ChatEditCard } from './ChatEditCard';
 import { formatChatFileSize } from '../../lib/chat/attachments';
-import type { ChatUiMessage } from '../../lib/chat/types';
+import type { ChatPart, ChatUiMessage, ChatUiTool } from '../../lib/chat/types';
 
 interface ChatMessageProps {
   message: ChatUiMessage;
   onUndoEdit: (id: string) => void;
   onConfirmDelete: (id: string) => void;
   onCancelDelete: (id: string) => void;
+}
+
+function legacyParts(message: ChatUiMessage): ChatPart[] {
+  const parts: ChatPart[] = [];
+  if (message.reasoning) parts.push({ type: 'reasoning', text: message.reasoning });
+  if (message.content) parts.push({ type: 'text', text: message.content });
+  for (const tool of message.tools ?? []) {
+    parts.push({ type: 'tool', ...tool });
+  }
+  return parts;
+}
+
+function reasoningBlock(text: string, open: boolean, key: string): ReactNode {
+  return (
+    <details key={key} className="group mb-3" open={open}>
+      <summary className="flex h-7 cursor-pointer select-none items-center gap-1.5 text-[11.5px] font-medium text-ink-muted transition-colors hover:text-ink [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+        <ChevronDownIcon
+          className="h-3 w-3 shrink-0 transition-transform group-open:rotate-180"
+          aria-hidden="true"
+        />
+        <span>{open ? 'Thinking…' : 'Reasoning'}</span>
+      </summary>
+      <div className="mt-1 max-h-80 overflow-y-auto border-l border-line pl-3 text-[13px] leading-relaxed text-ink-muted scrollbar-autohide">
+        <MarkdownPreview
+          content={text}
+          className="chat-markdown !text-[13px] !leading-relaxed text-ink-muted [&_p]:my-1 [&_pre]:my-1.5 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-[13px] [&_h2]:text-[13px] [&_h3]:text-[13px] [&_code]:text-[11.5px]"
+        />
+      </div>
+    </details>
+  );
 }
 
 /** One turn. User copy is plain text; answers render sanitized Markdown. */
@@ -63,11 +94,21 @@ export function ChatMessage({
     );
   }
 
-  const toolCount = message.tools?.length ?? 0;
+  const parts = message.parts?.length ? [...message.parts] : legacyParts(message);
+  if (message.reasoning && !parts.some((part) => part.type === 'reasoning')) {
+    parts.unshift({ type: 'reasoning', text: message.reasoning });
+  }
+  if (!parts.some((part) => part.type === 'text') && message.content) {
+    parts.push({ type: 'text', text: message.content });
+  }
+
+  const editsById = new Map((message.edits ?? []).map((edit) => [edit.id, edit]));
+  const textCount = parts.filter((part) => part.type === 'text' && part.text.trim()).length;
+  const toolCount = parts.filter((part) => part.type === 'tool').length;
   const editCount = message.edits?.length ?? 0;
-  const hasReasoning = Boolean(message.reasoning);
+  const hasContent = textCount > 0;
+  const hasReasoning = parts.some((part) => part.type === 'reasoning');
   const editing = message.edits?.some((edit) => edit.status === 'applying') ?? false;
-  const hasContent = Boolean(message.content.trim());
   const showThinking = message.streaming
     && !hasContent
     && !hasReasoning
@@ -80,6 +121,91 @@ export function ChatMessage({
       window.setTimeout(() => setCopied(false), 1800);
     });
   };
+
+  const displayedEdits = new Set<string>();
+  const blocks: ReactNode[] = [];
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (!part) continue;
+
+    if (part.type === 'reasoning') {
+      blocks.push(reasoningBlock(part.text, message.streaming && !hasContent, `reasoning:${index}`));
+      continue;
+    }
+
+    if (part.type === 'text') {
+      if (!part.text.trim()) continue;
+      blocks.push(
+        <div key={`text:${index}`} className="chat-answer break-words text-[14.5px] leading-[1.75] text-ink">
+          <MarkdownPreview
+            content={part.text}
+            className="chat-markdown !text-[14.5px] !leading-[1.75] [&_p]:my-1 [&_pre]:my-2 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_code]:text-xs"
+          />
+          {message.streaming && index === parts.length - 1 && (
+            <span
+              className="ml-0.5 inline-block h-4 w-px animate-pulse bg-signal align-text-bottom"
+              aria-hidden="true"
+            />
+          )}
+        </div>,
+      );
+      continue;
+    }
+
+    if (part.type === 'tool') {
+      const tools: ChatUiTool[] = [];
+      while (index < parts.length) {
+        const toolPart = parts[index];
+        if (toolPart?.type !== 'tool') break;
+        tools.push({
+          id: toolPart.id,
+          name: toolPart.name,
+          status: toolPart.status,
+          ...(toolPart.title ? { title: toolPart.title } : {}),
+          ...(toolPart.targetType ? { targetType: toolPart.targetType } : {}),
+          ...(toolPart.targetId ? { targetId: toolPart.targetId } : {}),
+        });
+        index += 1;
+      }
+      index -= 1;
+      blocks.push(
+        <ChatToolStrip
+          key={`tools:${index}`}
+          tools={tools}
+          streaming={message.streaming}
+        />,
+      );
+      continue;
+    }
+
+    const edit = editsById.get(part.editId);
+    if (!edit) continue;
+    displayedEdits.add(edit.id);
+    blocks.push(
+      <div key={`edit:${part.editId}`} className="mb-1.5">
+        <ChatEditCard
+          edit={edit}
+          onUndo={onUndoEdit}
+          onConfirm={onConfirmDelete}
+          onCancel={onCancelDelete}
+        />
+      </div>,
+    );
+  }
+
+  for (const edit of message.edits ?? []) {
+    if (displayedEdits.has(edit.id)) continue;
+    blocks.push(
+      <div key={`edit:${edit.id}`} className="mb-1.5">
+        <ChatEditCard
+          edit={edit}
+          onUndo={onUndoEdit}
+          onConfirm={onConfirmDelete}
+          onCancel={onCancelDelete}
+        />
+      </div>,
+    );
+  }
 
   return (
     <div className="mb-9 w-full min-w-0">
@@ -94,57 +220,9 @@ export function ChatMessage({
         )}
       </div>
 
-      {(toolCount > 0 || editCount > 0) && (
-        <ChatToolStrip
-          tools={message.tools ?? []}
-          edits={message.edits ?? []}
-          streaming={message.streaming}
-          onUndoEdit={onUndoEdit}
-          onConfirmDelete={onConfirmDelete}
-          onCancelDelete={onCancelDelete}
-        />
-      )}
+      {blocks}
 
-      {hasReasoning && (
-        <details
-          className="group mb-3"
-          open={message.streaming && !hasContent}
-        >
-          <summary className="flex h-7 cursor-pointer select-none items-center gap-1.5 text-[11.5px] font-medium text-ink-muted transition-colors hover:text-ink [&::-webkit-details-marker]:hidden [&::marker]:hidden">
-            <ChevronDownIcon
-              className="h-3 w-3 shrink-0 transition-transform group-open:rotate-180"
-              aria-hidden="true"
-            />
-            <span>{message.streaming && !hasContent ? 'Thinking…' : 'Reasoning'}</span>
-          </summary>
-          {message.reasoning && (
-            <div className="mt-1 max-h-80 overflow-y-auto border-l border-line pl-3 text-[13px] leading-relaxed text-ink-muted scrollbar-autohide">
-              <MarkdownPreview
-                content={message.reasoning}
-                className="chat-markdown !text-[13px] !leading-relaxed text-ink-muted [&_p]:my-1 [&_pre]:my-1.5 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-[13px] [&_h2]:text-[13px] [&_h3]:text-[13px] [&_code]:text-[11.5px]"
-              />
-            </div>
-          )}
-        </details>
-      )}
-
-      {hasContent ? (
-        <div className="chat-answer break-words text-[14.5px] leading-[1.75] text-ink">
-          <MarkdownPreview
-            content={message.content}
-            className="chat-markdown !text-[14.5px] !leading-[1.75] [&_p]:my-1 [&_pre]:my-2 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_code]:text-xs"
-          />
-          {message.streaming && (
-            <span
-              className="ml-0.5 inline-block h-4 w-px animate-pulse bg-signal align-text-bottom"
-              aria-hidden="true"
-            />
-          )}
-          {message.stopped && (
-            <span className="ml-2 align-middle text-[11px] font-medium text-ink-muted">Stopped</span>
-          )}
-        </div>
-      ) : showThinking ? (
+      {showThinking ? (
         <p className="inline-flex items-center gap-2 text-[11.5px] font-medium text-ink-muted">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal" aria-hidden="true" />
           Thinking…
@@ -153,7 +231,7 @@ export function ChatMessage({
         <p className="text-[12px] font-medium text-ink-muted">Stopped.</p>
       ) : null}
 
-      {!message.streaming && (hasContent || message.edits?.length || toolCount > 0) && (
+      {!message.streaming && (hasContent || editCount > 0 || toolCount > 0) && (
         <ChatSources sources={message.sources} />
       )}
 

@@ -44,6 +44,7 @@ Requirements:
 - `dist/index.html` must exist.
 - PocketBase must be running at `POCKETBASE_URL` (default `http://127.0.0.1:8090`).
 - Migrations must already have run once.
+- **`git` must be installed and on `PATH`.** Version history shells out to git with argument arrays. The production and development images install it in `app-base`; a bare-metal or custom-container deployment must provide it.
 
 Production detection is `NODE_ENV=production` **and** `existsSync(dist/index.html)`. Without the built files, Bun runs the development SPA.
 
@@ -53,6 +54,7 @@ Production detection is `NODE_ENV=production` **and** `existsSync(dist/index.htm
 | --- | --- | --- |
 | `PORT` | `3000` | Bun server. |
 | `POCKETBASE_URL` | `http://127.0.0.1:8090` | Bun → PocketBase. |
+| `NANA_VERSIONING_DIR` | `<cwd>/pocketbase/pb_data/versioning` | Bare git repositories for note version history. Keep it inside the persisted `pb_data` volume. |
 | `NODE_ENV` | — | Production static serving and logging. |
 | `RAM_CACHE` | `false` | Export cache: RAM instead of disk. |
 | `PB_SUPERUSER_EMAIL` | generated | Bootstrap superuser. |
@@ -69,7 +71,7 @@ All Bun-side environment access goes through `src/lib/config.ts`. PocketBase hoo
 
 | Stage | Purpose |
 | --- | --- |
-| `app-base` | Bun slim plus the PocketBase binary downloaded for `TARGETARCH`. |
+| `app-base` | Bun slim, `git`, and the PocketBase binary downloaded for `TARGETARCH`. |
 | `builder` | Install production dependencies and run `bun run build.ts`. |
 | `development` | Full source and dev dependencies; runs the development entrypoint. |
 | `testing` | Full source; runs the test entrypoint on a disposable database. |
@@ -118,11 +120,12 @@ Do not publish `8090`. PocketBase listens on the container loopback only, so a p
 - `data.db` — SQLite database.
 - `auxiliary.db` — auxiliary PocketBase data.
 - attachments and thumbnails.
+- `versioning/` — one bare git repository per note with saved versions (`<noteId>.git`).
 - `superuser_credentials.json` — generated credentials when env vars are absent.
 - logs and generated types, depending on runtime.
 - **Legacy only:** a `zvec/` directory may remain from an older release. Nothing reads or writes it now.
 
-Back up the whole directory before upgrades. Never mount it into the test container.
+Back up the whole directory before upgrades; `versioning/` is part of the same persistent volume, and deleting it permanently discards note version history. Never mount it into the test container.
 
 ### Boards migration and archive behavior
 
@@ -152,7 +155,7 @@ Migration `0000021_add_board_public_sharing.js` adds the board public-share fiel
 
 Migration `0000022_relational_remodel.js` upgrades existing data in place:
 
-- Copies legacy `trash_documents`/`trash_folders` back into `documents`/`folders` as soft-deleted records, reuses their original ids, reuploads attachments, and moves legacy version rows into `document_versions`.
+- Copies legacy `trash_documents`/`trash_folders` back into `documents`/`folders` as soft-deleted records, reuses their original ids, reuploads attachments, and moves legacy version rows into the then-current `document_versions` store (dropped later by `0000032`).
 - Converts `conversations.messages` JSON arrays into `messages` records.
 - Drops the legacy trash collections and creates the `trash_documents`/`trash_folders` views.
 - Removes `tasks.author`, `document_versions.created_by`, and `folders.published`; ownership now comes from `tasks.board` and `document_versions.document`.
@@ -170,8 +173,11 @@ Back up `pb_data` before the first boot on this migration. The `down()` moves so
 5. Verify the timeline and sidebar: existing tasks should appear under `My board` (or their existing board), with status and order preserved.
 6. Verify the archive flow: active boards cannot be deleted; archived boards can be restored or deleted forever.
 7. Verify boards in folders: create a folder, drag a board into it, and confirm the board remains after trashing the folder (it returns to the root).
-8. Verify trash: move a note to trash, confirm it disappears from the library but keeps its id in Trash, restore it, then permanently delete it. Check that its versions and attachments are gone after permanent delete.
-8. Verify the active AI provider/model in Settings → Workspace → AI. There is nothing to configure for embeddings.
+8. Verify trash: move a note to trash, confirm it disappears from the library but keeps its id in Trash, restore it, then permanently delete it. Check that its version repository and attachments are gone after permanent delete.
+9. Verify version history: save a version, edit the note, save again, open **Version history**, and restore the first version. Confirm the body restores while the title/tags stay.
+10. Verify the active AI provider/model in Settings → Workspace → AI. There is nothing to configure for embeddings.
+
+Migration `0000032_remove_document_versions.js` drops the legacy `document_versions` collection and `documents.published` and does not convert old rows. Version history starts empty and begins with the first **Save version** after the upgrade. A `down()` restores the schema, not the discarded data.
 
 Migrations are append-only. Do not rename or remove historical migration files; `bootstrap.js` has a temporary compatibility rewrite for old filenames.
 

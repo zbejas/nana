@@ -462,7 +462,7 @@ export function registerNoteTools(server: McpServer, context: ToolContext): void
         {
             title: "Delete note",
             description:
-                "Move a visible note to trash. The note keeps its id, attachments, and versions and can be restored from the Nana trash UI; this tool returns the trashed document id as trashDocumentId. Private notes and notes in private folder subtrees look missing.",
+                "Move a visible note to trash. The note keeps its id and attachments and can be restored from the Nana trash UI; this tool returns the trashed document id as trashDocumentId. Private notes and notes in private folder subtrees look missing.",
             inputSchema: deleteNoteInputSchema,
             annotations: { destructiveHint: true, openWorldHint: false },
         },

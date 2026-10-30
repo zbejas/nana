@@ -4,26 +4,21 @@ import {
     createFolder,
     createNote,
     createUser,
-    getSuperuserToken,
-    publishNote,
     type TestUser,
 } from "../../helpers/factories";
 
 describe("Trash collection guards", () => {
     let user: TestUser;
     let other: TestUser;
-    let superuserToken: string;
     let noteId: string;
     let folderId: string;
 
     beforeAll(async () => {
         user = await createUser("trash-guards");
         other = await createUser("trash-guards-other");
-        superuserToken = await getSuperuserToken();
 
         const note = await createNote(user, { title: "Guarded note" });
         noteId = note.id;
-        await publishNote(user, note.id);
         const moveDocRes = await pbRequest("/trash/move-document", {
             method: "POST",
             headers: { Authorization: user.token, "Content-Type": "application/json" },
@@ -122,17 +117,5 @@ describe("Trash collection guards", () => {
         expect(folders.items).toEqual([]);
         expect(ownDocs.items.map((item) => item.id)).toContain(noteId);
         expect(ownFolders.items.map((item) => item.id)).toContain(folderId);
-    });
-
-    test("trashed versions stay in document_versions but are hidden from the owner", async () => {
-        const asUser = await pbList<{ id: string }>(user.token, "document_versions", {
-            filter: `document='${noteId}'`,
-        });
-        expect(asUser.items).toEqual([]);
-
-        const asSuperuser = await pbList<{ id: string }>(superuserToken, "document_versions", {
-            filter: `document='${noteId}'`,
-        });
-        expect(asSuperuser.items).toHaveLength(1);
     });
 });

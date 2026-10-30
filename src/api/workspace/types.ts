@@ -63,7 +63,6 @@ export interface NoteSummaryDto {
     folderId: string | null;
     isPrivate: boolean;
     isPublic: boolean;
-    published: boolean;
     wordCount: number;
     readingTime: number;
     created: string;

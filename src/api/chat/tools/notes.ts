@@ -51,7 +51,6 @@ interface PBNoteRecord {
     reading_time?: number;
     folder?: string;
     is_private?: boolean;
-    published?: boolean;
     revision?: number;
     author?: string;
 }
@@ -66,10 +65,9 @@ interface PBNoteSummary {
     readingTime: number;
     folderId: string | null;
     isPrivate: boolean;
-    published: boolean;
 }
 
-const NOTE_LIST_FIELDS = "id,title,tags,updated,created,word_count,reading_time,folder,is_private,published,revision,author";
+const NOTE_LIST_FIELDS = "id,title,tags,updated,created,word_count,reading_time,folder,is_private,revision,author";
 const NOTE_READ_FIELDS = `${NOTE_LIST_FIELDS},content`;
 
 function invalidInput(message: string): ToolFailure {
@@ -91,7 +89,6 @@ function summarizeNote(record: PBNoteRecord): PBNoteSummary {
         readingTime: typeof record.reading_time === "number" ? record.reading_time : 0,
         folderId: record.folder || null,
         isPrivate: Boolean(record.is_private),
-        published: Boolean(record.published),
     };
 }
 

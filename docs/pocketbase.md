@@ -4,7 +4,9 @@
 
 PocketBase is the source of truth for data, auth, schema, and server-side behavior. It listens on `127.0.0.1:8090` inside the container and is never a public browser surface; the browser reaches it through the Elysia `/api/v1` facade. Nana customizes PocketBase through JavaScript hooks and append-only migrations in `pocketbase/`.
 
-Notes and folders use **soft delete**: `deleted_at` marks a record as trashed, while the record keeps its id, attachments, versions, and relations. `trash_documents` and `trash_folders` are read-only view collections over that state. Boards archive instead of trashing. Chat messages are records in their own collection, not a JSON blob on the conversation.
+Notes and folders use **soft delete**: `deleted_at` marks a record as trashed, while the record keeps its id, attachments, version repository, and relations. `trash_documents` and `trash_folders` are read-only view collections over that state. Boards archive instead of trashing. Chat messages are records in their own collection, not a JSON blob on the conversation.
+
+Version history is not a PocketBase collection. Migration `0000032` drops the legacy `document_versions` store and `documents.published`; versions are now bare git repositories under `pb_data/versioning/`, managed by Bun.
 
 ## Key files
 
@@ -12,7 +14,7 @@ Notes and folders use **soft delete**: `deleted_at` marks a record as trashed, w
 | --- | --- |
 | `pocketbase/pb_hooks/index.pb.js` | The only file PocketBase loads automatically; requires every active hook module. |
 | `pocketbase/pb_hooks/bootstrap.js` | Seeds `site_url`, syncs `meta.appURL`, provisions the superuser, handles first-user/signup bootstrap and legacy migration filenames. |
-| `pocketbase/pb_hooks/documents/` | Word count/reading time and version snapshots. |
+| `pocketbase/pb_hooks/documents/` | Word count and reading time. |
 | `pocketbase/pb_hooks/guards/user_guards.js` | Signup lock, admin grant, verified/owned-user deletion guard. |
 | `pocketbase/pb_hooks/guards/relation_guards.js` | Incoming relation checks for documents, folders, boards, tasks, and conversations. |
 | `pocketbase/pb_hooks/guards/relation_helpers.js` | Shared ownership, folder-cycle, and task-relation helpers used inside guard callbacks. |
@@ -26,6 +28,8 @@ Notes and folders use **soft delete**: `deleted_at` marks a record as trashed, w
 | `pocketbase/pb_hooks/public_sharing_cron.js` | Clears expired public shares every 15 minutes. |
 | `pocketbase/pb_hooks/utils.js` | `requireAdmin`, `parseRequestBody`, `escapeHtml`, `sanitizeUrl`, `sendError`, site/sender helpers. |
 | `pocketbase/pb_migrations/0000022_relational_remodel.js` | Soft-delete trash, messages records, relation indexes/cascades, and removal of redundant relations. |
+| `pocketbase/pb_migrations/0000032_remove_document_versions.js` | Drops `document_versions`, the legacy trash version view, and `documents.published`; version history moves to Bun's git store. |
+| `src/api/versioning/` | Bun-owned git version store and service. Not a PocketBase hook or collection. |
 
 ## How it works
 
@@ -49,7 +53,6 @@ PocketBase hooks run in the **JSVM**, not Node.js:
 require(`${__hooks}/bootstrap.js`);
 require(`${__hooks}/public_sharing_cron.js`);
 require(`${__hooks}/documents/calculate_stats.js`);
-require(`${__hooks}/documents/create_version.js`);
 require(`${__hooks}/routes/trash.js`);
 require(`${__hooks}/guards/user_guards.js`);
 require(`${__hooks}/guards/relation_guards.js`);
@@ -60,7 +63,7 @@ Groups:
 | Directory | Contents |
 | --- | --- |
 | `bootstrap.js` | Seed `site_url` from `SITE_URL`, sync `meta.appURL`, provision the superuser, first-user/signup bootstrap, legacy migration filename compatibility. |
-| `documents/` | Word count/reading time and version snapshots. |
+| `documents/` | Word count and reading time. |
 | `guards/` | Signup lock, user deletion, owner locking, folder-cycle prevention, incoming relation ownership. |
 | `mailer/` | Password reset, email change, OTP, auth alert templates. |
 | `routes/` | Soft-delete trash routes and public share routes. |
@@ -69,7 +72,7 @@ Groups:
 
 ### Migrations
 
-Files are sequential and zero-padded. **The next migration is `0000032_<description>.js`.**
+Files are sequential and zero-padded. **The next migration is `0000034_<description>.js`.**
 
 | Migration | Purpose |
 | --- | --- |
@@ -104,6 +107,8 @@ Files are sequential and zero-padded. **The next migration is `0000032_<descript
 | `0000029_chat_actions.js` | Adds `pending`/`cancelled` chat action statuses and the `folder` edit target. |
 | `0000030_chat_attachments.js` | Adds owner-scoped `chat_attachments` with a protected file and `messages.attachments`. |
 | `0000031_message_usage.js` | Adds `messages.usage`, the final-step token accounting used by the chat context ring. |
+| `0000032_remove_document_versions.js` | Drops `document_versions` and `documents.published`; rebuilds `trash_documents` without the removed column. |
+| `0000033_message_parts.js` | Adds `messages.parts`, the ordered chat timeline. |
 
 Use the migration API, not `module.exports`:
 
@@ -131,7 +136,7 @@ Rules:
 - Guard additions/removals so retries are idempotent.
 - Never rename an existing migration. `bootstrap.js` contains a temporary compatibility hook that rewrites old filenames in the `_migrations` table.
 - For data migrations, use `findRecordsByFilter` and tolerate missing records when the schema may not be seeded yet.
-- Migrations are append-only; start the next one at `0000032`.
+- Migrations are append-only; start the next one at `0000034`.
 - View collections reject `SELECT *`; list explicit columns. When a source field is added, update the view query in the same migration.
 
 ### Collections
@@ -140,8 +145,7 @@ Rules:
 | --- | --- | --- |
 | `users` | Auth collection | `admin` boolean; first user is auto-verified and admin. |
 | `folders` | Nested folder tree | Self-referencing `parent`; soft-delete fields; sharing fields. |
-| `documents` | Markdown documents | Content, attachments, tags, stats, folder relation, soft-delete and sharing fields, `revision`, `last_edited_by`, `last_edit_source`. |
-| `document_versions` | Version snapshots | Created on publish or AI edit; carries `source`, `snapshot`, `actor_type`, `actor_label`. |
+| `documents` | Markdown documents | Content, attachments, tags, stats, folder relation, soft-delete and sharing fields, `revision`, `last_edited_by`, `last_edit_source`. Version history lives in git, not here. |
 | `boards` | Task boards | Author-scoped; name, description, icon, task counter, archived flag, optional folder, private and public-share fields. |
 | `board_columns` | Ordered board workflow | `board`, `name`, stable `slug`, `position`, `icon`, `color`, `is_final`. |
 | `tasks` | Board work items | Board-scoped; ownership derives from `board.author`; text `status`, priority, assignee, dates, labels, recurrence, task number, optional source document. |
@@ -149,7 +153,7 @@ Rules:
 | `task_relations` | Task graph | `source`, `target`, `type` (`subtask|blocks|related`). |
 | `task_activity` | Task audit | Task, board, actor, actor type/label, type, JSON data. Server writes only. |
 | `conversations` | Chat threads | Author-scoped title, timestamps, rolling summary. |
-| `messages` | Chat messages | Role, content, reasoning/model metadata, tool activity, context, attachment refs, sources, token usage, stopped, position. |
+| `messages` | Chat messages | Role, content, reasoning/model metadata, tool activity, ordered `parts` timeline, context, attachment refs, sources, token usage, stopped, position. |
 | `chat_attachments` | Chat attachment drafts and bound files | Owner-scoped protected file, name/MIME/size/kind, optional conversation/message, server-extracted text. |
 | `shares` | Owner-managed direct grants | One row per resource/user; created and updated by the sharing route layer. |
 | `access_grants` | Materialized direct + inherited grants | Read-only to the grantee; lets collection rules resolve folder inheritance without recursion. |
@@ -171,7 +175,6 @@ Rules:
 | `documents` | `author` | `users` | yes | no | Owner. |
 | `documents` | `folder` | `folders` | no | yes | Hard delete of a folder removes its notes; trash uses `deleted_at`. |
 | `documents` | `deleted_by` | `users` | no | no | Audit field. |
-| `document_versions` | `document` | `documents` | yes | yes | Versions die with the note. |
 | `boards` | `author` | `users` | yes | no | Owner. |
 | `boards` | `folder` | `folders` | no | no | Folder trash rehomes boards; never delete a board with a folder. |
 | `board_columns` | `board` | `boards` | yes | yes | Columns die with the board. |
@@ -189,11 +192,11 @@ Rules:
 | `conversations` | `author` | `users` | yes | yes | Conversations and messages follow the user. |
 | `messages` | `conversation` | `conversations` | yes | yes | Messages die with the conversation. |
 
-The trash views mirror `documents` and `folders`; they do not add relations or storage. `tasks.author`, `document_versions.created_by`, and `folders.published` do not exist after `0000022`.
+The trash views mirror `documents` and `folders`; they do not add relations or storage. `tasks.author` and `folders.published` do not exist after `0000022`; `documents.published` and the `document_versions` collection do not exist after `0000032`.
 
 ### Content size limits
 
-`content` is a PocketBase `editor` field. When `maxSize` is `0`, PocketBase applies a hard 5 MB cap and rejects larger saves with `validation_content_size_limit`. Migration `0000015_raise_content_size_limit.js` raises the limit to 100 MB on `documents`, `document_versions`, and (through the view) `trash_documents`. Keep them in sync: a version snapshot with a smaller limit than the document fails to save large notes. The editor warns at 5 MB and switches to a hard-limit message at 100 MB; keep `ContentSizeWarning.tsx` in sync if the migration changes.
+`content` is a PocketBase `editor` field. When `maxSize` is `0`, PocketBase applies a hard 5 MB cap and rejects larger saves with `validation_content_size_limit`. Migration `0000015_raise_content_size_limit.js` raises the limit to 100 MB on `documents` and (through the view) `trash_documents`. After `0000032` there is no version snapshot column to keep in sync. The editor warns at 5 MB and switches to a hard-limit message at 100 MB; keep `ContentSizeWarning.tsx` in sync if the migration changes.
 
 ### Document and folder schema
 
@@ -206,7 +209,6 @@ The trash views mirror `documents` and `folders`; they do not add relations or s
 | `content` | Editor | Sanitized HTML/Markdown, 100 MB cap. |
 | `attachments` | File | Protected; up to 20 files, 50 MB each. |
 | `tags` | JSON | String array. |
-| `published` | Bool | Version-request flag: set true on update to snapshot the previous content. |
 | `author` | Relation → `users` | Required, `cascadeDelete: false`, max 1. |
 | `word_count`, `reading_time` | Number | Computed by `documents/calculate_stats.js`. |
 | `folder` | Relation → `folders` | Optional, `cascadeDelete: true`, max 1. Empty means the workspace root. |
@@ -232,7 +234,6 @@ Rules:
 | --- | --- | --- | --- |
 | `documents` | `author = @request.auth.id && deleted_at = ''` | `author = @request.auth.id` | `null` (superuser/internal only) |
 | `folders` | `author = @request.auth.id && deleted_at = ''` | `author = @request.auth.id` | `null` (superuser/internal only) |
-| `document_versions` | `document.author = @request.auth.id && document.deleted_at = ''` | `null` | `null` |
 | `trash_documents` / `trash_folders` (views) | `author = @request.auth.id` | read-only | read-only |
 
 Normal API deletes are disabled on documents and folders. `POST /api/trash/move-*` sets the soft-delete fields; permanent delete is a separate route.
@@ -342,16 +343,16 @@ PocketBase evaluates relation rules against the **stored** record, not the incom
 There is no second copy of a note or folder. Moving to trash:
 
 1. Set `deleted_at`, `deleted_by`, `is_public = false`, `public_share_token = ""`, and `public_expires_at = ""`.
-2. Leave attachments, versions, ids, and relations in place.
+2. Leave attachments, the git version repository, ids, and relations in place.
 3. Read the trash through the `trash_documents` / `trash_folders` views.
 4. Restore clears the soft-delete fields. A note whose folder is still trashed is re-rooted to `""`.
-5. Permanent delete removes the live record; versions cascade, attachments are deleted by PocketBase, and task `document` links are cleared first.
+5. Permanent delete removes the live record and its `pb_data/versioning/<noteId>.git` repository; attachments are deleted by PocketBase, and task `document` links are cleared first.
 
 Folder soft delete:
 
 - `move-folder` walks the subtree, marks every folder and its active documents, clears shares, and rehomes every board in the subtree to the root.
 - `restore-folder` clears the subtree and every document trashed with it. A subtree whose parent is still trashed is re-rooted.
-- `permanent-delete-folder` rehomes boards, clears task note links for the subtree, then hard-deletes the root folder. `folders.parent` and `documents.folder` cascade, so the subtree, notes, versions, and attachments go with it.
+- `permanent-delete-folder` rehomes boards, clears task note links for the subtree, then hard-deletes the root folder. `folders.parent` and `documents.folder` cascade, so the subtree, notes, git repositories, and attachments go with it.
 
 Tasks and boards do not use trash. Boards archive; deleting an archived board cascades tasks.
 
@@ -368,20 +369,20 @@ Tasks and boards do not use trash. Boards archive; deleting an archived board ca
 | Folder parent | The incoming parent must be owned, not trashed, and must not create a cycle. |
 | Folder relation | Documents and boards can only point at the caller's active folders. |
 | Task relation | A task's board must be the caller's and active; its note must be the caller's and not trashed. |
-| Version writes | `document_versions` create/update/delete rules are `null`; only hooks and trash routes write them. |
 | Trash views | `trash_documents` and `trash_folders` are read-only. |
 
-### Versions
+### Version history
 
-`documents/create_version.js` runs on document update:
+Version history is a Bun-owned git store, not a PocketBase collection:
 
-1. If `published` is not true, do nothing.
-2. Load the old record from the database.
-3. Compute the next `version_number`.
-4. Copy the old content into `document_versions` with a formatted summary and `source_created_at`.
-5. Set `published = false` on the document.
+- Each note gets one bare repository at `pb_data/versioning/<noteId>.git` (`serverConfig.versioningDir`). The store commits a `content.md` blob plus a metadata document containing title, tags, folder, and privacy.
+- Only the explicit version routes commit. Autosave, chat, MCP, trash moves, and the first editor load never write history.
+- A commit is skipped when the current tree matches HEAD. Version numbers are derived from the commit count on `main`; the API returns them newest first.
+- Restoring first commits the current state when it differs from HEAD, then patches only `documents.content`. Title, tags, folder, and privacy stay at their current values.
+- A trashed note keeps its repository, but the version routes return `404` while `deleted_at` is set. Permanent note and folder deletes remove the corresponding repositories after PocketBase succeeds.
+- `0000032` backfills nothing. Old `document_versions` rows were intentionally discarded; the schema can be restored by `down()`, but the data cannot.
 
-Version history is surfaced in the editor's version preview and restore UI. Versions stay under the document while it is trashed; the `document_versions` rules hide them from the owner until the document is restored. Restores and trash operations are internal, so they bypass the request guards.
+The editor surfaces this as **Version history** with preview and restore. Do not expose commit ids, branches, or git vocabulary in the UI.
 
 ### Chat messages
 
@@ -442,7 +443,7 @@ Rules are `@request.auth.id != '' && author = @request.auth.id` for list, view, 
 
 `documents.revision` is the optimistic-concurrency token. `revision_guard.js` accepts an omitted revision from older clients but rejects a supplied stale one; AI note edits must supply it. Content/title/tags changes bump the revision and stamp `last_edited_by`/`last_edit_source` (`user`, `ai`, or `system`).
 
-`document_versions` snapshots the old title, content, tags, folder, and privacy when `published` is set. AI note writes use `source: "ai"`, `actor_type: "ai"`, `actor_label: "Nana"`, and the same snapshot path. `chat_edits` records the tool, target, operations, summary, and status for the chat's edit cards and undo. `messages.context` stores the open-page metadata attached at send time; `messages.sources` stores server-derived note/board links; `messages.usage` stores the latest assistant turn's final-step token accounting.
+AI note writes do not create version history. Chat undo uses the pre-edit snapshot in `chat_edits.operations.before`; `chat_edits` also records the tool, target, operations, summary, and status for the edit cards. `messages.context` stores the open-page metadata attached at send time; `messages.sources` stores server-derived note/board links; `messages.usage` stores the latest assistant turn's final-step token accounting.
 
 ### Public sharing
 
@@ -521,7 +522,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 - **Boards never cascade with folders.** `boards.folder` is `cascadeDelete: false`. Folder trash and permanent delete rehome boards to the root first.
 - **Task links do not cascade.** `tasks.document` is `cascadeDelete: false`; permanently deleting a note clears the task's `document` field. Trashing a note keeps the link so a restore restores it.
 - **`tasks.author` no longer exists.** Ownership is `board.author`; all task list/view/delete rules use the board relation. Do not reintroduce a second author source of truth.
-- **`document_versions.created_by` no longer exists.** The document relation carries the owner. Version writes are superuser/internal only.
+- **Version history is not a collection.** `document_versions` and `documents.published` were removed by `0000032`. Versions are git repositories managed by Bun; never reintroduce a snapshot collection or a version-request flag.
 - **`folders.published` no longer exists.** Public folders use `is_public` and `public_share_token`. Do not add a second publish flag.
 - **Messages are records.** There is no `conversations.messages` JSON field. Append through `src/api/chat/pocketbase.ts`; it also touches the conversation's `updated` timestamp.
 - **`messages.position` is optional.** A `required` number field rejects zero in PocketBase, so position 0 is stored in an optional field and always written by the app.
@@ -529,11 +530,11 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 - **Folder cycles are guarded.** The rule only sees the stored parent; the guard walks the parent chain and rejects self-parenting and deeper cycles.
 - **Share tokens are unique by partial index, not by `TextField.unique`.** The old `unique: true` option did not create an index. Empty token values are allowed on many records.
 - **User deletion is blocked when content exists.** Documents, folders, and boards do not cascade with the user; conversations and messages do. Delete or permanently remove content first, or keep the account.
-- **Trashed versions stay in `document_versions`.** Rules hide them while `document.deleted_at != ''`. Permanent delete removes them through the document cascade; do not copy them to a second collection.
+- **Trashed notes keep their version repository.** Version routes hide a trashed note while `deleted_at != ''`. Permanent delete removes `pb_data/versioning/<noteId>.git` after the PocketBase hard delete; do not copy repositories into PocketBase.
 - **API keys are hashed, not encrypted.** `key_hash` is SHA-256 of the full `nana_…` secret. Never add the plaintext, a reversible encoding, or the hash to an API response. The hash lookup uses the superuser only after the key itself is presented.
 - **`api_keys` has no public rules.** It is server-managed on purpose. Do not add it to the browser facade allowlist or expose it through a collection route.
 - **API keys cascade with the user.** `api_keys.author` uses `cascadeDelete: true`; `api_keys.folders` does not cascade from folders, so a deleted scope root grants nothing.
-- **The next migration is `0000032`.** `0000031_message_usage` is the current head; never edit an applied migration in place.
+- **The next migration is `0000034`.** `0000033_message_parts` is the current head; never edit an applied migration in place.
 
 ## Related docs
 

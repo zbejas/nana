@@ -113,4 +113,28 @@ describe("ChatStreamState", () => {
         state.addToolStart("1", "read_board");
         expect(state.toolActivity()).toEqual([{ name: "read_board", status: "error" }]);
     });
+
+    test("interleaves text and tool calls in the order they streamed", () => {
+        const state = new ChatStreamState();
+        state.addText("Checking the notes.");
+        state.addToolStart("1", "list_notes");
+        state.addToolResult("1", "list_notes", true);
+        state.addText(" Here is the answer.");
+
+        expect(state.parts).toEqual([
+            { type: "text", text: "Checking the notes." },
+            { type: "tool", id: "1", name: "list_notes", status: "success" },
+            { type: "text", text: " Here is the answer." },
+        ]);
+    });
+
+    test("adds the fallback text and closes unfinished calls in persisted parts", () => {
+        const state = new ChatStreamState();
+        state.addToolStart("1", "read_note");
+
+        expect(state.persistedParts("I couldn't finish that answer.")).toEqual([
+            { type: "tool", id: "1", name: "read_note", status: "error" },
+            { type: "text", text: "I couldn't finish that answer." },
+        ]);
+    });
 });

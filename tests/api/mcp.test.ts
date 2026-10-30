@@ -63,7 +63,6 @@ interface NoteSummaryDto {
     tags: string[];
     folderId: string | null;
     isPrivate: boolean;
-    published: boolean;
     [key: string]: unknown;
 }
 
@@ -325,6 +324,7 @@ describe("note tools", () => {
             isPrivate: false,
         });
         expect(note.content).toContain("Initial body");
+        expect(note).not.toHaveProperty("published");
 
         const listCall = await mcpCall(owner.token, "list_notes", { query: title });
         expect(listCall.isError).toBe(false);
