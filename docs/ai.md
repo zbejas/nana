@@ -85,7 +85,7 @@ AI settings live in the admin-only `settings` record with key `ai_config`:
 
 | Provider | Package | Notes |
 | --- | --- | --- |
-| OpenAI | `@ai-sdk/openai` | Optional custom base URL. |
+| OpenAI | `@ai-sdk/openai` | Optional custom base URL. Responses calls use `store: false`, so multi-step tool turns are self-contained and compatible gateways do not receive `item_reference` items. |
 | Google | `@ai-sdk/google` | Optional custom base URL. |
 | Ollama | `ai-sdk-ollama` | Optional API key for remote instances; `thinking` maps to the Ollama `think` option. |
 
@@ -124,7 +124,7 @@ The lock is structural, not prompt-based. The system instruction for chat and th
 1. `POST /api/chat/send` calls `verifyAuth(req)` and keeps the raw `Authorization` header.
 2. Bun parses `{ conversationId?, message, mode, context?, regenerate? }`. `message` is required and trimmed. `mode` defaults to `"ask"`; anything other than `"ask"` or `"edit"` returns `400`.
 3. If `context` is present, it must be `{ type: "document" | "board" | "folder", id }`. `resolveChatContext()` loads the record with the caller's token, checks ownership, trash state, and the private lock, and resolves the display title from PocketBase. A missing or malformed context is `400`; a foreign, trashed, private, or hidden one is `404`; an unavailable visibility snapshot is `503`. The client cannot supply a title or body.
-4. `fetchAIConfig()` loads `ai_config`; `getAIModel()` builds the language model. Generation parameters from the active provider are passed to `streamText()`.
+4. `fetchAIConfig()` loads `ai_config`; `getAIModel()` builds the language model. Generation parameters from the active provider are passed to `streamText()`. OpenAI Responses calls include `providerOptions.openai.store = false`; stored reasoning and tool items never round-trip through the provider, and compatible gateways receive a self-contained follow-up request instead of `item_reference` items.
 5. Without a `conversationId`, Bun creates a conversation titled from the first message and writes the user message with its resolved `context`. With one, it appends the user message; `regenerate: true` first trims the previous user/assistant pair.
 6. History is loaded and reduced to `{ role, content }`. Stored reasoning, tool activity, sources, context metadata, and model metadata are never sent back to the model. The resolved page context contributes a short system note instead.
 7. `buildSystemPrompt()` appends the fixed read contract to the admin `systemPrompt`, adds the edit contract in edit mode, and adds the page-context note when a context was resolved.

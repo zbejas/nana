@@ -1,6 +1,6 @@
 import { streamText, generateText, stepCountIs, type TextStreamPart, type ToolSet } from "ai";
 import { verifyAuth, AuthError } from "../auth";
-import { getAIModel } from "./providers";
+import { getAIModel, getAIProviderOptions } from "./providers";
 import {
     fetchAIConfig,
     createConversation,
@@ -287,6 +287,7 @@ interface ChatStreamOptions {
     modelName: string;
     userMessage: string;
     model: Parameters<typeof generateText>[0]["model"];
+    providerOptions: Parameters<typeof generateText>[0]["providerOptions"];
     adminSystemPrompt: string;
     adminTitlePrompt: string;
     recorder: ChatRunRecorder;
@@ -468,6 +469,7 @@ function createChatStream(options: ChatStreamOptions): ReadableStream<Uint8Array
                     options.conversationId,
                     options.adminSystemPrompt,
                     options.adminTitlePrompt,
+                    options.providerOptions,
                 );
             }
         },
@@ -534,10 +536,12 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
     let adminSystemPrompt = "";
     let adminTitlePrompt = "";
     let modelName = "";
+    let providerOptions: Parameters<typeof streamText>[0]["providerOptions"];
     let generationParams: { temperature?: number; maxTokens?: number; topP?: number } = {};
     try {
         const aiConfig = await fetchAIConfig();
         model = getAIModel(aiConfig);
+        providerOptions = getAIProviderOptions(aiConfig.activeProvider);
         adminSystemPrompt = aiConfig.systemPrompt ?? "";
         adminTitlePrompt = aiConfig.titlePrompt ?? "";
         const providerConfig = aiConfig.providers[aiConfig.activeProvider!];
@@ -603,6 +607,7 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
             model,
             system: systemInstruction,
             ...generationParams,
+            ...(providerOptions ? { providerOptions } : {}),
             messages: aiMessages,
             tools,
             abortSignal: AbortSignal.any([req.signal, abortController.signal]),
@@ -624,6 +629,7 @@ async function handleSend(req: Request, authHeader: string, userId: string): Pro
             modelName,
             userMessage,
             model,
+            providerOptions,
             adminSystemPrompt,
             adminTitlePrompt,
             recorder,
@@ -740,6 +746,7 @@ async function generateConversationTitle(
     conversationId: string,
     adminSystemPrompt: string = "",
     adminTitlePrompt: string = "",
+    providerOptions?: Parameters<typeof generateText>[0]["providerOptions"],
 ): Promise<void> {
     const titleInstruction = adminTitlePrompt.trim() || DEFAULT_TITLE_PROMPT;
 
@@ -750,6 +757,7 @@ async function generateConversationTitle(
     try {
         const { text: title } = await generateText({
             model,
+            ...(providerOptions ? { providerOptions } : {}),
             messages: [
                 { role: "system", content: systemContent },
                 { role: "user", content: userMessage },

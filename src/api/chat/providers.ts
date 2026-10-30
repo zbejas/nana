@@ -24,6 +24,22 @@ export function getAIModel(config: AIConfig): LanguageModel {
     return createModelForProvider(activeProvider, providerConfig.activeModel, providerConfig.apiKey, providerConfig.baseUrl, providerConfig.thinking);
 }
 
+/**
+ * Provider options shared by every OpenAI call.
+ *
+ * OpenAI's Responses API stores items server-side by default and replaces
+ * earlier reasoning/tool items with `item_reference` objects on later steps.
+ * OpenAI-compatible gateways generally implement Chat Completions and only
+ * part of Responses, so those references fail with
+ * `unknown input item type: "item_reference"` during multi-step tool use.
+ * Keeping Responses stateless makes the follow-up request self-contained.
+ */
+export function getAIProviderOptions(
+    provider: AIProviderKey | null,
+): { openai: { store: false } } | undefined {
+    return provider === "openai" ? { openai: { store: false } } : undefined;
+}
+
 function createModelForProvider(
     provider: AIProviderKey,
     model: string,
