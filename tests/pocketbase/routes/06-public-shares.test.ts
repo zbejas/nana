@@ -398,8 +398,12 @@ describe("Public share routes", () => {
                     "status",
                     "priority",
                     "due_date",
+                    "start_date",
+                    "completed_at",
+                    "task_number",
                     "board_order",
                     "labels",
+                    "assignee",
                     "created",
                     "updated",
                 ].sort(),
@@ -576,8 +580,13 @@ describe("Public share routes", () => {
             expect(data.board.name).toBe("Public Board");
             expect(data.board.description).toBe("The shared plan");
             expect(Object.keys(data.board).sort()).toEqual(
-                ["id", "name", "description", "author", "folder", "created", "updated"].sort(),
+                ["id", "name", "description", "icon", "author", "folder", "columns", "created", "updated"].sort(),
             );
+            expect(data.board.columns).toBeInstanceOf(Array);
+            expect((data.board.columns as Array<{ slug: string; is_final: boolean }>).map((column) => column.slug))
+                .toEqual(["backlog", "next", "progress", "done"]);
+            expect((data.board.columns as Array<{ slug: string; is_final: boolean }>)
+                .find((column) => column.slug === "done")?.is_final).toBe(true);
             expect(data.tasks.map((task) => task.id)).toEqual([first.id, second.id]);
             expect(data.tasks.map((task) => task.title)).toEqual(["First task", "Second task"]);
             expect(data.tasks[0]?.status).toBe("done");
@@ -592,8 +601,12 @@ describe("Public share routes", () => {
                     "status",
                     "priority",
                     "due_date",
+                    "start_date",
+                    "completed_at",
+                    "task_number",
                     "board_order",
                     "labels",
+                    "assignee",
                     "created",
                     "updated",
                 ].sort(),
@@ -612,6 +625,57 @@ describe("Public share routes", () => {
                 await pbRequest(`${PUBLIC_API}/boards/${token}`),
             );
             expect(data.tasks).toEqual([]);
+        });
+    });
+
+    describe("private and trashed ancestor folders", () => {
+        test("a public note inside a private folder subtree returns 404", async () => {
+            const token = uniqueToken();
+            const outer = await createFolder(user, { name: "Outer public" });
+            const inner = await createFolder(user, { name: "Inner public", parent: outer.id });
+            const note = await createNote(user, { folder: inner.id });
+            await shareDocument(note.id, token);
+
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 200);
+            await superuserUpdate("folders", outer.id, { is_private: true });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 404);
+        });
+
+        test("a public board inside a private folder returns 404", async () => {
+            const token = uniqueToken();
+            const folder = await createFolder(user, { name: "Board ancestor" });
+            const board = await createBoard(user, { folder: folder.id });
+            await shareBoard(board.id, token);
+
+            await expectStatus(await pbRequest(`${PUBLIC_API}/boards/${token}`), 200);
+            await superuserUpdate("folders", folder.id, { is_private: true });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/boards/${token}`), 404);
+        });
+
+        test("a public note under a trashed ancestor folder returns 404", async () => {
+            const token = uniqueToken();
+            const folder = await createFolder(user, { name: "Trashed ancestor" });
+            const note = await createNote(user, { folder: folder.id });
+            await shareDocument(note.id, token);
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 200);
+
+            // Set the trash state directly so the note's token is not cleared
+            // by the folder trash route; the ancestor walk alone must hide it.
+            await superuserUpdate("folders", folder.id, {
+                deleted_at: "2024-01-01 00:00:00.000Z",
+            });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 404);
+        });
+
+        test("a public folder under a private parent returns 404", async () => {
+            const token = uniqueToken();
+            const parent = await createFolder(user, { name: "Private parent" });
+            const child = await createFolder(user, { name: "Public child", parent: parent.id });
+            await shareFolder(child.id, token);
+
+            await expectStatus(await pbRequest(`${PUBLIC_API}/folders/${token}`), 200);
+            await superuserUpdate("folders", parent.id, { is_private: true });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/folders/${token}`), 404);
         });
     });
 

@@ -355,7 +355,19 @@ describe("list_boards", () => {
             open: 3,
             done: 2,
             total: 5,
+            planned: 0,
+            archived: 0,
             columns: { backlog: 1, next: 1, progress: 1, done: 2 },
+        });
+        expect(roadmap?.columns.map((column) => column.slug)).toEqual([
+            "backlog",
+            "next",
+            "progress",
+            "done",
+        ]);
+        expect(roadmap?.columns.find((column) => column.slug === "done")).toMatchObject({
+            isFinal: true,
+            count: 2,
         });
     });
 
@@ -520,7 +532,7 @@ describe("read_board", () => {
 
         const badColumn = await readBoard(ownerContext, {
             boardId: boards.roadmap.id,
-            column: "archived",
+            column: "no-such-column",
         });
         expect(badColumn.ok).toBe(false);
         if (badColumn.ok) return;

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Nana rabbit maskable icon</title>
+  <rect width="512" height="512" fill="#0c0c0d"/>
+  <g transform="translate(0 -32)">
+    <g fill="#f5f3ef">
+      <path d="M178 306C166 260 164 190 174 150c6-24 28-34 44-18 20 22 16 114 8 174z"/>
+      <path d="M286 306c-8-60-12-152 8-174 16-16 38-6 44 18 10 40 8 110-4 156z"/>
+      <circle cx="256" cy="330" r="122"/>
+    </g>
+    <g fill="#ff7048">
+      <path d="M202 160c6 0 10 6 14 16 4 26 4 70 0 98-2 14-8 22-14 22s-12-8-14-22c-4-28-4-72 0-98 2-10 8-16 14-16z" transform="rotate(-3 202 228)"/>
+      <path d="M310 160c6 0 10 6 14 16 4 26 4 70 0 98-2 14-8 22-14 22s-12-8-14-22c-4-28-4-72 0-98 2-10 8-16 14-16z" transform="rotate(4 310 228)"/>
+    </g>
+    <g fill="#0c0c0d">
+      <circle cx="222" cy="330" r="11"/>
+      <circle cx="290" cy="330" r="11"/>
+      <path d="M248 352c4-5 12-5 16 0-1 7-4 10-8 10s-7-3-8-10z"/>
+    </g>
+  </g>
+</svg>

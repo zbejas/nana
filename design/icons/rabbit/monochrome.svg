@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Nana rabbit monochrome icon</title>
+  <g fill="#1a1a18">
+    <path d="M178 306C166 260 164 190 174 150c6-24 28-34 44-18 20 22 16 114 8 174z"/>
+    <path d="M286 306c-8-60-12-152 8-174 16-16 38-6 44 18 10 40 8 110-4 156z"/>
+    <circle cx="256" cy="330" r="122"/>
+  </g>
+</svg>

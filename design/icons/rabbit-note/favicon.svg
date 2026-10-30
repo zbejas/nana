@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title">
+  <title id="title">Nana rabbit note favicon</title>
+  <rect width="32" height="32" rx="7" fill="#0c0c0d"/>
+  <g fill="#f5f3ef">
+    <rect x="9.2" y="3.6" width="4.2" height="9.8" rx="2.1" transform="rotate(-6 11.3 8.5)"/>
+    <rect x="18.8" y="4" width="4.2" height="9.4" rx="2.1" transform="rotate(6 20.9 8.7)"/>
+    <path d="M8 13h14.5l3.5 3.5v7c0 1.1-.9 2-2 2H8c-1.1 0-2-.9-2-2v-8.5c0-1.1.9-2 2-2z"/>
+  </g>
+  <path d="M22.5 13l3.5 3.5h-3.5z" fill="#ff7048"/>
+</svg>

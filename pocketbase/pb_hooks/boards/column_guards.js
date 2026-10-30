@@ -27,6 +27,48 @@ onRecordUpdateRequest((e) => {
   return e.next()
 }, "board_columns")
 
+// Moving a column between final and open changes the completion meaning for
+// every task already in it. Recompute in the same transaction as the column
+// write so a failed update cannot leave half-completed columns behind.
+onRecordUpdateRequest((e) => {
+  if (!e.auth) return e.next()
+  const original = e.record.original()
+  if (!original || !original.id) return e.next()
+  if (original.getBool("is_final") === e.record.getBool("is_final")) {
+    return e.next()
+  }
+
+  const boardId = String(e.record.get("board") || "")
+  const slug = String(e.record.get("slug") || "")
+  const final = e.record.getBool("is_final")
+  if (!boardId || !slug) return e.next()
+
+  const previous = e.app
+  $app.runInTransaction((txApp) => {
+    e.app = txApp
+    try {
+      e.next()
+      if (final) {
+        txApp.db()
+          .newQuery(
+            "UPDATE tasks SET completed_at = {:now} WHERE board = {:board} AND status = {:status} AND COALESCE(completed_at, '') = ''"
+          )
+          .bind({ now: new Date().toISOString(), board: boardId, status: slug })
+          .execute()
+      } else {
+        txApp.db()
+          .newQuery(
+            "UPDATE tasks SET completed_at = '' WHERE board = {:board} AND status = {:status} AND COALESCE(completed_at, '') != ''"
+          )
+          .bind({ board: boardId, status: slug })
+          .execute()
+      }
+    } finally {
+      e.app = previous
+    }
+  })
+}, "board_columns")
+
 onRecordDeleteRequest((e) => {
   if (!e.auth || e.hasSuperuserAuth()) return e.next()
 

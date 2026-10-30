@@ -1,63 +1,70 @@
 /// <reference path="../../pb_data/types.d.ts" />
 
-// Keep inherited folder grants in sync when records are created or moved.
-// Direct shares are handled transactionally by the share routes.
+// Keep inherited folder grants and direct user shares in sync when records are
+// created, moved, made private, trashed, or restored.
+//
+// Privacy, move, and trash transitions are fail-closed: the request hook
+// revokes the old grants, saves the record, and rebuilds access in one
+// transaction. If the rebuild fails the whole write rolls back, so a stale
+// grant can never outlive the privacy change. Creates and restores under-grant
+// on failure (safe) and queue a repair row instead of failing the write.
+//
+// Every helper is required inside the callback: PocketBase drops module-scope
+// bindings in hook files between invocations. Request hooks call e.next().
 
-function changed(record, field) {
-  const original = record.original()
-  if (!original || !original.id) return true
-  return String(record.get(field) || "") !== String(original.get(field) || "")
-}
-
-function boolChanged(record, field) {
-  const original = record.original()
-  if (!original || !original.id) return true
-  return record.getBool(field) !== original.getBool(field)
-}
-
-function safelyRebuild(fn) {
-  try {
-    fn()
-  } catch (err) {
-    console.error("Failed to rebuild share access:", err)
-  }
-}
-
-onRecordAfterCreateSuccess((e) => {
-  const h = require(`${__hooks}/sharing/access_helpers.js`)
-  safelyRebuild(() => h.rebuildResourceGrants("document", e.record.id))
+onRecordCreateRequest((e) => {
+  if (!e.auth) return e.next()
+  e.next()
+  const repair = require(`${__hooks}/sharing/repair_helpers.js`)
+  repair.safeSync("document", e.record.id, $app, "create_target")
 }, "documents")
 
-onRecordAfterUpdateSuccess((e) => {
-  if (!changed(e.record, "folder") && !boolChanged(e.record, "is_private")) {
-    return
+onRecordUpdateRequest((e) => {
+  if (!e.auth) return e.next()
+  const h = require(`${__hooks}/sharing/hook_helpers.js`)
+  if (!h.sharingFieldsChanged(e.record, ["folder", "is_private", "deleted_at"])) {
+    return e.next()
   }
-  const h = require(`${__hooks}/sharing/access_helpers.js`)
-  safelyRebuild(() => h.rebuildResourceGrants("document", e.record.id))
+  h.runWithRebuild(e, (txApp) => {
+    h.revokeTarget("document", e.record.id, txApp)
+    h.syncTarget("document", e.record.id, txApp)
+  })
 }, "documents")
 
-onRecordAfterCreateSuccess((e) => {
-  const h = require(`${__hooks}/sharing/access_helpers.js`)
-  safelyRebuild(() => h.rebuildResourceGrants("board", e.record.id))
+onRecordCreateRequest((e) => {
+  if (!e.auth) return e.next()
+  e.next()
+  const repair = require(`${__hooks}/sharing/repair_helpers.js`)
+  repair.safeSync("board", e.record.id, $app, "create_target")
 }, "boards")
 
-onRecordAfterUpdateSuccess((e) => {
-  if (!changed(e.record, "folder") && !boolChanged(e.record, "is_private")) {
-    return
+onRecordUpdateRequest((e) => {
+  if (!e.auth) return e.next()
+  const h = require(`${__hooks}/sharing/hook_helpers.js`)
+  if (!h.sharingFieldsChanged(e.record, ["folder", "is_private"])) {
+    return e.next()
   }
-  const h = require(`${__hooks}/sharing/access_helpers.js`)
-  safelyRebuild(() => h.rebuildResourceGrants("board", e.record.id))
+  h.runWithRebuild(e, (txApp) => {
+    h.revokeTarget("board", e.record.id, txApp)
+    h.syncTarget("board", e.record.id, txApp)
+  })
 }, "boards")
 
-onRecordAfterCreateSuccess((e) => {
-  const h = require(`${__hooks}/sharing/access_helpers.js`)
-  safelyRebuild(() => h.rebuildResourceGrants("folder", e.record.id))
+onRecordCreateRequest((e) => {
+  if (!e.auth) return e.next()
+  e.next()
+  const repair = require(`${__hooks}/sharing/repair_helpers.js`)
+  repair.safeSync("folder", e.record.id, $app, "create_folder")
 }, "folders")
 
-onRecordAfterUpdateSuccess((e) => {
-  if (!changed(e.record, "parent") && !boolChanged(e.record, "is_private")) {
-    return
+onRecordUpdateRequest((e) => {
+  if (!e.auth) return e.next()
+  const h = require(`${__hooks}/sharing/hook_helpers.js`)
+  if (!h.sharingFieldsChanged(e.record, ["parent", "is_private", "deleted_at"])) {
+    return e.next()
   }
-  const h = require(`${__hooks}/sharing/access_helpers.js`)
-  safelyRebuild(() => h.rebuildFolderSubtree(e.record.id))
+  h.runWithRebuild(e, (txApp) => {
+    h.revokeFolder(e.record.id, txApp)
+    h.syncFolder(e.record.id, txApp)
+  })
 }, "folders")

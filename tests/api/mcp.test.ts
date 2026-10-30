@@ -415,6 +415,9 @@ describe("board and task tools", () => {
             priority: "high",
             labels: ["mcp"],
             boardOrder: 1,
+            assigneeId: owner.id,
+            startDate: "2026-11-01 09:00:00.000Z",
+            recurrence: { frequency: "weekly", interval: 1, weekdays: [1, 3] },
         });
         expect(createTaskCall.isError).toBe(false);
         const task = createTaskCall.payload as unknown as TaskDto;
@@ -425,7 +428,40 @@ describe("board and task tools", () => {
             labels: ["mcp"],
             boardOrder: 1,
             boardId: board.id,
+            assigneeId: owner.id,
+            startDate: "2026-11-01 09:00:00.000Z",
         });
+        expect(task.recurrence).toEqual({
+            frequency: "weekly",
+            interval: 1,
+            weekdays: [1, 3],
+        });
+
+        const boardReadCall = await mcpCall(owner.token, "read_board", {
+            boardId: board.id,
+            column: "backlog",
+        });
+        expect(boardReadCall.isError).toBe(false);
+        const boardRead = boardReadCall.payload as unknown as {
+            board: { columns: Array<{ slug: string; isFinal: boolean }> };
+            tasks: TaskDto[];
+        };
+        expect(boardRead.board.columns.map((column) => column.slug)).toEqual([
+            "backlog",
+            "next",
+            "progress",
+            "done",
+        ]);
+        expect(boardRead.tasks.map((item) => item.id)).toContain(task.id);
+
+        const relationsCall = await mcpCall(owner.token, "list_task_relations", { taskId: task.id });
+        expect(relationsCall.isError).toBe(false);
+        expect(relationsCall.payload).toEqual([]);
+
+        const activityCall = await mcpCall(owner.token, "list_task_activity", { taskId: task.id });
+        expect(activityCall.isError).toBe(false);
+        const activity = activityCall.payload as unknown as Array<{ type: string }>;
+        expect(activity.map((entry) => entry.type)).toContain("created");
 
         const tasksCall = await mcpCall(owner.token, "list_tasks", { boardId: board.id });
         const tasks = tasksCall.payload as unknown as { items: TaskDto[] };

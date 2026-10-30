@@ -1,7 +1,7 @@
 import { getBoard, updateBoard, type Board } from './boards';
 import { getDocument, updateDocument, type Document } from './documents';
 import { buildFolderTree, getFolder, updateFolder, type Folder, type FolderTreeNode } from './folders';
-import type { TaskPriority, TaskStatus } from './tasks';
+import type { TaskPriority } from './tasks';
 
 export type ShareTargetType = 'document' | 'folder' | 'board';
 
@@ -45,21 +45,42 @@ export interface PublicBoard {
     id: string;
     name: string;
     description: string;
+    icon?: string;
     author: string;
     folder: string;
+    columns?: PublicBoardColumn[];
     created: string;
     updated: string;
+}
+
+export interface PublicBoardColumn {
+    id?: string;
+    slug: string;
+    name: string;
+    position: number;
+    icon?: string;
+    color?: string;
+    is_final: boolean;
+}
+
+export interface PublicBoardAssignee {
+    id: string;
+    name: string;
 }
 
 export interface PublicBoardTask {
     id: string;
     title: string;
     description: string;
-    status: TaskStatus;
+    status: string;
     priority: TaskPriority | '';
     due_date: string | null;
+    start_date?: string | null;
+    completed_at?: string | null;
+    task_number?: number | null;
     board_order: number;
     labels: string[];
+    assignee?: PublicBoardAssignee | null;
     created: string | null;
     updated: string | null;
 }

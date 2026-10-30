@@ -1,8 +1,8 @@
-import { BookmarkIcon, EyeIcon, PencilSquareIcon, XMarkIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon, CodeBracketIcon, EyeIcon, PencilSquareIcon, XMarkIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
 import { EditorContextMenu } from './EditorContextMenu';
 import { IconButton, SegmentedControl } from '../ui';
 
-type ViewMode = 'text' | 'preview' | 'split';
+type ViewMode = 'wysiwyg' | 'text' | 'preview' | 'split';
 
 interface EditorHeaderProps {
   title: string;
@@ -41,7 +41,8 @@ export function EditorHeader({
   onExport,
   onDelete,
 }: EditorHeaderProps) {
-  const textOption = { value: 'text' as const, label: 'Write', icon: <PencilSquareIcon className="h-3.5 w-3.5" /> };
+  const writeOption = { value: 'wysiwyg' as const, label: 'Write', icon: <PencilSquareIcon className="h-3.5 w-3.5" /> };
+  const sourceOption = { value: 'text' as const, label: 'Source', icon: <CodeBracketIcon className="h-3.5 w-3.5" /> };
   const previewOption = { value: 'preview' as const, label: 'Read', icon: <EyeIcon className="h-3.5 w-3.5" /> };
   const splitOption = { value: 'split' as const, label: 'Split', icon: <ViewColumnsIcon className="h-3.5 w-3.5" /> };
 
@@ -79,7 +80,7 @@ export function EditorHeader({
               label={viewMode === 'preview' ? 'Switch to write view' : 'Switch to read view'}
               size="md"
               className="h-11 w-11 sm:h-8 sm:w-8"
-              onClick={() => onViewModeChange(viewMode === 'preview' ? 'text' : 'preview')}
+              onClick={() => onViewModeChange(viewMode === 'preview' ? 'wysiwyg' : 'preview')}
             >
               {viewMode === 'preview' ? <PencilSquareIcon /> : <EyeIcon />}
             </IconButton>
@@ -90,7 +91,7 @@ export function EditorHeader({
               value={viewMode}
               onChange={onViewModeChange}
               size="sm"
-              options={[textOption, splitOption, previewOption]}
+              options={[writeOption, sourceOption, splitOption, previewOption]}
             />
           </span>
 

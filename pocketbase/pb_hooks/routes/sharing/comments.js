@@ -1,11 +1,9 @@
 /// <reference path="../../../pb_data/types.d.ts" />
 
-// Comments on shared notes and boards. The comments collection is internal;
-// every operation resolves target access through the sharing helpers.
-
-function isCommentTarget(type) {
-  return type === "document" || type === "board"
-}
+// Comments on shared notes, boards, and tasks. The comments collection is
+// internal; every operation resolves target access through the sharing
+// helpers. Bodies are stored and returned as plain text (never HTML) and are
+// trimmed, length-capped, and rejected when empty.
 
 routerAdd("GET", "/api/sharing/comments", (c) => {
   const h = require(`${__hooks}/routes/sharing/sharing_helpers.js`)
@@ -15,8 +13,8 @@ routerAdd("GET", "/api/sharing/comments", (c) => {
     const me = h.authId(c)
     const targetType = h.queryValue(c, "targetType")
     const targetId = h.queryValue(c, "targetId")
-    if (!isCommentTarget(targetType) || !targetId) {
-      throw new BadRequestError("Comments require a note or board")
+    if (!h.isCommentTarget(targetType) || !targetId) {
+      throw new BadRequestError("Comments require a note, board, or task")
     }
 
     const resolved = access.effectiveAccess(targetType, targetId, me)
@@ -54,13 +52,11 @@ routerAdd("POST", "/api/sharing/comments", (c) => {
     const body = h.bodyValue(c)
     const targetType = String(body.targetType || "").trim()
     const targetId = String(body.targetId || "").trim()
-    const text = String(body.body || "").trim()
+    const text = h.normalizeCommentBody(body.body)
 
-    if (!isCommentTarget(targetType) || !targetId) {
-      throw new BadRequestError("Comments require a note or board")
+    if (!h.isCommentTarget(targetType) || !targetId) {
+      throw new BadRequestError("Comments require a note, board, or task")
     }
-    if (!text) throw new BadRequestError("Write a comment first")
-    if (text.length > 10000) throw new BadRequestError("Comment is too long")
 
     const resolved = access.effectiveAccess(targetType, targetId, me)
     if (!resolved) throw new NotFoundError("Target not found")
@@ -91,7 +87,7 @@ routerAdd("PATCH", "/api/sharing/comments/{id}", (c) => {
   try {
     const me = h.authId(c)
     const commentId = c.request.pathValue("id")
-    const comment = h.loadShare(commentId)
+    const comment = h.loadComment(commentId)
     if (!comment) throw new NotFoundError("Comment not found")
     if (String(comment.get("author") || "") !== me) {
       throw new ForbiddenError("You can only edit your own comment")
@@ -101,13 +97,12 @@ routerAdd("PATCH", "/api/sharing/comments/{id}", (c) => {
     if (!target || !target.record) throw new NotFoundError("Target not found")
     const resolved = access.effectiveAccess(target.type, target.id, me)
     if (!resolved) throw new NotFoundError("Target not found")
+    if (resolved.level < 2) {
+      throw new ForbiddenError("You can view this item but not comment")
+    }
 
     const body = h.bodyValue(c)
-    const text = String(body.body || "").trim()
-    if (!text) throw new BadRequestError("Write a comment first")
-    if (text.length > 10000) throw new BadRequestError("Comment is too long")
-
-    comment.set("body", text)
+    comment.set("body", h.normalizeCommentBody(body.body))
     $app.save(comment)
     return c.json(200, h.serializeComment(comment, me, resolved))
   } catch (err) {
@@ -127,7 +122,7 @@ routerAdd("DELETE", "/api/sharing/comments/{id}", (c) => {
   try {
     const me = h.authId(c)
     const commentId = c.request.pathValue("id")
-    const comment = h.loadShare(commentId)
+    const comment = h.loadComment(commentId)
     if (!comment) throw new NotFoundError("Comment not found")
 
     const target = h.commentTarget(comment)

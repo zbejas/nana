@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nana — app icon directions</title>
+<style>
+  :root {
+    --paper: #faf9f7;
+    --paper-deep: #f2f1ee;
+    --surface: #ffffff;
+    --sunken: #f3f2ef;
+    --ink: #1a1a18;
+    --ink-2: #52524e;
+    --muted: #6b6b65;
+    --line: rgb(26 26 24 / .08);
+    --line-strong: rgb(26 26 24 / .18);
+    --night: #0c0c0d;
+    --night-surface: #131315;
+    --night-raised: #1b1b1e;
+    --cream: #f5f3ef;
+    --cream-2: #a3a39e;
+    --ember: #ff7048;
+    --ember-dark: #b7431e;
+    --radius: 12px;
+    --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, monospace;
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--paper-deep);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  .page { max-width: 1480px; margin: 0 auto; padding: 56px 48px 96px; }
+  .eyebrow {
+    font: 500 11px/1.2 var(--mono);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ember-dark);
+  }
+  h1 {
+    margin: 14px 0 12px;
+    font-size: clamp(38px, 5vw, 64px);
+    line-height: .98;
+    letter-spacing: -.045em;
+    font-weight: 600;
+    max-width: 920px;
+  }
+  .lead {
+    max-width: 720px;
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink-2);
+  }
+  .masthead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 48px;
+    align-items: end;
+    padding-bottom: 36px;
+    border-bottom: 1px solid var(--line-strong);
+  }
+  .masthead-meta {
+    display: grid;
+    gap: 14px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .masthead-meta strong {
+    display: block;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .swatches { display: flex; gap: 8px; }
+  .swatch { width: 44px; height: 44px; border-radius: 8px; border: 1px solid var(--line); }
+  .swatch.dark { background: #0c0c0d; }
+  .swatch.light { background: #faf9f7; }
+  .swatch.ink { background: #1a1a18; }
+  .swatch.cream { background: #f5f3ef; }
+  .swatch.ember { background: #ff7048; }
+  .swatch.ember-dark { background: #b7431e; }
+
+  .glance {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin: 28px 0 52px;
+  }
+  .glance-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 14px;
+    align-items: center;
+    text-decoration: none;
+  }
+  .glance-card:hover { border-color: var(--line-strong); }
+  .glance-icon {
+    width: 64px; height: 64px; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 0 0 1px rgb(26 26 24 / .06);
+  }
+  .glance-icon img { display: block; width: 100%; height: 100%; }
+  .glance-card h2 { margin: 0; font-size: 15px; letter-spacing: -.015em; font-weight: 600; }
+  .glance-card p { margin: 4px 0 0; font-size: 12px; line-height: 1.35; color: var(--muted); }
+  .glance-card .rank { font: 500 10px/1 var(--mono); color: var(--ember-dark); }
+
+  .direction {
+    padding: 48px 0 56px;
+    border-top: 1px solid var(--line-strong);
+  }
+  .direction-head {
+    display: grid;
+    grid-template-columns: 80px minmax(0, 1fr) 300px;
+    gap: 28px;
+    align-items: start;
+    margin-bottom: 28px;
+  }
+  .direction-index { font: 500 12px/1 var(--mono); color: var(--muted); padding-top: 8px; }
+  .direction h2 { margin: 0; font-size: 34px; line-height: 1; letter-spacing: -.035em; font-weight: 600; }
+  .direction h2 span { color: var(--muted); font-weight: 400; }
+  .direction-summary { margin: 12px 0 0; max-width: 640px; font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
+  .direction-side { display: grid; gap: 12px; justify-items: start; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    border: 1px solid var(--line-strong); border-radius: 999px;
+    padding: 6px 10px; font-size: 11.5px; color: var(--ink-2);
+  }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ember-dark); }
+  .palette { display: flex; gap: 6px; align-items: center; }
+  .palette i { width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--line); }
+  .palette code { font: 10.5px/1 var(--mono); color: var(--muted); margin-left: 4px; }
+
+  .heroes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .stage {
+    position: relative;
+    min-height: 560px;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .stage.light { background: var(--paper); }
+  .stage.dark { background: var(--night); border-color: rgb(255 255 255 / .08); }
+  .stage .corner {
+    position: absolute; top: 14px; left: 16px;
+    font: 500 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .stage.dark .corner { color: var(--cream-2); }
+  .hero-icon { width: 512px; height: 512px; max-width: 100%; }
+  .hero-icon img { display: block; width: 100%; height: 100%; }
+
+  .ladder-wrap {
+    display: grid;
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+    margin-bottom: 14px;
+  }
+  .ladder-label {
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    gap: 8px;
+    font: 500 10px/1 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .ladder-label div { display: flex; align-items: center; }
+  .ladder {
+    display: grid;
+    grid-template-columns: 40px 48px 56px 72px 88px 152px 280px;
+    gap: 10px;
+    align-items: center;
+    justify-content: start;
+  }
+  .size-col { display: grid; grid-template-rows: 1fr 1fr; gap: 8px; }
+  .size-cell {
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px;
+    min-height: 68px;
+    border: 1px solid var(--line);
+  }
+  .size-cell.light { background: var(--paper); }
+  .size-cell.dark { background: var(--night); border-color: rgb(255 255 255 / .08); }
+  .size-icon { display: block; }
+  .size-num { display: block; text-align: center; font: 10px/1 var(--mono); color: var(--muted); margin-top: 2px; }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr;
+    gap: 14px;
+  }
+  .panel {
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    padding: 22px;
+  }
+  .panel.light { background: var(--surface); }
+  .panel.dark { background: var(--night); border-color: rgb(255 255 255 / .08); color: var(--cream); }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+  .panel-head h3 { margin: 0; font-size: 13px; letter-spacing: -.01em; font-weight: 600; }
+  .panel-head span { font-size: 10.5px; color: var(--muted); }
+  .panel.dark .panel-head span { color: var(--cream-2); }
+  .mask-row { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+  .mask-item { display: grid; gap: 8px; justify-items: center; }
+  .mask-stage {
+    position: relative; width: 160px; height: 160px;
+    display: grid; place-items: center;
+    background: var(--night-raised);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .mask-stage img { width: 160px; height: 160px; display: block; }
+  .mask-stage.circle img { clip-path: circle(50%); }
+  .mask-stage.squircle { border-radius: 54px; }
+  .mask-stage.squircle img { border-radius: 34%; }
+  .mask-stage.safe img { clip-path: circle(40%); }
+  .safe-ring {
+    position: absolute; width: 128px; height: 128px;
+    border: 1px dashed var(--ember); border-radius: 50%;
+    pointer-events: none;
+  }
+  .mask-label { font: 10px/1.2 var(--mono); color: var(--muted); text-align: center; }
+  .panel.dark .mask-label { color: var(--cream-2); }
+
+  .mono-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
+  .mono-item { display: grid; gap: 8px; justify-items: center; }
+  .mono-stage {
+    width: 100%; max-width: 112px; aspect-ratio: 1; border-radius: 12px;
+    display: grid; place-items: center;
+    border: 1px solid var(--line);
+  }
+  .mono-stage.on-paper { background: var(--cream); }
+  .mono-stage.on-dark { background: var(--night-raised); border-color: rgb(255 255 255 / .08); }
+  .mono-stage img { width: 80%; height: 80%; display: block; }
+  .masked {
+    display: block; width: 80%; height: 80%;
+    -webkit-mask: var(--m) center / contain no-repeat;
+    mask: var(--m) center / contain no-repeat;
+  }
+  .tint-ember { background: var(--ember); }
+  .tint-cream { background: var(--cream); }
+  .tint-ink { background: var(--ink); }
+
+  .tabs { display: flex; gap: 6px; align-items: flex-end; }
+  .tab {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 36px; padding: 0 12px 0 10px;
+    border-radius: 9px 9px 0 0;
+    font-size: 12px; white-space: nowrap;
+  }
+  .tabs.light .tab { background: #e9e7e2; color: var(--ink-2); }
+  .tabs.light .tab.active { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-bottom: 0; }
+  .tabs.dark .tab { background: #1b1b1e; color: var(--cream-2); }
+  .tabs.dark .tab.active { background: #2a2a2d; color: var(--cream); }
+  .tab img { width: 16px; height: 16px; display: block; }
+  .tab .x { color: var(--muted); font-size: 11px; }
+  .tab-row { display: grid; gap: 12px; }
+  .tab-caption { font: 10px/1.2 var(--mono); color: var(--muted); }
+
+  .notes-box {
+    margin-top: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 18px 20px;
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 16px;
+  }
+  .notes-box h4 { margin: 0; font-size: 12px; font-weight: 600; }
+  .notes-box p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
+  .notes-box code { font: 11px/1.4 var(--mono); color: var(--ember-dark); }
+
+  .zoom-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+    margin-top: 18px;
+  }
+  .zoom-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px;
+  }
+  .zoom-card h4 { margin: 0 0 12px; font-size: 12px; font-weight: 600; }
+  .zoom-pair { display: flex; gap: 12px; align-items: center; }
+  .zoom-frame { width: 96px; height: 96px; border-radius: 8px; display: grid; place-items: center; overflow: hidden; }
+  .zoom-frame.light { background: var(--paper); }
+  .zoom-frame.dark { background: var(--night); }
+  .zoom-frame .zoom { width: 16px; height: 16px; transform: scale(5.5); transform-origin: center; image-rendering: pixelated; }
+  .zoom-frame img { width: 16px; height: 16px; display: block; image-rendering: pixelated; }
+
+  .rank-list {
+    display: grid; gap: 1px; background: var(--line);
+    border: 1px solid var(--line); border-radius: 12px;
+    overflow: hidden; margin-top: 22px;
+  }
+  .rank-row {
+    display: grid; grid-template-columns: 44px 210px minmax(0, 1fr);
+    gap: 18px; background: var(--surface); padding: 16px 18px; align-items: start;
+  }
+  .rank-row .n { font: 500 12px/1.4 var(--mono); color: var(--ember-dark); }
+  .rank-row h3 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+  .rank-row p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
+  .rank-row .why { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .research { margin-top: 64px; padding-top: 36px; border-top: 1px solid var(--line-strong); }
+  .research h2 { font-size: 26px; letter-spacing: -.03em; margin: 0 0 8px; }
+  .research p { max-width: 760px; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+  .research ul { columns: 2; column-gap: 40px; margin: 20px 0 0; padding-left: 18px; }
+  .research li { break-inside: avoid; margin-bottom: 9px; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+  .research a { color: var(--ember-dark); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; gap: 20px; }
+
+  @media (max-width: 1100px) {
+    .page { padding: 36px 22px 64px; }
+    .masthead { grid-template-columns: 1fr; }
+    .glance { grid-template-columns: repeat(2, 1fr); }
+    .direction-head { grid-template-columns: 40px 1fr; }
+    .direction-side { grid-column: 2; }
+    .detail-grid { grid-template-columns: 1fr; }
+    .ladder-wrap { overflow-x: auto; }
+    .ladder { grid-template-columns: 40px 48px 56px 72px 88px 152px 280px; }
+    .heroes { grid-template-columns: 1fr; }
+    .stage { min-height: auto; padding: 28px 0; }
+    .hero-icon { width: min(512px, 84vw); height: auto; aspect-ratio: 1; }
+    .zoom-grid { grid-template-columns: repeat(2, 1fr); }
+    .notes-box { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <div>
+      <div class="eyebrow">Nana / icon system / four directions</div>
+      <h1>Four ways to draw a quiet rabbit.</h1>
+      <p class="lead">A new app icon and favicon system for Nana. Every direction is built at 16px first, then scaled up: one silhouette, two or three flat colours, and a mark that survives a circular mask. The mascot stays a rabbit; the notebook becomes a geometry cue rather than an illustration.</p>
+    </div>
+    <div class="masthead-meta">
+      <div>
+        <strong>Palette</strong>
+        Graphite, cream, one ember accent. No gradients.
+      </div>
+      <div class="swatches" aria-label="Palette swatches">
+        <span class="swatch dark" title="#0c0c0d"></span>
+        <span class="swatch light" title="#faf9f7"></span>
+        <span class="swatch ink" title="#1a1a18"></span>
+        <span class="swatch cream" title="#f5f3ef"></span>
+        <span class="swatch ember" title="#ff7048"></span>
+        <span class="swatch ember-dark" title="#b7431e"></span>
+      </div>
+      <div>
+        <strong>Test surfaces</strong>
+        Daylight paper #faf9f7 and low-lamp graphite #0c0c0d, the two Graphite canvases.
+      </div>
+    </div>
+  </header>
+
+  <div class="glance" id="glance"></div>
+  <main id="directions"></main>
+
+  <section class="research" id="ranking">
+    <div class="eyebrow">Recommendation</div>
+    <h2>Ranked for the tab bar, then the home screen.</h2>
+    <p>The first test is 16px in a tab on both paper and graphite chrome. The second is whether the mark still says Nana without the wordmark. The rabbit wins on identity; the N wins on pure optical clarity. I would ship the rabbit as the product mark and keep the monogram as the disciplined fallback if the rabbit ever feels too soft in real tabs.</p>
+    <div class="rank-list">
+      <div class="rank-row">
+        <span class="n">01</span>
+        <div><h3>Rabbit mark</h3><p class="why">best brand fit · strong 16px silhouette · safe mask</p></div>
+        <p>A solid head with two tall ears is still a rabbit at 16px, and it is the only direction that carries the existing mascot into the icon. The ember inner ear is the warm detail; the silhouette does the work. <strong>Recommend as the app icon.</strong></p>
+      </div>
+      <div class="rank-row">
+        <span class="n">02</span>
+        <div><h3>N monogram</h3><p class="why">best 16px clarity · best light/dark contrast</p></div>
+        <p>The paper tile and graphite N survive any surface, and the dog-ear keeps it from being a font sample. It is the safest technical choice, but it gives up the mascot and reads more like a publishing tool than Nana.</p>
+      </div>
+      <div class="rank-row">
+        <span class="n">03</span>
+        <div><h3>Rabbit + note</h3><p class="why">best story · strongest at 32px+</p></div>
+        <p>The rabbit peeking over a note is the clearest one-sentence description of the product. At 16px the wide card softens the ear silhouette, so it is better for the install prompt, About, and marketing than for the smallest tab.</p>
+      </div>
+      <div class="rank-row">
+        <span class="n">04</span>
+        <div><h3>Note + board</h3><p class="why">most product-specific · weakest at 16px</p></div>
+        <p>Three columns plus one ember card says notes and boards without a document cliché. At 16px the fold disappears and the mark can read as a bar chart, so it works best as a secondary product glyph, not the app icon.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="research">
+    <div class="eyebrow">Method</div>
+    <h2>What the small sizes are up against.</h2>
+    <p>The working rules: design the tab icon at 16px, not 512px; reduce to one dominant silhouette; keep contrast against both paper and near-black chrome; use a full-bleed opaque background for maskable icons with the mark inside the central 80% circle; provide a single-colour alpha mark for themed/tinted contexts; and keep text out of the mark. The preview below renders the actual SVGs at every size, not approximations.</p>
+    <ul>
+      <li><a href="https://web.dev/articles/maskable-icon">web.dev — Adaptive icon support in PWAs with maskable icons</a></li>
+      <li><a href="https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/How_to/Define_app_icons">MDN — Define your app icons (80% safe zone)</a></li>
+      <li><a href="https://developer.apple.com/design/human-interface-guidelines/app-icons">Apple HIG — App icons (opaque square, no text, no baked corners)</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction">Microsoft — Construct your Windows app's icon</a></li>
+      <li><a href="https://developer.android.com/develop/ui/compose/system/icon_design_adaptive">Android — Adaptive icons and the monochrome layer</a></li>
+      <li><a href="https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/icons">MDN — Manifest icons and the monochrome purpose</a></li>
+      <li><a href="https://faviconbuilder.com/guides/favicon-design-best-practices">Favicon Builder — favicon design best practices</a></li>
+      <li><a href="https://imagemint.net/tutorials/favicon-sizes-guide">ImageMint — favicon sizes and formats that work</a></li>
+    </ul>
+  </section>
+
+  <footer>
+    <span>Nana icon directions · design/icons · not integrated</span>
+    <span>SVG masters · 512 viewBox · Graphite tokens</span>
+  </footer>
+</div>
+
+<script>
+const directions = [
+  {
+    slug: "rabbit",
+    rank: "01",
+    name: "Rabbit mark",
+    tag: "Mascot, reduced",
+    blurb: "The existing Nana rabbit cut down to the two things that survive a 16px tab: the ears and the head. A warm ember inner ear keeps the character without a face at small sizes.",
+    small: "At 16px the head reads as a solid disc with two tall ears. The ember inner ear is the first detail to go; the silhouette still works.",
+    palette: ["#0c0c0d", "#f5f3ef", "#ff7048"],
+    note: "Silhouette first. The eyes and nose are deliberately sub-pixel at tab size and only resolve at 32px and above."
+  },
+  {
+    slug: "monogram",
+    rank: "02",
+    name: "N monogram",
+    tag: "Paper geometry",
+    blurb: "An N that is also a sheet of paper: the left stem is a page edge, the diagonal is the fold, and the top-left corner is a dog-ear. The cream tile is the sheet; the graphite N is the writing.",
+    small: "At 16px the N is three bold strokes. The dog-ear becomes a 1.5px bevel and the ember fold is a warm glint on the corner.",
+    palette: ["#faf9f7", "#1a1a18", "#b7431e"],
+    note: "The strongest tab shape of the four: a bright paper tile on dark chrome, a dark N on light chrome."
+  },
+  {
+    slug: "note-board",
+    rank: "03",
+    name: "Note + board",
+    tag: "One card, three lanes",
+    blurb: "A landscape card with a folded corner and two carved lanes. The third lane holds one small ember card. It is a note that happens to be a board, not a generic document with lines.",
+    small: "At 16px the card is a striped tile; the ember task card is a single warm pixel. The fold keeps it from reading as a folder.",
+    palette: ["#0c0c0d", "#f5f3ef", "#ff7048"],
+    note: "The most product-specific mark. It also makes the best 32px app icon for the installed PWA because the lanes stay visible."
+  },
+  {
+    slug: "rabbit-note",
+    rank: "04",
+    name: "Rabbit + note",
+    tag: "Mascot as page",
+    blurb: "The rabbit becomes the note: two ears rise from a page, the page has a folded ember corner, and the face is cut into the paper. Iconic at 16, characterful at 128.",
+    small: "At 16px the page is a rounded rectangle with two ears; the face disappears. The folded corner is the only ember cue left.",
+    palette: ["#0c0c0d", "#f5f3ef", "#ff7048"],
+    note: "The most literal story of the product, but the square page silhouette is slightly less immediate than the round rabbit head."
+  }
+];
+
+const sizes = [16, 24, 32, 48, 64, 128, 256];
+
+function hero(d) {
+  return `
+  <div class="heroes">
+    <div class="stage light"><span class="corner">Paper / 512</span><div class="hero-icon"><img src="${d.slug}/icon.svg" width="512" height="512" alt="${d.name} on paper"></div></div>
+    <div class="stage dark"><span class="corner">Graphite / 512</span><div class="hero-icon"><img src="${d.slug}/icon.svg" width="512" height="512" alt="${d.name} on graphite"></div></div>
+  </div>`;
+}
+
+function ladder(d) {
+  return `
+  <div class="ladder-wrap">
+    <div class="ladder-label"><div>Paper</div><div>Graphite</div></div>
+    <div class="ladder">
+      ${sizes.map(s => `
+        <div>
+          <div class="size-col">
+            <div class="size-cell light"><img class="size-icon" src="${d.slug}/icon.svg" width="${s}" height="${s}" alt=""></div>
+            <div class="size-cell dark"><img class="size-icon" src="${d.slug}/icon.svg" width="${s}" height="${s}" alt=""></div>
+          </div>
+          <span class="size-num">${s}</span>
+        </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+function masks(d) {
+  return `
+  <div class="panel dark">
+    <div class="panel-head"><h3>Maskable / safe zone</h3><span>full-bleed + 80% circle</span></div>
+    <div class="mask-row">
+      <div class="mask-item">
+        <div class="mask-stage">
+          <img src="${d.slug}/maskable.svg" alt="">
+          <span class="safe-ring"></span>
+        </div>
+        <span class="mask-label">full bleed<br>+ safe ring</span>
+      </div>
+      <div class="mask-item">
+        <div class="mask-stage circle"><img src="${d.slug}/maskable.svg" alt=""></div>
+        <span class="mask-label">circle mask</span>
+      </div>
+      <div class="mask-item">
+        <div class="mask-stage squircle"><img src="${d.slug}/maskable.svg" alt=""></div>
+        <span class="mask-label">squircle</span>
+      </div>
+      <div class="mask-item">
+        <div class="mask-stage safe"><img src="${d.slug}/maskable.svg" alt=""></div>
+        <span class="mask-label">safe area only</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function mono(d) {
+  return `
+  <div class="panel light">
+    <div class="panel-head"><h3>Monochrome / tinted</h3><span>single alpha silhouette</span></div>
+    <div class="mono-row">
+      <div class="mono-item">
+        <div class="mono-stage on-paper"><img src="${d.slug}/monochrome.svg" alt=""></div>
+        <span class="mask-label">source / ink</span>
+      </div>
+      <div class="mono-item">
+        <div class="mono-stage on-dark"><span class="masked tint-ember" style="--m:url('${d.slug}/monochrome.svg')"></span></div>
+        <span class="mask-label">tinted ember</span>
+      </div>
+      <div class="mono-item">
+        <div class="mono-stage on-dark"><span class="masked tint-cream" style="--m:url('${d.slug}/monochrome.svg')"></span></div>
+        <span class="mask-label">tinted cream</span>
+      </div>
+      <div class="mono-item">
+        <div class="mono-stage on-paper"><span class="masked tint-ink" style="--m:url('${d.slug}/monochrome.svg')"></span></div>
+        <span class="mask-label">tinted ink</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function tabs(d) {
+  return `
+  <div class="panel light">
+    <div class="panel-head"><h3>Tab test / 16px</h3><span>favicon.svg, actual size</span></div>
+    <div class="tab-row">
+      <div class="tabs light">
+        <div class="tab active"><img src="${d.slug}/favicon.svg" alt=""><span>Nana — Notes</span><span class="x">×</span></div>
+      </div>
+      <div class="tabs dark">
+        <div class="tab active"><img src="${d.slug}/favicon.svg" alt=""><span>Nana — Notes</span><span class="x">×</span></div>
+      </div>
+      <span class="tab-caption">The favicon at 16×16, actual size. The dark chrome is the harder test.</span>
+    </div>
+  </div>`;
+}
+
+function section(d) {
+  return `
+  <section class="direction" id="${d.slug}">
+    <div class="direction-head">
+      <div class="direction-index">${d.rank}</div>
+      <div>
+        <h2>${d.name} <span>/ ${d.tag}</span></h2>
+        <p class="direction-summary">${d.blurb}</p>
+      </div>
+      <div class="direction-side">
+        <span class="pill">Reads at 16px</span>
+        <div class="palette">
+          ${d.palette.map(c => `<i style="background:${c}" title="${c}"></i>`).join("")}
+          <code>${d.palette.join(" · ")}</code>
+        </div>
+      </div>
+    </div>
+    ${hero(d)}
+    ${ladder(d)}
+    <div class="detail-grid">
+      ${masks(d)}
+      ${mono(d)}
+    </div>
+    <div class="notes-box">
+      <h4>Small-size behavior</h4>
+      <p>${d.small}</p>
+    </div>
+    <div style="margin-top:14px">${tabs(d)}</div>
+  </section>`;
+}
+
+document.getElementById("directions").innerHTML = directions.map(section).join("");
+document.getElementById("glance").innerHTML = directions.map(d => `
+  <a class="glance-card" href="#${d.slug}">
+    <span class="glance-icon"><img src="${d.slug}/icon.svg" alt=""></span>
+    <div><span class="rank">${d.rank}</span><h2>${d.name}</h2><p>${d.tag}</p></div>
+  </a>`).join("");
+
+const zoom = document.createElement("section");
+zoom.className = "research";
+zoom.innerHTML = `
+  <div class="eyebrow">Pixel check</div>
+  <h2>16px, magnified 5.5×.</h2>
+  <p>These are the favicon SVGs rendered at 16px, then scaled up without smoothing. If the silhouette is still readable here, it will read in a tab bar.</p>
+  <div class="zoom-grid">
+    ${directions.map(d => `
+      <div class="zoom-card">
+        <h4>${d.rank} / ${d.name}</h4>
+        <div class="zoom-pair">
+          <div class="zoom-frame light"><span class="zoom"><img src="${d.slug}/favicon.svg" alt=""></span></div>
+          <div class="zoom-frame dark"><span class="zoom"><img src="${d.slug}/favicon.svg" alt=""></span></div>
+        </div>
+      </div>`).join("")}
+  </div>`;
+document.querySelector(".page").insertBefore(zoom, document.querySelector("footer"));
+</script>
+</body>
+</html>

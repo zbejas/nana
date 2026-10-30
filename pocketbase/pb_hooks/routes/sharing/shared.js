@@ -8,6 +8,37 @@ routerAdd("GET", "/api/sharing/shared", (c) => {
 
   try {
     const me = h.authId(c)
+    // Bounded, offset-paged list: default 50, maximum 100. The response keeps
+    // `items` for existing clients and adds limit/offset/hasMore/nextOffset.
+    const limit = h.queryNumber(c, "limit", 50, 1, 100)
+    const offset = h.queryNumber(c, "offset", 0, 0, 100000)
+
+    const items = []
+    const seen = {}
+
+    const addItem = (type, record, permission, level, sharedBy, id, shareId, grantId, inherited) => {
+      if (!record) return
+      if (seen[`${type}:${record.id}`]) return
+      if (access.isDeleted(record)) return
+      if (type === "board" && record.getBool("archived")) return
+
+      const resolved = access.effectiveAccess(type, record.id, me)
+      if (!resolved) return
+
+      seen[`${type}:${record.id}`] = true
+      items.push({
+        id,
+        shareId,
+        grantId,
+        type,
+        permission: resolved.role || permission,
+        level: resolved.level || level,
+        inherited,
+        sharedBy: h.serializeUser(sharedBy),
+        target: h.serializeTarget(type, record),
+      })
+    }
+
     const shares = $app.findRecordsByFilter(
       "shares",
       "user = {:user}",
@@ -17,18 +48,79 @@ routerAdd("GET", "/api/sharing/shared", (c) => {
       { user: me }
     )
 
-    const items = []
     for (const share of shares) {
       const target = h.shareTarget(share)
-      if (!target || !target.record || access.isDeleted(target.record)) continue
+      if (!target || !target.record) continue
+      const level = Number(share.get("level") || 0)
+      const permission = String(share.get("permission") || "") || access.levelPermission(level)
+      const sharedBy =
+        h.findUser(String(share.get("shared_by") || "")) ||
+        h.findUser(String(target.record.get("author") || ""))
 
-      items.push({
-        type: target.type,
-        permission: String(share.get("permission") || ""),
-        level: Number(share.get("level") || 0),
-        sharedBy: h.serializeUser(h.findUser(String(share.get("shared_by") || ""))),
-        target: h.serializeTarget(target.type, target.record),
-      })
+      addItem(
+        target.type,
+        target.record,
+        permission,
+        level,
+        sharedBy,
+        share.id,
+        share.id,
+        "",
+        false
+      )
+    }
+
+    const grants = $app.findRecordsByFilter(
+      "access_grants",
+      "user = {:user}",
+      "-updated",
+      0,
+      0,
+      { user: me }
+    )
+
+    for (const grant of grants) {
+      let type = ""
+      let targetId = ""
+      for (const candidate of ["document", "folder", "board"]) {
+        const value = String(grant.get(candidate) || "")
+        if (value) {
+          type = candidate
+          targetId = value
+          break
+        }
+      }
+      if (!type || !targetId) continue
+      if (seen[`${type}:${targetId}`]) continue
+
+      const record = h.loadTarget(type, targetId)
+      if (!record) continue
+
+      // Only the top-most inherited folder is a useful "shared folder" entry.
+      if (type === "folder") {
+        const parentId = String(record.get("parent") || "")
+        if (parentId && access.effectiveAccess("folder", parentId, me)) continue
+      }
+
+      const resolved = access.effectiveAccess(type, targetId, me)
+      if (!resolved || resolved.source === "owner") continue
+
+      const ancestorShare = access.findAncestorShare(type, record, me)
+      const sharedBy = ancestorShare
+        ? h.findUser(String(ancestorShare.get("shared_by") || ""))
+        : h.findUser(String(record.get("author") || ""))
+
+      addItem(
+        type,
+        record,
+        resolved.role,
+        resolved.level,
+        sharedBy,
+        grant.id,
+        "",
+        grant.id,
+        true
+      )
     }
 
     items.sort((a, b) => {
@@ -37,7 +129,15 @@ routerAdd("GET", "/api/sharing/shared", (c) => {
       return (Number.isFinite(right) ? right : 0) - (Number.isFinite(left) ? left : 0)
     })
 
-    return c.json(200, { items })
+    const page = items.slice(offset, offset + limit)
+    const hasMore = items.length > offset + page.length
+    return c.json(200, {
+      items: page,
+      limit,
+      offset,
+      hasMore,
+      nextOffset: hasMore ? offset + page.length : null,
+    })
   } catch (err) {
     if (err instanceof UnauthorizedError) return c.json(401, { error: "Authentication required" })
     console.error("Failed to list shared records:", err)
@@ -101,7 +201,7 @@ routerAdd("GET", "/api/sharing/folders/{id}", (c) => {
 
     const boards = $app.findRecordsByFilter(
       "boards",
-      "folder = {:folder}",
+      "folder = {:folder} && archived = false",
       "+name",
       0,
       0,

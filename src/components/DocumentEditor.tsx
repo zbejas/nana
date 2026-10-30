@@ -113,7 +113,7 @@ export function DocumentEditor() {
     return <DocumentNotFoundState />;
   }
 
-  const effectiveViewMode = !isDesktop && viewMode === 'split' ? 'text' : viewMode;
+  const effectiveViewMode = !isDesktop && viewMode === 'split' ? 'wysiwyg' : viewMode;
 
   return (
     <div
@@ -183,11 +183,12 @@ export function DocumentEditor() {
 
         <div className="md:flex-1 flex-1 min-h-0 md:pb-12 overflow-hidden">
           <EditorContent
+            key={document?.id ?? urlDocumentId ?? 'new'}
             content={content}
             onContentChange={setContent}
             readOnly={isTrashDocument}
             viewMode={effectiveViewMode}
-            editablePreview={effectiveViewMode === 'preview'}
+            onDropFiles={handleDrop}
           />
         </div>
       </div>

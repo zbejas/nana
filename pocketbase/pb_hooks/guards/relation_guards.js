@@ -19,7 +19,9 @@ onRecordUpdateRequest((e) => {
   }
   const h = require(`${__hooks}/guards/relation_helpers.js`);
   h.assertAuthorUnchanged(e.record);
-  h.assertFolderRelation(e.record, "folder", e.auth.id);
+  if (h.relationChanged(e.record, "folder")) {
+    h.assertFolderRelation(e.record, "folder", e.auth.id);
+  }
   return e.next();
 }, "documents");
 
@@ -38,7 +40,9 @@ onRecordUpdateRequest((e) => {
   }
   const h = require(`${__hooks}/guards/relation_helpers.js`);
   h.assertAuthorUnchanged(e.record);
-  h.assertFolderParent(e.record, e.auth.id);
+  if (h.relationChanged(e.record, "parent")) {
+    h.assertFolderParent(e.record, e.auth.id);
+  }
   return e.next();
 }, "folders");
 
@@ -57,7 +61,9 @@ onRecordUpdateRequest((e) => {
   }
   const h = require(`${__hooks}/guards/relation_helpers.js`);
   h.assertAuthorUnchanged(e.record);
-  h.assertFolderRelation(e.record, "folder", e.auth.id);
+  if (h.relationChanged(e.record, "folder")) {
+    h.assertFolderRelation(e.record, "folder", e.auth.id);
+  }
   return e.next();
 }, "boards");
 
@@ -78,6 +84,33 @@ onRecordUpdateRequest((e) => {
   h.assertTaskRelations(e.record, e.auth.id);
   return e.next();
 }, "tasks");
+
+onRecordCreateRequest((e) => {
+  if (!e.auth || e.hasSuperuserAuth()) {
+    return e.next();
+  }
+  const h = require(`${__hooks}/guards/relation_helpers.js`);
+  h.assertRelationEdge(e.record, e.auth.id);
+  return e.next();
+}, "task_relations");
+
+onRecordUpdateRequest((e) => {
+  if (!e.auth || e.hasSuperuserAuth()) {
+    return e.next();
+  }
+  const h = require(`${__hooks}/guards/relation_helpers.js`);
+  h.assertRelationEdge(e.record, e.auth.id);
+  return e.next();
+}, "task_relations");
+
+onRecordDeleteRequest((e) => {
+  if (!e.auth || e.hasSuperuserAuth()) {
+    return e.next();
+  }
+  const h = require(`${__hooks}/guards/relation_helpers.js`);
+  h.assertRelationDelete(e.record, e.auth.id);
+  return e.next();
+}, "task_relations");
 
 onRecordUpdateRequest((e) => {
   if (!e.auth || e.hasSuperuserAuth()) {

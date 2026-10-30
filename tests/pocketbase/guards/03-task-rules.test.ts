@@ -120,10 +120,26 @@ describe("Task collection rules", () => {
             await expectStatus(res, 400, "archived board task create");
         });
 
+        test("accepts virtual backlog statuses", async () => {
+            const plannedRes = await createTaskAs(owner, {
+                title: "Planned task",
+                status: "planned",
+                board: ownerBoardId,
+            });
+            await expectStatus(plannedRes, 200, "planned status");
+
+            const archivedRes = await createTaskAs(owner, {
+                title: "Archived task",
+                status: "archived",
+                board: ownerBoardId,
+            });
+            await expectStatus(archivedRes, 200, "archived status");
+        });
+
         test("rejects an unknown status", async () => {
             const res = await createTaskAs(owner, {
                 title: "Bad status",
-                status: "archived",
+                status: "no-such-column",
                 board: ownerBoardId,
             });
             await expectStatus(res, 400, "unknown status");

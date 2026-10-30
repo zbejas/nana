@@ -16,7 +16,7 @@ import {
     type TestRecord,
     type TestUser,
 } from "../../helpers/factories";
-import { uniqueSuffix } from "../../helpers/setup";
+import { authHeaders, uniqueSuffix } from "../../helpers/setup";
 
 function patch(token: string, path: string, body: Record<string, unknown>) {
     return pbRequest(path, {
@@ -261,6 +261,64 @@ describe("Relation integrity", () => {
 
             expect(duplicate.ok).toBe(false);
             expect([400, 403]).toContain(duplicate.status);
+        });
+    });
+
+    describe("task relations", () => {
+        test("rejects self-links, cross-user targets, and private targets", async () => {
+            const board = await createBoard(owner);
+            const task = await createTask(owner, board.id);
+            const otherBoard = await createBoard(other);
+            const otherTask = await createTask(other, otherBoard.id);
+            const privateBoard = await createBoard(other, { is_private: true });
+            const privateTask = await createTask(other, privateBoard.id);
+
+            const self = await pbRequest("/collections/task_relations/records", {
+                method: "POST",
+                headers: authHeaders(owner.token, true),
+                body: JSON.stringify({ source: task.id, target: task.id, type: "related" }),
+            });
+            await expectStatus(self, 400, "self relation");
+
+            const foreign = await pbRequest("/collections/task_relations/records", {
+                method: "POST",
+                headers: authHeaders(owner.token, true),
+                body: JSON.stringify({ source: task.id, target: otherTask.id, type: "related" }),
+            });
+            await expectStatus(foreign, [400, 403, 404], "cross-user target");
+
+            const privateTarget = await pbRequest("/collections/task_relations/records", {
+                method: "POST",
+                headers: authHeaders(owner.token, true),
+                body: JSON.stringify({ source: task.id, target: privateTask.id, type: "related" }),
+            });
+            await expectStatus(privateTarget, [400, 403, 404], "private target");
+        });
+
+        test("allows a cross-board edge when both boards are accessible", async () => {
+            const ownerBoard = await createBoard(owner);
+            const ownerTask = await createTask(owner, ownerBoard.id);
+            const otherBoard = await createBoard(other);
+            const otherTask = await createTask(other, otherBoard.id);
+
+            const shared = await pbRequest("/sharing/links", {
+                method: "POST",
+                headers: authHeaders(other.token, true),
+                body: JSON.stringify({
+                    targetType: "board",
+                    targetId: otherBoard.id,
+                    userId: owner.id,
+                    permission: "view",
+                }),
+            });
+            await expectStatus(shared, 200, "share target board");
+
+            const created = await pbRequest("/collections/task_relations/records", {
+                method: "POST",
+                headers: authHeaders(owner.token, true),
+                body: JSON.stringify({ source: ownerTask.id, target: otherTask.id, type: "blocks" }),
+            });
+            await expectStatus(created, 200, "cross-board relation");
         });
     });
 

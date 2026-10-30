@@ -14,7 +14,11 @@
 | P2 — Milkdown editor | pending | Kit + CodeMirror split, inline WYSIWYG for task descriptions and comments. |
 | P3 — kanban surfaces | pending | Board, list, backlog, calendar, Gantt, filters, bulk, task panel. |
 | P4 — user sharing product | pending | Share panel, shared-with-me, comments, permission-aware UI. |
-| P5 — verification and docs | pending | Docker suite, Playwright desktop/mobile, user QA, security and design review. |
+| P5 — chat dock and agent | pending | Global right dock, context attachment, note/board write tools, AI actor. |
+| P6 — AI section edits | pending | Section-scoped edit protocol, Milkdown transactions, animated highlights. |
+| P7 — realtime shared workspaces | pending | Realtime shared index, revocation, conflict banner, Yjs decision. |
+| P8 — notes UX polish | pending | Palette, pins, quick capture, focus mode, universal search. |
+| P9 — verification and docs | pending | Docker suite, Playwright desktop/mobile, user QA, security and design review. |
 
 ## Goal
 
@@ -199,6 +203,86 @@ the orchestrator. Shared contracts are defined in `src/lib/tasks/index.ts` and
 - Baseline serialization on mount must not mark the document dirty or create a
   version.
 
+### Chat dock and agent
+
+Chat becomes a persistent right-side dock, not a separate page. `ChatDock` is
+mounted once in `AppContent` and survives navigation, so a note conversation
+can continue on a board with the same context. `/chat` remains a full-page
+history view for deep links and mobile.
+
+- Toggle: `Ask Nana` in the page header and a `Cmd/Ctrl+J` shortcut. The dock is
+  400px on desktop, full width on mobile, and never auto-opens.
+- The dock has an `Ask / Edit` mode. `Ask` is read-only. `Edit` exposes note and
+  board write tools. The mode is visible in the composer.
+- At send time the client attaches the open page as metadata only:
+  `{ type: 'document' | 'board' | 'folder', id }`. The server resolves the
+  title and permission itself; it never trusts client content. The UI shows a
+  removable context chip; the model is told to call `read_note`/`read_board`
+  if it needs the body.
+- Conversations persist across routes. The dock keeps one active conversation,
+  its scroll position, and a pending stream. History is available from the dock
+  and the full-page route.
+- Write tools are direct, visible, and reversible: create note, append note,
+  update note title/content/tags, create board, create task, update task, move
+  task. No delete, move-between-boards, publish, share, privacy, folder, or
+  column changes.
+- Every write snapshots the previous state, checks the record's `updated`
+  version (optimistic concurrency), and returns a change summary. Private and
+  private-folder records are `not_found`; AI edits never bypass the lock.
+- The assistant is an actor: Nana avatar, "Nana is editing…" status, section
+  highlights, activity rows, and a one-click Undo. See below.
+
+### Section-scoped AI edits
+
+The model edits Markdown by section, not by replacing the whole note. This
+keeps formatting intact, makes diffs readable, and lets the open editor animate
+exactly what changed.
+
+Tool contract:
+
+```ts
+edit_note({
+  noteId: string,
+  expectedUpdated: string,          // optimistic concurrency
+  operations: Array<
+    | { op: 'replace_section'; heading: string; markdown: string }
+    | { op: 'insert_after'; heading: string; markdown: string }
+    | { op: 'append'; markdown: string }
+    | { op: 'replace_text'; find: string; markdown: string } // unique match only
+  >,
+  summary: string
+})
+```
+
+- A heading anchor matches the heading path (`## Plan` or `Plan > Risks`) and
+  the section runs to the next heading of the same or higher level. `append`
+  adds to the end of the note. `replace_text` is a fallback for notes without
+  headings and requires a unique match.
+- The server validates every anchor against the current Markdown before
+  writing. One missing or ambiguous anchor aborts the whole edit and returns a
+  `conflict`/`invalid_input` result so the model can re-read and retry.
+- The server applies operations in order, preserves untouched sections
+  byte-for-byte, snapshots the old content, bumps `updated`, and returns
+  `{ updated, sections: [{ heading, from, to }], summary }`.
+- If the note is open in Milkdown, the client maps each section heading to a
+  ProseMirror node range and dispatches a transaction replacing only that
+  range. It never calls `replaceAll`.
+- Changed ranges get a temporary decoration: a 1.2s `signal-soft` wash that
+  fades to transparent, a 2px `signal` left rule, and an inline "Nana" label
+  above the first changed section. The editor shows "Nana is editing…" while a
+  tool is running, then "Nana updated 2 sections · Undo" for 10 seconds.
+- If the note is not open, the chat card shows the section list with a compact
+  before/after excerpt. Opening the note jumps to the first changed section.
+- A remote user sees the normal realtime update plus the AI edit metadata, so
+  the change reads as another collaborator's edit rather than a silent
+  record replacement. If the user has unsaved changes, the existing conflict
+  banner wins and the AI edit is not applied locally until resolved.
+
+Board edits use the same actor model: task activity rows carry
+`actor_type: 'ai'`, the task card flashes the changed field, and the task
+panel activity line reads "Nana moved this to In progress". No section
+animation is needed for boards.
+
 ## 6. Verification
 
 - Unit: column ordering, filter/sort predicates, recurrence dates, calendar
@@ -209,9 +293,16 @@ the orchestrator. Shared contracts are defined in `src/lib/tasks/index.ts` and
 - Build: `bun run build`.
 - Docker: `bun run test:docker`.
 - Playwright: desktop and 390px mobile for board, list, backlog, calendar,
-  Gantt, task panel, share panel, shared page, editor split/WYSIWYG.
+  Gantt, task panel, share panel, shared page, editor split/WYSIWYG, chat dock,
+  section-edit animation, and shared workspace realtime.
+- Chat/agent: read tools stay private-locked; edit tools snapshot before write,
+  reject stale `updated`, refuse private records, never delete, and animate the
+  changed Milkdown range; direct writes are undoable.
+- Realtime: two-user note/board updates, revocation mid-session, reconnect
+  refetch, and no silent clobber on concurrent saves.
 - Normal-user QA: create a board, add tasks, move them, filter, share, comment,
-  open the shared view as a second user; report pain points.
+  open the shared view as a second user; open chat on a note, edit it, navigate
+  to a board, and continue the same conversation; report pain points.
 - Skeptics: security review of sharing and permissions; design review of every
   new surface against `DESIGN.md`; accessibility review of drag/keyboard/touch.
 
@@ -229,6 +320,15 @@ the orchestrator. Shared contracts are defined in `src/lib/tasks/index.ts` and
   split pane and keep the editor route lazy.
 - **Large boards:** `getFullList` is still used for tasks and summaries. Add
   pagination only after the feature set is stable; do not block parity on it.
+- **Chat writes break the read-only invariant.** Every write goes through one
+  audited service with a snapshot, optimistic concurrency, private-lock checks,
+  and a hard tool allowlist. No delete, move, publish, share, or privacy fields.
+- **Section anchors can be ambiguous.** The server aborts the entire edit when a
+  heading or text anchor is missing or non-unique; the model must re-read.
+  Untouched sections stay byte-identical.
+- **A global chat dock is a second stateful surface.** The dock keeps one active
+  conversation and stream across routes; it must not unmount on navigation or
+  duplicate subscriptions. Closing it never aborts an in-flight tool write.
 - **Docs drift:** board rules and testing migration head are already stale.
-  The P5 docs pass must correct `docs/pocketbase.md`, `docs/api.md`,
+  The P9 docs pass must correct `docs/pocketbase.md`, `docs/api.md`,
   `docs/security.md`, and `docs/testing.md` in the same change.

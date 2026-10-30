@@ -186,10 +186,10 @@ export function useDocumentEditorState() {
     const getInitialViewMode = (): ViewMode => {
         if (typeof window === 'undefined') return 'split';
         const saved = localStorage.getItem('editorViewMode') as ViewMode | null;
-        if (saved && ['text', 'preview', 'split'].includes(saved)) {
+        if (saved && ['wysiwyg', 'text', 'preview', 'split'].includes(saved)) {
             return saved;
         }
-        return window.innerWidth < 768 ? 'text' : 'split';
+        return window.innerWidth < 768 ? 'wysiwyg' : 'split';
     };
 
     const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode());

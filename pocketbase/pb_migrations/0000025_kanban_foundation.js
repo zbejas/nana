@@ -16,11 +16,12 @@
 // `pb_hooks/boards/seed_columns.js`.
 
 const BOARD_ACCESS =
-  "(board.author = @request.auth.id || board.shares_via_board.user ?= @request.auth.id || (board.is_private = false && board.access_grants_via_board.user ?= @request.auth.id))"
+  "(board.author = @request.auth.id || (board.is_private = false && board.access_grants_via_board.user ?= @request.auth.id))"
 
 const BOARD_OWNER = "@request.auth.id != '' && board.author = @request.auth.id"
 const BOARD_READ = `@request.auth.id != '' && ${BOARD_ACCESS}`
-const TASK_RELATION_READ = `@request.auth.id != '' && (source.board.author = @request.auth.id || source.board.shares_via_board.user ?= @request.auth.id || (source.board.is_private = false && source.board.access_grants_via_board.user ?= @request.auth.id))`
+// Read from either endpoint so a target-board owner can see an inbound edge.
+const TASK_RELATION_READ = `@request.auth.id != '' && (source.board.author = @request.auth.id || (source.board.is_private = false && source.board.access_grants_via_board.user ?= @request.auth.id) || target.board.author = @request.auth.id || (target.board.is_private = false && target.board.access_grants_via_board.user ?= @request.auth.id))`
 
 const DEFAULT_COLUMNS = [
   { slug: "backlog", name: "Backlog", icon: "inbox", color: "muted", position: 0, final: false },
@@ -44,6 +45,13 @@ function findCollection(app, name) {
 
 function hasField(collection, name) {
   return Boolean(collection && collection.fields.getByName(name))
+}
+
+// PocketBase exposes the field type as a method on some collection snapshots.
+function fieldType(field) {
+  if (!field) return ""
+  if (typeof field.type === "function") return String(field.type())
+  return String(field.type || "")
 }
 
 function hasIndex(collection, name) {
@@ -209,7 +217,7 @@ function ensureTaskActivity(app, tasks, boards, users) {
 function convertTaskStatusToText(app) {
   let tasks = app.findCollectionByNameOrId("tasks")
   const status = tasks.fields.getByName("status")
-  if (!status || status.type === "text") return
+  if (!status || fieldType(status) === "text") return
 
   // Keep the old column's data while PocketBase rebuilds the table around the
   // new field definition.
@@ -316,7 +324,17 @@ function seedColumnsForBoard(app, columns, board) {
     0,
     { board: board.id }
   )
-  if (existing.length > 0) return
+
+  const seen = {}
+  const usedPositions = {}
+  let nextPosition = 0
+  for (let i = 0; i < existing.length; i++) {
+    const slug = String(existing[i].get("slug") || "")
+    if (slug) seen[slug] = true
+    const current = Number(existing[i].get("position") || 0)
+    usedPositions[current] = true
+    nextPosition = Math.max(nextPosition, current + 1)
+  }
 
   const tasks = app.findRecordsByFilter(
     "tasks",
@@ -326,34 +344,41 @@ function seedColumnsForBoard(app, columns, board) {
     0,
     { board: board.id }
   )
-  const seen = {}
   const statuses = []
   // Every board starts with the same four lanes so an empty or partial board
-  // still has a complete workflow. Extra statuses follow in task order.
+  // still has a complete workflow. Extra statuses follow in task order, but the
+  // virtual backlog keys never become real columns.
   for (let i = 0; i < DEFAULT_COLUMNS.length; i++) {
-    const slug = DEFAULT_COLUMNS[i].slug
-    seen[slug] = true
-    statuses.push(slug)
+    statuses.push(DEFAULT_COLUMNS[i].slug)
   }
   for (let i = 0; i < tasks.length; i++) {
     const status = String(tasks[i].get("status") || "").trim()
-    if (!status || seen[status]) continue
-    seen[status] = true
+    if (!status || status === "planned" || status === "archived") continue
+    if (statuses.indexOf(status) !== -1) continue
     statuses.push(status)
   }
 
   for (let i = 0; i < statuses.length; i++) {
     const slug = statuses[i]
+    // Upsert per slug: a partial seed keeps its existing rows and only fills
+    // the gaps. This is what makes a retried migration safe.
+    if (seen[slug]) continue
     const preset = columnForSlug(slug)
+    let position = preset ? preset.position : nextPosition
+    while (usedPositions[position]) position += 1
+    usedPositions[position] = true
+    if (position >= nextPosition) nextPosition = position + 1
+
     const record = new Record(columns)
     record.set("board", board.id)
     record.set("slug", slug)
     record.set("name", preset ? preset.name : slug.replace(/[-_]/g, " ").replace(/^./, function (c) { return c.toUpperCase() }))
-    record.set("position", i)
+    record.set("position", position)
     record.set("icon", preset ? preset.icon : "dot")
     record.set("color", preset ? preset.color : "muted")
-    record.set("is_final", preset ? preset.final : slug === "done")
+    record.set("is_final", preset ? preset.final : false)
     app.save(record)
+    seen[slug] = true
   }
 }
 
@@ -419,6 +444,15 @@ function seedLabels(app, labels) {
   }
 }
 
+function setTaskNumber(app, taskId, number) {
+  // Direct SQL keeps the existing `updated` value. Saving through the record
+  // would bump it via the autodate field, which is wrong for a backfill.
+  app.db()
+    .newQuery("UPDATE tasks SET task_number = {:number} WHERE id = {:id}")
+    .bind({ number: number, id: taskId })
+    .execute()
+}
+
 function seedTaskNumbers(app, boards) {
   const allBoards = app.findRecordsByFilter("boards", "", "+created", 0, 0)
   for (let i = 0; i < allBoards.length; i++) {
@@ -439,25 +473,61 @@ function seedTaskNumbers(app, boards) {
         continue
       }
       counter += 1
-      task.set("task_number", counter)
-      app.save(task)
+      setTaskNumber(app, task.id, counter)
     }
     if (Number(board.get("task_counter") || 0) !== counter) {
-      board.set("task_counter", counter)
-      app.save(board)
+      app.db()
+        .newQuery("UPDATE boards SET task_counter = {:counter} WHERE id = {:id}")
+        .bind({ counter: counter, id: board.id })
+        .execute()
     }
   }
 }
 
 function backfillCompletion(app) {
-  const tasks = app.findRecordsByFilter("tasks", "status = 'done'", "", 0, 0)
-  for (let i = 0; i < tasks.length; i++) {
-    const task = tasks[i]
-    if (String(task.get("completed_at") || "")) continue
-    const stamp = String(task.get("updated") || task.get("created") || "")
-    if (stamp) {
-      task.set("completed_at", stamp)
-      app.save(task)
+  const boards = app.findRecordsByFilter("boards", "", "+created", 0, 0)
+  for (let i = 0; i < boards.length; i++) {
+    const board = boards[i]
+    const finals = {}
+    const columns = app.findRecordsByFilter(
+      "board_columns",
+      "board = {:board} && is_final = true",
+      "",
+      0,
+      0,
+      { board: board.id }
+    )
+    for (let c = 0; c < columns.length; c++) {
+      finals[String(columns[c].get("slug") || "")] = true
+    }
+
+    const tasks = app.findRecordsByFilter(
+      "tasks",
+      "board = {:board}",
+      "+created",
+      0,
+      0,
+      { board: board.id }
+    )
+    for (let t = 0; t < tasks.length; t++) {
+      const task = tasks[t]
+      const complete = Boolean(finals[String(task.get("status") || "")])
+      const current = String(task.get("completed_at") || "")
+      if (complete && !current) {
+        // `updated` is still the pre-backfill value here. SQL avoids bumping it
+        // a second time the way record.save() would.
+        const stamp = String(task.get("updated") || task.get("created") || "")
+        if (!stamp) continue
+        app.db()
+          .newQuery("UPDATE tasks SET completed_at = {:stamp} WHERE id = {:id}")
+          .bind({ stamp: stamp, id: task.id })
+          .execute()
+      } else if (!complete && current) {
+        app.db()
+          .newQuery("UPDATE tasks SET completed_at = '' WHERE id = {:id}")
+          .bind({ id: task.id })
+          .execute()
+      }
     }
   }
 }
@@ -491,7 +561,7 @@ migrate(
 
     if (tasks) {
       const status = tasks.fields.getByName("status")
-      if (status && status.type === "text") {
+      if (status && fieldType(status) === "text") {
         tasks.indexes = indexesWithout(tasks, "idx_tasks_board_status_order")
         tasks.indexes = indexesWithout(tasks, "idx_tasks_board_number")
         tasks.indexes = indexesWithout(tasks, "idx_tasks_assignee")
@@ -538,7 +608,14 @@ migrate(
       app.save(boards)
     }
 
-    const comments = findCollection(app, "comments")
+    let comments = findCollection(app, "comments")
+    if (comments && hasIndex(comments, "idx_comments_task_created")) {
+      // Drop the index first: SQLite refuses to remove a column that an index
+      // still references, which would make the rollback fail.
+      comments.indexes = indexesWithout(comments, "idx_comments_task_created")
+      app.save(comments)
+    }
+    comments = findCollection(app, "comments")
     if (comments && hasField(comments, "task")) {
       comments.fields.removeByName("task")
       app.save(comments)

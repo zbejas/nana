@@ -29,6 +29,33 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+/**
+ * Revoke materialized grants before a trash transition. Trash routes save
+ * through `$app`, so they cannot use the request-hook transaction that makes
+ * privacy changes atomic. Clearing first means a failed rebuild under-grants
+ * instead of leaving access behind.
+ */
+function clearSharing(targets) {
+  const access = require(`${__hooks}/sharing/access_helpers.js`)
+  for (const target of targets || []) {
+    if (!target || !target.type || !target.id) continue
+    access.clearResourceGrants(target.type, target.id)
+  }
+}
+
+/**
+ * Re-evaluate sharing after a trash transition. The sharing helper is required
+ * lazily because this module is loaded by route files and helper bindings do
+ * not survive hook invocations. Failures are queued for the repair cron.
+ */
+function syncSharing(targets) {
+  const repair = require(`${__hooks}/sharing/repair_helpers.js`)
+  for (const target of targets || []) {
+    if (!target || !target.type || !target.id) continue
+    repair.safeSync(target.type, target.id, $app, "trash_transition")
+  }
+}
+
 function clearPublicShare(record) {
   record.setIfFieldExists("is_public", false)
   record.setIfFieldExists("public_share_token", "")
@@ -109,6 +136,25 @@ function collectFolderTree(folderRecord) {
   return result
 }
 
+/** Board ids currently placed in any of the given folders. */
+function collectBoardIdsInFolders(folderIds) {
+  const ids = []
+  const seen = {}
+  for (const folderId of folderIds || []) {
+    const boards = $app.findRecordsByFilter(
+      "boards",
+      `folder = "${folderId}"`,
+      ""
+    )
+    for (const board of boards) {
+      if (seen[board.id]) continue
+      seen[board.id] = true
+      ids.push(board.id)
+    }
+  }
+  return ids
+}
+
 function clearTaskDocumentLinks(documentId) {
   const tasks = $app.findRecordsByFilter(
     "tasks",
@@ -129,7 +175,10 @@ function moveDocumentToTrashById(documentId, userId) {
     throw new BadRequestError("Document is already in trash")
   }
 
+  const targets = [{ type: "document", id: document.id }]
+  clearSharing(targets)
   markDeleted(document, userId, nowIso())
+  syncSharing(targets)
   return document
 }
 
@@ -152,7 +201,10 @@ function restoreDocumentById(documentId, userId) {
     }
   }
 
+  const targets = [{ type: "document", id: document.id }]
+  clearSharing(targets)
   markRestored(document)
+  syncSharing(targets)
   return {
     documentId: document.id,
     folderId: document.getString("folder") || null,
@@ -185,10 +237,8 @@ function moveFolderToTrash(folderId, userId) {
   const folderIds = tree.map((node) => node.id)
   const documentIds = []
 
-  for (const node of tree) {
-    markDeleted(node, userId, deletedAt)
-  }
-
+  // Collect every affected record before mutating so grants can be cleared
+  // first. A failed rebuild after the trash transition then under-grants.
   for (const id of folderIds) {
     const documents = $app.findRecordsByFilter(
       "documents",
@@ -196,12 +246,29 @@ function moveFolderToTrash(folderId, userId) {
       ""
     )
     for (const document of documents) {
-      markDeleted(document, userId, deletedAt)
       documentIds.push(document.id)
     }
   }
+  const boardIds = collectBoardIdsInFolders(folderIds)
+
+  const targets = []
+  for (const id of folderIds) targets.push({ type: "folder", id })
+  for (const id of documentIds) targets.push({ type: "document", id })
+  for (const id of boardIds) targets.push({ type: "board", id })
+  clearSharing(targets)
+
+  for (const node of tree) {
+    markDeleted(node, userId, deletedAt)
+  }
+
+  for (const id of documentIds) {
+    const document = $app.findRecordById("documents", id)
+    markDeleted(document, userId, deletedAt)
+  }
 
   const movedBoardIds = rehomeBoardsFromFolderIds(folderIds)
+  syncSharing(targets)
+
   return { folderId: folder.id, folderIds, documentIds, movedBoardIds }
 }
 
@@ -220,7 +287,25 @@ function restoreFolderTree(folderId, userId) {
     folderIdSet[node.id] = true
   }
 
-  const restoredDocumentIds = []
+  const restoredDocuments = []
+  for (const node of tree) {
+    const documents = $app.findRecordsByFilter(
+      "documents",
+      `folder = "${node.id}" && deleted_at != ""`,
+      ""
+    )
+    for (const document of documents) {
+      restoredDocuments.push(document)
+    }
+  }
+
+  const targets = tree
+    .map((node) => ({ type: "folder", id: node.id }))
+    .concat(restoredDocuments.map((document) => ({ type: "document", id: document.id })))
+  // Never let a stale grant from a failed trash rebuild surface when a record
+  // becomes live again. The post-restore sync adds back only valid inheritance.
+  clearSharing(targets)
+
   for (const node of tree) {
     const parentId = String(node.getString("parent") || "")
     if (parentId && !folderIdSet[parentId]) {
@@ -237,17 +322,13 @@ function restoreFolderTree(folderId, userId) {
     markRestored(node)
   }
 
-  for (const node of tree) {
-    const documents = $app.findRecordsByFilter(
-      "documents",
-      `folder = "${node.id}" && deleted_at != ""`,
-      ""
-    )
-    for (const document of documents) {
-      markRestored(document)
-      restoredDocumentIds.push(document.id)
-    }
+  const restoredDocumentIds = []
+  for (const document of restoredDocuments) {
+    markRestored(document)
+    restoredDocumentIds.push(document.id)
   }
+
+  syncSharing(targets)
 
   return { folderId: root.id, restoredDocumentIds }
 }
@@ -260,8 +341,11 @@ function permanentlyDeleteFolderTree(folderId, userId) {
 
   const tree = collectFolderTree(root)
   const folderIds = tree.map((node) => node.id)
+  const boardTargets = collectBoardIdsInFolders(folderIds).map((id) => ({ type: "board", id }))
+  clearSharing(boardTargets)
 
-  rehomeBoardsFromFolderIds(folderIds)
+  const movedBoardIds = rehomeBoardsFromFolderIds(folderIds)
+  syncSharing(movedBoardIds.map((id) => ({ type: "board", id })))
 
   // Cascades delete child folders, documents, and versions. Clear optional
   // task links first because tasks deliberately do not cascade.
@@ -284,6 +368,7 @@ module.exports = {
   assertOwned,
   parseBody,
   nowIso,
+  syncSharing,
   clearPublicShare,
   markDeleted,
   markRestored,

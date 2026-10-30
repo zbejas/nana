@@ -48,18 +48,50 @@ function diffTask(record, original) {
   return changes
 }
 
-function recordActivity(taskId, boardId, actorId, type, data) {
-  const collection = $app.findCollectionByNameOrId("task_activity")
+function headerValue(info, name) {
+  const headers = (info && info.headers) || {}
+  const wanted = String(name || "").toLowerCase()
+  for (const key in headers) {
+    const normalized = String(key).toLowerCase().replace(/_/g, "-")
+    if (normalized !== wanted) continue
+    const value = headers[key]
+    return Array.isArray(value) ? String(value[0] || "") : String(value || "")
+  }
+  return ""
+}
+
+function actorInfo(auth, info, isSuperuser) {
+  if (headerValue(info, "X-Nana-Actor").toLowerCase() === "ai") {
+    return { id: "", type: "ai", label: "Nana" }
+  }
+  if (!auth) return { id: "", type: "system", label: "System" }
+  // A superuser record lives in `_superusers`, not `users`; it cannot be an
+  // activity actor relation. Imports and admin writes are system events.
+  if (isSuperuser) return { id: "", type: "system", label: "System" }
+  return {
+    id: auth.id,
+    type: "user",
+    label: String(auth.get("name") || auth.email() || "You").slice(0, 120),
+  }
+}
+
+function recordActivity(taskId, boardId, actor, type, data, app) {
+  const db = app || $app
+  const collection = db.findCollectionByNameOrId("task_activity")
   const activity = new Record(collection)
   activity.set("task", taskId)
   activity.set("board", boardId)
-  if (actorId) activity.set("actor", actorId)
+  if (actor && actor.id) activity.set("actor", actor.id)
+  activity.set("actor_type", (actor && actor.type) || "system")
+  activity.set("actor_label", (actor && actor.label) || "System")
   activity.set("type", type)
   activity.set("data", data || {})
-  $app.save(activity)
+  db.save(activity)
 }
 
 module.exports = {
-  diffTask: diffTask,
-  recordActivity: recordActivity,
+  actorInfo,
+  diffTask,
+  headerValue,
+  recordActivity,
 }

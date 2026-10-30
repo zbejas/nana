@@ -13,20 +13,29 @@ import type { ApiKeyDto } from "../api-keys/types";
 import {
     addNoteToBoard,
     createBoard,
+    createBoardColumn,
     createFolder,
     createNote,
     createTask,
+    createTaskRelation,
     deleteBoard,
+    deleteBoardColumn,
     deleteNote,
     deleteTask,
+    deleteTaskRelation,
     getBoard,
     getNote,
     getTask,
+    listBoardColumns,
     listBoards,
     listFolders,
     listNotes,
+    listTaskActivity,
+    listTaskRelations,
     listTasks,
+    reorderBoardColumns,
     updateBoard,
+    updateBoardColumn,
     updateNote,
     updateTask,
     type ToolContext,
@@ -36,13 +45,17 @@ import { authenticateApiRequest, AuthError } from "./auth";
 import {
     AddNoteToBoardBodySchema,
     ApiKeyListSchema,
+    BoardColumnDtoSchema,
+    BoardColumnListSchema,
     BoardDtoSchema,
     BoardListSchema,
     CreateApiKeyBodySchema,
     CreateBoardBodySchema,
+    CreateBoardColumnBodySchema,
     CreateFolderBodySchema,
     CreateNoteBodySchema,
     CreateTaskBodySchema,
+    CreateTaskRelationBodySchema,
     CreatedApiKeySchema,
     DeleteNoteResultSchema,
     FolderDtoSchema,
@@ -53,9 +66,14 @@ import {
     ListTasksQuerySchema,
     NoteDtoSchema,
     NoteListSchema,
+    ReorderBoardColumnsBodySchema,
+    TaskActivityListSchema,
     TaskDtoSchema,
     TaskListSchema,
+    TaskRelationDtoSchema,
+    TaskRelationListSchema,
     UpdateBoardBodySchema,
+    UpdateBoardColumnBodySchema,
     UpdateNoteBodySchema,
     UpdateTaskBodySchema,
 } from "./schemas";
@@ -291,6 +309,69 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
             description: "Permanently deletes a board and every task on it. The board must be archived first; deleting an active board returns `409`.",
         },
     })
+    // ── Board columns ───────────────────────────────────────────────
+    .get("/boards/:id/columns", ({ workspace, params }) =>
+        listBoardColumns(workspace, "user", params.id), {
+        params: IdParamsSchema,
+        response: { 200: BoardColumnListSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["Boards"],
+            operationId: "listBoardColumns",
+            summary: "List board columns",
+            description: "Returns the board's ordered workflow columns. `slug` is the value stored in `tasks.status`; `isFinal` marks completion.",
+        },
+    })
+    .post("/boards/:id/columns", ({ workspace, params, body, set }) => {
+        set.status = 201;
+        return createBoardColumn(workspace, "user", params.id, body);
+    }, {
+        params: IdParamsSchema,
+        body: CreateBoardColumnBodySchema,
+        response: { 201: BoardColumnDtoSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["Boards"],
+            operationId: "createBoardColumn",
+            summary: "Create a board column",
+            description: "Adds a column at the end of the board unless `position` is supplied. Only the board owner may change the workflow.",
+        },
+    })
+    .post("/boards/:id/columns/reorder", ({ workspace, params, body }) =>
+        reorderBoardColumns(workspace, "user", params.id, body.orderedIds), {
+        params: IdParamsSchema,
+        body: ReorderBoardColumnsBodySchema,
+        response: { 200: BoardColumnListSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["Boards"],
+            operationId: "reorderBoardColumns",
+            summary: "Reorder board columns",
+            description: "Persists a complete column order. The array must include every column id on the board exactly once.",
+        },
+    })
+    .patch("/board-columns/:id", ({ workspace, params, body }) =>
+        updateBoardColumn(workspace, "user", params.id, body), {
+        params: IdParamsSchema,
+        body: UpdateBoardColumnBodySchema,
+        response: { 200: BoardColumnDtoSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["Boards"],
+            operationId: "updateBoardColumn",
+            summary: "Update a board column",
+            description: "Partial column update. Changing `slug` is rejected while tasks still use the old key.",
+        },
+    })
+    .delete("/board-columns/:id", async ({ workspace, params }) => {
+        await deleteBoardColumn(workspace, "user", params.id);
+        return status(204);
+    }, {
+        params: IdParamsSchema,
+        response: { 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["Boards"],
+            operationId: "deleteBoardColumn",
+            summary: "Delete a board column",
+            description: "Deletes an empty column. PocketBase refuses to delete a column while tasks reference it or when it is the board's last column.",
+        },
+    })
     // ── Tasks ───────────────────────────────────────────────────────
     .get("/boards/:id/tasks", ({ workspace, params, query }) =>
         listTasks(workspace, "user", params.id, query), {
@@ -364,6 +445,59 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
             operationId: "deleteTask",
             summary: "Delete a task",
             description: "Permanently deletes the task. Tasks have no trash flow.",
+        },
+    })
+    .get("/tasks/:id/relations", ({ workspace, params }) =>
+        listTaskRelations(workspace, "user", params.id), {
+        params: IdParamsSchema,
+        response: { 200: TaskRelationListSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["Tasks"],
+            operationId: "listTaskRelations",
+            summary: "List task relations",
+            description: "Returns every `subtask`, `blocks`, or `related` edge touching the task in either direction.",
+        },
+    })
+    .post("/tasks/:id/relations", ({ workspace, params, body, set }) => {
+        set.status = 201;
+        return createTaskRelation(workspace, "user", {
+            sourceTaskId: params.id,
+            targetTaskId: body.targetTaskId,
+            type: body.type,
+        });
+    }, {
+        params: IdParamsSchema,
+        body: CreateTaskRelationBodySchema,
+        response: { 201: TaskRelationDtoSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["Tasks"],
+            operationId: "createTaskRelation",
+            summary: "Create a task relation",
+            description: "Creates a directed edge from the task in the path to another visible task. For `subtask`, the path task is the parent.",
+        },
+    })
+    .delete("/task-relations/:id", async ({ workspace, params }) => {
+        await deleteTaskRelation(workspace, "user", params.id);
+        return status(204);
+    }, {
+        params: IdParamsSchema,
+        response: { 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["Tasks"],
+            operationId: "deleteTaskRelation",
+            summary: "Delete a task relation",
+            description: "Removes one relation edge. The tasks themselves are unchanged.",
+        },
+    })
+    .get("/tasks/:id/activity", ({ workspace, params }) =>
+        listTaskActivity(workspace, "user", params.id), {
+        params: IdParamsSchema,
+        response: { 200: TaskActivityListSchema, 404: NotFoundErrorSchema, ...workspaceErrorSchemas },
+        detail: {
+            tags: ["Tasks"],
+            operationId: "listTaskActivity",
+            summary: "List task activity",
+            description: "Returns the task's append-only audit trail, newest first. Rows are written by PocketBase hooks, never by this API.",
         },
     })
     // ── API keys ────────────────────────────────────────────────────

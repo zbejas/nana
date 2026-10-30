@@ -27,12 +27,26 @@ onModelUpdate((e) => {
   const pad = (value) => String(value).padStart(2, "0")
   const formattedDate = `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`
   const collection = $app.findCollectionByNameOrId("document_versions")
+  const source = String(e.model.get("last_edit_source") || "user") === "ai" ? "ai" : "publish"
+  const actorType = source === "ai" ? "ai" : "user"
+  const actorLabel = String(e.model.get("last_edited_by") || "")
+
   const version = new Record(collection)
   version.set("document", e.model.id)
   version.set("content", oldContent)
   version.set("version_number", versionNumber)
-  version.set("change_summary", `Published on ${formattedDate}`)
+  version.set("change_summary", source === "ai" ? "Nana edit" : `Published on ${formattedDate}`)
   version.set("source_created_at", createdAt)
+  version.set("source", source)
+  version.set("actor_type", actorType)
+  version.set("actor_label", actorLabel)
+  version.set("snapshot", {
+    title: oldRecord.get("title") || "",
+    content: oldContent,
+    tags: oldRecord.get("tags") || [],
+    folder: oldRecord.get("folder") || "",
+    is_private: Boolean(oldRecord.get("is_private")),
+  })
   
   $app.save(version)
   

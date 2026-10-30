@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { listBoardColumns, type BoardColumn } from '../../lib/boards';
 import {
+  VIRTUAL_STATUSES,
   createTask,
   deleteTask,
   listTasks,
@@ -20,16 +22,26 @@ export interface DropTarget {
   index: number;
 }
 
-export function useBoardState(boardId?: string) {
+/**
+ * The open board's tasks and workflow columns.
+ *
+ * Columns can be supplied by the caller while the board route is loading, or
+ * loaded here. Tasks are grouped by their stored column slug, so a board with
+ * custom columns never falls back to a fixed four-lane shape.
+ */
+export function useBoardState(boardId?: string, providedColumns?: BoardColumn[]) {
   const { user } = useAuth();
   const { showToast } = useToasts();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [columns, setColumns] = useState<BoardColumn[]>(providedColumns ?? []);
   const [isLoading, setIsLoading] = useState(Boolean(boardId));
+  const [loadingColumns, setLoadingColumns] = useState(Boolean(boardId));
   const [error, setError] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const skipRealtimeRefresh = useRef(false);
   const loadSequence = useRef(0);
+  const columnsSequence = useRef(0);
 
   const load = useCallback(async () => {
     if (skipRealtimeRefresh.current) return;
@@ -58,6 +70,39 @@ export function useBoardState(boardId?: string) {
     }
   }, [boardId]);
 
+  const loadColumns = useCallback(async () => {
+    if (!boardId) {
+      columnsSequence.current += 1;
+      setColumns(providedColumns ?? []);
+      setLoadingColumns(false);
+      return;
+    }
+
+    if (providedColumns) {
+      columnsSequence.current += 1;
+      setColumns(providedColumns);
+      setLoadingColumns(false);
+      return;
+    }
+
+    const sequence = ++columnsSequence.current;
+    setLoadingColumns(true);
+
+    try {
+      const next = await listBoardColumns(boardId);
+      if (sequence !== columnsSequence.current) return;
+      setColumns(next);
+    } catch {
+      if (sequence !== columnsSequence.current) return;
+      // A column read failure should not hide the tasks. Leave the current
+      // columns in place and let the caller retry via reloadColumns.
+    } finally {
+      if (sequence === columnsSequence.current) {
+        setLoadingColumns(false);
+      }
+    }
+  }, [boardId, providedColumns]);
+
   useEffect(() => {
     skipRealtimeRefresh.current = false;
     setDraggingId(null);
@@ -65,13 +110,23 @@ export function useBoardState(boardId?: string) {
     setError(null);
     setTasks([]);
     setIsLoading(Boolean(boardId));
+    setLoadingColumns(Boolean(boardId) && !providedColumns);
+    if (providedColumns) {
+      setColumns(providedColumns);
+    } else if (boardId) {
+      setColumns([]);
+    }
 
     if (boardId) {
       void load();
+      void loadColumns();
     } else {
       loadSequence.current += 1;
+      columnsSequence.current += 1;
+      setColumns([]);
+      setLoadingColumns(false);
     }
-  }, [boardId, load]);
+  }, [boardId, load, loadColumns, providedColumns]);
 
   useEffect(() => {
     if (!user?.id || !boardId) return;
@@ -93,27 +148,37 @@ export function useBoardState(boardId?: string) {
     };
   }, [user?.id, boardId, load]);
 
-  const byStatus = useMemo(() => {
-    const groups: Record<TaskStatus, Task[]> = {
-      backlog: [],
-      next: [],
-      progress: [],
-      done: [],
-    };
+  const defaultStatus = useMemo(() => {
+    const openColumn = columns.find((column) => !column.is_final);
+    return openColumn?.slug ?? 'planned';
+  }, [columns]);
 
-    for (const task of tasks) {
-      groups[task.status].push(task);
+  const byStatus = useMemo(() => {
+    const groups: Record<TaskStatus, Task[]> = {};
+
+    for (const column of columns) {
+      groups[column.slug] = groups[column.slug] ?? [];
+    }
+    for (const status of VIRTUAL_STATUSES) {
+      groups[status] = groups[status] ?? [];
     }
 
-    for (const status of Object.keys(groups) as TaskStatus[]) {
-      groups[status].sort((a, b) => a.board_order - b.board_order || a.created.localeCompare(b.created));
+    for (const task of tasks) {
+      const group = groups[task.status] ?? (groups[task.status] = []);
+      group.push(task);
+    }
+
+    for (const status of Object.keys(groups)) {
+      groups[status].sort(
+        (a, b) => a.board_order - b.board_order || a.created.localeCompare(b.created)
+      );
     }
 
     return groups;
-  }, [tasks]);
+  }, [columns, tasks]);
 
   const nextOrder = useCallback(
-    (status: TaskStatus) => (byStatus[status].at(-1)?.board_order ?? -1) + 1,
+    (status: TaskStatus) => (byStatus[status]?.at(-1)?.board_order ?? -1) + 1,
     [byStatus]
   );
 
@@ -121,7 +186,8 @@ export function useBoardState(boardId?: string) {
     setIsLoading(true);
     setError(null);
     void load();
-  }, [load]);
+    void loadColumns();
+  }, [load, loadColumns]);
 
   const addTask = useCallback(
     async (data: TaskDraft) => {
@@ -129,15 +195,17 @@ export function useBoardState(boardId?: string) {
         throw new Error('Choose a board first.');
       }
 
+      const status = data.status?.trim() || defaultStatus;
       const created = await createTask({
         ...data,
+        status,
         board: boardId,
-        board_order: nextOrder(data.status),
+        board_order: nextOrder(status),
       });
       setTasks((current) => [...current, created]);
       return created;
     },
-    [boardId, nextOrder]
+    [boardId, defaultStatus, nextOrder]
   );
 
   const addExistingTask = useCallback((task: Task) => {
@@ -188,7 +256,7 @@ export function useBoardState(boardId?: string) {
       const dragged = tasks.find((task) => task.id === id);
       if (!dragged) return;
 
-      const column = byStatus[status].filter((task) => task.id !== id);
+      const column = (byStatus[status] ?? []).filter((task) => task.id !== id);
       const insertAt = Math.max(0, Math.min(index, column.length));
       column.splice(insertAt, 0, { ...dragged, status });
 
@@ -233,12 +301,16 @@ export function useBoardState(boardId?: string) {
 
   return {
     tasks,
+    columns,
+    loadingColumns,
     byStatus,
+    defaultStatus,
     isLoading,
     error,
     draggingId,
     dropTarget,
     load,
+    reloadColumns: loadColumns,
     retry,
     addTask,
     addExistingTask,

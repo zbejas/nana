@@ -1,6 +1,8 @@
 @import "tailwindcss";
-@import "@uiw/react-md-editor/markdown-editor.css";
+@import "@milkdown/kit/prose/view/style/prosemirror.css";
+@import "@milkdown/kit/prose/tables/style/tables.css";
 @import "@uiw/react-markdown-preview/markdown.css";
+@import "./components/editor/milkdown/milkdown.css";
 
 /*
  * Graphite — Nana's visual world.
@@ -307,37 +309,29 @@ body.public-route-active {
     @apply mb-0;
   }
 
-  .wmde-markdown ul,
-  .w-md-editor-preview ul {
+  .wmde-markdown ul {
     @apply my-4 ml-6 list-disc list-outside space-y-2;
   }
 
-  .wmde-markdown ol,
-  .w-md-editor-preview ol {
+  .wmde-markdown ol {
     @apply my-4 ml-6 list-decimal list-outside space-y-2;
   }
 
-  .wmde-markdown li,
-  .w-md-editor-preview li {
+  .wmde-markdown li {
     color: var(--ink-secondary);
   }
 
   .wmde-markdown ul ul,
-  .wmde-markdown ol ul,
-  .w-md-editor-preview ul ul,
-  .w-md-editor-preview ol ul {
+  .wmde-markdown ol ul {
     @apply my-2 list-disc;
   }
 
   .wmde-markdown ul ol,
-  .wmde-markdown ol ol,
-  .w-md-editor-preview ul ol,
-  .w-md-editor-preview ol ol {
+  .wmde-markdown ol ol {
     @apply my-2 list-decimal;
   }
 
-  .wmde-markdown,
-  .w-md-editor-preview {
+  .wmde-markdown {
     color: var(--ink-secondary);
   }
 
@@ -685,9 +679,7 @@ body.public-route-active {
 /* Third-party overrides                                               */
 /* ------------------------------------------------------------------ */
 
-.w-md-editor,
-.wmde-markdown,
-.w-md-editor-preview {
+.wmde-markdown {
   --color-fg-default: var(--ink);
   --color-fg-muted: var(--ink-muted);
   --color-canvas-default: transparent;
@@ -707,34 +699,9 @@ body.public-route-active {
 .wmde-markdown h3,
 .wmde-markdown h4,
 .wmde-markdown h5,
-.wmde-markdown h6,
-.w-md-editor-preview h1,
-.w-md-editor-preview h2,
-.w-md-editor-preview h3,
-.w-md-editor-preview h4,
-.w-md-editor-preview h5,
-.w-md-editor-preview h6 {
+.wmde-markdown h6 {
   font-family: var(--font-sans) !important;
   letter-spacing: -0.02em;
-}
-
-.w-md-editor {
-  background: transparent !important;
-  color: var(--ink) !important;
-}
-
-.wmde-markdown h1,
-.wmde-markdown h2,
-.wmde-markdown h3,
-.wmde-markdown h4,
-.wmde-markdown h5,
-.wmde-markdown h6,
-.w-md-editor-preview h1,
-.w-md-editor-preview h2,
-.w-md-editor-preview h3,
-.w-md-editor-preview h4,
-.w-md-editor-preview h5,
-.w-md-editor-preview h6 {
   color: var(--ink) !important;
   border-bottom-color: var(--line) !important;
 }
@@ -748,58 +715,11 @@ body.public-route-active {
   color: var(--ink-secondary) !important;
 }
 
-.w-md-editor-preview p,
-.w-md-editor-preview li {
-  color: var(--ink) !important;
-}
-
 .chat-answer .wmde-markdown p,
 .chat-answer .wmde-markdown li,
 .chat-answer .wmde-markdown td,
 .chat-answer .wmde-markdown th {
   color: var(--ink) !important;
-}
-
-.w-md-editor-toolbar {
-  background: transparent !important;
-  border-color: var(--line) !important;
-}
-
-.w-md-editor-toolbar li > button {
-  color: var(--ink-secondary) !important;
-}
-
-.w-md-editor-toolbar li > button:hover {
-  background: var(--surface-raised) !important;
-  color: var(--ink) !important;
-}
-
-.w-md-editor-text,
-.w-md-editor-text-pre,
-.w-md-editor-text-input {
-  color: var(--ink) !important;
-  caret-color: var(--signal) !important;
-}
-
-.w-md-editor-text-pre .code-line {
-  color: var(--ink) !important;
-}
-
-.w-md-editor-text-pre .token.punctuation {
-  color: var(--ink-muted) !important;
-}
-
-.w-md-editor-text-pre .token.title {
-  color: var(--ink) !important;
-  font-weight: 600;
-}
-
-.w-md-editor-text-pre .token.list.punctuation {
-  color: var(--ink-muted) !important;
-}
-
-.w-md-editor-preview {
-  background: transparent !important;
 }
 
 .wmde-markdown {

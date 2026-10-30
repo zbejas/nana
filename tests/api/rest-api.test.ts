@@ -517,9 +517,9 @@ describe("boards and tasks", () => {
         const moveBoardRes = await restPatch(`/tasks/${task.id}`, {
             boardId: secondBoard.id,
         }, owner.token);
-        await expectStatus(moveBoardRes, 200, "move task to second board");
-        const movedTask = await readJson<TaskDto>(moveBoardRes, "move task to second board");
-        expect(movedTask.boardId).toBe(secondBoard.id);
+        await expectJsonError(moveBoardRes, 400, "cannot move to another board");
+        const unchangedTask = await restGet(`/tasks/${task.id}`, owner.token);
+        expect((await readJson<TaskDto>(unchangedTask, "unchanged task")).boardId).toBe(board.id);
 
         const linkedNoteRes = await restPost("/notes", {
             title: `Linked Note ${suffix}`,
@@ -565,7 +565,7 @@ describe("boards and tasks", () => {
         const missingBoardRes = await restGet(`/boards/${board.id}`, owner.token);
         await expectJsonError(missingBoardRes, 404, "not found");
 
-        // Deleting the second board cascades the task that was moved onto it.
+        // The task stayed on the first board, so the earlier board delete removed it.
         const archiveSecondRes = await restPatch(
             `/boards/${secondBoard.id}`,
             { archived: true },
@@ -635,7 +635,7 @@ describe("task filters and partial updates", () => {
         expect(patched.priority).toBe("high");
     });
 
-    test("preserves status and priority when the task moves to another board", async () => {
+    test("rejects moving a task to another board and keeps its fields", async () => {
         const source = await newBoard(`REST Source Board ${suffix}`);
         const target = await newBoard(`REST Target Board ${suffix}`);
         const task = await newTask(source.id, `Move Task ${suffix}`, "progress", "urgent");
@@ -643,11 +643,13 @@ describe("task filters and partial updates", () => {
         const res = await restPatch(`/tasks/${task.id}`, {
             boardId: target.id,
         }, owner.token);
-        await expectStatus(res, 200, "move task between boards");
-        const moved = await readJson<TaskDto>(res, "move task between boards");
+        await expectJsonError(res, 400, "cannot move to another board");
 
-        expect(moved.boardId).toBe(target.id);
-        expect(moved.status).toBe("progress");
-        expect(moved.priority).toBe("urgent");
+        const stillThere = await restGet(`/tasks/${task.id}`, owner.token);
+        await expectStatus(stillThere, 200, "read source task");
+        const unchanged = await readJson<TaskDto>(stillThere, "read source task");
+        expect(unchanged.boardId).toBe(source.id);
+        expect(unchanged.status).toBe("progress");
+        expect(unchanged.priority).toBe("urgent");
     });
 });

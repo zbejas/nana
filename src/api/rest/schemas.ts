@@ -1,7 +1,11 @@
 import { t } from "elysia";
 import type { TSchema } from "@sinclair/typebox";
 import { API_KEY_ACCESS_VALUES, API_KEY_SCOPE_VALUES } from "../api-keys/types";
-import { TASK_PRIORITIES, TASK_STATUSES } from "../workspace/types";
+import {
+    RECURRENCE_FREQUENCIES,
+    TASK_PRIORITIES,
+    TASK_RELATION_TYPES,
+} from "../workspace/types";
 
 const recordId = t.String({
     minLength: 1,
@@ -36,14 +40,49 @@ const clearableId = (description: string) =>
 const nullableClearableId = (description: string) =>
     t.Union([clearableId(description), t.Null()], { description });
 
-// Keep these as literal unions, not `t.UnionEnum`: UnionEnum attaches a default
-// for the first value, which Elysia applies to omitted optional query/body
-// fields (silently filtering task lists and resetting task updates).
-export const TaskStatusSchema = t.Union(
-    TASK_STATUSES.map((status) => t.Literal(status)),
+// Statuses are board-defined column slugs. `planned` and `archived` are the
+// virtual backlog statuses. Membership is validated by the workspace service
+// and the PocketBase status guard, so the schema only bounds the string.
+export const TaskStatusSchema = t.String({
+    minLength: 1,
+    maxLength: 60,
+    description: "A column slug from the board's `columns`, or `planned`/`archived` for the virtual backlog.",
+    examples: ["next"],
+});
+
+export const TaskRecurrenceSchema = t.Object({
+    frequency: t.Union(
+        RECURRENCE_FREQUENCIES.map((frequency) => t.Literal(frequency)),
+        {
+            description: "Repeat frequency.",
+            examples: ["weekly"],
+        },
+    ),
+    interval: t.Integer({
+        minimum: 1,
+        maximum: 365,
+        description: "Number of frequency units between occurrences.",
+        examples: [1],
+    }),
+    weekdays: t.Optional(t.Array(t.Integer({ minimum: 1, maximum: 7 }), {
+        maxItems: 7,
+        description: "ISO weekdays (1 = Monday … 7 = Sunday) for weekly rules.",
+        examples: [[1, 3, 5]],
+    })),
+    timeZone: t.Optional(t.String({
+        maxLength: 80,
+        description: "IANA time zone used to resolve the next occurrence.",
+        examples: ["Europe/Berlin"],
+    })),
+}, {
+    description: "A recurring-task rule.",
+});
+
+export const TaskRelationTypeSchema = t.Union(
+    TASK_RELATION_TYPES.map((type) => t.Literal(type)),
     {
-        description: "Board column.",
-        examples: ["next"],
+        description: "Relation kind. For `subtask`, the source task is the parent.",
+        examples: ["blocks"],
     },
 );
 export const TaskPrioritySchema = t.Union(
@@ -191,9 +230,17 @@ export const BoardDtoSchema = t.Object({
         examples: [false],
     }),
     folderId: nullableString("Containing folder id, or null at the workspace root.", ["folder123"]),
+    icon: t.String({
+        description: "Optional board icon key. Empty string when unset.",
+        examples: ["kanban"],
+    }),
     isPrivate: t.Boolean({
         description: "Hidden from chat and MCP. The owner still sees it here.",
         examples: [false],
+    }),
+    taskCounter: t.Integer({
+        description: "Highest task number allocated on this board.",
+        examples: [42],
     }),
     created: dateTime,
     updated: dateTime,
@@ -205,10 +252,52 @@ export const BoardDtoSchema = t.Object({
         description: "Ship the next version",
         archived: false,
         folderId: "folder123",
+        icon: "kanban",
         isPrivate: false,
+        taskCounter: 42,
         created: "2026-10-20 09:15:00.000Z",
         updated: "2026-10-24 16:40:00.000Z",
     }],
+});
+
+export const BoardColumnDtoSchema = t.Object({
+    id: t.String({ description: "Column id.", examples: ["column123"] }),
+    boardId: t.String({ description: "Owning board id.", examples: ["board123"] }),
+    name: t.String({ description: "Column label.", examples: ["In review"] }),
+    slug: t.String({
+        description: "Stable key stored in `tasks.status`. It cannot change while tasks reference it.",
+        examples: ["in-review"],
+    }),
+    position: t.Integer({
+        description: "Workflow order. Lower values appear first.",
+        examples: [2],
+    }),
+    icon: t.String({ description: "Icon key. Empty string when unset.", examples: ["eye"] }),
+    color: t.String({ description: "Semantic colour key. Empty string when unset.", examples: ["signal"] }),
+    isFinal: t.Boolean({
+        description: "Tasks in a final column are complete; completion never depends on a literal `done` slug.",
+        examples: [false],
+    }),
+    created: dateTime,
+    updated: dateTime,
+}, {
+    description: "One ordered workflow column on a board.",
+    examples: [{
+        id: "column123",
+        boardId: "board123",
+        name: "In review",
+        slug: "in-review",
+        position: 2,
+        icon: "eye",
+        color: "warning",
+        isFinal: false,
+        created: "2026-10-20 09:15:00.000Z",
+        updated: "2026-10-24 16:40:00.000Z",
+    }],
+});
+
+export const BoardColumnListSchema = t.Array(BoardColumnDtoSchema, {
+    description: "The board's columns, sorted by position then creation time.",
 });
 
 export const TaskDtoSchema = t.Object({
@@ -221,6 +310,8 @@ export const TaskDtoSchema = t.Object({
     status: TaskStatusSchema,
     priority: TaskPrioritySchema,
     dueDate: nullableString("Due date-time, or null when unset.", ["2026-12-01 12:00:00.000Z"]),
+    startDate: nullableString("Start date-time, or null when unset.", ["2026-11-25 09:00:00.000Z"]),
+    completedAt: nullableString("Completion timestamp, or null when the task is not in a final column.", ["2026-10-24 16:40:00.000Z"]),
     boardOrder: t.Number({
         description: "Order within the column. Lower values appear first.",
         examples: [0],
@@ -231,6 +322,13 @@ export const TaskDtoSchema = t.Object({
     }),
     noteId: nullableString("Linked note id, or null when unset.", ["note123"]),
     boardId: t.String({ description: "Owning board id.", examples: ["board123"] }),
+    assigneeId: nullableString("Assigned user id, or null when unassigned.", ["user123"]),
+    recurrence: t.Union([TaskRecurrenceSchema, t.Null()], {
+        description: "Recurrence rule, or null when the task does not repeat.",
+    }),
+    taskNumber: t.Union([t.Integer({ description: "Board-scoped task number.", examples: [42] }), t.Null()], {
+        description: "Board-scoped task number, or null if the record predates numbering.",
+    }),
     created: dateTime,
     updated: dateTime,
 }, {
@@ -242,13 +340,54 @@ export const TaskDtoSchema = t.Object({
         status: "next",
         priority: "high",
         dueDate: "2026-12-01 12:00:00.000Z",
+        startDate: "2026-11-25 09:00:00.000Z",
+        completedAt: null,
         boardOrder: 0,
         labels: ["release"],
         noteId: "note123",
         boardId: "board123",
+        assigneeId: "user123",
+        recurrence: null,
+        taskNumber: 42,
         created: "2026-10-20 09:15:00.000Z",
         updated: "2026-10-24 16:40:00.000Z",
     }],
+});
+
+export const TaskRelationDtoSchema = t.Object({
+    id: t.String({ description: "Relation id.", examples: ["relation123"] }),
+    sourceTaskId: t.String({ description: "Source task id. For `subtask`, this is the parent.", examples: ["task123"] }),
+    targetTaskId: t.String({ description: "Target task id. For `subtask`, this is the child.", examples: ["task456"] }),
+    type: TaskRelationTypeSchema,
+    sourceTitle: nullableString("Source task title when expanded.", ["Draft release notes"]),
+    targetTitle: nullableString("Target task title when expanded.", ["Publish release notes"]),
+    targetStatus: nullableString("Target task status when expanded.", ["next"]),
+    created: dateTime,
+    updated: dateTime,
+}, {
+    description: "A directed edge between two tasks.",
+});
+
+export const TaskRelationListSchema = t.Array(TaskRelationDtoSchema, {
+    description: "Every relation touching the task, in either direction.",
+});
+
+export const TaskActivityDtoSchema = t.Object({
+    id: t.String({ description: "Activity id.", examples: ["activity123"] }),
+    taskId: t.String({ description: "Task id.", examples: ["task123"] }),
+    boardId: t.String({ description: "Board id.", examples: ["board123"] }),
+    actorId: nullableString("User who made the change, or null for system writes.", ["user123"]),
+    type: t.String({ description: "Activity type.", examples: ["status_changed"] }),
+    data: t.Record(t.String(), t.Unknown(), {
+        description: "Activity-specific payload, such as the previous and next values.",
+    }),
+    created: dateTime,
+}, {
+    description: "One append-only task audit entry.",
+});
+
+export const TaskActivityListSchema = t.Array(TaskActivityDtoSchema, {
+    description: "The task's activity, newest first (up to 100 entries).",
 });
 
 function listOf<T extends TSchema>(item: T) {
@@ -448,13 +587,18 @@ export const CreateBoardBodySchema = t.Object({
         examples: ["Ship the next version"],
     })),
     folderId: t.Optional(nullableClearableId("Folder id, or null at the workspace root.")),
+    icon: t.Optional(t.String({
+        maxLength: 40,
+        description: "Optional board icon key.",
+        examples: ["kanban"],
+    })),
     isPrivate: t.Optional(t.Boolean({
         description: "Hide the board from chat and MCP.",
         examples: [false],
     })),
 }, {
     description: "Create a board.",
-    examples: [{ name: "Release", description: "Ship the next version", folderId: null, isPrivate: false }],
+    examples: [{ name: "Release", description: "Ship the next version", folderId: null, icon: "kanban", isPrivate: false }],
 });
 
 export const UpdateBoardBodySchema = t.Object({
@@ -474,12 +618,96 @@ export const UpdateBoardBodySchema = t.Object({
         examples: [true],
     })),
     folderId: t.Optional(nullableClearableId("Move the board to this folder, or to the root with an empty value.")),
+    icon: t.Optional(t.String({
+        maxLength: 40,
+        description: "New board icon key.",
+        examples: ["kanban"],
+    })),
     isPrivate: t.Optional(t.Boolean({
         description: "Hide the board from chat and MCP.",
         examples: [true],
     })),
 }, {
     description: "Partial board update.",
+});
+
+export const CreateBoardColumnBodySchema = t.Object({
+    name: t.String({
+        minLength: 1,
+        maxLength: 80,
+        description: "Column label.",
+        examples: ["In review"],
+    }),
+    slug: t.Optional(t.String({
+        minLength: 1,
+        maxLength: 60,
+        pattern: "^[a-z0-9][a-z0-9_-]{0,59}$",
+        description: "Stable key. Defaults to a slug of the name; it is immutable while tasks reference it.",
+        examples: ["in-review"],
+    })),
+    position: t.Optional(t.Integer({
+        minimum: 0,
+        description: "Workflow order. Defaults to the end of the board.",
+        examples: [2],
+    })),
+    icon: t.Optional(t.String({ maxLength: 40, description: "Icon key.", examples: ["eye"] })),
+    color: t.Optional(t.String({ maxLength: 20, description: "Semantic colour key.", examples: ["warning"] })),
+    isFinal: t.Optional(t.Boolean({
+        description: "Tasks in this column count as complete.",
+        examples: [false],
+    })),
+}, {
+    description: "Add a column to a board.",
+    examples: [{ name: "In review", slug: "in-review", position: 2, icon: "eye", color: "warning", isFinal: false }],
+});
+
+export const UpdateBoardColumnBodySchema = t.Object({
+    name: t.Optional(t.String({
+        minLength: 1,
+        maxLength: 80,
+        description: "New column label.",
+        examples: ["Review"],
+    })),
+    slug: t.Optional(t.String({
+        minLength: 1,
+        maxLength: 60,
+        pattern: "^[a-z0-9][a-z0-9_-]{0,59}$",
+        description: "New stable key. PocketBase rejects this while tasks still use the old key.",
+        examples: ["review"],
+    })),
+    position: t.Optional(t.Integer({
+        minimum: 0,
+        description: "New workflow order.",
+        examples: [3],
+    })),
+    icon: t.Optional(t.String({ maxLength: 40, description: "Icon key.", examples: ["eye"] })),
+    color: t.Optional(t.String({ maxLength: 20, description: "Semantic colour key.", examples: ["warning"] })),
+    isFinal: t.Optional(t.Boolean({
+        description: "Change whether this column completes a task.",
+        examples: [true],
+    })),
+}, {
+    description: "Partial column update.",
+});
+
+export const ReorderBoardColumnsBodySchema = t.Object({
+    orderedIds: t.Array(
+        t.String({
+            minLength: 1,
+            maxLength: 64,
+            pattern: "^[A-Za-z0-9]{1,64}$",
+            description: "Column id.",
+            examples: ["column123"],
+        }),
+        {
+            minItems: 1,
+            description: "Every column id on the board, in the new order.",
+            examples: [["column123", "column456"]],
+        },
+    ),
+}, {
+    description: "Persist the full column order.",
+    examples: [{ orderedIds: ["column123", "column456"] }],
 });
 
 export const CreateTaskBodySchema = t.Object({
@@ -500,6 +728,11 @@ export const CreateTaskBodySchema = t.Object({
         description: "Due date-time string.",
         examples: ["2026-12-01 12:00:00.000Z"],
     })),
+    startDate: t.Optional(t.String({
+        maxLength: 40,
+        description: "Start date-time string.",
+        examples: ["2026-11-25 09:00:00.000Z"],
+    })),
     boardOrder: t.Optional(t.Number({
         minimum: 0,
         description: "Order within the column.",
@@ -511,6 +744,10 @@ export const CreateTaskBodySchema = t.Object({
         examples: [["release"]],
     })),
     noteId: t.Optional(nullableClearableId("Optional linked note id.")),
+    assigneeId: t.Optional(nullableClearableId("Optional assigned user id.")),
+    recurrence: t.Optional(t.Union([TaskRecurrenceSchema, t.Null()], {
+        description: "Optional recurrence rule.",
+    })),
 }, {
     description: "Create a task on the board in the path.",
     examples: [{
@@ -519,9 +756,12 @@ export const CreateTaskBodySchema = t.Object({
         status: "next",
         priority: "high",
         dueDate: "2026-12-01 12:00:00.000Z",
+        startDate: "2026-11-25 09:00:00.000Z",
         boardOrder: 0,
         labels: ["release"],
         noteId: "note123",
+        assigneeId: "user123",
+        recurrence: { frequency: "weekly", interval: 1, weekdays: [1, 3] },
     }],
 });
 
@@ -543,6 +783,11 @@ export const UpdateTaskBodySchema = t.Object({
         description: "New due date-time string.",
         examples: ["2026-12-01 12:00:00.000Z"],
     })),
+    startDate: t.Optional(t.String({
+        maxLength: 40,
+        description: "New start date-time string.",
+        examples: ["2026-11-25 09:00:00.000Z"],
+    })),
     boardOrder: t.Optional(t.Number({
         minimum: 0,
         description: "New order within the column.",
@@ -554,9 +799,13 @@ export const UpdateTaskBodySchema = t.Object({
         examples: [["release"]],
     })),
     noteId: t.Optional(nullableClearableId("Linked note id. Send an empty value to clear the link.")),
+    assigneeId: t.Optional(nullableClearableId("Assigned user id. Send an empty value to clear it.")),
+    recurrence: t.Optional(t.Union([TaskRecurrenceSchema, t.Null()], {
+        description: "Replacement recurrence rule, or null to stop repeating.",
+    })),
     boardId: t.Optional(recordId),
 }, {
-    description: "Partial task update. Omitted fields stay unchanged. Send `boardId`, `status`, and/or `boardOrder` to move the task.",
+    description: "Partial task update. Omitted fields stay unchanged. Send `status`, `boardOrder`, and/or `assigneeId` to move or reassign the task. Tasks cannot move to another board.",
 });
 
 export const AddNoteToBoardBodySchema = t.Object({
@@ -565,6 +814,14 @@ export const AddNoteToBoardBodySchema = t.Object({
 }, {
     description: "Copy a note into a new task.",
     examples: [{ noteId: "note123", status: "done" }],
+});
+
+export const CreateTaskRelationBodySchema = t.Object({
+    targetTaskId: recordId,
+    type: TaskRelationTypeSchema,
+}, {
+    description: "Create a directed relation from the task in the path to another task.",
+    examples: [{ targetTaskId: "task456", type: "blocks" }],
 });
 
 // ── API keys ─────────────────────────────────────────────────────────

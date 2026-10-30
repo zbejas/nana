@@ -157,6 +157,130 @@ describe("browser record facade", () => {
         await expectStatus(foreignTask, 404, "missing board rejected");
     });
 
+    test("supports workflow columns, task fields, and read-only relations", async () => {
+        const suffix = uniqueSuffix();
+        const boardRes = await bunRequest(api("/records/boards"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ name: `Facade kanban ${suffix}` }),
+        });
+        await expectStatus(boardRes, 200, "create facade board");
+        const board = await readJson<{ id: string }>(boardRes);
+
+        const columnRes = await bunRequest(api("/records/board_columns"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ board: board.id, name: "In review", color: "warning" }),
+        });
+        await expectStatus(columnRes, 200, "create facade column");
+        const column = await readJson<{ id: string; slug: string; board: string }>(columnRes);
+        expect(column.board).toBe(board.id);
+        expect(column.slug).toBe("in-review");
+
+        const columnsRes = await bunRequest(
+            api(`/records/board_columns?filter=${encodeURIComponent(`board="${board.id}"`)}&sort=position`),
+            { headers: authHeaders(user.token) },
+        );
+        await expectStatus(columnsRes, 200, "list facade columns");
+        const columns = await readJson<{ items: Array<{ slug: string }> }>(columnsRes);
+        expect(columns.items.map((item) => item.slug)).toContain("in-review");
+
+        const taskRes = await bunRequest(api("/records/tasks"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({
+                title: `Facade kanban task ${suffix}`,
+                description: "<script>alert(1)</script><p>Safe task body</p>",
+                board: board.id,
+                status: "in-review",
+                assignee: user.id,
+                start_date: "2026-11-01 09:00:00.000Z",
+                recurrence: { frequency: "weekly", interval: 1 },
+                task_number: 999,
+                completed_at: "2026-01-01 00:00:00.000Z",
+            }),
+        });
+        await expectStatus(taskRes, 200, "create facade task");
+        const task = await readJson<{
+            id: string;
+            status: string;
+            description: string;
+            assignee: string;
+            start_date: string;
+            recurrence: { frequency: string };
+            task_number: number;
+            completed_at: string;
+        }>(taskRes);
+        expect(task.status).toBe("in-review");
+        expect(task.description).not.toContain("<script");
+        expect(task.description).toContain("Safe task body");
+        expect(task.assignee).toBe(user.id);
+        expect(task.start_date).toContain("2026-11-01");
+        expect(task.recurrence.frequency).toBe("weekly");
+        expect(task.task_number).not.toBe(999);
+        expect(task.task_number).toBeGreaterThan(0);
+        expect(task.completed_at).toBe("");
+
+        const invalidStatus = await bunRequest(api(`/records/tasks/${task.id}`), {
+            method: "PATCH",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ status: "no-such-column" }),
+        });
+        await expectStatus(invalidStatus, 400, "facade rejects unknown status");
+
+        const ignoredServerFields = await bunRequest(api(`/records/tasks/${task.id}`), {
+            method: "PATCH",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ task_number: 500, completed_at: "2026-02-01 00:00:00.000Z" }),
+        });
+        await expectStatus(ignoredServerFields, 200, "facade ignores server fields");
+        const unchanged = await readJson<{ task_number: number; completed_at: string }>(ignoredServerFields);
+        expect(unchanged.task_number).toBe(task.task_number);
+        expect(unchanged.completed_at).toBe("");
+
+        const foreignAssignee = await bunRequest(api(`/records/tasks/${task.id}`), {
+            method: "PATCH",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ assignee: other.id }),
+        });
+        await expectStatus(foreignAssignee, 400, "facade rejects a foreign assignee");
+
+        const labelsRes = await bunRequest(api("/records/labels"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ name: `label-${suffix}`, color: "rose", author: other.id }),
+        });
+        await expectStatus(labelsRes, 200, "create facade label");
+        const label = await readJson<{ author: string }>(labelsRes);
+        expect(label.author).toBe(user.id);
+
+        const activityRes = await bunRequest(
+            api(`/records/task_activity?filter=${encodeURIComponent(`task="${task.id}"`)}`),
+            { headers: authHeaders(user.token) },
+        );
+        await expectStatus(activityRes, 200, "read facade activity");
+        const activity = await readJson<{ items: Array<{ type: string }> }>(activityRes);
+        expect(activity.items.map((item) => item.type)).toContain("created");
+
+        const relationsRead = await bunRequest(
+            api(`/records/task_relations?filter=${encodeURIComponent(`source="${task.id}"`)}`),
+            { headers: authHeaders(user.token) },
+        );
+        await expectStatus(relationsRead, 200, "read facade relations");
+
+        const relationsWrite = await bunRequest(api("/records/task_relations"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ source: task.id, target: task.id, type: "related" }),
+        });
+        await expectStatus(relationsWrite, 405, "facade relations are read-only");
+
+        const commentsRead = await bunRequest(api("/records/comments"), {
+            headers: authHeaders(user.token),
+        });
+        await expectStatus(commentsRead, 404, "comments are not on the record facade");
+    });
+
     test("does not let a user promote themselves through the users collection", async () => {
         const res = await bunRequest(api(`/records/users/${user.id}`), {
             method: "PATCH",

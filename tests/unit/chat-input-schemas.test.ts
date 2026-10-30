@@ -48,10 +48,12 @@ describe("board input schemas", () => {
         });
     });
 
-    test("read_board only accepts known columns", () => {
+    test("read_board accepts column slugs and virtual statuses", () => {
         expect(readBoardInputSchema.parse({ boardId: "abc123" }).column).toBeUndefined();
         expect(readBoardInputSchema.safeParse({ boardId: "abc123", column: "done" }).success).toBe(true);
-        expect(readBoardInputSchema.safeParse({ boardId: "abc123", column: "archived" }).success).toBe(false);
+        expect(readBoardInputSchema.safeParse({ boardId: "abc123", column: "in-review" }).success).toBe(true);
+        expect(readBoardInputSchema.safeParse({ boardId: "abc123", column: "archived" }).success).toBe(true);
+        expect(readBoardInputSchema.safeParse({ boardId: "abc123", column: "" }).success).toBe(false);
     });
 });
 

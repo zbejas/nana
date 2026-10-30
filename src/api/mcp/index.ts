@@ -26,6 +26,8 @@ import {
     deleteNote,
     deleteTask,
     listFolders,
+    listTaskActivity,
+    listTaskRelations,
     listTasks,
     moveBoard,
     moveNote,
@@ -111,8 +113,23 @@ const tagsSchema = z
     .describe("Up to 20 tags, 60 characters each.");
 
 const taskStatusSchema = z
-    .enum(["backlog", "next", "progress", "done"])
-    .describe("Board column: backlog, next, progress, or done.");
+    .string()
+    .min(1)
+    .max(60)
+    .describe("A column slug from the board's `columns`, or `planned`/`archived` for the virtual backlog.");
+
+const taskRecurrenceSchema = z
+    .object({
+        frequency: z.enum(["daily", "weekly", "monthly", "yearly"]),
+        interval: z.number().int().min(1).max(365).default(1),
+        weekdays: z
+            .array(z.number().int().min(1).max(7))
+            .max(7)
+            .optional()
+            .describe("ISO weekdays (1 = Monday … 7 = Sunday) for weekly rules."),
+        timeZone: z.string().max(80).optional().describe("IANA time zone."),
+    })
+    .describe("A recurring-task rule.");
 
 const taskPrioritySchema = z
     .enum(["", "low", "medium", "high", "urgent"])
@@ -209,42 +226,62 @@ const createTaskInputSchema = z.object({
     boardId: recordId.describe("A visible, active board owned by the caller."),
     title: z.string().min(1).max(240).describe("Task title."),
     description: z.string().optional().describe("Task description, usually Markdown."),
-    status: taskStatusSchema.optional().describe("Initial column; defaults to backlog."),
+    status: taskStatusSchema.optional().describe("Initial column slug; defaults to the board's first open column."),
     priority: taskPrioritySchema.optional(),
     dueDate: z.string().max(40).optional().describe("Due date as a PocketBase date string."),
+    startDate: z.string().max(40).optional().describe("Start date as a PocketBase date string."),
     boardOrder: z.number().min(0).optional().describe("Position within the column; defaults to 0."),
     labels: tagsSchema.optional(),
     noteId: z
         .union([clearableId, z.null()])
         .optional()
         .describe("Optional visible note to link. The note is not modified."),
+    assigneeId: z
+        .union([clearableId, z.null()])
+        .optional()
+        .describe("Optional user who can access the board."),
+    recurrence: taskRecurrenceSchema.nullable().optional(),
 });
 
 const updateTaskInputSchema = z.object({
     taskId: recordId,
     title: z.string().min(1).max(240).optional().describe("New task title."),
     description: z.string().optional().describe("New task description."),
-    status: taskStatusSchema.optional().describe("New column."),
+    status: taskStatusSchema.optional().describe("New column slug from the task's board."),
     priority: taskPrioritySchema.optional(),
     dueDate: z.string().max(40).optional().describe("New due date as a PocketBase date string."),
+    startDate: z.string().max(40).optional().describe("New start date as a PocketBase date string."),
     boardOrder: z.number().min(0).optional().describe("New position within the column."),
     labels: tagsSchema.optional(),
     noteId: z
         .union([clearableId, z.null()])
         .optional()
         .describe("Visible note to link, or null/empty to clear the link."),
-    boardId: recordId.optional().describe("Visible active board to move the task to."),
+    assigneeId: z
+        .union([clearableId, z.null()])
+        .optional()
+        .describe("User who can access the board, or null/empty to clear the assignee."),
+    recurrence: taskRecurrenceSchema.nullable().optional(),
+    boardId: recordId.optional().describe("The current board id; tasks cannot move to another board."),
 });
 
 const moveTaskInputSchema = z.object({
     taskId: recordId,
-    boardId: recordId.optional().describe("Visible active board to move the task to."),
-    status: taskStatusSchema.optional().describe("Target column."),
+    boardId: recordId.optional().describe("The current board id; tasks cannot move to another board."),
+    status: taskStatusSchema.optional().describe("Target column slug."),
     boardOrder: z.number().min(0).optional().describe("Target position within the column."),
 });
 
 const deleteTaskInputSchema = z.object({
     taskId: recordId,
+});
+
+const listTaskRelationsInputSchema = z.object({
+    taskId: recordId.describe("The task whose relation edges should be read."),
+});
+
+const listTaskActivityInputSchema = z.object({
+    taskId: recordId.describe("The task whose activity should be read."),
 });
 
 const addNoteToBoardInputSchema = z.object({
@@ -579,6 +616,34 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
                 })),
     );
 
+    server.registerTool(
+        "list_task_relations",
+        {
+            title: "List task relations",
+            description:
+                "Read the subtask, blocks, and related edges touching one visible task, in either direction. Relations are read-only in this version.",
+            inputSchema: listTaskRelationsInputSchema,
+            annotations: { readOnlyHint: true, openWorldHint: false },
+        },
+        async (input) =>
+            runWorkspace("list_task_relations", () =>
+                listTaskRelations(context, AI_SURFACE, input.taskId)),
+    );
+
+    server.registerTool(
+        "list_task_activity",
+        {
+            title: "List task activity",
+            description:
+                "Read the append-only activity trail for one visible task, newest first. Activity is written by the workspace and cannot be changed here.",
+            inputSchema: listTaskActivityInputSchema,
+            annotations: { readOnlyHint: true, openWorldHint: false },
+        },
+        async (input) =>
+            runWorkspace("list_task_activity", () =>
+                listTaskActivity(context, AI_SURFACE, input.taskId)),
+    );
+
     if (context.apiKey?.access === "read") return;
 
     server.registerTool(
@@ -599,9 +664,12 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
                     status: input.status,
                     priority: input.priority,
                     dueDate: input.dueDate,
+                    startDate: input.startDate,
                     boardOrder: input.boardOrder,
                     labels: input.labels,
                     noteId: input.noteId,
+                    assigneeId: input.assigneeId,
+                    recurrence: input.recurrence,
                 })),
     );
 
@@ -610,7 +678,7 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
         {
             title: "Update task",
             description:
-                "Update a visible task's fields, link or clear a note, or move it to another visible active board. Hidden boards and notes look missing.",
+                "Update a visible task's fields, link or clear a note, or change its assignee, dates, labels, and recurrence. Hidden boards and notes look missing. Tasks cannot move between boards.",
             inputSchema: updateTaskInputSchema,
             annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
         },
@@ -622,9 +690,12 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
                 if (input.status !== undefined) patch.status = input.status;
                 if (input.priority !== undefined) patch.priority = input.priority;
                 if (input.dueDate !== undefined) patch.dueDate = input.dueDate;
+                if (input.startDate !== undefined) patch.startDate = input.startDate;
                 if (input.boardOrder !== undefined) patch.boardOrder = input.boardOrder;
                 if (input.labels !== undefined) patch.labels = input.labels;
                 if (input.noteId !== undefined) patch.noteId = input.noteId;
+                if (input.assigneeId !== undefined) patch.assigneeId = input.assigneeId;
+                if (input.recurrence !== undefined) patch.recurrence = input.recurrence;
                 if (input.boardId !== undefined) patch.boardId = input.boardId;
                 return updateTask(context, AI_SURFACE, input.taskId, patch);
             }),
@@ -635,7 +706,7 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
         {
             title: "Move task",
             description:
-                "Move a visible task to another visible active board, column, or position. Omitted fields stay unchanged.",
+                "Move a visible task to another column or position on the same board. Omitted fields stay unchanged. Tasks cannot move between boards.",
             inputSchema: moveTaskInputSchema,
             annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
         },
