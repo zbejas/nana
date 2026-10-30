@@ -115,6 +115,14 @@ export async function getBoard(id: string): Promise<Board> {
   return normalizeBoard(record);
 }
 
+/**
+ * Creates a board with a provisional name and opens it for inline naming.
+ * Board creation no longer interrupts the workspace with a form dialog.
+ */
+export async function createUntitledBoard(folder?: string): Promise<Board> {
+  return createBoard({ name: 'Untitled board', folder });
+}
+
 export async function createBoard(data: CreateBoardData): Promise<Board> {
   const payload: Record<string, unknown> = {
     name: normalizeName(data.name),

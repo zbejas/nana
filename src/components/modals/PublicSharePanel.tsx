@@ -13,14 +13,14 @@ import {
     toDatetimeLocalValue,
     type PublicShareUpdateOptions,
 } from '../../lib/public-sharing';
-import { Button, Dialog, Switch } from '../ui';
+import { Button, SidePanel, Switch } from '../ui';
 
 type PublicShareTarget =
     | { type: 'document'; record: Document }
     | { type: 'folder'; record: Folder }
     | { type: 'board'; record: Board };
 
-interface PublicShareModalProps {
+interface PublicSharePanelProps {
     target: PublicShareTarget | null;
     isOpen: boolean;
     isSaving: boolean;
@@ -44,7 +44,7 @@ function getShareUrl(target: PublicShareTarget | null) {
     return getPublicBoardUrl(target.record.public_share_token);
 }
 
-export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: PublicShareModalProps) {
+export function PublicSharePanel({ target, isOpen, isSaving, onClose, onSave }: PublicSharePanelProps) {
     const [publicEnabled, setPublicEnabled] = useState(false);
     const [isPrivate, setIsPrivate] = useState(false);
     const [shareAttachments, setShareAttachments] = useState(false);
@@ -105,14 +105,18 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
 
         setValidationError(null);
 
-        await onSave({
-            enabled: publicEnabled,
-            expiresAt: publicEnabled && expirationEnabled && parsedExpiration
-                ? parsedExpiration.toISOString()
-                : null,
-            isPrivate,
-            shareAttachments,
-        });
+        try {
+            await onSave({
+                enabled: publicEnabled,
+                expiresAt: publicEnabled && expirationEnabled && parsedExpiration
+                    ? parsedExpiration.toISOString()
+                    : null,
+                isPrivate,
+                shareAttachments,
+            });
+        } catch {
+            // The shared hook surfaces the failure as a toast and keeps the panel open.
+        }
     };
 
     const title = target.type === 'document' ? target.record.title || 'Untitled' : target.record.name;
@@ -131,13 +135,12 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
                 : 'Hidden from AI chat and MCP. A private board cannot be shared publicly and can still be opened here.';
 
     return (
-        <Dialog
-            open
+        <SidePanel
+            open={isOpen}
             onClose={onClose}
-            eyebrow="Public sharing"
             title={`Share this ${kind}`}
             description={title}
-            size="lg"
+            width="lg"
             footer={
                 <>
                     <Button variant="secondary" onClick={onClose} disabled={isSaving}>
@@ -225,6 +228,6 @@ export function PublicShareModal({ target, isOpen, isSaving, onClose, onSave }: 
 
                 {validationError && <p className="text-sm text-danger">{validationError}</p>}
             </div>
-        </Dialog>
+        </SidePanel>
     );
 }

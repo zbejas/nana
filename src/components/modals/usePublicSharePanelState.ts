@@ -18,7 +18,7 @@ type PublicShareTarget =
     | { type: 'folder'; record: Folder }
     | { type: 'board'; record: Board };
 
-export function usePublicShareModalState() {
+export function usePublicSharePanelState() {
     const { showToast } = useToasts();
     const [target, setTarget] = useState<PublicShareTarget | null>(null);
     const [isSaving, setIsSaving] = useState(false);

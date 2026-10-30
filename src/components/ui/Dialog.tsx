@@ -167,6 +167,9 @@ export function Dialog({
 
       if (event.key === 'Escape' && closeOnEsc) {
         event.preventDefault();
+        // A confirmed overlay owns Escape. Do not let the same key press
+        // reach a side panel or inline form underneath it.
+        event.stopPropagation();
         onClose();
         return;
       }
@@ -210,6 +213,7 @@ export function Dialog({
     <div
       className="fixed inset-0 flex items-end justify-center sm:items-center sm:p-6"
       style={{ zIndex }}
+      data-dialog-layer=""
     >
       <div
         className="absolute inset-0 bg-scrim"

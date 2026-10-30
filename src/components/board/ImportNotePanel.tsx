@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MagnifyingGlassIcon, DocumentTextIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { listDocuments, type Document } from '../../lib/documents';
-import { Button, Dialog, EmptyState, Input, Spinner } from '../ui';
+import { Button, EmptyState, Input, SidePanel, Spinner } from '../ui';
 
-interface ImportNoteDialogProps {
+interface ImportNotePanelProps {
   open: boolean;
   boardId: string;
   boardName: string;
@@ -12,14 +12,14 @@ interface ImportNoteDialogProps {
   onImport: (document: Document) => Promise<void>;
 }
 
-export function ImportNoteDialog({
+export function ImportNotePanel({
   open,
   boardId,
   boardName,
   onClose,
   existingDocumentIds,
   onImport,
-}: ImportNoteDialogProps) {
+}: ImportNotePanelProps) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,12 +76,11 @@ export function ImportNoteDialog({
   };
 
   return (
-    <Dialog
+    <SidePanel
       open={open}
       onClose={onClose}
       title={`Add a note to ${boardName}`}
       description="A task is created on this board and linked back to the note. The note stays in your library."
-      size="md"
       footer={
         <Button variant="secondary" onClick={onClose}>
           Close
@@ -89,17 +88,15 @@ export function ImportNoteDialog({
       }
     >
       <div className="space-y-4">
-        <div className="relative">
-          <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search notes"
-            aria-label="Search notes to import"
-            className="pl-9"
-            autoFocus
-          />
-        </div>
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search notes"
+          aria-label="Search notes to import"
+          icon={<MagnifyingGlassIcon />}
+          autoFocus
+          data-autofocus
+        />
 
         {error && <p className="text-sm text-danger">{error}</p>}
 
@@ -118,7 +115,7 @@ export function ImportNoteDialog({
             }
           />
         ) : (
-          <div className="max-h-[46dvh] space-y-1 overflow-y-auto scrollbar-autohide pr-1">
+          <div className="space-y-1">
             {filtered.map((document) => {
               const alreadyOnBoard = existingDocumentIds.has(document.id);
               return (
@@ -152,6 +149,6 @@ export function ImportNoteDialog({
           </div>
         )}
       </div>
-    </Dialog>
+    </SidePanel>
   );
 }

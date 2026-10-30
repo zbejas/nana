@@ -6,6 +6,7 @@ import {
   PlusIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline';
+import { XMarkIcon } from '@heroicons/react/20/solid';
 import type {
   ApiKeyAccess,
   ApiKeyDto,
@@ -25,9 +26,9 @@ import {
   Card,
   Checkbox,
   ConfirmDialog,
-  Dialog,
   EmptyState,
   Field,
+  IconButton,
   Input,
   SectionHeading,
   SegmentedControl,
@@ -154,6 +155,7 @@ export function ApiKeysTab() {
     setFormError(null);
     setCopied(false);
     setCreateOpen(true);
+    window.requestAnimationFrame(() => nameRef.current?.focus({ preventScroll: true }));
   };
 
   const toggleFolder = (id: string) => {
@@ -233,13 +235,169 @@ export function ApiKeysTab() {
       <Card className="p-5 sm:p-6">
         <SectionHeading
           title="API keys"
-          description="Long-lived credentials for the workspace API and MCP. Nana stores only a hash after creation, so copy a new key before closing the dialog."
+          description="Long-lived credentials for the workspace API and MCP. Nana stores only a hash after creation, so copy a new key before dismissing it."
           actions={
-            <Button variant="primary" icon={<PlusIcon />} onClick={openCreate}>
-              Create key
+            <Button
+              variant={createOpen ? 'secondary' : 'primary'}
+              icon={<PlusIcon />}
+              onClick={() => {
+                if (createOpen) {
+                  setCreateOpen(false);
+                  setFormError(null);
+                } else {
+                  openCreate();
+                }
+              }}
+              aria-expanded={createOpen}
+            >
+              {createOpen ? 'Close' : 'Create key'}
             </Button>
           }
         />
+
+        {createOpen && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleCreate();
+            }}
+            className="animate-slideDown mt-5 space-y-4 border-t border-line pt-5"
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Key name" htmlFor="api-key-name">
+                <Input
+                  id="api-key-name"
+                  ref={nameRef}
+                  value={name}
+                  maxLength={80}
+                  placeholder="Claude Desktop"
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    if (formError && event.target.value.trim()) setFormError(null);
+                  }}
+                  autoComplete="off"
+                />
+              </Field>
+
+              <Field label="Scope" htmlFor="api-key-scope" hint={SCOPE_HINTS[scope]}>
+                <Select
+                  id="api-key-scope"
+                  value={scope}
+                  onChange={(event) => setScope(event.target.value as ApiKeyScope)}
+                >
+                  {SCOPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+
+            <Field label="Access" hint="Read-only keys cannot create, update, move, archive, or delete anything.">
+              <SegmentedControl
+                label="Key access"
+                value={access}
+                onChange={(next) => setAccess(next as ApiKeyAccess)}
+                options={ACCESS_OPTIONS}
+              />
+            </Field>
+
+            {scope === 'folders' && (
+              <div className="space-y-2">
+                <p className="text-[12.5px] font-medium text-ink">Folders</p>
+                {foldersLoading ? (
+                  <div className="flex items-center justify-center rounded-control border border-line bg-surface-sunken py-8">
+                    <Spinner label="Loading folders" />
+                  </div>
+                ) : folderOptions.length === 0 ? (
+                  <p className="rounded-control border border-line bg-surface-sunken px-3.5 py-3 text-xs text-ink-muted">
+                    You have no folders yet. Choose another scope, or create a folder first.
+                  </p>
+                ) : (
+                  <div className="max-h-64 space-y-1 overflow-y-auto rounded-control border border-line bg-surface-sunken p-1.5 scrollbar-autohide">
+                    {folderOptions.map((folder) => (
+                      <Checkbox
+                        key={folder.id}
+                        id={`api-key-folder-${folder.id}`}
+                        checked={selectedFolders.has(folder.id)}
+                        onChange={() => toggleFolder(folder.id)}
+                        label={folder.label}
+                        description={folder.isPrivate ? 'Private folders stay hidden from MCP.' : undefined}
+                      />
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-ink-muted">
+                  Selecting a folder includes every folder inside it. The workspace root is not included.
+                </p>
+              </div>
+            )}
+
+            {formError && (
+              <p className="text-[12.5px] leading-relaxed text-danger" role="alert">
+                {formError}
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setCreateOpen(false);
+                  setFormError(null);
+                }}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" loading={isSubmitting}>
+                Create key
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {created && (
+          <div
+            className="animate-slideDown mt-5 rounded-control border border-signal/25 bg-signal-soft/60 p-4"
+            role="status"
+          >
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-ink">Copy your key now</p>
+                <p className="mt-1 max-w-[62ch] text-[12px] leading-relaxed text-ink-secondary">
+                  This is the only time Nana can show the full key. Store it in the client that will use
+                  it; if you lose it, revoke it and create another.
+                </p>
+              </div>
+              <IconButton label="Dismiss new key" size="sm" onClick={closeCreated} className="-mr-1 -mt-1">
+                <XMarkIcon />
+              </IconButton>
+            </div>
+            <div className="mt-3 rounded-control border border-line bg-surface px-3.5 py-3">
+              <code className="block break-all font-mono text-[12.5px] leading-relaxed text-ink">
+                {created.token}
+              </code>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={copied ? <CheckIcon /> : <ClipboardDocumentIcon />}
+                onClick={() => void copyToken()}
+              >
+                {copied ? 'Copied' : 'Copy key'}
+              </Button>
+              <span className="text-xs text-ink-muted">For {created.name}</span>
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-ink-muted">
+              Send it as <code className="font-mono text-ink-secondary">Authorization: Bearer nana_…</code> to{' '}
+              <code className="font-mono text-ink-secondary">/mcp</code> or the typed{' '}
+              <code className="font-mono text-ink-secondary">/api/v1</code> workspace API.
+            </p>
+          </div>
+        )}
 
         <div className="mt-5 border-t border-line">
           {loading ? (
@@ -317,131 +475,6 @@ export function ApiKeysTab() {
           Keys are limited to the typed workspace API and MCP. They cannot sign in to the web app, open files, or manage other keys. Private notes, boards, and folders stay hidden from MCP regardless of scope.
         </p>
       </Card>
-
-      <Dialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        eyebrow="API keys"
-        title="Create an API key"
-        description="Name the client that will use this key. Access and scope are enforced by the server on every request."
-        size="md"
-        initialFocusRef={nameRef}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setCreateOpen(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button variant="primary" loading={isSubmitting} onClick={() => void handleCreate()}>
-              Create key
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-5">
-          <Field label="Key name" htmlFor="api-key-name" error={formError}>
-            <Input
-              id="api-key-name"
-              ref={nameRef}
-              value={name}
-              maxLength={80}
-              placeholder="Claude Desktop"
-              onChange={(event) => setName(event.target.value)}
-            />
-          </Field>
-
-          <Field label="Access" hint="Read-only keys cannot create, update, move, archive, or delete anything.">
-            <SegmentedControl
-              label="Key access"
-              value={access}
-              onChange={(next) => setAccess(next as ApiKeyAccess)}
-              options={ACCESS_OPTIONS}
-            />
-          </Field>
-
-          <Field label="Scope" htmlFor="api-key-scope" hint={SCOPE_HINTS[scope]}>
-            <Select
-              id="api-key-scope"
-              value={scope}
-              onChange={(event) => setScope(event.target.value as ApiKeyScope)}
-            >
-              {SCOPE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-
-          {scope === 'folders' && (
-            <div className="space-y-2">
-              <p className="text-[13px] font-medium text-ink">Folders</p>
-              {foldersLoading ? (
-                <div className="flex items-center justify-center rounded-control border border-line bg-surface-sunken py-8">
-                  <Spinner label="Loading folders" />
-                </div>
-              ) : folderOptions.length === 0 ? (
-                <p className="rounded-control border border-line bg-surface-sunken px-3.5 py-3 text-xs text-ink-muted">
-                  You have no folders yet. Choose another scope, or create a folder first.
-                </p>
-              ) : (
-                <div className="max-h-64 space-y-1 overflow-y-auto rounded-control border border-line bg-surface-sunken p-1.5 scrollbar-autohide">
-                  {folderOptions.map((folder) => (
-                    <Checkbox
-                      key={folder.id}
-                      id={`api-key-folder-${folder.id}`}
-                      checked={selectedFolders.has(folder.id)}
-                      onChange={() => toggleFolder(folder.id)}
-                      label={folder.label}
-                      description={folder.isPrivate ? 'Private folders stay hidden from MCP.' : undefined}
-                    />
-                  ))}
-                </div>
-              )}
-              <p className="text-xs text-ink-muted">
-                Selecting a folder includes every folder inside it. The workspace root is not included.
-              </p>
-            </div>
-          )}
-        </div>
-      </Dialog>
-
-      <Dialog
-        open={created !== null}
-        onClose={closeCreated}
-        eyebrow="API keys"
-        title="Copy your key now"
-        description="This is the only time Nana can show the full key. Store it in the client that will use it; if you lose it, revoke it and create another."
-        size="md"
-        closeOnBackdrop={false}
-        closeOnEsc={false}
-        showClose={false}
-        footer={
-          <Button variant="primary" onClick={closeCreated}>
-            Done
-          </Button>
-        }
-      >
-        <div className="space-y-4">
-          <div className="rounded-control border border-line bg-surface-sunken px-3.5 py-3">
-            <code className="block break-all font-mono text-[12.5px] leading-relaxed text-ink">
-              {created?.token}
-            </code>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              variant="secondary"
-              icon={copied ? <CheckIcon /> : <ClipboardDocumentIcon />}
-              onClick={() => void copyToken()}
-            >
-              {copied ? 'Copied' : 'Copy key'}
-            </Button>
-            <span className="text-xs text-ink-muted">For {created?.name}</span>
-          </div>
-          <p className="text-xs leading-relaxed text-ink-muted">
-            Send it as <code className="font-mono text-ink-secondary">Authorization: Bearer nana_…</code> to <code className="font-mono text-ink-secondary">/mcp</code> or the typed <code className="font-mono text-ink-secondary">/api/v1</code> workspace API.
-          </p>
-        </div>
-      </Dialog>
 
       <ConfirmDialog
         open={revoking !== null}

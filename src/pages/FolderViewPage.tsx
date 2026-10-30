@@ -8,9 +8,8 @@ import { FolderViewHeader } from '../components/folder-view/FolderViewHeader';
 import { FolderViewList } from '../components/folder-view/FolderViewList';
 import { FolderViewGrid } from '../components/folder-view/FolderViewGrid';
 import { useFolderViewState } from '../components/folder-view/useFolderViewState';
-import { BoardDialog } from '../components/board/BoardDialog';
-import { PublicShareModal } from '../components/modals/PublicShareModal';
-import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
+import { PublicSharePanel } from '../components/modals/PublicSharePanel';
+import { usePublicSharePanelState } from '../components/modals/usePublicSharePanelState';
 import {
   TrashIcon,
   GlobeAltIcon,
@@ -30,7 +29,7 @@ import {
 } from '../components/ui';
 
 export function FolderViewPage() {
-  const publicShareModal = usePublicShareModalState();
+  const publicSharePanel = usePublicSharePanelState();
   const setAddToBoardRequest = useSetAtom(addToBoardRequestAtom);
   const {
     viewMode,
@@ -49,9 +48,6 @@ export function FolderViewPage() {
     hasSelection,
     clearSelection,
     deleteConfirmState,
-    boardDialogOpen,
-    editingBoard,
-    boardFolderId,
     pendingCreate,
     pendingRename,
     isCreating,
@@ -87,9 +83,6 @@ export function FolderViewPage() {
     handleAddDocument,
     handleOpenCreateBoard,
     handleOpenEditBoard,
-    handleCloseBoardDialog,
-    handleBoardSaved,
-    handleBoardArchived,
     handleInlineCreateSubmit,
     handleInlineCreateCancel,
     setPendingRename,
@@ -186,7 +179,7 @@ export function FolderViewPage() {
                 <Button variant="secondary" icon={<FolderPlusIcon />} onClick={() => void handleAddFolder()}>
                   New folder
                 </Button>
-                <Button variant="secondary" icon={<ViewColumnsIcon />} onClick={handleOpenCreateBoard}>
+                <Button variant="secondary" icon={<ViewColumnsIcon />} onClick={() => void handleOpenCreateBoard()}>
                   New board
                 </Button>
                 <Button variant="primary" icon={<DocumentPlusIcon />} onClick={() => void handleAddDocument()}>
@@ -258,7 +251,7 @@ export function FolderViewPage() {
                         <Button variant="primary" icon={<DocumentPlusIcon />} onClick={() => void handleAddDocument()}>
                           New note
                         </Button>
-                        <Button variant="secondary" icon={<ViewColumnsIcon />} onClick={handleOpenCreateBoard}>
+                        <Button variant="secondary" icon={<ViewColumnsIcon />} onClick={() => void handleOpenCreateBoard()}>
                           New board
                         </Button>
                       </>
@@ -407,7 +400,7 @@ export function FolderViewPage() {
             onRenameDocument={handleRenameDocument}
             onMakePublicDocument={() => {
               if (contextMenu?.documentId) {
-                void publicShareModal.openDocument(contextMenu.documentId);
+                void publicSharePanel.openDocument(contextMenu.documentId);
                 closeContextMenu();
               }
             }}
@@ -439,7 +432,7 @@ export function FolderViewPage() {
             onRenameFolder={handleRenameFolder}
             onMakePublicFolder={() => {
               if (contextMenu?.folderId) {
-                void publicShareModal.openFolder(contextMenu.folderId);
+                void publicSharePanel.openFolder(contextMenu.folderId);
                 closeContextMenu();
               }
             }}
@@ -476,7 +469,7 @@ export function FolderViewPage() {
             onEditBoard={() => handleOpenEditBoard(contextMenu.boardId)}
             onShareBoard={() => {
               if (contextMenu.boardId) {
-                void publicShareModal.openBoard(contextMenu.boardId);
+                void publicSharePanel.openBoard(contextMenu.boardId);
                 closeContextMenu();
               }
             }}
@@ -485,18 +478,6 @@ export function FolderViewPage() {
           />,
           document.body
         )}
-
-      {(canModify || Boolean(editingBoard)) && (
-        <BoardDialog
-          open={boardDialogOpen}
-          board={editingBoard}
-          folderId={boardFolderId}
-          taskCount={editingBoard?.total ?? 0}
-          onClose={handleCloseBoardDialog}
-          onSaved={handleBoardSaved}
-          onArchived={handleBoardArchived}
-        />
-      )}
 
       <ConfirmDialog
         open={Boolean(deleteConfirmState)}
@@ -508,12 +489,12 @@ export function FolderViewPage() {
         onCancel={handleCancelDelete}
       />
 
-      <PublicShareModal
-        target={publicShareModal.target}
-        isOpen={publicShareModal.isOpen}
-        isSaving={publicShareModal.isSaving}
-        onClose={publicShareModal.close}
-        onSave={publicShareModal.save}
+      <PublicSharePanel
+        target={publicSharePanel.target}
+        isOpen={publicSharePanel.isOpen}
+        isSaving={publicSharePanel.isSaving}
+        onClose={publicSharePanel.close}
+        onSave={publicSharePanel.save}
       />
     </PageShell>
   );

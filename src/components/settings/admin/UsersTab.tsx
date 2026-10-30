@@ -276,6 +276,7 @@ export function UsersTab() {
                 if (showCreateUserForm) {
                   handleCloseForm();
                 } else {
+                  setEditingUser(null);
                   setShowCreateUserForm(true);
                 }
                 setUserError(null);
@@ -321,7 +322,6 @@ export function UsersTab() {
       {/* Edit User Form */}
       {editingUser && (
         <EditUserForm
-          isOpen={!!editingUser}
           user={editingUser}
           onSubmit={handleUpdateUser}
           onRequestEmailChange={handleRequestEmailChange}

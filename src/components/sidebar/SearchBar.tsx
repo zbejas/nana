@@ -3,7 +3,7 @@ import { MagnifyingGlassIcon } from '@heroicons/react/20/solid';
 import { type Document } from '../../lib/documents';
 import { useDocumentSearch } from '../../lib/documents/useDocumentSearch';
 import { highlightText } from '../../lib/highlightText';
-import { Spinner } from '../ui';
+import { Input, Spinner } from '../ui';
 
 interface SearchBarProps {
   onDocumentClick: (doc: Document) => void;
@@ -50,21 +50,16 @@ export function SearchBar({ onDocumentClick, onContextMenu }: SearchBarProps) {
 
   return (
     <div ref={searchRef} className="relative px-3">
-      <div className="relative">
-        <MagnifyingGlassIcon
-          className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted"
-          aria-hidden="true"
-        />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-          onFocus={() => searchQuery.trim().length > 0 && setShowResults(true)}
-          placeholder="Search notes"
-          aria-label="Search documents"
-          className="h-[34px] w-full rounded-control border border-line bg-surface pl-8 pr-3 text-[13px] text-ink outline-none transition-colors placeholder:text-ink-muted hover:border-line-strong focus:border-signal/70 focus:ring-4 focus:ring-signal/10"
-        />
-      </div>
+      <Input
+        type="text"
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.target.value)}
+        onFocus={() => searchQuery.trim().length > 0 && setShowResults(true)}
+        placeholder="Search notes"
+        aria-label="Search documents"
+        icon={<MagnifyingGlassIcon />}
+        className="h-9 bg-surface-sunken text-[13px]"
+      />
 
       {showResults && (
         <div className="absolute left-3 right-3 top-full z-50 mt-1.5 overflow-hidden rounded-panel border border-line bg-surface-raised shadow-float">

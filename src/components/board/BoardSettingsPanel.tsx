@@ -2,19 +2,28 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArchiveBoxIcon } from '@heroicons/react/24/outline';
 import {
   archiveBoard,
-  createBoard,
   updateBoard,
   type Board,
 } from '../../lib/boards';
 import { getAllFolders, type Folder } from '../../lib/folders';
-import { Button, ConfirmDialog, Dialog, Field, Input, Select, Switch, Textarea } from '../ui';
+import {
+  Button,
+  ConfirmDialog,
+  Field,
+  InlineForm,
+  Input,
+  Select,
+  Switch,
+  Textarea,
+} from '../ui';
 
-interface BoardDialogProps {
+interface BoardSettingsPanelProps {
+  board: Board;
   open: boolean;
-  board?: Board | null;
-  /** Initial folder when creating a board. Editing uses the board's folder. */
-  folderId?: string;
-  /** Omit when the caller only has the board record and no task count. */
+  /** Focus and select the name when the panel opens. */
+  autoFocus?: boolean;
+  /** True only for a provisional board created by the global New action. */
+  newBoard?: boolean;
   taskCount?: number;
   onClose: () => void;
   onSaved: (board: Board) => void;
@@ -35,20 +44,25 @@ function folderPath(folder: Folder, byId: Map<string, Folder>): string {
   return names.join(' / ');
 }
 
-export function BoardDialog({
+/**
+ * Board details live on the board itself. Creating a board opens this panel;
+ * editing it from anywhere else navigates here instead of opening a modal.
+ */
+export function BoardSettingsPanel({
+  board,
   open,
-  board = null,
-  folderId,
+  autoFocus = false,
+  newBoard = false,
   taskCount,
   onClose,
   onSaved,
   onArchived,
-}: BoardDialogProps) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [isPrivate, setIsPrivate] = useState(false);
+}: BoardSettingsPanelProps) {
+  const [name, setName] = useState(board.name);
+  const [description, setDescription] = useState(board.description);
+  const [isPrivate, setIsPrivate] = useState(board.is_private);
+  const [selectedFolderId, setSelectedFolderId] = useState(board.folder ?? '');
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [selectedFolderId, setSelectedFolderId] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -60,10 +74,10 @@ export function BoardDialog({
   useEffect(() => {
     if (!open) return;
 
-    setName(board?.name ?? '');
-    setDescription(board?.description ?? '');
-    setIsPrivate(board?.is_private ?? false);
-    setSelectedFolderId(board?.folder ?? folderId ?? '');
+    setName(board.name);
+    setDescription(board.description);
+    setIsPrivate(board.is_private);
+    setSelectedFolderId(board.folder ?? '');
     setNameError(null);
     setFormError(null);
     setIsSaving(false);
@@ -83,7 +97,16 @@ export function BoardDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, board, folderId]);
+  }, [open, board]);
+
+  useEffect(() => {
+    if (!open || !autoFocus) return;
+    const frame = window.requestAnimationFrame(() => {
+      nameRef.current?.focus({ preventScroll: true });
+      nameRef.current?.select();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, autoFocus]);
 
   const folderOptions = useMemo(() => {
     const byId = new Map(folders.map((folder) => [folder.id, folder]));
@@ -95,7 +118,9 @@ export function BoardDialog({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [folders]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
     const trimmedName = name.trim();
     if (!trimmedName) {
       setNameError('Give the board a name.');
@@ -108,27 +133,13 @@ export function BoardDialog({
     setIsSaving(true);
 
     try {
-      let saved: Board;
-
-      if (board) {
-        const patch = {
-          name: trimmedName,
-          description,
-          is_private: isPrivate,
-          ...(selectedFolderId !== (board.folder ?? '') ? { folder: selectedFolderId } : {}),
-        };
-        saved = await updateBoard(board.id, patch);
-      } else {
-        saved = await createBoard({
-          name: trimmedName,
-          description,
-          folder: selectedFolderId || undefined,
-          is_private: isPrivate,
-        });
-      }
-
+      const saved = await updateBoard(board.id, {
+        name: trimmedName,
+        description,
+        is_private: isPrivate,
+        folder: selectedFolderId,
+      });
       onSaved(saved);
-      onClose();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Could not save the board.');
     } finally {
@@ -137,19 +148,13 @@ export function BoardDialog({
   };
 
   const handleArchive = async () => {
-    if (!board) return;
-
     setArchiveError(null);
     setIsArchiving(true);
 
     try {
       const archived = await archiveBoard(board.id);
       setShowArchive(false);
-      if (onArchived) {
-        onArchived(archived);
-      } else {
-        onClose();
-      }
+      onArchived?.(archived);
     } catch (error) {
       setShowArchive(false);
       setArchiveError(error instanceof Error ? error.message : 'Could not archive the board.');
@@ -163,55 +168,47 @@ export function BoardDialog({
       ? 'The board and its tasks leave your timeline and library, and its public link stops working. Nothing is deleted — restore it any time from Archived boards.'
       : `The board and its ${taskCount} ${taskCount === 1 ? 'task' : 'tasks'} leave your timeline and library, and its public link stops working. Nothing is deleted — restore it any time from Archived boards.`;
 
+  if (!open) return null;
+
   return (
     <>
-      <Dialog
-        open={open}
-        onClose={onClose}
-        title={board ? 'Edit board' : 'New board'}
+      <InlineForm
+        title={newBoard ? 'Name your board' : 'Board settings'}
         description={
-          board
-            ? 'Rename the board, move it to a folder, or change what it is for. Archiving keeps every task until you restore it.'
-            : folderId
-              ? 'A board keeps a set of tasks together. It will be filed in this folder; notes stay in your library.'
-              : 'A board keeps a set of tasks together. Choose a folder, or leave it at the workspace root.'
+          newBoard
+            ? 'The board is already saved. Name it, file it, or close this panel and keep working.'
+            : 'Rename, describe, file, or archive this board. Changes stay on this board.'
         }
-        size="md"
-        initialFocusRef={nameRef}
+        onSubmit={(event) => void handleSubmit(event)}
+        onClose={onClose}
+        className="mb-4"
         footer={
           <>
-            {board && (
-              <Button
-                variant="ghost"
-                className="mr-auto text-ink-secondary"
-                icon={<ArchiveBoxIcon />}
-                onClick={() => {
-                  setArchiveError(null);
-                  setShowArchive(true);
-                }}
-                disabled={isSaving || isArchiving}
-              >
-                Archive board
-              </Button>
-            )}
-            <Button variant="secondary" onClick={onClose} disabled={isSaving || isArchiving}>
-              Cancel
-            </Button>
             <Button
-              variant="primary"
-              onClick={() => void handleSubmit()}
-              loading={isSaving}
-              disabled={isArchiving}
+              variant="ghost"
+              className="mr-auto text-ink-secondary hover:bg-danger-soft hover:text-danger"
+              icon={<ArchiveBoxIcon />}
+              onClick={() => {
+                setArchiveError(null);
+                setShowArchive(true);
+              }}
+              disabled={isSaving || isArchiving}
             >
-              {board ? 'Save' : 'Create board'}
+              Archive board
+            </Button>
+            <Button variant="secondary" onClick={onClose} disabled={isSaving || isArchiving}>
+              {newBoard ? 'Close' : 'Cancel'}
+            </Button>
+            <Button type="submit" variant="primary" loading={isSaving} disabled={isArchiving}>
+              Save board
             </Button>
           </>
         }
       >
-        <div className="space-y-5">
-          <Field label="Name" htmlFor="board-name" error={nameError}>
+        <div className="space-y-4">
+          <Field label="Name" htmlFor="board-settings-name" error={nameError}>
             <Input
-              id="board-name"
+              id="board-settings-name"
               ref={nameRef}
               value={name}
               onChange={(event) => {
@@ -223,23 +220,17 @@ export function BoardDialog({
               placeholder="What is this board for?"
               maxLength={120}
               invalid={Boolean(nameError)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                  event.preventDefault();
-                  void handleSubmit();
-                }
-              }}
             />
           </Field>
 
           <Field
             label="Description"
-            htmlFor="board-description"
+            htmlFor="board-settings-description"
             hint="A short note about the work this board holds."
             optional
           >
             <Textarea
-              id="board-description"
+              id="board-settings-description"
               rows={3}
               value={description}
               onChange={(event) => setDescription(event.target.value)}
@@ -250,11 +241,11 @@ export function BoardDialog({
 
           <Field
             label="Folder"
-            htmlFor="board-folder"
+            htmlFor="board-settings-folder"
             hint="Boards sit beside notes in the folder tree. The workspace root is always available."
           >
             <Select
-              id="board-folder"
+              id="board-settings-folder"
               value={selectedFolderId}
               onChange={(event) => setSelectedFolderId(event.target.value)}
             >
@@ -271,41 +262,34 @@ export function BoardDialog({
           </Field>
 
           <Switch
-            id="board-private"
+            id="board-settings-private"
             label="Private"
             description="Hidden from AI chat and MCP. It stays in your workspace and can still be opened here."
             checked={isPrivate}
             onChange={setIsPrivate}
           />
 
-          {formError && (
-            <p className="text-sm text-danger" role="alert">
-              {formError}
-            </p>
-          )}
-          {archiveError && (
-            <p className="text-sm text-danger" role="alert">
-              {archiveError}
+          {(formError || archiveError) && (
+            <p className="text-[12.5px] text-danger" role="alert">
+              {formError || archiveError}
             </p>
           )}
         </div>
-      </Dialog>
+      </InlineForm>
 
-      {board && (
-        <ConfirmDialog
-          open={showArchive}
-          title={`Archive “${board.name}”?`}
-          description={archiveDescription}
-          confirmLabel="Archive board"
-          busy={isArchiving}
-          onConfirm={() => void handleArchive()}
-          onCancel={() => {
-            if (!isArchiving) {
-              setShowArchive(false);
-            }
-          }}
-        />
-      )}
+      <ConfirmDialog
+        open={showArchive}
+        title={`Archive “${board.name}”?`}
+        description={archiveDescription}
+        confirmLabel="Archive board"
+        busy={isArchiving}
+        onConfirm={() => void handleArchive()}
+        onCancel={() => {
+          if (!isArchiving) {
+            setShowArchive(false);
+          }
+        }}
+      />
     </>
   );
 }

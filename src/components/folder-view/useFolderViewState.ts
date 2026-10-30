@@ -18,6 +18,7 @@ import {
     startNewDocumentAtom,
 } from '../../state/atoms';
 import { createFolder, updateFolder, deleteFolder } from '../../lib/folders';
+import { createUntitledBoard, type BoardSummary } from '../../lib/boards';
 import {
     deleteDocument,
     permanentlyDeleteDocument,
@@ -29,7 +30,6 @@ import { exportDocument, exportFolder, exportSelectionAsZip } from '../../lib/ex
 import { useFileFolderDnD, useContextMenuState } from '../file-folder-handling';
 import { useBoardSummaries } from '../board/useBoardSummaries';
 import { useToasts } from '../../state/hooks';
-import type { Board, BoardSummary } from '../../lib/boards';
 import type { FolderTreeNode } from '../../lib/folders';
 import type { Document } from '../../lib/documents';
 import type { PendingCreate, PendingRename, ViewMode } from './types';
@@ -156,9 +156,7 @@ export function useFolderViewState() {
     const [selectionAnchorKey, setSelectionAnchorKey] = useState<string | null>(null);
     const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
     const [deleteConfirmState, setDeleteConfirmState] = useState<DeleteConfirmState | null>(null);
-    const [boardDialogOpen, setBoardDialogOpen] = useState(false);
-    const [editingBoard, setEditingBoard] = useState<BoardSummary | null>(null);
-    const [boardFolderId, setBoardFolderId] = useState<string | undefined>(undefined);
+    const [isCreatingBoard, setIsCreatingBoard] = useState(false);
 
     const { boards } = useBoardSummaries(false);
 
@@ -316,15 +314,6 @@ export function useFolderViewState() {
         setSelectionAnchorKey(null);
         setPendingRename(null);
     }, [currentFolderId]);
-
-    useEffect(() => {
-        if (!isTrashMode && !isSharedMode) {
-            return;
-        }
-
-        setBoardDialogOpen(false);
-        setEditingBoard(null);
-    }, [isTrashMode, isSharedMode]);
 
     useEffect(() => {
         const handleResize = () => setIsDesktop(window.innerWidth >= 768);
@@ -742,61 +731,32 @@ export function useFolderViewState() {
         closeContextMenu();
     };
 
-    const handleOpenCreateBoard = () => {
-        if (isTrashMode || isSharedMode) {
+    const handleOpenCreateBoard = async () => {
+        if (isTrashMode || isSharedMode || isCreatingBoard) {
             closeContextMenu();
             return;
         }
 
         const targetFolderId = getTargetFolderForCreation();
-        setEditingBoard(null);
-        setBoardFolderId(targetFolderId);
-        setBoardDialogOpen(true);
         closeContextMenu();
+        setIsCreatingBoard(true);
+
+        try {
+            const board = await createUntitledBoard(targetFolderId);
+            navigate(`/board/${board.id}`, { state: { editBoard: true, newBoard: true } });
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : 'Could not create the board.', 'error');
+        } finally {
+            setIsCreatingBoard(false);
+        }
     };
 
     const handleOpenEditBoard = (boardId?: string) => {
         const targetBoardId = boardId ?? contextMenu?.boardId;
-        if (!targetBoardId) {
-            closeContextMenu();
-            return;
-        }
-
-        const targetBoard = boards.find((board) => board.id === targetBoardId);
-        if (!targetBoard) {
-            closeContextMenu();
-            return;
-        }
-
-        setEditingBoard(targetBoard);
-        setBoardFolderId(targetBoard.folder || undefined);
-        setBoardDialogOpen(true);
         closeContextMenu();
-    };
+        if (!targetBoardId) return;
 
-    const handleCloseBoardDialog = () => {
-        setBoardDialogOpen(false);
-        setEditingBoard(null);
-    };
-
-    const handleBoardSaved = (board: Board) => {
-        const isEdit = Boolean(editingBoard);
-        setBoardDialogOpen(false);
-        setEditingBoard(null);
-
-        if (isEdit) {
-            showToast('Board saved', 'success');
-            return;
-        }
-
-        showToast('Board created', 'success');
-        navigate(`/board/${board.id}`);
-    };
-
-    const handleBoardArchived = () => {
-        setBoardDialogOpen(false);
-        setEditingBoard(null);
-        showToast('Board archived', 'info');
+        navigate(`/board/${targetBoardId}`, { state: { editBoard: true } });
     };
 
     const handleBoardClick = (board: BoardSummary) => {
@@ -1283,9 +1243,7 @@ export function useFolderViewState() {
         hasSelection,
         clearSelection,
         deleteConfirmState,
-        boardDialogOpen,
-        editingBoard,
-        boardFolderId,
+        isCreatingBoard,
         pendingCreate,
         pendingRename,
         isCreating,
@@ -1313,9 +1271,6 @@ export function useFolderViewState() {
         handleAddDocument,
         handleOpenCreateBoard,
         handleOpenEditBoard,
-        handleCloseBoardDialog,
-        handleBoardSaved,
-        handleBoardArchived,
         handleInlineCreateSubmit,
         handleInlineCreateCancel,
         setPendingRename,

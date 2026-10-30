@@ -16,7 +16,7 @@ All colour is tokenised in `src/index.css` and exposed to Tailwind through `@the
 | --- | --- | --- | --- |
 | `canvas` | `#0c0c0d` | `#faf9f7` | Page ground |
 | `canvas-deep` | `#080809` | `#f2f1ee` | Sidebar, mobile nav, footer |
-| `surface` | `#131315` | `#ffffff` | Panels, cards, dialogs, menus, inputs |
+| `surface` | `#131315` | `#ffffff` | Panels, cards, dialogs, side panels, menus, inputs |
 | `surface-raised` | `#1b1b1e` | `#f7f6f3` | Hover rows, selected cards, popovers |
 | `surface-sunken` | `#0f0f10` | `#f3f2ef` | Wells, nested chips, column lanes, stats |
 | `line` | `rgb(255 255 255 / 0.07)` | `rgb(26 26 24 / 0.08)` | Default hairline |
@@ -73,7 +73,7 @@ Scale:
 
 - Page title: 28px mobile / 34px desktop, weight 600, line-height 1.08, tracking `-0.032em`.
 - Auth hero: 38px mobile / 48px desktop, weight 600, line-height 1.02, tracking `-0.035em`.
-- Section heading: 17px semibold, tracking `-0.015em`. Dialog title: 18px. Sheet title: 17px. Empty-state title: 17px.
+- Section heading: 17px semibold, tracking `-0.015em`. Dialog title: 18px. Sheet and side-panel title: 17px. Inline form title: 16px. Empty-state title: 17px.
 - Body: 13.5–14px. Assistant answers and note prose: 14.5–15px / 1.75.
 - Labels and buttons: 12.5–13px medium. Metadata and hints: 11–12px.
 - `.eyebrow` and `.meta` are 12px sans, sentence case. Section labels are 11.5px medium.
@@ -86,7 +86,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 - Route content is full bleed beside the sidebar. The sidebar’s 1px right rule is the only divider; do not wrap Timeline, Folders, Chat, Settings, or the editor in an outer card, border, radius, or inset.
 - Every authenticated route uses `PageShell` for one shared page field, max **1280px** (reading 820px, wide 1600px), centered, with 20/32/48px gutters.
 - Panels are flat. `surface-raised` is a hover/menu state, not a permanent second layer.
-- The only shadow is `shadow-float`, used on overlays: dialogs, sheets, menus, toasts, and popovers. Nothing in the page body carries a shadow.
+- The only shadow is `shadow-float`, used on overlays: dialogs, sheets, side panels, menus, toasts, and the install banner. Nothing in the page body carries a shadow.
 - Focus is `outline: 2px solid var(--signal); outline-offset: 2px`, or a 1px ember border with a 4px `signal/10` ring on inputs.
 - Ember details are structural but rare: the primary action, the active icon, the focused input, the progress fill, the selected calendar day, and a drag insertion line.
 
@@ -139,10 +139,10 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 `/board/:boardId` is four kanban lanes.
 
-- Each lane is a 10px `surface-sunken` panel with a 1px border, 10px inner padding, a status dot, label, plain count, add button, scrollable card body, and an Add task footer.
+- Each lane is a 10px `surface-sunken` panel with a 1px border, 10px inner padding, a status dot, label, plain count, add button, scrollable card body, and an Add task footer. The new-task composer sits outside the scroll area so its primary action is always visible; clicking a card opens the non-modal task edit side panel.
 - Task cards are 7px-radius `surface` panels with a 13.5px medium title, two-line excerpt, and compact meta chips for priority, due date, linked note, and labels. Done titles are muted and struck through.
 - Mobile is a horizontal snap row; the helper reads “Swipe between columns.” Desktop shows all four and reads “Drag between columns.”
-- The header is `PageHeader` with a back link to the timeline, open/done in the meta strip, a share icon, and Import note / New task / Edit actions. A public board also carries the success share glyph beside its title.
+- The header is `PageHeader` with a back link to the timeline, open/done in the meta strip, a share icon, and Import note / New task / Edit actions. A public board also carries the success share glyph beside its title. Edit turns the page into the inline board settings form; New task opens the lane composer.
 
 ### Archive
 
@@ -203,10 +203,12 @@ The primitives live in `src/components/ui/`; `Toast` and `ToastHost` live in `sr
 | --- | --- |
 | `Button` | Variants `primary` (`signal-bright` fill), `secondary` (`surface` + hairline), `ghost`, `danger`, `link`. Sizes `sm` 32px, `md` 36px, `lg` 44px. Medium 12.5–14px. Loading spinner replaces the leading icon. |
 | `IconButton` | Square 28/36/44px; `label` is required and becomes `aria-label` and `title`. Default variant is `ghost`. |
-| `Field`, `Input`, `Textarea`, `Select` | Label + optional marker + hint + error. Inputs are 36px, `surface`, hairline, ember focus border with a 4px soft ring. `Select` owns its chevron. |
+| `Field`, `Input`, `Textarea`, `Select` | Label + optional marker + hint + error. Inputs are 40px, `surface-sunken`, hairline, and switch to `surface` on focus with an ember border and a 4px soft ring. `Input` accepts leading icon and trailing action slots; `Select` owns its chevron. |
 | `Switch`, `Checkbox`, `SegmentedControl` | Native semantics, 150ms state change, ember for on/selected. `SegmentedControl` uses a bordered surface pill inside a sunken track. |
 | `Card`, `SectionHeading` | `Card` is a 10px panel with a hairline. `SectionHeading` renders a 17px title, description, and actions; its `eyebrow` prop is accepted but not rendered. |
-| `Dialog` | Portalled, focus-trapped, Escape/backdrop close, scroll lock, nested stack, exit animation. Sizes `sm`/`md`/`lg`/`xl`/`full`. Mobile becomes a bottom-anchored sheet. Only overlay with `shadow-float`. |
+| `InlineForm` | Flat in-page form panel with header, optional close, body, and footer. It replaces data-entry dialogs: no scrim, no focus trap, no scroll lock. |
+| `SidePanel` | Non-modal right inspector for share settings, task editing, and pickers. Full-width on mobile, 26/32rem on desktop, no scrim, Escape/outside close, focus restore. |
+| `Dialog` | Portalled, focus-trapped, Escape/backdrop close, scroll lock, nested stack, exit animation. Sizes `sm`/`md`/`lg`/`xl`/`full`. Mobile becomes a bottom-anchored sheet. Reserved for warnings, destructive confirmations, and version previews; never for data entry. |
 | `ConfirmDialog` | Built on `Dialog`; `tone="danger"` for destructive actions; verb confirm label. |
 | `Sheet` | Mobile bottom sheet with drag handle, scrim, Escape, focus restore, safe-area padding. |
 | `MenuSurface`, `MenuItem` | Fixed floating menu, outside-click + Escape, 140ms pop, `shadow-float`; `MenuItem` supports a danger tone and a hint. |
@@ -220,7 +222,7 @@ The primitives live in `src/components/ui/`; `Toast` and `ToastHost` live in `sr
 
 Rules:
 
-- No bespoke modal shells. A new modal is a `Dialog` (or `Sheet` on touch) with a title, optional description, and a footer of `Button`s.
+- Data entry is inline (`InlineForm`) or in a `SidePanel`. A new centred `Dialog` is only for a warning, destructive confirmation, or preview; a share/picker/editor never uses one. No bespoke overlay shells.
 - Destructive confirmation always uses `ConfirmDialog` with `tone="danger"` and a verb label (“Move to trash”, “Delete forever”). Never a green destructive button.
 - Icon-only buttons require `label`.
 - Empty states explain the next action; they do not blame the user.
@@ -229,7 +231,7 @@ Rules:
 ## Motion
 
 - App durations: 140–260ms. Standard easing is `ease-out` or the house `cubic-bezier(0.22, 1, 0.36, 1)`.
-- Dialogs: 220ms fade + 10px rise + scale from 0.985; exit 160ms. Sheets: 260ms rise; exit 180ms.
+- Dialogs: 220ms fade + 10px rise + scale from 0.985; exit 160ms. Sheets: 260ms rise; exit 180ms. Side panels: 220ms fade + 18px slide from the right. Inline forms: 200ms fade + 8px drop. Install banner: 220ms fade + 12px rise.
 - Menus: 140ms pop from 0.97 with a 2px lift.
 - Desktop route content: 260ms, 4px rise. Mobile route change: 240ms, 14px lateral slide in the route order.
 - Hover changes colour, border, and tone. It does not change size. Dragging a task uses 40% opacity and a 2px signal insertion line.
@@ -259,7 +261,7 @@ Rules:
 - **Ember does two jobs only.** Use `signal` for links, icons, focus, and selection marks; use `signal-bright` for filled actions, progress, and selected calendar days. White on the light fill (`#b7431e`) is 5.48:1; near-black on the dark fill (`#ff7048`) is 7.0:1. Never put `text-signal` on a `signal-bright` fill.
 - **The active navigation row is neutral.** It is `surface` with a hairline and an ember icon. Do not restore the old inverted ink chip or copy inversion to page cards.
 - **The auth cover is intentionally theme-invariant.** It uses `cover` tokens, not `canvas` or `ink`. Reusing `canvas` there makes the cover flip to light in the light theme and breaks the first-screen composition.
-- **Page-level cards never carry a shadow.** Only dialogs, sheets, menus, toasts, and popovers use `shadow-float`.
+- **Page-level cards never carry a shadow.** Only dialogs, sheets, side panels, menus, toasts, and the install banner use `shadow-float`.
 - **One family, no mono metadata.** UI counts, dates, percentages, and priorities use Geist with `tabular-nums`. `font-mono` is reserved for code, ids, and URLs.
 - **The rabbit is not a chrome glyph.** The wordmark and ink tile lead the shell; the mascot stays in About, public pages, the install prompt, and the app icons so it is not rendered as an indistinct 24px blob.
 

@@ -16,7 +16,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useAuth } from "../lib/auth";
 import { useSidebar, useToasts } from "../state/hooks";
-import type { Board } from "../lib/boards";
+import { createUntitledBoard, type Board } from "../lib/boards";
 import {
   foldersAtom,
   rootDocumentsAtom,
@@ -45,7 +45,6 @@ import { RootLibrarySection } from "./sidebar/RootLibrarySection";
 import { FoldersSection } from "./sidebar/FoldersSection";
 import { SidebarResizeHandle } from "./sidebar/SidebarResizeHandle";
 import { useSidebarBoards } from "./sidebar/useSidebarBoards";
-import { BoardDialog } from "./board/BoardDialog";
 import { NewContentMenu } from "./NewContentMenu";
 import { useSidebarHandlers } from "./sidebar/useSidebarHandlers";
 import { useInlineInputState } from "./sidebar/useInlineInputState";
@@ -53,8 +52,8 @@ import { useDialogState } from "./sidebar/useDialogState";
 import { useMobileState } from "./sidebar/useMobileState";
 import { CompactSidebar } from "./sidebar/CompactSidebar";
 import { useContextMenuState, useContextMenuHandlers } from "./file-folder-handling";
-import { PublicShareModal } from "./modals/PublicShareModal";
-import { usePublicShareModalState } from "./modals/usePublicShareModalState";
+import { PublicSharePanel } from "./modals/PublicSharePanel";
+import { usePublicSharePanelState } from "./modals/usePublicSharePanelState";
 import { useSidebarWidth } from "../lib/settings";
 import { IconButton } from "./ui";
 import logo from '../assets/nana.svg';
@@ -83,9 +82,7 @@ export function Sidebar() {
   const { isResizing, setIsResizing } = sidebarHook;
   const boards = useSidebarBoards();
   const { showToast } = useToasts();
-  const [boardDialogOpen, setBoardDialogOpen] = useState(false);
-  const [editingBoard, setEditingBoard] = useState<Board | null>(null);
-  const [boardFolderId, setBoardFolderId] = useState<string | undefined>(undefined);
+  const [isCreatingBoard, setIsCreatingBoard] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const newButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -131,7 +128,7 @@ export function Sidebar() {
     showDeleteDialog, deleteDialogConfig, openDeleteDialog, closeDeleteDialog,
     showLogoutDialog, setShowLogoutDialog
   } = useDialogState();
-  const publicShareModal = usePublicShareModalState();
+  const publicSharePanel = usePublicSharePanelState();
 
   const contextMenuHandlers = useContextMenuHandlers({
     contextMenu,
@@ -164,42 +161,31 @@ export function Sidebar() {
     handleViewNavigation(`/board/${board.id}`);
   };
 
-  const handleOpenCreateBoard = (folderId?: string) => {
-    setEditingBoard(null);
-    setBoardFolderId(folderId);
-    setBoardDialogOpen(true);
+  const handleOpenCreateBoard = async (folderId?: string) => {
+    if (isCreatingBoard) return;
+    setIsCreatingBoard(true);
+
+    try {
+      const board = await createUntitledBoard(folderId);
+      if (isMobile) {
+        prepareForNavigation();
+        toggle();
+      }
+      navigate(`/board/${board.id}`, { state: { editBoard: true, newBoard: true } });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not create the board.', 'error');
+    } finally {
+      setIsCreatingBoard(false);
+    }
   };
 
   const handleOpenEditBoard = (board: Board) => {
-    setEditingBoard(board);
-    setBoardFolderId(board.folder || undefined);
-    setBoardDialogOpen(true);
     closeContextMenu();
-  };
-
-  const handleCloseBoardDialog = () => {
-    setBoardDialogOpen(false);
-    setEditingBoard(null);
-  };
-
-  const handleBoardSaved = (board: Board) => {
-    const isEdit = Boolean(editingBoard);
-    setBoardDialogOpen(false);
-    setEditingBoard(null);
-
-    if (isEdit) {
-      showToast('Board saved', 'success');
-      return;
+    if (isMobile) {
+      prepareForNavigation();
+      toggle();
     }
-
-    showToast('Board created', 'success');
-    handleViewNavigation(`/board/${board.id}`);
-  };
-
-  const handleBoardArchived = () => {
-    setBoardDialogOpen(false);
-    setEditingBoard(null);
-    showToast('Board archived', 'info');
+    navigate(`/board/${board.id}`, { state: { editBoard: true } });
   };
 
   if (!user) return null;
@@ -219,7 +205,7 @@ export function Sidebar() {
         anchorRect={newButtonRef.current?.getBoundingClientRect() ?? null}
         onClose={() => setNewMenuOpen(false)}
         onCreateNote={() => void handlers.handleAddDocument()}
-        onCreateBoard={() => handleOpenCreateBoard()}
+        onCreateBoard={() => void handleOpenCreateBoard()}
       />
 
       <aside
@@ -370,7 +356,7 @@ export function Sidebar() {
                       label="New board"
                       size="sm"
                       className="h-6 w-6 [&>svg]:h-3.5 [&>svg]:w-3.5"
-                      onClick={() => handleOpenCreateBoard()}
+                      onClick={() => void handleOpenCreateBoard()}
                     >
                       <ViewColumnsIcon />
                     </IconButton>
@@ -488,7 +474,7 @@ export function Sidebar() {
           onRenameDocument={contextMenuHandlers.handleRenameDocument}
           onMakePublicDocument={() => {
             if (contextMenu?.documentId) {
-              void publicShareModal.openDocument(contextMenu.documentId);
+              void publicSharePanel.openDocument(contextMenu.documentId);
               closeContextMenu();
             }
           }}
@@ -518,12 +504,12 @@ export function Sidebar() {
           onAddBoard={() => {
             const folderId = contextMenu?.type === 'folder' ? contextMenu.folderId : undefined;
             closeContextMenu();
-            handleOpenCreateBoard(folderId);
+            void handleOpenCreateBoard(folderId);
           }}
           onRenameFolder={contextMenuHandlers.handleRenameFolder}
           onMakePublicFolder={() => {
             if (contextMenu?.folderId) {
-              void publicShareModal.openFolder(contextMenu.folderId);
+              void publicSharePanel.openFolder(contextMenu.folderId);
               closeContextMenu();
             }
           }}
@@ -568,7 +554,7 @@ export function Sidebar() {
           }}
           onShareBoard={() => {
             if (contextMenu.boardId) {
-              void publicShareModal.openBoard(contextMenu.boardId);
+              void publicSharePanel.openBoard(contextMenu.boardId);
               closeContextMenu();
             }
           }}
@@ -577,15 +563,6 @@ export function Sidebar() {
         />,
         document.body
       )}
-
-      <BoardDialog
-        open={boardDialogOpen}
-        board={editingBoard}
-        folderId={boardFolderId}
-        onClose={handleCloseBoardDialog}
-        onSaved={handleBoardSaved}
-        onArchived={handleBoardArchived}
-      />
 
       <SidebarDialogs
         showUnsavedDialog={showUnsavedDialog}
@@ -615,12 +592,12 @@ export function Sidebar() {
         onLogoutCancel={() => setShowLogoutDialog(false)}
       />
 
-      <PublicShareModal
-        target={publicShareModal.target}
-        isOpen={publicShareModal.isOpen}
-        isSaving={publicShareModal.isSaving}
-        onClose={publicShareModal.close}
-        onSave={publicShareModal.save}
+      <PublicSharePanel
+        target={publicSharePanel.target}
+        isOpen={publicSharePanel.isOpen}
+        isSaving={publicSharePanel.isSaving}
+        onClose={publicSharePanel.close}
+        onSave={publicSharePanel.save}
       />
     </>
   );

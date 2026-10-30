@@ -26,7 +26,7 @@ The system is one deployable with two processes: **Bun** serves the SPA, the app
 | `src/lib/boards/` | Board types, CRUD, archive/restore, permanent delete, folder/privacy/public-share fields, summaries, realtime subscription. |
 | `src/lib/tasks/` | Task types, CRUD, position persistence, note import, realtime subscription. |
 | `src/pages/` | Timeline, board detail/archive, chat, settings, auth, onboarding, public pages. |
-| `src/components/board/` | Board state, summaries, task rows/dialog, board dialog, add-to-board host/picker, note import. |
+| `src/components/board/` | Board state, summaries, task cards/editor, inline board settings, add-to-board host/picker, note import. |
 | `src/components/folder-view/` | Folder contents grid/list, folder state, board rows beside notes, drag targets, board create/edit entry points. |
 | `src/components/file-folder-handling/` | Note, folder, and board drag-and-drop plus the folder/document/board context menus. |
 | `src/lib/documents/` | Document and attachment CRUD, export helpers, public sharing. |

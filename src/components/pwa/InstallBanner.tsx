@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useInstallPrompt } from './useInstallPrompt';
-import { Button, Dialog } from '../ui';
+import { Button, IconButton } from '../ui';
+import { XMarkIcon } from '@heroicons/react/20/solid';
 import logo from '../../assets/nana.svg';
 
 const INSTALL_DISMISSED_KEY = 'pwa-install-dismissed';
@@ -73,42 +74,46 @@ export function InstallBanner() {
   const shouldShowManualHint = ios;
 
   return (
-    <Dialog
-      open
-      onClose={() => setDismissed(true)}
-      eyebrow="Mobile app"
-      title={shouldShowManualHint ? 'Add Nana to your home screen' : 'Install Nana'}
-      description={
-        shouldShowManualHint
-          ? 'Nana runs like an app once it is on your home screen: full-screen, faster, and one tap away.'
-          : 'A full-screen, faster version of Nana with its own icon.'
-      }
-      size="sm"
-      footer={
-        <>
-          <Button variant="ghost" onClick={dismissBanner}>
-            {shouldShowManualHint ? 'Not now' : "Don't remind me"}
-          </Button>
-          {shouldShowManualHint ? (
-            <Button variant="primary" onClick={() => setDismissed(true)}>
-              Got it
-            </Button>
-          ) : (
-            <Button variant="primary" onClick={() => void promptInstall()}>
-              Install Nana
-            </Button>
-          )}
-        </>
-      }
+    <aside
+      role="region"
+      aria-label={shouldShowManualHint ? 'Add Nana to your home screen' : 'Install Nana'}
+      className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-[900] mx-auto max-w-md animate-banner-in overflow-hidden rounded-panel border border-line bg-surface p-4 text-ink shadow-float"
     >
-      <div className="flex items-center gap-4 rounded-control border border-line bg-surface-sunken/50 p-4">
-        <img src={logo} alt="" className="h-12 w-12 shrink-0" />
-        <p className="text-sm leading-relaxed text-ink-secondary">
-          {shouldShowManualHint
-            ? 'Tap the Share button in Safari, then choose “Add to Home Screen”.'
-            : 'Use the install button below, or your browser menu, to place Nana on your home screen.'}
-        </p>
+      <div className="flex items-start gap-3">
+        <img src={logo} alt="" className="h-10 w-10 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13.5px] font-semibold tracking-[-0.01em] text-ink">
+            {shouldShowManualHint ? 'Add Nana to your home screen' : 'Install Nana'}
+          </p>
+          <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">
+            {shouldShowManualHint
+              ? 'Tap Share in Safari, then choose “Add to Home Screen”. Nana runs full-screen and one tap away.'
+              : 'A full-screen, faster version with its own icon. Use the button below or your browser menu.'}
+          </p>
+        </div>
+        <IconButton
+          label="Close install prompt"
+          size="md"
+          onClick={() => setDismissed(true)}
+          className="-mr-1 -mt-1"
+        >
+          <XMarkIcon />
+        </IconButton>
       </div>
-    </Dialog>
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={dismissBanner}>
+          {shouldShowManualHint ? 'Not now' : "Don't remind me"}
+        </Button>
+        {shouldShowManualHint ? (
+          <Button variant="primary" size="sm" onClick={() => setDismissed(true)}>
+            Got it
+          </Button>
+        ) : (
+          <Button variant="primary" size="sm" onClick={() => void promptInstall()}>
+            Install Nana
+          </Button>
+        )}
+      </div>
+    </aside>
   );
 }

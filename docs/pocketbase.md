@@ -293,7 +293,7 @@ PocketBase evaluates relation rules against the **stored** record, not the incom
 
 ### Archive and permanent-delete lifecycle
 
-1. The board detail edit dialog calls `archiveBoard()` (`PATCH archived: true`).
+1. The board detail settings panel calls `archiveBoard()` (`PATCH archived: true`).
 2. The active index filters `archived = false`; the archive route filters `archived = true`.
 3. An archived board detail renders a restore state only; task writes are blocked by rule and the client does not load tasks for it.
 4. Restore clears `archived` and leaves every task intact.

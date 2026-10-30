@@ -10,7 +10,7 @@ import {
   MagnifyingGlassIcon,
   PlusIcon,
 } from '@heroicons/react/24/outline';
-import type { Board, BoardSummary } from '../lib/boards';
+import { createUntitledBoard, type BoardSummary } from '../lib/boards';
 import type { Document } from '../lib/documents';
 import { deleteDocument } from '../lib/documents';
 import {
@@ -27,7 +27,6 @@ import { CalendarFilterPanel } from '../components/timeline/CalendarFilterPanel'
 import { TimelineBoardCard } from '../components/timeline/TimelineBoardCard';
 import { TimelineDocumentCard } from '../components/timeline/TimelineDocumentCard';
 import { NewContentMenu } from '../components/NewContentMenu';
-import { BoardDialog } from '../components/board/BoardDialog';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('Timeline');
@@ -35,8 +34,8 @@ import { useTimelinePageState } from '../components/timeline/useTimelinePageStat
 import { useContextMenuState } from '../components/file-folder-handling';
 import { BoardContextMenu } from '../components/file-folder-handling/context-menu/BoardContextMenu';
 import { DocumentContextMenu } from '../components/file-folder-handling/context-menu/DocumentContextMenu';
-import { PublicShareModal } from '../components/modals/PublicShareModal';
-import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
+import { PublicSharePanel } from '../components/modals/PublicSharePanel';
+import { usePublicSharePanelState } from '../components/modals/usePublicSharePanelState';
 import { Button, Card, ConfirmDialog, EmptyState, Input, PageHeader, PageShell, SegmentedControl, Spinner } from '../components/ui';
 
 export function TimelinePage() {
@@ -47,11 +46,10 @@ export function TimelinePage() {
   const setRefreshTrigger = useSetAtom(refreshTriggerAtom);
   const folders = useAtomValue(foldersAtom);
   const { showToast } = useToasts();
-  const publicShareModal = usePublicShareModalState();
+  const publicSharePanel = usePublicSharePanelState();
   const [deleteConfirmState, setDeleteConfirmState] = useState<{ id: string; title: string } | null>(null);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
-  const [boardDialogOpen, setBoardDialogOpen] = useState(false);
-  const [editingBoard, setEditingBoard] = useState<BoardSummary | null>(null);
+  const [isCreatingBoard, setIsCreatingBoard] = useState(false);
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const { contextMenu, isClosingContextMenu, setContextMenu, contextMenuRef, closeContextMenu } = useContextMenuState();
   const {
@@ -88,8 +86,6 @@ export function TimelinePage() {
     getWordCount,
     getReadingTime,
     removeDocumentFromTimeline,
-    replaceBoardFromTimeline,
-    removeBoardFromTimeline,
   } = useTimelinePageState();
 
   const handleDocumentClick = (document: Document) => {
@@ -115,34 +111,23 @@ export function TimelinePage() {
     return undefined;
   };
 
-  const handleOpenCreateBoard = () => {
-    setEditingBoard(null);
-    setBoardDialogOpen(true);
-  };
+  const handleOpenCreateBoard = async () => {
+    if (isCreatingBoard) return;
+    setIsCreatingBoard(true);
 
-  const handleOpenEditBoard = (board: BoardSummary) => {
-    setEditingBoard(board);
-    setBoardDialogOpen(true);
-    closeContextMenu();
-  };
-
-  const handleBoardSaved = (board: Board) => {
-    const wasEditing = Boolean(editingBoard);
-    setBoardDialogOpen(false);
-    setEditingBoard(null);
-    replaceBoardFromTimeline(board);
-    showToast(wasEditing ? 'Board saved' : 'Board created', 'success');
-
-    if (!wasEditing) {
-      navigate(`/board/${board.id}`);
+    try {
+      const board = await createUntitledBoard();
+      navigate(`/board/${board.id}`, { state: { editBoard: true, newBoard: true } });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not create the board.', 'error');
+    } finally {
+      setIsCreatingBoard(false);
     }
   };
 
-  const handleBoardArchived = (board: Board) => {
-    setBoardDialogOpen(false);
-    setEditingBoard(null);
-    removeBoardFromTimeline(board.id);
-    showToast('Board archived', 'info');
+  const handleOpenEditBoard = (board: BoardSummary) => {
+    closeContextMenu();
+    navigate(`/board/${board.id}`, { state: { editBoard: true } });
   };
 
   const handleBoardContextMenu = (event: MouseEvent<HTMLDivElement>, board: BoardSummary) => {
@@ -451,7 +436,7 @@ export function TimelinePage() {
                     <Button
                       variant="primary"
                       icon={<PlusIcon />}
-                      onClick={handleOpenCreateBoard}
+                      onClick={() => void handleOpenCreateBoard()}
                     >
                       Create board
                     </Button>
@@ -644,7 +629,7 @@ export function TimelinePage() {
             onRenameDocument={() => undefined}
             onMakePublicDocument={() => {
               if (contextMenu?.documentId) {
-                void publicShareModal.openDocument(contextMenu.documentId);
+                void publicSharePanel.openDocument(contextMenu.documentId);
                 closeContextMenu();
               }
             }}
@@ -687,7 +672,7 @@ export function TimelinePage() {
             }}
             onShareBoard={() => {
               if (contextMenu.boardId) {
-                void publicShareModal.openBoard(contextMenu.boardId);
+                void publicSharePanel.openBoard(contextMenu.boardId);
                 closeContextMenu();
               }
             }}
@@ -711,12 +696,12 @@ export function TimelinePage() {
         onCancel={() => setDeleteConfirmState(null)}
       />
 
-      <PublicShareModal
-        target={publicShareModal.target}
-        isOpen={publicShareModal.isOpen}
-        isSaving={publicShareModal.isSaving}
-        onClose={publicShareModal.close}
-        onSave={publicShareModal.save}
+      <PublicSharePanel
+        target={publicSharePanel.target}
+        isOpen={publicSharePanel.isOpen}
+        isSaving={publicSharePanel.isSaving}
+        onClose={publicSharePanel.close}
+        onSave={publicSharePanel.save}
       />
 
       <NewContentMenu
@@ -724,20 +709,9 @@ export function TimelinePage() {
         anchorRect={newButtonRef.current?.getBoundingClientRect() ?? null}
         onClose={() => setNewMenuOpen(false)}
         onCreateNote={handleCreateDocument}
-        onCreateBoard={handleOpenCreateBoard}
+        onCreateBoard={() => void handleOpenCreateBoard()}
       />
 
-      <BoardDialog
-        open={boardDialogOpen}
-        board={editingBoard}
-        taskCount={editingBoard ? editingBoard.total : undefined}
-        onClose={() => {
-          setBoardDialogOpen(false);
-          setEditingBoard(null);
-        }}
-        onSaved={handleBoardSaved}
-        onArchived={handleBoardArchived}
-      />
     </PageShell>
   );
 }

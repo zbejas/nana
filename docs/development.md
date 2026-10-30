@@ -160,7 +160,7 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 1. Read [`../DESIGN.md`](../DESIGN.md) and reuse the primitives in `src/components/ui/`.
 2. Use semantic tokens (`bg-surface`, `border-line`, `text-ink`, `bg-signal-soft`, `text-signal`); no raw colour families, `dark:`/`light:` variants, gradients, blur, or serif faces.
 3. Check the change in both themes and at a mobile width.
-4. If the change introduces a modal, use `Dialog` (or `Sheet` on touch) so focus, Escape, scroll lock, and stacking stay consistent.
+4. If the change introduces data entry, use `InlineForm` in place or a `SidePanel`; do not open a centred dialog. `Dialog` (or `Sheet` on touch) is reserved for warnings/destructive confirmations and previews.
 5. Update [`frontend.md`](frontend.md) when routes, state, or component structure changes.
 
 #### Add a migration
@@ -253,7 +253,7 @@ For larger tasks:
 - **The next migration is `0000025`.** Do not reuse `0000018`–`0000024`; they are applied.
 - **Board and task data is user data.** Never use `pb_data` fixtures from the host in tests, and never edit an applied migration in place.
 - **`useDocumentData()` is a single call site.** Moving it into a page duplicates subscriptions and breaks the initial-load order.
-- **The root AddToBoard host is the only picker.** New entry points set `addToBoardRequestAtom`; they do not open their own dialog.
+- **The root AddToBoard host is the only picker.** New entry points set `addToBoardRequestAtom`; they do not open their own picker.
 - **The chat tool set is a security boundary.** Chat stays read-only. MCP is the separate write surface and must keep user-token auth, author scoping, and the private lock.
 - **A folder delete never deletes boards.** `boards.folder` has `cascadeDelete: false`; the trash routes rehome boards to the root.
 - **Trash is soft delete.** Notes and folders keep their id, attachments, and versions while `deleted_at` is set. Use `/api/trash/*`; direct deletes are superuser-only.

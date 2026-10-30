@@ -55,7 +55,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 
 ## Boards in folders
 
-Boards live in the same folder tree as notes. The timeline, sidebar library, and folder view show boards beside their notes; drag a board into another folder, or choose **New board** and it is filed where you are. Right-click a board to open, edit, or share it. A public board link opens a read-only page with its tasks, while private boards stay out of every public and AI surface. Boards are archived before they can be deleted, and a folder never deletes the boards inside it: move a folder to trash and its boards return to the root with their tasks.
+Boards live in the same folder tree as notes. The timeline, sidebar library, and folder view show boards beside their notes; drag a board into another folder, choose **New board** in a folder to file it there, or move it from the board's settings. Right-click a board to open, edit, or share it. A public board link opens a read-only page with its tasks, while private boards stay out of every public and AI surface. Boards are archived before they can be deleted, and a folder never deletes the boards inside it: move a folder to trash and its boards return to the root with their tasks.
 
 Mark a note, board, or folder **Private** to keep it out of AI chat and MCP. It stays in your workspace and you can still open and edit it.
 

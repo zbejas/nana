@@ -8,10 +8,18 @@ import {
   ShieldCheckIcon,
 } from '@heroicons/react/24/outline';
 import { useToasts } from '../../../state/hooks';
-import { Button, Checkbox, ConfirmDialog, Dialog, Field, IconButton, Input } from '../../ui';
+import {
+  Button,
+  Card,
+  Checkbox,
+  ConfirmDialog,
+  Field,
+  IconButton,
+  Input,
+  SectionHeading,
+} from '../../ui';
 
 interface EditUserFormProps {
-  isOpen: boolean;
   user: {
     id: string;
     name: string;
@@ -32,7 +40,15 @@ interface EditUserFormProps {
   isCurrentUserVerified?: boolean;
 }
 
-export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onCancel, isUpdating, isSelfService = false, isCurrentUserVerified = false }: EditUserFormProps) {
+export function EditUserForm({
+  user,
+  onSubmit,
+  onRequestEmailChange,
+  onCancel,
+  isUpdating,
+  isSelfService = false,
+  isCurrentUserVerified = false,
+}: EditUserFormProps) {
   const [formData, setFormData] = useState({
     name: user.name,
     newEmail: user.email,
@@ -50,12 +66,29 @@ export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onC
   const { showToast } = useToasts();
 
   useEffect(() => {
+    nameRef.current?.focus();
     return () => {
       if (revealTimeoutRef.current) {
         clearTimeout(revealTimeoutRef.current);
       }
     };
   }, []);
+
+  // The inline form can switch to another user without unmounting.
+  useEffect(() => {
+    setFormData({
+      name: user.name,
+      newEmail: user.email,
+      oldPassword: '',
+      password: '',
+      confirmPassword: '',
+      sendPasswordEmail: false,
+      admin: user.admin || false,
+    });
+    setShowEmailChangeConfirm(false);
+    setShowPasswords(false);
+    setTemporaryPasswordReveal(false);
+  }, [user.id]);
 
   // Generate random password (12 characters with symbols)
   const generatePassword = () => {
@@ -101,7 +134,13 @@ export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onC
     }
 
     // Prepare update data
-    const updateData: { name: string; password?: string; oldPassword?: string; sendPasswordEmail?: boolean; admin?: boolean } = {
+    const updateData: {
+      name: string;
+      password?: string;
+      oldPassword?: string;
+      sendPasswordEmail?: boolean;
+      admin?: boolean;
+    } = {
       name: formData.name,
     };
 
@@ -129,231 +168,230 @@ export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onC
 
   return (
     <>
-      <Dialog
-        open={isOpen}
-        onClose={onCancel}
-        title="Edit user"
-        description={
-          isSelfService
-            ? 'Update your name, email, or password.'
-            : "Update this person's name, email, access, or password."
-        }
-        size="md"
-        initialFocusRef={nameRef}
-        closeOnBackdrop={!isUpdating}
-        closeOnEsc={!isUpdating}
-        showClose={!isUpdating}
-        footer={
-          <>
-            <Button variant="secondary" onClick={onCancel} disabled={isUpdating}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              form="edit-user-form"
-              variant="primary"
-              loading={isUpdating}
-              disabled={isUpdating || passwordsDoNotMatch}
-            >
-              {isUpdating ? 'Updating...' : 'Update User'}
-            </Button>
-          </>
-        }
-      >
-        <form id="edit-user-form" onSubmit={handleSubmit} className="space-y-5">
-          {/* Email Change Section */}
-          {onRequestEmailChange && (
-            <Field
-              label="Email address"
-              htmlFor="edit-user-email"
-              hint={
-                isSelfService
-                  ? "You'll receive a confirmation email with a link. You'll need your password to complete the change."
-                  : 'User will receive a confirmation email to verify the new address'
-              }
-            >
-              <div className="flex items-start gap-2">
-                <Input
-                  id="edit-user-email"
-                  type="email"
-                  value={formData.newEmail}
-                  onChange={(e) => setFormData({ ...formData, newEmail: e.target.value })}
-                  className="min-w-0 flex-1"
-                  placeholder="user@example.com"
-                  disabled={isUpdating}
-                />
-                {hasEmailChanged && (
-                  <Button
-                    variant="secondary"
-                    className="shrink-0"
-                    icon={<EnvelopeIcon />}
-                    onClick={() => setShowEmailChangeConfirm(true)}
-                    disabled={isUpdating}
-                  >
-                    Send
-                  </Button>
-                )}
-              </div>
-            </Field>
-          )}
-
-          {/* Name */}
-          <Field label="Full name" htmlFor="edit-user-name">
-            <Input
-              id="edit-user-name"
-              ref={nameRef}
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="John Doe"
-              required
-              autoComplete="off"
-              disabled={isUpdating}
-            />
-          </Field>
-
-          {/* Admin Toggle (only for verified admin editing other users) */}
-          {!isSelfService && isCurrentUserVerified && (
-            <Checkbox
-              id="admin-checkbox"
-              checked={formData.admin}
-              onChange={(checked) => setFormData({ ...formData, admin: checked })}
-              disabled={isUpdating}
-              label={
-                <span className="flex items-center gap-2">
-                  <ShieldCheckIcon className="h-4 w-4 text-signal" aria-hidden="true" />
-                  Administrator privileges
-                </span>
-              }
+      <div className="animate-slideDown">
+        <Card className="p-4 sm:p-5">
+          <form id="edit-user-form" onSubmit={handleSubmit}>
+            <SectionHeading
+              title="Edit user"
               description={
-                <>
-                  <ExclamationTriangleIcon
-                    className="mr-1 inline h-3.5 w-3.5 text-warning"
-                    aria-hidden="true"
-                  />
-                  Admins have full access to manage users, documents, and system settings.
-                </>
+                isSelfService
+                  ? 'Update your name, email, or password.'
+                  : "Update this person's name, email, access, or password."
               }
             />
-          )}
-
-          {/* Password Section */}
-          <div className="space-y-4 border-t border-line pt-5">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-medium text-ink">
-                Change password <span className="font-normal text-ink-muted">(optional)</span>
-              </h3>
-              {!isSelfService && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="[&>svg]:h-3.5 [&>svg]:w-3.5"
-                  icon={<ArrowPathIcon />}
-                  onClick={generatePassword}
-                  disabled={isUpdating}
-                  title="Generate random password"
-                >
-                  Generate
-                </Button>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              {/* Current Password (only for self-service) */}
-              {isSelfService && (
+            <div className="mt-4 space-y-5">
+              {/* Email Change Section */}
+              {onRequestEmailChange && (
                 <Field
-                  label="Current password"
-                  htmlFor="edit-user-old-password"
-                  hint="Required to change your password"
+                  label="Email address"
+                  htmlFor="edit-user-email"
+                  hint={
+                    isSelfService
+                      ? "You'll receive a confirmation email with a link. You'll need your password to complete the change."
+                      : 'User will receive a confirmation email to verify the new address'
+                  }
                 >
-                  <Input
-                    id="edit-user-old-password"
-                    type={showPasswords ? 'text' : 'password'}
-                    value={formData.oldPassword}
-                    onChange={(e) => setFormData({ ...formData, oldPassword: e.target.value })}
-                    placeholder="Enter your current password"
-                    required={!!formData.password}
-                    autoComplete="current-password"
-                    disabled={isUpdating}
-                  />
+                  <div className="flex items-start gap-2">
+                    <Input
+                      id="edit-user-email"
+                      type="email"
+                      value={formData.newEmail}
+                      onChange={(e) => setFormData({ ...formData, newEmail: e.target.value })}
+                      className="min-w-0 flex-1"
+                      placeholder="user@example.com"
+                      disabled={isUpdating}
+                    />
+                    {hasEmailChanged && (
+                      <Button
+                        variant="secondary"
+                        className="shrink-0"
+                        icon={<EnvelopeIcon />}
+                        onClick={() => setShowEmailChangeConfirm(true)}
+                        disabled={isUpdating}
+                      >
+                        Send
+                      </Button>
+                    )}
+                  </div>
                 </Field>
               )}
 
-              <Field
-                label="New password"
-                htmlFor="edit-user-password"
-                hint={formData.password ? 'Must be at least 8 characters long' : undefined}
-              >
-                <div className="relative">
-                  <Input
-                    id="edit-user-password"
-                    type={showPasswords || temporaryPasswordReveal ? 'text' : 'password'}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="pr-11"
-                    placeholder="Leave blank to keep current password"
-                    minLength={8}
-                    autoComplete="new-password"
-                    disabled={isUpdating}
-                  />
-                  <IconButton
-                    label={showPasswords ? 'Hide passwords' : 'Show passwords'}
-                    size="sm"
-                    onClick={() => {
-                      const nextShow = !showPasswords;
-                      setShowPasswords(nextShow);
-                      if (nextShow) {
-                        setTemporaryPasswordReveal(false);
-                        if (revealTimeoutRef.current) {
-                          clearTimeout(revealTimeoutRef.current);
-                        }
-                      }
-                    }}
-                    disabled={isUpdating}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2"
-                  >
-                    {showPasswords ? <EyeSlashIcon /> : <EyeIcon />}
-                  </IconButton>
-                </div>
+              {/* Name */}
+              <Field label="Full name" htmlFor="edit-user-name">
+                <Input
+                  id="edit-user-name"
+                  ref={nameRef}
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="John Doe"
+                  required
+                  autoComplete="off"
+                  disabled={isUpdating}
+                />
               </Field>
 
-              {formData.password && (
-                <Field
-                  label="Confirm new password"
-                  htmlFor="edit-user-confirm-password"
-                  error={passwordsDoNotMatch ? 'Passwords do not match' : undefined}
-                >
-                  <Input
-                    id="edit-user-confirm-password"
-                    type={showPasswords || temporaryPasswordReveal ? 'text' : 'password'}
-                    value={formData.confirmPassword}
-                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                    placeholder="Confirm your new password"
-                    required={!!formData.password}
-                    minLength={8}
-                    disabled={isUpdating}
-                  />
-                </Field>
-              )}
-
-              {/* Send Password Email Checkbox (only for admin) */}
-              {!isSelfService && (
+              {/* Admin Toggle (only for verified admin editing other users) */}
+              {!isSelfService && isCurrentUserVerified && (
                 <Checkbox
-                  id="edit-user-send-password-email"
-                  checked={formData.sendPasswordEmail}
-                  onChange={(checked) => setFormData({ ...formData, sendPasswordEmail: checked })}
+                  id="admin-checkbox"
+                  checked={formData.admin}
+                  onChange={(checked) => setFormData({ ...formData, admin: checked })}
                   disabled={isUpdating}
-                  label="Send password to user via email"
-                  description="User will receive an email with their new password"
+                  label={
+                    <span className="flex items-center gap-2">
+                      <ShieldCheckIcon className="h-4 w-4 text-signal" aria-hidden="true" />
+                      Administrator privileges
+                    </span>
+                  }
+                  description={
+                    <>
+                      <ExclamationTriangleIcon
+                        className="mr-1 inline h-3.5 w-3.5 text-warning"
+                        aria-hidden="true"
+                      />
+                      Admins have full access to manage users, documents, and system settings.
+                    </>
+                  }
                 />
               )}
+
+              {/* Password Section */}
+              <div className="space-y-4 border-t border-line pt-5">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium text-ink">
+                    Change password <span className="font-normal text-ink-muted">(optional)</span>
+                  </h3>
+                  {!isSelfService && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="[&>svg]:h-3.5 [&>svg]:w-3.5"
+                      icon={<ArrowPathIcon />}
+                      onClick={generatePassword}
+                      disabled={isUpdating}
+                      title="Generate random password"
+                    >
+                      Generate
+                    </Button>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  {/* Current Password (only for self-service) */}
+                  {isSelfService && (
+                    <Field
+                      label="Current password"
+                      htmlFor="edit-user-old-password"
+                      hint="Required to change your password"
+                    >
+                      <Input
+                        id="edit-user-old-password"
+                        type={showPasswords ? 'text' : 'password'}
+                        value={formData.oldPassword}
+                        onChange={(e) => setFormData({ ...formData, oldPassword: e.target.value })}
+                        placeholder="Enter your current password"
+                        required={!!formData.password}
+                        autoComplete="current-password"
+                        disabled={isUpdating}
+                      />
+                    </Field>
+                  )}
+
+                  <Field
+                    label="New password"
+                    htmlFor="edit-user-password"
+                    hint={formData.password ? 'Must be at least 8 characters long' : undefined}
+                  >
+                    <div className="relative">
+                      <Input
+                        id="edit-user-password"
+                        type={showPasswords || temporaryPasswordReveal ? 'text' : 'password'}
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        className="pr-11"
+                        placeholder="Leave blank to keep current password"
+                        minLength={8}
+                        autoComplete="new-password"
+                        disabled={isUpdating}
+                      />
+                      <IconButton
+                        label={showPasswords ? 'Hide passwords' : 'Show passwords'}
+                        size="sm"
+                        onClick={() => {
+                          const nextShow = !showPasswords;
+                          setShowPasswords(nextShow);
+                          if (nextShow) {
+                            setTemporaryPasswordReveal(false);
+                            if (revealTimeoutRef.current) {
+                              clearTimeout(revealTimeoutRef.current);
+                            }
+                          }
+                        }}
+                        disabled={isUpdating}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2"
+                      >
+                        {showPasswords ? <EyeSlashIcon /> : <EyeIcon />}
+                      </IconButton>
+                    </div>
+                  </Field>
+
+                  {formData.password && (
+                    <Field
+                      label="Confirm new password"
+                      htmlFor="edit-user-confirm-password"
+                      error={passwordsDoNotMatch ? 'Passwords do not match' : undefined}
+                    >
+                      <Input
+                        id="edit-user-confirm-password"
+                        type={showPasswords || temporaryPasswordReveal ? 'text' : 'password'}
+                        value={formData.confirmPassword}
+                        onChange={(e) =>
+                          setFormData({ ...formData, confirmPassword: e.target.value })
+                        }
+                        placeholder="Confirm your new password"
+                        required={!!formData.password}
+                        minLength={8}
+                        disabled={isUpdating}
+                      />
+                    </Field>
+                  )}
+
+                  {/* Send Password Email Checkbox (only for admin) */}
+                  {!isSelfService && (
+                    <Checkbox
+                      id="edit-user-send-password-email"
+                      checked={formData.sendPasswordEmail}
+                      onChange={(checked) =>
+                        setFormData({ ...formData, sendPasswordEmail: checked })
+                      }
+                      disabled={isUpdating}
+                      label="Send password to user via email"
+                      description="User will receive an email with their new password"
+                    />
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+                <Button variant="secondary" onClick={onCancel} disabled={isUpdating}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  loading={isUpdating}
+                  disabled={isUpdating || passwordsDoNotMatch}
+                >
+                  {isUpdating ? 'Updating…' : 'Update user'}
+                </Button>
+              </div>
             </div>
-          </div>
-        </form>
-      </Dialog>
+          </form>
+        </Card>
+      </div>
 
       <ConfirmDialog
-        open={isOpen && showEmailChangeConfirm}
+        open={showEmailChangeConfirm}
         title="Confirm email change request"
         description={
           <>
@@ -364,7 +402,7 @@ export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onC
               : 'The user must click the link in that email to verify the new address.'}
           </>
         }
-        confirmLabel={isUpdating ? 'Sending...' : 'Send confirmation'}
+        confirmLabel={isUpdating ? 'Sending…' : 'Send confirmation'}
         busy={isUpdating}
         onConfirm={() => void handleEmailChangeRequest()}
         onCancel={() => setShowEmailChangeConfirm(false)}

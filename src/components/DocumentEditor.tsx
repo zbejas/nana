@@ -9,8 +9,8 @@ import { Footer } from './Footer';
 import { useDocumentEditorState } from './editor/useDocumentEditorState';
 import { DocumentLoadingState, DocumentNotFoundState } from './editor/DocumentEditorStatus';
 import { EditorDragOverlay, EditorReadOnlyOverlay, ShowHeaderButton } from './editor/DocumentEditorOverlays';
-import { PublicShareModal } from './modals/PublicShareModal';
-import { usePublicShareModalState } from './modals/usePublicShareModalState';
+import { PublicSharePanel } from './modals/PublicSharePanel';
+import { usePublicSharePanelState } from './modals/usePublicSharePanelState';
 import { ConfirmDialog } from './ui';
 import { deleteDocument } from '../lib/documents/trash';
 import { exportDocument } from '../lib/export';
@@ -69,12 +69,12 @@ export function DocumentEditor() {
   const navigate = useNavigate();
   const setRefreshTrigger = useSetAtom(refreshTriggerAtom);
   const { showToast } = useToasts();
-  const publicShareModal = usePublicShareModalState();
+  const publicSharePanel = usePublicSharePanelState();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const handleShare = () => {
     if (document?.id) {
-      void publicShareModal.openDocument(document.id);
+      void publicSharePanel.openDocument(document.id);
     }
   };
 
@@ -254,12 +254,12 @@ export function DocumentEditor() {
         </div>
       )}
 
-      <PublicShareModal
-        target={publicShareModal.target}
-        isOpen={publicShareModal.isOpen}
-        isSaving={publicShareModal.isSaving}
-        onClose={publicShareModal.close}
-        onSave={publicShareModal.save}
+      <PublicSharePanel
+        target={publicSharePanel.target}
+        isOpen={publicSharePanel.isOpen}
+        isSaving={publicSharePanel.isSaving}
+        onClose={publicSharePanel.close}
+        onSave={publicSharePanel.save}
       />
 
       <ConfirmDialog

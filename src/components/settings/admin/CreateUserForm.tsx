@@ -212,7 +212,7 @@ export function CreateUserForm({ onSubmit, onCancel, isCreating, isClosing = fal
                 loading={isCreating}
                 disabled={isCreating}
               >
-                {isCreating ? 'Creating...' : 'Create User'}
+                {isCreating ? 'Creating…' : 'Create user'}
               </Button>
             </div>
           </div>
