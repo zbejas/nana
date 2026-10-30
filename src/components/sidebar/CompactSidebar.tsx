@@ -141,7 +141,7 @@ export function CompactSidebar({
             className={railItemClass(chatActive)}
             title="Chat"
             aria-label="Chat"
-            aria-current={chatActive ? 'page' : undefined}
+            aria-pressed={chatActive}
           >
             <ChatBubbleLeftRightIcon className="h-[1.15rem] w-[1.15rem]" />
           </button>
@@ -218,7 +218,7 @@ export function CompactSidebar({
             onClick={toggleChat}
             className={`${itemClass(chatActive)} h-14`}
             aria-label="Chat"
-            aria-current={chatActive ? 'page' : undefined}
+            aria-pressed={chatActive}
           >
             <ChatBubbleLeftRightIcon className={`h-5 w-5 ${chatActive ? 'text-signal' : ''}`} />
             <span className="leading-none">Chat</span>

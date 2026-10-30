@@ -356,18 +356,36 @@ export function Sidebar() {
               </div>
             </div>
 
-            <button
-              ref={newButtonRef}
-              type="button"
-              onClick={() => setNewMenuOpen((open) => !open)}
-              aria-haspopup="menu"
-              aria-expanded={newMenuOpen}
-              className="mt-3 flex h-9 w-full items-center gap-2 rounded-control bg-ink px-3 text-[13px] font-medium text-canvas transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal"
-            >
-              <PlusIcon className="h-4 w-4" aria-hidden="true" />
-              New
-              <ChevronDownIcon className="ml-auto h-3.5 w-3.5" aria-hidden="true" />
-            </button>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                ref={newButtonRef}
+                type="button"
+                onClick={() => setNewMenuOpen((open) => !open)}
+                aria-haspopup="menu"
+                aria-expanded={newMenuOpen}
+                className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control bg-ink px-3 text-[13px] font-medium text-canvas transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal"
+              >
+                <PlusIcon className="h-4 w-4" aria-hidden="true" />
+                New
+                <ChevronDownIcon className="ml-auto h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={handleChatClick}
+                aria-label="Chat"
+                aria-pressed={chatRoute || chatDockOpen}
+                aria-expanded={chatDockOpen}
+                title="Chat"
+                className={`flex h-9 shrink-0 items-center gap-1.5 rounded-control border px-2.5 text-[12.5px] font-medium transition-colors ${
+                  chatRoute || chatDockOpen
+                    ? 'border-signal/40 bg-signal-soft text-signal'
+                    : 'border-line bg-surface text-ink-secondary hover:border-line-strong hover:bg-surface-raised hover:text-ink'
+                }`}
+              >
+                <ChatBubbleLeftRightIcon className="h-4 w-4" aria-hidden="true" />
+                <span>Chat</span>
+              </button>
+            </div>
           </div>
 
           <nav className="px-2 pb-2" aria-label="Primary">
@@ -390,21 +408,6 @@ export function Sidebar() {
                 </button>
               );
             })}
-            <button
-              type="button"
-              onClick={handleChatClick}
-              aria-current={chatRoute || chatDockOpen ? 'page' : undefined}
-              className={`group relative mb-0.5 flex h-8 w-full items-center gap-2.5 rounded-control border px-2.5 text-[13px] font-medium transition-colors ${
-                chatRoute || chatDockOpen
-                  ? 'border-line bg-surface text-ink'
-                  : 'border-transparent text-ink-secondary hover:bg-surface/70 hover:text-ink'
-              }`}
-            >
-              <ChatBubbleLeftRightIcon
-                className={`h-4 w-4 shrink-0 ${chatRoute || chatDockOpen ? 'text-signal' : 'text-ink-muted'}`}
-              />
-              <span>Chat</span>
-            </button>
           </nav>
 
           <SearchBar
