@@ -9,7 +9,6 @@ import { FolderViewList } from '../components/folder-view/FolderViewList';
 import { FolderViewGrid } from '../components/folder-view/FolderViewGrid';
 import { useFolderViewState } from '../components/folder-view/useFolderViewState';
 import { SharePanel, useSharePanel } from '../components/sharing';
-import { ChatHeaderButton } from '../components/chat/ChatHeaderButton';
 import {
   TrashIcon,
   GlobeAltIcon,
@@ -188,7 +187,6 @@ export function FolderViewPage() {
                   </Button>
                 </>
               )}
-              <ChatHeaderButton />
             </>
           }
         />

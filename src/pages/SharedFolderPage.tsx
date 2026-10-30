@@ -15,7 +15,6 @@ import {
 } from '../components/ui';
 import { PermissionBadge } from '../components/sharing/PermissionBadge';
 import { SharedItemRow } from '../components/sharing/SharedItemRow';
-import { ChatHeaderButton } from '../components/chat/ChatHeaderButton';
 import { displayShareUserName } from '../components/sharing/share-users';
 import { formatRelativeDate } from '../components/board/dates';
 
@@ -117,7 +116,6 @@ export function SharedFolderPage() {
                 Up to {data.parent.name || 'parent folder'}
               </Button>
             )}
-            <ChatHeaderButton />
           </>
         }
       />

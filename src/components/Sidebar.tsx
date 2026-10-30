@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   ArchiveBoxIcon,
+  ChatBubbleLeftRightIcon,
   ClockIcon,
   FolderIcon,
   ViewColumnsIcon,
@@ -33,6 +34,7 @@ import {
   resetEditorAtom,
   startNewDocumentAtom,
   selectDocumentAtom,
+  chatDockOpenAtom,
 } from "../state/atoms";
 import { FolderContextMenu } from "./file-folder-handling/context-menu/FolderContextMenu";
 import { DocumentContextMenu } from "./file-folder-handling/context-menu/DocumentContextMenu";
@@ -109,6 +111,9 @@ export function Sidebar() {
 
   const sidebarWidth = useSidebarWidth();
   const { isOpen, toggle } = sidebarHook;
+  const chatDockOpen = useAtomValue(chatDockOpenAtom);
+  const setChatDockOpen = useSetAtom(chatDockOpenAtom);
+  const chatRoute = location.pathname.startsWith('/chat');
 
   const { isMobile, swipeStartX, setSwipeStartX, swipeCurrentX, setSwipeCurrentX, prepareForNavigation } = useMobileState(isOpen, toggle);
 
@@ -212,6 +217,17 @@ export function Sidebar() {
       toggle();
     }
     navigate(path);
+  };
+
+  const handleChatClick = () => {
+    if (chatRoute) return;
+    if (isMobile) {
+      prepareForNavigation();
+      toggle();
+      setChatDockOpen(true);
+      return;
+    }
+    setChatDockOpen((open) => !open);
   };
 
   const handleBoardClick = (board: Board) => {
@@ -374,6 +390,21 @@ export function Sidebar() {
                 </button>
               );
             })}
+            <button
+              type="button"
+              onClick={handleChatClick}
+              aria-current={chatRoute || chatDockOpen ? 'page' : undefined}
+              className={`group relative mb-0.5 flex h-8 w-full items-center gap-2.5 rounded-control border px-2.5 text-[13px] font-medium transition-colors ${
+                chatRoute || chatDockOpen
+                  ? 'border-line bg-surface text-ink'
+                  : 'border-transparent text-ink-secondary hover:bg-surface/70 hover:text-ink'
+              }`}
+            >
+              <ChatBubbleLeftRightIcon
+                className={`h-4 w-4 shrink-0 ${chatRoute || chatDockOpen ? 'text-signal' : 'text-ink-muted'}`}
+              />
+              <span>Chat</span>
+            </button>
           </nav>
 
           <SearchBar

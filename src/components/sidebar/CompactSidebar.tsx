@@ -2,14 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { RecordModel } from '../../lib/record-model';
 import {
-  ChevronRightIcon,
-  FolderIcon,
-  ClockIcon,
   Bars3Icon,
+  ChatBubbleLeftRightIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  FolderIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { pb } from '../../lib/pocketbase';
 import { Avatar } from '../ui';
+import { useAtom } from 'jotai';
+import { chatDockOpenAtom } from '../../state/atoms';
 import { ProfileContextMenu } from './ProfileContextMenu';
 import { BrandMark } from '../BrandMark';
 
@@ -46,6 +49,9 @@ export function CompactSidebar({
   const mobileNavRef = useRef<HTMLElement>(null);
   const avatarRef = useRef<HTMLButtonElement>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useAtom(chatDockOpenAtom);
+  const chatRoute = location.pathname.startsWith('/chat');
+  const chatActive = chatRoute || chatOpen;
 
   const avatarUrl = user.avatar ? pb.files.getURL(user, user.avatar) : null;
 
@@ -53,11 +59,16 @@ export function CompactSidebar({
     navigate(item.path);
   };
 
+  const toggleChat = () => {
+    if (chatRoute) return;
+    setChatOpen((open) => !open);
+  };
+
   const viewIsActive = (item: (typeof viewItems)[number]) =>
     isPathActive(location.pathname, item.path);
   // Shared, Chat, Settings, and the document reader live behind the drawer.
   // Mark Menu active there instead of leaving the bottom bar with no selection.
-  const menuActive = !viewItems.some((item) => viewIsActive(item));
+  const menuActive = !viewItems.some((item) => viewIsActive(item)) && !chatActive;
 
   useEffect(() => {
     const updateMobileNavHeight = () => {
@@ -124,6 +135,16 @@ export function CompactSidebar({
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={toggleChat}
+            className={railItemClass(chatActive)}
+            title="Chat"
+            aria-label="Chat"
+            aria-current={chatActive ? 'page' : undefined}
+          >
+            <ChatBubbleLeftRightIcon className="h-[1.15rem] w-[1.15rem]" />
+          </button>
         </div>
 
         <div className="mt-auto flex flex-col items-center gap-2">
@@ -164,7 +185,7 @@ export function CompactSidebar({
         }`}
         aria-label="Primary"
       >
-        <div className="grid grid-cols-3 gap-1">
+        <div className="grid grid-cols-4 gap-1">
           <button
             onClick={onToggleExpanded}
             className={`${itemClass(menuActive)} h-14`}
@@ -192,6 +213,16 @@ export function CompactSidebar({
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={toggleChat}
+            className={`${itemClass(chatActive)} h-14`}
+            aria-label="Chat"
+            aria-current={chatActive ? 'page' : undefined}
+          >
+            <ChatBubbleLeftRightIcon className={`h-5 w-5 ${chatActive ? 'text-signal' : ''}`} />
+            <span className="leading-none">Chat</span>
+          </button>
         </div>
       </nav>
     </>
