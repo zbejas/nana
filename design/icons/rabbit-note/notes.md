@@ -18,16 +18,16 @@ Only the fold is ember. The eyes and nose are cut out of the paper, so they disa
 
 ## Small-size behaviour
 
-- **16px:** a wide cream card with two long ears. The face is gone; the fold is a warm corner pixel. It still reads as a rabbit, though less immediately than the round rabbit head.
-- **24–32px:** the ears, card, and folded corner are all visible. The face begins to resolve at 32px.
+- **16px:** a cream card with two thick ears and two dark eyes. The nose is a single warm-dark pixel; the fold is a warm corner. The face survives the 16px raster because the favicon variant enlarges the eyes and widens the nose.
+- **24–32px:** the ears, card, face, and folded corner are all visible.
 - **48px+:** the hybrid is clear: a note with a rabbit's ears and face.
 
-The `favicon.svg` uses a 32-unit grid: a 20×12.5px card, 4.2×9.8px ears, no face, and a 3.5px fold. The ears are widened relative to the 512 master so the 16px raster keeps two clear vertical strokes.
+The `favicon.svg` (v4) uses a 32-unit grid: a narrower note, thicker ears, enlarged eyes, a wider nose, and a larger fold. It is deliberately a separate 16px-first drawing, not the 512 master scaled down: the master's thin ears and small face blur on a 16px grid. The app/PWA icons keep the full master.
 
 ## Variants
 
 - `icon.svg` — 512 rounded-square graphite tile, landscape note, rabbit ears and face, ember fold.
-- `favicon.svg` — 32-unit grid, no face, wider ears, simplified fold.
+- `favicon.svg` — 32-unit grid, v4: thicker ears, enlarged face, narrower note, larger fold.
 - `maskable.svg` — full-bleed graphite, mark scaled to 90% and centred inside the safe circle.
 - `monochrome.svg` — solid card and ears, dog-ear cut, eyes and nose as alpha holes.
 

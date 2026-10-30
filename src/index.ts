@@ -30,6 +30,7 @@ const icon512 = resolve(import.meta.dir, "assets/nana-512.png");
 const maskable192 = resolve(import.meta.dir, "assets/nana-maskable-192.png");
 const maskable512 = resolve(import.meta.dir, "assets/nana-maskable-512.png");
 const monochrome512 = resolve(import.meta.dir, "assets/nana-monochrome-512.png");
+const favicon16 = resolve(import.meta.dir, "assets/nana-favicon-16.png");
 const favicon32 = resolve(import.meta.dir, "assets/nana-favicon-32.png");
 const pdfWorkerScript = resolve(import.meta.dir, "../node_modules/pdfjs-dist/build/pdf.worker.min.mjs");
 
@@ -250,6 +251,7 @@ const server = serve({
       withSecurityHeaders(new Response(Bun.file(maskable512))),
     "/nana-monochrome-512.png": (): Response =>
       withSecurityHeaders(new Response(Bun.file(monochrome512))),
+    "/nana-favicon-16.png": (): Response => withSecurityHeaders(new Response(Bun.file(favicon16))),
     "/nana-favicon-32.png": (): Response => withSecurityHeaders(new Response(Bun.file(favicon32))),
 
     // REST API and OpenAPI docs (public docs, authenticated /api/v1)
@@ -286,6 +288,16 @@ const server = serve({
       return withSecurityHeaders(await handleChat(req));
     },
     "/api/chat/conversations/*": async (req): Promise<Response> => {
+      const blocked = await checkRateLimit(req, server);
+      if (blocked) return withSecurityHeaders(blocked);
+      return withSecurityHeaders(await handleChat(req));
+    },
+    "/api/chat/status": async (req): Promise<Response> => {
+      const blocked = await checkRateLimit(req, server);
+      if (blocked) return withSecurityHeaders(blocked);
+      return withSecurityHeaders(await handleChat(req));
+    },
+    "/api/chat/edits/*": async (req): Promise<Response> => {
       const blocked = await checkRateLimit(req, server);
       if (blocked) return withSecurityHeaders(blocked);
       return withSecurityHeaders(await handleChat(req));
