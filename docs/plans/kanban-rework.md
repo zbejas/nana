@@ -9,16 +9,16 @@
 
 | Phase | State | Notes |
 | --- | --- | --- |
-| P0 — schema, hooks, sharing safety | **in progress** | `0000025_kanban_foundation.js`, board/task hooks, and sharing audit are in. |
-| P1 — data layer and contracts | pending | Types, browser facade, workspace services, MCP, chat, tests. |
-| P2 — Milkdown editor | pending | Kit + CodeMirror split, inline WYSIWYG for task descriptions and comments. |
-| P3 — kanban surfaces | pending | Board, list, backlog, calendar, Gantt, filters, bulk, task panel. |
-| P4 — user sharing product | pending | Share panel, shared-with-me, comments, permission-aware UI. |
-| P5 — chat dock and agent | pending | Global right dock, context attachment, note/board write tools, AI actor. |
-| P6 — AI section edits | pending | Section-scoped edit protocol, Milkdown transactions, animated highlights. |
-| P7 — realtime shared workspaces | pending | Realtime shared index, revocation, conflict banner, Yjs decision. |
+| P0 — schema, hooks, sharing safety | **done** | `0025`–`0028`, permission guards, grant repair, private checks; Docker gate green. |
+| P1 — data layer and contracts | **done** | Columns, task fields, facade, workspace services, MCP, public payloads, tests. |
+| P2 — Milkdown editor | **done** | Kit + CodeMirror split/source, inline editor, toolbar, slash menu, tests. |
+| P3 — kanban surfaces | **in progress** | Board shell, views, filters, bulk, and task panel are being implemented. |
+| P4 — user sharing product | pending | Share panel, shared-with-me page, comments UI, permission-aware controls. |
+| P5 — chat dock and agent | **in progress** | Dock UI and read/write agent backend are being implemented. |
+| P6 — AI section edits | **in progress** | Section engine and revision/actor schema are in; Milkdown range animation next. |
+| P7 — realtime shared workspaces | **in progress** | Shared index hooks and realtime allowlist are in; conflict banner and UI next. |
 | P8 — notes UX polish | pending | Palette, pins, quick capture, focus mode, universal search. |
-| P9 — verification and docs | pending | Docker suite, Playwright desktop/mobile, user QA, security and design review. |
+| P9 — verification and docs | pending | Final Docker suite, Playwright desktop/mobile, user QA, security/design review. |
 
 ## Goal
 

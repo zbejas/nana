@@ -171,8 +171,19 @@ async function uniqueColumnSlug(boardId: string, preferred: string): Promise<str
  * archived boards after them (most recently updated first).
  */
 export async function listBoards(options: ListBoardsOptions = {}): Promise<Board[]> {
+  const author = pb.authStore.record?.id;
+  if (!author) return [];
+
   const records = await pb.collection(COLLECTION).getFullList<Board>({
-    filter: options.includeArchived ? '' : 'archived = false',
+    // Board rules now include records shared with the caller. Personal
+    // surfaces (timeline, folders, sidebar, archive) must stay owner-only;
+    // shared boards are reached through /shared and getBoard(id).
+    filter: pb.filter(
+      options.includeArchived
+        ? 'author = {:author}'
+        : 'author = {:author} && archived = false',
+      { author }
+    ),
     sort: '-created',
     // The sidebar, folder view, and timeline can all read boards at the same
     // time. Keep these small list requests out of the SDK's auto-cancellation
@@ -497,12 +508,11 @@ export function subscribeToBoards(onChange: () => void): () => void {
 
   void pb
     .collection(COLLECTION)
-    .subscribe('*', (event) => {
-      const record = event.record as Board | undefined;
-      const userId = pb.authStore.record?.id;
-      if (!record || !userId || record.author === userId) {
-        onChange();
-      }
+    .subscribe('*', () => {
+      // PocketBase already scopes events to records the caller can read.
+      // Personal lists refetch owner-only rows; an open shared board still
+      // needs the same refresh.
+      onChange();
     })
     .then((unsub) => {
       unsubscribe = unsub;

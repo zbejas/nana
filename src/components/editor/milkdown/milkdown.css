@@ -536,4 +536,46 @@
       padding: 1.25rem;
     }
   }
+
+  /* An AI section edit washes the changed blocks and leaves a short-lived
+     Nana badge on the first heading. The Markdown transaction is instant;
+     only the visual acknowledgement animates. */
+  .nana-ai-edited {
+    position: relative;
+    box-shadow: inset 2px 0 0 var(--signal);
+    animation: nana-ai-wash 1.8s ease-out both;
+  }
+
+  .nana-ai-edited[data-nana-ai-heading='true']::before {
+    content: 'Nana';
+    position: absolute;
+    top: -1.15rem;
+    left: -2px;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    background: var(--signal);
+    color: var(--on-signal);
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+    pointer-events: none;
+  }
+
+  @keyframes nana-ai-wash {
+    0% {
+      background: var(--signal-soft);
+    }
+    100% {
+      background: transparent;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nana-ai-edited {
+      animation: none;
+      background: var(--signal-soft);
+    }
+  }
 }

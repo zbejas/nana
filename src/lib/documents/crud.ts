@@ -67,6 +67,10 @@ export async function updateDocument(
             formData.append('tags', JSON.stringify(data.tags));
         }
 
+        if (data.revision !== undefined) {
+            formData.append('revision', String(data.revision));
+        }
+
         if (data.published !== undefined) {
             formData.append('published', String(data.published));
         }

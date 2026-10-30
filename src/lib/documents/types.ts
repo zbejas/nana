@@ -18,6 +18,9 @@ export interface Document extends RecordModel {
     folder?: string; // Folder ID
     word_count: number;
     reading_time: number; // minutes
+    revision?: number;
+    last_edited_by?: string;
+    last_edit_source?: 'user' | 'ai' | 'system';
     created: string;
     updated: string;
 }
@@ -43,6 +46,8 @@ export interface UpdateDocumentData {
     title?: string;
     content?: string;
     tags?: string[];
+    /** The revision the editor loaded. Required for conflict detection. */
+    revision?: number;
     published?: boolean;
     is_public?: boolean;
     is_private?: boolean;

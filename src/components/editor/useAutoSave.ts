@@ -129,6 +129,7 @@ export function useAutoSave({
                         title: title.trim() || 'Untitled',
                         content: content.trim(),
                         tags,
+                        revision: document.revision,
                         published,
                         attachments: newAttachments.length > 0 ? newAttachments : undefined,
                         removeAttachments: removedAttachments.length > 0 ? removedAttachments : undefined,

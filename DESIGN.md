@@ -101,7 +101,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 ### Sidebar
 
-- Brand is the rabbit mascot glyph at 32px, plus the “Nana” wordmark and “Your workspace”. The wordmark starts on the navigation label line, and the mascot marks the sidebar edge. The mascot is also used in About, public pages, the install prompt, and the app icons, so the sidebar mark stays recognisably the same character.
+- Brand is the rabbit mascot glyph at 32px, plus the “Nana” wordmark and “Your workspace”. The wordmark starts on the navigation label line, and the mascot marks the sidebar edge. The app icon is the separate rabbit-note mark: a landscape note with two ears and an ember folded corner. It is used for the favicon, PWA any/maskable/monochrome icons, and install surfaces; the sidebar keeps the wordmark so the character stays recognisable at chrome size.
 - A full-width inverted `ink` **New** button sits under the brand and opens a Note/Board menu. It is global chrome, not the contextual primary action; page-level primary actions take `signal-bright`.
 - Primary navigation rows are 32px with 6px radius. The active row is `surface` with a hairline and an ember icon; inactive rows are transparent with muted icons. There are no inverted navigation chips.
 - Section labels are 11.5px medium muted: “Recent”, “Library”.
@@ -245,7 +245,7 @@ Rules:
 - Board copy is plain about consequence: “Nothing is deleted — restore it any time from Archived boards.”
 - No exclamation marks, no “simply”, no “Oops”.
 - Dates: relative for the last day (“2h ago”), short absolute after (“Oct 23”), with a year once outside the current year.
-- Never call the mascot a fox. It is a rabbit holding a notebook.
+- Never call the mascot a fox. It is a rabbit and its note: the app icon shows the rabbit peeking over a landscape note.
 
 ## Theme
 
@@ -256,8 +256,9 @@ Rules:
 - **Route content is not framed.** The content inset is exactly the sidebar width (or 64px for the rail), with no gap or outer card. Every authenticated route wraps once in `PageShell`; the editor footer is fixed to `bottom: 0`, `right: 0`, with the same left offset. If you change the sidebar or rail width, update `src/App.tsx`, `src/components/Footer.tsx`, and `src/components/sidebar/CompactSidebar.tsx` together.
 - **The compact rail is 64px.** `src/App.tsx` and `src/components/Footer.tsx` each hold a `COMPACT_SIDEBAR_WIDTH` constant. The rail, the content inset, and the footer offset must move as one.
 - **`PageHeader` is the only masthead.** Do not hand-roll a route header with a different title scale, rule, or action alignment. Child routes pass `back`; counts and model status pass `meta`. `PageShell` owns the max width and gutters.
-- **MDEditor ships a system-font heading stack.** `.wmde-markdown` resolves headings to `-apple-system, …`; on Linux that becomes a serif. `src/index.css` forces `font-family: var(--font-sans)` on the markdown containers and headings. When upgrading `@uiw/react-md-editor`, re-check headings, body, punctuation, and links in both themes.
-- **The raw editor is sans.** `.w-md-editor-text-pre` and the textarea must stay on `var(--font-sans)` at 15px / 1.75. Mono in the writing surface breaks the one-voice rule.
+- **Milkdown is headless; the ProseMirror shell needs its structural CSS.** `src/index.css` imports ProseMirror view/gapcursor/table CSS before `milkdown.css`. Without it, lists, tables, and gap cursors break. The editor theme is scoped under `.nana-md .ProseMirror`, so Tailwind utilities elsewhere cannot leak into the document.
+- **The writing surface is sans.** ProseMirror prose and the CodeMirror source pane stay on `var(--font-sans)` at 15px / 1.75. Mono in the writing surface breaks the one-voice rule; code blocks and inline code use `var(--font-mono)` only inside the prose.
+- **Milkdown must not dirty a note on open.** The first serialization can normalize Markdown. The editor records that baseline and only reports changes after the user edits; if this guard is removed, opening a note creates a version on autosave.
 - **Ember does two jobs only.** Use `signal` for links, icons, focus, and selection marks; use `signal-bright` for filled actions, progress, and selected calendar days. White on the light fill (`#b7431e`) is 5.48:1; near-black on the dark fill (`#ff7048`) is 7.0:1. Never put `text-signal` on a `signal-bright` fill.
 - **The active navigation row is neutral.** It is `surface` with a hairline and an ember icon. Do not restore the old inverted ink chip or copy inversion to page cards.
 - **The auth cover is intentionally theme-invariant.** It uses `cover` tokens, not `canvas` or `ink`. Reusing `canvas` there makes the cover flip to light in the light theme and breaks the first-screen composition.

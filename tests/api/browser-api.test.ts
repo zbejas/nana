@@ -384,6 +384,22 @@ describe("browser record facade", () => {
         }
     });
 
+    test("rejects realtime subscriptions outside the allowlist", async () => {
+        const denied = await bunRequest(api("/realtime"), {
+            method: "POST",
+            headers: { ...authHeaders(user.token), "Content-Type": "application/json" },
+            body: JSON.stringify({ clientId: "test-client", subscriptions: ["users/*"] }),
+        });
+        await expectStatus(denied, 400, "unknown realtime topic");
+
+        const allowed = await bunRequest(api("/realtime"), {
+            method: "POST",
+            headers: { ...authHeaders(user.token), "Content-Type": "application/json" },
+            body: JSON.stringify({ clientId: "test-client", subscriptions: ["documents/*"] }),
+        });
+        expect(allowed.status).not.toBe(400);
+    });
+
     test("serves protected files through the facade", async () => {
         const note = await createNoteWithAttachment(
             user,

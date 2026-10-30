@@ -93,6 +93,7 @@ export function useDocumentActions({
                     title: saveTitle,
                     content: content.trim(),
                     tags,
+                    revision: document.revision,
                     published,
                     attachments: newAttachments.length > 0 ? newAttachments : undefined,
                     removeAttachments: removedAttachments.length > 0 ? removedAttachments : undefined,
