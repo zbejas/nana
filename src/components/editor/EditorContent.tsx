@@ -1,8 +1,16 @@
-import type { DragEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
+import type { Editor } from '@milkdown/kit/core';
 import { NanaMarkdownEditor } from './milkdown/NanaMarkdownEditor';
 import { NanaSourceEditor } from './milkdown/NanaSourceEditor';
 import { NanaSplitMarkdownEditor } from './milkdown/NanaSplitMarkdownEditor';
+import { applyAiMarkdown, type AiChangedSection } from './milkdown/aiEdits';
 import type { ViewMode } from './EditorHeader';
+
+export interface EditorAiEdit {
+  id: string;
+  markdown: string;
+  sections: AiChangedSection[];
+}
 
 interface EditorContentProps {
   content: string;
@@ -10,6 +18,7 @@ interface EditorContentProps {
   readOnly?: boolean;
   viewMode: ViewMode;
   onDropFiles?: (event: DragEvent<HTMLDivElement>) => void;
+  aiEdit?: EditorAiEdit | null;
 }
 
 /**
@@ -24,9 +33,27 @@ export function EditorContent({
   readOnly = false,
   viewMode,
   onDropFiles,
+  aiEdit = null,
 }: EditorContentProps) {
   const isSplitMode = viewMode === 'split';
   const editorPlaceholder = readOnly ? '' : 'Start writing…';
+  const editorRef = useRef<Editor | null>(null);
+  const [editorReadyVersion, setEditorReadyVersion] = useState(0);
+
+  useEffect(() => {
+    editorRef.current = null;
+  }, [viewMode]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !aiEdit) return;
+    applyAiMarkdown(editor, aiEdit.markdown, aiEdit.sections);
+  }, [aiEdit, editorReadyVersion]);
+
+  const handleEditorReady = (editor: Editor) => {
+    editorRef.current = editor;
+    setEditorReadyVersion((value) => value + 1);
+  };
 
   return (
     <div
@@ -66,6 +93,7 @@ export function EditorContent({
             placeholder={editorPlaceholder}
             ariaLabel="Document content"
             className="min-h-0 flex-1"
+            onEditorReady={handleEditorReady}
           />
         )}
 
@@ -79,6 +107,7 @@ export function EditorContent({
             className="scrollbar-autohide h-full min-h-0 flex-1"
             showToolbar={viewMode !== 'preview'}
             enableSlash={viewMode !== 'preview'}
+            onEditorReady={handleEditorReady}
           />
         )}
       </div>

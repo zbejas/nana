@@ -11,6 +11,7 @@ import {
     normalizeStringList,
     truncate,
 } from "./text";
+import { noteVersionToken } from "./version";
 
 // ── Shared input shapes ──────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ interface PBNoteRecord {
     folder?: string;
     is_private?: boolean;
     published?: boolean;
+    revision?: number;
     author?: string;
 }
 
@@ -67,7 +69,7 @@ interface PBNoteSummary {
     published: boolean;
 }
 
-const NOTE_LIST_FIELDS = "id,title,tags,updated,created,word_count,reading_time,folder,is_private,published,author";
+const NOTE_LIST_FIELDS = "id,title,tags,updated,created,word_count,reading_time,folder,is_private,published,revision,author";
 const NOTE_READ_FIELDS = `${NOTE_LIST_FIELDS},content`;
 
 function invalidInput(message: string): ToolFailure {
@@ -181,6 +183,10 @@ export interface ReadNoteResult extends PBNoteSummary {
     nextOffset: number | null;
     truncated: boolean;
     clippedLines: number;
+    /** Optimistic-concurrency revision; pass it back to edit_note/append_note. */
+    revision: number;
+    /** Opaque token derived from title/content/tags/updated. */
+    versionToken: string;
 }
 
 /**
@@ -262,5 +268,9 @@ export async function readNote(
         nextOffset: hasMore ? startIndex + consumed + 1 : null,
         truncated: contentCapped || clippedLines > 0,
         clippedLines,
+        revision: typeof record.revision === "number" && Number.isFinite(record.revision)
+            ? record.revision
+            : 0,
+        versionToken: noteVersionToken(record),
     };
 }

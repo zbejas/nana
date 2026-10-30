@@ -101,7 +101,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 ### Sidebar
 
-- Brand is the rabbit-note app glyph at 32px, plus the “Nana” wordmark and “Your workspace”. The wordmark starts on the navigation label line, and the glyph marks the sidebar edge. The mark is a landscape note with two ears and an ember folded corner; the app tile is used in the sidebar, About, public pages, install surfaces, and PWA any/maskable/monochrome icons. The favicon is the same mark, cropped tight and transparent: cream on dark chrome, ink on light chrome, with no tile.
+- Brand is the rabbit-note mark at 32px, plus the “Nana” wordmark and “Your workspace”. The wordmark starts on the navigation label line, and the mark anchors the sidebar edge. The sidebar, auth cover, and favicon use the transparent, tightly cropped mark (cream on dark, ink on light); the graphite app tile is used in About, public pages, install surfaces, and PWA any/maskable/monochrome icons.
 - A full-width inverted `ink` **New** button sits under the brand and opens a Note/Board menu. It is global chrome, not the contextual primary action; page-level primary actions take `signal-bright`.
 - Primary navigation rows are 32px with 6px radius. The active row is `surface` with a hairline and an ember icon; inactive rows are transparent with muted icons. There are no inverted navigation chips.
 - Section labels are 11.5px medium muted: “Recent”, “Library”.

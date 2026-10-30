@@ -253,7 +253,7 @@ The workflow is idempotent: if the release already exists it is a no-op, so edit
 
 - [`development.md`](development.md) — local commands and workflow.
 - [`pocketbase.md`](pocketbase.md) — migrations, bootstrap, schema, and settings.
-- [`ai.md`](ai.md) — provider configuration and read-tool behavior.
+- [`ai.md`](ai.md) — provider configuration and chat/MCP tool behavior.
 - [`security.md`](security.md) — exposure, secrets, and runtime data.
 - [`architecture.md`](architecture.md) — process topology and runtime modes.
 - [`testing.md`](testing.md) — unit and Docker integration layers and the shipping gate.

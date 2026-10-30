@@ -18,9 +18,19 @@ export interface ToolContext {
     userId: string;
     /** Present only when the caller authenticated with an API key. */
     apiKey?: ApiKeyPermission;
+    /**
+     * Request actor. Chat writes use `"ai"` so PocketBase hooks stamp the
+     * version/activity rows as Nana instead of inventing a user record.
+     */
+    actor?: "ai";
 }
 
-export type ToolErrorCode = "unauthorized" | "not_found" | "invalid_input" | "unavailable";
+export type ToolErrorCode =
+    | "unauthorized"
+    | "not_found"
+    | "invalid_input"
+    | "conflict"
+    | "unavailable";
 
 export interface ToolFailure {
     ok: false;
@@ -66,6 +76,9 @@ function mapStatus(status: number): ToolFailure {
     if (status === 400 || status === 422) {
         return failure("invalid_input", "That request was not valid.");
     }
+    if (status === 409) {
+        return failure("conflict", "That item changed since it was loaded.");
+    }
     if (status === 429) {
         return failure("unavailable", "The workspace is busy. Try again in a moment.");
     }
@@ -95,6 +108,9 @@ export async function pbRequest<T extends object = Record<string, never>>(
     };
     if (body !== undefined) {
         headers["Content-Type"] = "application/json";
+    }
+    if (context.actor === "ai") {
+        headers["X-Nana-Actor"] = "ai";
     }
 
     let response: Response;

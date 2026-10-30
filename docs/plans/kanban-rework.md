@@ -99,7 +99,7 @@ same columns and fields with their existing author/scope/private rules.
 | Sharing backend | subagent | `pb_hooks/sharing/*`, `pb_hooks/routes/sharing/*`, `pb_hooks/guards/*`, `src/api/rest/browser/extras.ts`, `tests/pocketbase/sharing*` | P0 hooks |
 | Data layer | subagent | `src/lib/boards/*`, `src/lib/tasks/*`, `src/api/rest/browser/records.ts`, `src/api/workspace/*`, `src/api/mcp/*`, `src/api/chat/tools/*` | schema |
 | Board surfaces | subagent | `src/pages/BoardPage.tsx`, `src/components/board/*` (except task panel), view components | data layer |
-| Task panel | subagent | `src/components/board/TaskPanel*`, `TaskEditor.tsx`, activity/comments components | data layer |
+| Task panel | subagent | `src/components/board/TaskPanel*`, properties/subtasks/relations/activity/comments components | data layer |
 | Milkdown | subagent | `src/components/editor/milkdown/*`, `EditorContent.tsx`, `index.css`, `package.json` | — |
 | Sharing UI | subagent | `src/components/sharing/*`, `src/pages/SharedPage.tsx`, `App.tsx`, `Sidebar.tsx` | sharing backend |
 | Docs and QA | orchestrator + reviewers | `docs/*`, screenshots, Playwright | all |
@@ -212,8 +212,8 @@ history view for deep links and mobile.
 
 - Toggle: `Ask Nana` in the page header and a `Cmd/Ctrl+J` shortcut. The dock is
   400px on desktop, full width on mobile, and never auto-opens.
-- The dock has an `Ask / Edit` mode. `Ask` is read-only. `Edit` exposes note and
-  board write tools. The mode is visible in the composer.
+- The dock has an `Ask / Edit` mode. `Ask` is read-only. `Edit` exposes note,
+  board, and task write tools. The mode is visible in the composer.
 - At send time the client attaches the open page as metadata only:
   `{ type: 'document' | 'board' | 'folder', id }`. The server resolves the
   title and permission itself; it never trusts client content. The UI shows a
@@ -261,8 +261,8 @@ edit_note({
 - The server validates every anchor against the current Markdown before
   writing. One missing or ambiguous anchor aborts the whole edit and returns a
   `conflict`/`invalid_input` result so the model can re-read and retry.
-- The server applies operations in order, preserves untouched sections
-  byte-for-byte, snapshots the old content, bumps `updated`, and returns
+- The server applies operations in order, carries untouched sections through
+  without re-sanitizing, snapshots the old content, bumps `updated`, and returns
   `{ updated, sections: [{ heading, from, to }], summary }`.
 - If the note is open in Milkdown, the client maps each section heading to a
   ProseMirror node range and dispatches a transaction replacing only that
@@ -325,7 +325,7 @@ animation is needed for boards.
   and a hard tool allowlist. No delete, move, publish, share, or privacy fields.
 - **Section anchors can be ambiguous.** The server aborts the entire edit when a
   heading or text anchor is missing or non-unique; the model must re-read.
-  Untouched sections stay byte-identical.
+  Untouched sections are not re-sanitized.
 - **A global chat dock is a second stateful surface.** The dock keeps one active
   conversation and stream across routes; it must not unmount on navigation or
   duplicate subscriptions. Closing it never aborts an in-flight tool write.

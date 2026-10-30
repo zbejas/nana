@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { editorViewCtx } from '@milkdown/kit/core';
+import { editorViewCtx, type Editor } from '@milkdown/kit/core';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { cn } from '../../ui';
 import { NanaEditorToolbar } from './NanaEditorToolbar';
@@ -23,6 +23,7 @@ export interface NanaMarkdownEditorProps {
   uploadImage?: (file: File) => Promise<string>;
   onFocusChange?: (focused: boolean) => void;
   onViewReady?: (view: EditorView) => void;
+  onEditorReady?: (editor: Editor) => void;
 }
 
 /**
@@ -44,6 +45,7 @@ export function NanaMarkdownEditor({
   uploadImage,
   onFocusChange,
   onViewReady,
+  onEditorReady,
 }: NanaMarkdownEditorProps) {
   const [slashPosition, setSlashPosition] = useState<SlashTriggerPosition | null>(null);
   const linkSelectionRef = useRef<{ from: number; to: number } | null>(null);
@@ -58,6 +60,7 @@ export function NanaMarkdownEditor({
     onFocusChange,
     onSlash: (position) => setSlashPosition(position),
     onReady: (instance) => {
+      onEditorReady?.(instance);
       onViewReady?.(instance.action((ctx) => ctx.get(editorViewCtx)));
     },
   });

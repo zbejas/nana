@@ -1,21 +1,23 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSetAtom } from 'jotai';
 import { EditorHeader } from './editor/EditorHeader';
 import { EditorTags } from './editor/EditorTags';
-import { EditorContent } from './editor/EditorContent';
+import { EditorContent, type EditorAiEdit } from './editor/EditorContent';
 import { ContentSizeWarning } from './editor/ContentSizeWarning';
 import { Footer } from './Footer';
 import { useDocumentEditorState } from './editor/useDocumentEditorState';
 import { DocumentLoadingState, DocumentNotFoundState } from './editor/DocumentEditorStatus';
 import { EditorDragOverlay, EditorReadOnlyOverlay, ShowHeaderButton } from './editor/DocumentEditorOverlays';
-import { PublicSharePanel } from './modals/PublicSharePanel';
-import { usePublicSharePanelState } from './modals/usePublicSharePanelState';
+import { SharePanel, useSharePanel } from './sharing';
+import { AiEditingBanner } from './chat/AiEditingBanner';
 import { ConfirmDialog } from './ui';
 import { deleteDocument } from '../lib/documents/trash';
+import { getDocument } from '../lib/documents';
+import type { ChatUiEdit } from '../lib/chat/types';
 import { exportDocument } from '../lib/export';
 import { useToasts } from '../state/hooks';
-import { refreshTriggerAtom } from '../state/atoms';
+import { chatDockOpenAtom, refreshTriggerAtom } from '../state/atoms';
 
 export function DocumentEditor() {
   const {
@@ -28,7 +30,11 @@ export function DocumentEditor() {
     setTitle,
     content,
     setContent,
+    setSelectedDocument,
     tags,
+    setTags,
+    setPublished,
+    setGlobalUnsavedChanges,
     tagInput,
     setTagInput,
     publishing,
@@ -67,15 +73,134 @@ export function DocumentEditor() {
   } = useDocumentEditorState();
 
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const setRefreshTrigger = useSetAtom(refreshTriggerAtom);
+  const setChatDockOpen = useSetAtom(chatDockOpenAtom);
   const { showToast } = useToasts();
-  const publicSharePanel = usePublicSharePanelState();
+  const sharePanel = useSharePanel();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [aiEdit, setAiEdit] = useState<EditorAiEdit | null>(null);
+
+  useEffect(() => {
+    setAiEdit(null);
+  }, [document?.id]);
+
+  useEffect(() => {
+    const currentId = document?.id;
+    if (!currentId) return;
+
+    const handleAiEdit = (event: Event) => {
+      const edit = (event as CustomEvent<{ edit?: ChatUiEdit }>).detail?.edit;
+      if (!edit || edit.target.type !== 'document' || edit.target.id !== currentId) return;
+
+      const targetId = edit.target.id;
+      void getDocument(targetId)
+        .then((fresh) => {
+          if (document?.id !== targetId) return;
+          setSelectedDocument(fresh);
+          setTitle(fresh.title);
+          setContent(fresh.content);
+          setTags(fresh.tags || []);
+          setPublished(fresh.published);
+          setGlobalUnsavedChanges(false);
+          setAiEdit({
+            id: edit.id,
+            markdown: fresh.content,
+            sections: (edit.changed.sections ?? []).map((section) => ({
+              ...(section.heading ? { heading: section.heading } : {}),
+              ...(section.path ? { path: section.path } : {}),
+              ...(section.from !== undefined ? { from: section.from } : {}),
+              ...(section.to !== undefined ? { to: section.to } : {}),
+            })),
+          });
+        })
+        .catch((error: unknown) => {
+          showToast(
+            error instanceof Error
+              ? `Nana changed this note, but the editor could not refresh: ${error.message}`
+              : 'Nana changed this note, but the editor could not refresh.',
+            'error',
+          );
+        });
+    };
+
+    window.addEventListener('nana:ai-edit', handleAiEdit);
+    return () => window.removeEventListener('nana:ai-edit', handleAiEdit);
+  }, [
+    document?.id,
+    setContent,
+    setGlobalUnsavedChanges,
+    setPublished,
+    setSelectedDocument,
+    setTags,
+    setTitle,
+    showToast,
+  ]);
+
+  // Chat edit cards link here with ?nanaSection=Heading (or Parent > Child).
+  // Scroll to that heading once the editor surface exists; never touch the
+  // Milkdown document itself.
+  useEffect(() => {
+    const section = searchParams.get('nanaSection');
+    if (!section || loading || isLoadingDocument) return;
+
+    let cancelled = false;
+    let timer: number | undefined;
+    let finishTimer: number | undefined;
+    const wanted = (section.split('>').pop() ?? section).trim().toLowerCase();
+    const deadline = Date.now() + 2400;
+
+    const clearParam = () => {
+      const next = new URLSearchParams(searchParams);
+      next.delete('nanaSection');
+      setSearchParams(next, { replace: true });
+    };
+
+    const findHeading = (): HTMLElement | null => {
+      const root = window.document.querySelector('.nana-milkdown .ProseMirror')
+        ?? window.document.querySelector('.nana-milkdown');
+      if (!root) return null;
+      const headings = Array.from(root.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6'));
+      return headings.find((heading) => heading.textContent?.trim().toLowerCase() === wanted)
+        ?? headings.find((heading) => heading.textContent?.trim().toLowerCase().includes(wanted))
+        ?? null;
+    };
+
+    const focusSection = () => {
+      if (cancelled) return;
+      const match = findHeading();
+      if (match) {
+        // Query the live node each attempt; Milkdown replaces heading nodes
+        // while the editor finishes its initial mount.
+        match.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        finishTimer = window.setTimeout(clearParam, 900);
+        return;
+      }
+      if (Date.now() < deadline) {
+        timer = window.setTimeout(focusSection, 180);
+      } else {
+        finishTimer = window.setTimeout(clearParam, 0);
+      }
+    };
+
+    focusSection();
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+      if (finishTimer) window.clearTimeout(finishTimer);
+    };
+  }, [searchParams, setSearchParams, loading, isLoadingDocument, document?.id, viewMode]);
 
   const handleShare = () => {
-    if (document?.id) {
-      void publicSharePanel.openDocument(document.id);
-    }
+    if (!document?.id) return;
+    sharePanel.openSharePanel({
+      targetType: 'document',
+      targetId: document.id,
+      targetTitle: title.trim() || document.title || 'Untitled',
+      ...(document.folder ? { folderId: document.folder } : {}),
+      onChanged: () => setRefreshTrigger((value) => value + 1),
+    });
   };
 
   const handleExport = async () => {
@@ -138,6 +263,7 @@ export function DocumentEditor() {
             transform: headerExpanded ? 'translateY(0)' : 'translateY(-12px)',
           }}
         >
+          <AiEditingBanner type="document" id={document?.id} />
           <EditorHeader
             title={title}
             onTitleChange={setTitle}
@@ -155,6 +281,8 @@ export function DocumentEditor() {
             onShare={handleShare}
             onExport={handleExport}
             onDelete={handleDelete}
+            onAskNana={() => setChatDockOpen(true)}
+            askNanaDisabled={urlDocumentId === 'new' || Boolean(isTrashDocument)}
           />
         </div>
 
@@ -189,6 +317,7 @@ export function DocumentEditor() {
             readOnly={isTrashDocument}
             viewMode={effectiveViewMode}
             onDropFiles={handleDrop}
+            aiEdit={aiEdit}
           />
         </div>
       </div>
@@ -255,13 +384,18 @@ export function DocumentEditor() {
         </div>
       )}
 
-      <PublicSharePanel
-        target={publicSharePanel.target}
-        isOpen={publicSharePanel.isOpen}
-        isSaving={publicSharePanel.isSaving}
-        onClose={publicSharePanel.close}
-        onSave={publicSharePanel.save}
-      />
+      {sharePanel.target && (
+        <SharePanel
+          open
+          onClose={sharePanel.closeSharePanel}
+          targetType={sharePanel.target.targetType}
+          targetId={sharePanel.target.targetId}
+          targetTitle={sharePanel.target.targetTitle}
+          folderId={sharePanel.target.folderId}
+          folderName={sharePanel.target.folderName}
+          onChanged={sharePanel.target.onChanged}
+        />
+      )}
 
       <ConfirmDialog
         open={deleteConfirm}

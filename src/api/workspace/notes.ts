@@ -1,14 +1,15 @@
 import { generateSlug } from "../../lib/documents/utils";
 import { sanitizeHtml } from "../../lib/sanitize";
 import { escapeFilterString } from "../chat/tools/text";
+import { noteVersionToken } from "../chat/tools/version";
 import {
     pbRequest,
     queryString,
     type PBListResponse,
     type ToolContext,
 } from "../pocketbase/client";
-import { notFound, upstream } from "./errors";
-import { recordIsLocked, workspaceVisibilityConditions } from "./privacy";
+import { ApiError, conflict, notFound, upstream } from "./errors";
+import { folderIsLocked, recordIsLocked, workspaceVisibilityConditions } from "./privacy";
 import {
     assertFolderVisible,
     assertRecordId,
@@ -40,9 +41,37 @@ export interface PBNoteRecord {
     is_private?: boolean;
     is_public?: boolean;
     published?: boolean;
+    revision?: number;
     author?: string;
     created?: string;
     updated?: string;
+}
+
+/** Full pre-edit note state used by the AI undo path. */
+export interface NoteSnapshot {
+    title: string;
+    content: string;
+    tags: string[];
+    folder: string;
+    isPrivate: boolean;
+}
+
+export interface NoteEditOptions {
+    /** The revision the caller read; stale revisions are rejected before writing. */
+    revision: number;
+    /** Optional opaque token returned by read_note. */
+    versionToken?: string;
+    /** Set `published: true` so PocketBase snapshots the old state. Default true. */
+    publish?: boolean;
+    /** Section edits pre-sanitize the fragments and must not reformat the note. */
+    sanitizeContent?: boolean;
+}
+
+export interface NoteEditResult {
+    note: NoteDto;
+    revision: number;
+    previous: NoteSnapshot;
+    versionToken: string;
 }
 
 export interface ListNotesParams {
@@ -78,6 +107,7 @@ const NOTE_METADATA_FIELDS = [
     "is_private",
     "is_public",
     "published",
+    "revision",
     "word_count",
     "reading_time",
     "created",
@@ -111,6 +141,22 @@ function toNoteDto(record: PBNoteRecord): NoteDto {
         ...toNoteSummary(record),
         slug: record.slug || "",
         content: record.content || "",
+    };
+}
+
+function noteRevision(record: PBNoteRecord): number {
+    return typeof record.revision === "number" && Number.isFinite(record.revision)
+        ? record.revision
+        : 0;
+}
+
+function snapshotNote(record: PBNoteRecord): NoteSnapshot {
+    return {
+        title: noteTitle(record),
+        content: record.content || "",
+        tags: normalizeStringArray(record.tags),
+        folder: record.folder || "",
+        isPrivate: record.is_private === true,
     };
 }
 
@@ -284,6 +330,161 @@ export async function updateNote(
     const path = `/api/collections/documents/records/${encodeURIComponent(current.id)}`;
     const record = unwrap(await pbRequest<PBNoteRecord>(path, context, { method: "PATCH", body }));
     return toNoteDto(record);
+}
+
+/**
+ * Revision-aware note write for the AI edit tools.
+ *
+ * The caller must pass the revision (and optionally the version token) it read.
+ * A mismatch is a `conflict` before PocketBase is touched. Content is normally
+ * sanitized, but section edits pre-sanitize their fragments so untouched
+ * sections stay byte-identical. `published: true` makes the PocketBase version
+ * hook snapshot the pre-write state; AI writes also carry `X-Nana-Actor: ai`.
+ */
+export async function editNoteRecord(
+    context: ToolContext,
+    surface: Surface = "user",
+    id: string,
+    patch: UpdateNoteInput,
+    options: NoteEditOptions,
+): Promise<NoteEditResult> {
+    assertWritable(context);
+
+    const current = await loadNoteRecord(context, id);
+    const visibility = await visibilityFor(context, surface);
+    if (recordIsLocked(visibility, surface, current)) throw notFound();
+
+    const currentRevision = noteRevision(current);
+    const currentToken = noteVersionToken(current);
+    if (options.versionToken && options.versionToken !== currentToken) {
+        throw conflict("This note changed since it was read. Read it again and retry.");
+    }
+    if (options.revision !== currentRevision) {
+        throw conflict("This note changed since it was read. Read it again and retry.");
+    }
+
+    const body: Record<string, unknown> = {};
+    let changed = false;
+
+    if (patch.title !== undefined) {
+        const title = (patch.title || "").trim() || "Untitled";
+        body.title = title;
+        body.slug = generateSlug(title) || "untitled";
+        changed = true;
+    }
+    if (patch.content !== undefined) {
+        body.content = options.sanitizeContent === false
+            ? patch.content
+            : await sanitizeHtml(patch.content);
+        changed = true;
+    }
+    if (patch.tags !== undefined) {
+        body.tags = normalizeStringArray(patch.tags);
+        changed = true;
+    }
+    if (patch.isPrivate !== undefined) {
+        body.is_private = patch.isPrivate === true;
+        changed = true;
+    }
+    if (patch.folderId !== undefined) {
+        const folderId = normalizeFolderId(patch.folderId);
+        if (folderId) {
+            await assertFolderVisible(context, surface, folderId, visibility);
+            body.folder = folderId;
+        } else {
+            if (!visibility.rootAllowed) throw notFound();
+            body.folder = "";
+        }
+        changed = true;
+    }
+
+    if (!changed) {
+        return {
+            note: toNoteDto(current),
+            revision: currentRevision,
+            previous: snapshotNote(current),
+            versionToken: currentToken,
+        };
+    }
+
+    // The migration and revision hook own the actual bump, but sending the
+    // revision both enforces optimistic concurrency and unlocks AI writes.
+    body.revision = currentRevision;
+    if (options.publish !== false) body.published = true;
+
+    const path = `/api/collections/documents/records/${encodeURIComponent(current.id)}`;
+    const record = unwrap(await pbRequest<PBNoteRecord>(path, context, { method: "PATCH", body }));
+
+    return {
+        note: toNoteDto(record),
+        revision: noteRevision(record),
+        previous: snapshotNote(current),
+        versionToken: noteVersionToken(record),
+    };
+}
+
+/**
+ * Restore a pre-edit snapshot through the same revision-aware update path.
+ * Used by chat undo. The snapshot was persisted by the version hook (and is
+ * additionally carried in the chat_edits row as a fallback).
+ */
+export async function restoreNoteSnapshot(
+    context: ToolContext,
+    surface: Surface = "user",
+    id: string,
+    snapshot: NoteSnapshot,
+    revision: number,
+    expectedUpdated?: string,
+): Promise<{ note: NoteDto; revision: number; versionToken: string }> {
+    assertWritable(context);
+
+    const current = await loadNoteRecord(context, id);
+    const visibility = await visibilityFor(context, surface);
+    if (recordIsLocked(visibility, surface, current)) throw notFound();
+
+    const currentRevision = noteRevision(current);
+    if (revision !== currentRevision) {
+        throw conflict("This note changed after Nana's edit, so it can no longer be undone safely.");
+    }
+    if (expectedUpdated && current.updated && current.updated !== expectedUpdated) {
+        throw conflict("This note changed after Nana's edit, so it can no longer be undone safely.");
+    }
+
+    let folder = snapshot.folder;
+    if (folder) {
+        if (folderIsLocked(visibility, folder)) {
+            folder = "";
+        } else {
+            try {
+                await assertFolderVisible(context, surface, folder, visibility);
+            } catch (error) {
+                // The folder was trashed or deleted after the edit. Restore the
+                // note at the root rather than failing the whole undo.
+                if (!(error instanceof ApiError) || error.status !== 404) throw error;
+                folder = "";
+            }
+        }
+    }
+
+    const body: Record<string, unknown> = {
+        title: snapshot.title,
+        slug: generateSlug(snapshot.title) || "untitled",
+        content: snapshot.content,
+        tags: normalizeStringArray(snapshot.tags),
+        is_private: snapshot.isPrivate === true,
+        folder,
+        revision: currentRevision,
+        published: true,
+    };
+
+    const path = `/api/collections/documents/records/${encodeURIComponent(current.id)}`;
+    const record = unwrap(await pbRequest<PBNoteRecord>(path, context, { method: "PATCH", body }));
+
+    return {
+        note: toNoteDto(record),
+        revision: noteRevision(record),
+        versionToken: noteVersionToken(record),
+    };
 }
 
 /** Move a note to a folder, or to the root with an empty/null folder id. */

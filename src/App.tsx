@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { useEffect, useLayoutEffect, useState, useRef, lazy, Suspense } from "react";
-import { useSetAtom } from 'jotai';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { SignInPage } from "./pages/SignInPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { FolderViewPage } from "./pages/FolderViewPage";
@@ -12,18 +12,28 @@ import { Sidebar } from "./components/Sidebar";
 import { InstallBanner } from "./components/pwa/InstallBanner";
 import { ToastHost } from "./components/ToastHost";
 import { AddToBoardHost } from "./components/board/AddToBoardHost";
+import { ChatDock } from "./components/chat/ChatDock";
 import { useAuth } from "./lib/auth";
+import { resetChatStore } from "./lib/chat/store";
+import { clearChatContextCaches } from "./lib/chat/context";
 
 // Lazy load heavy routes for code splitting
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const BoardArchivePage = lazy(() => import("./pages/BoardArchivePage"));
 const BoardPage = lazy(() => import("./pages/BoardPage"));
+const SharedPage = lazy(() => import("./pages/SharedPage"));
+const SharedFolderPage = lazy(() => import("./pages/SharedFolderPage"));
 const DocumentEditor = lazy(() => import("./components/DocumentEditor"));
 const PublicDocumentPage = lazy(() => import("./pages/PublicDocumentPage"));
 const PublicFolderPage = lazy(() => import("./pages/PublicFolderPage"));
 const PublicBoardPage = lazy(() => import("./pages/PublicBoardPage"));
 import { useSidebar, useDocumentEditor, useDocumentData } from "./state/hooks";
-import { initialLoadDoneAtom } from './state/atoms';
+import {
+  chatConversationIdAtom,
+  chatDockHistoryOpenAtom,
+  chatDockOpenAtom,
+  initialLoadDoneAtom,
+} from './state/atoms';
 import { useSidebarWidth, setLastNonDocumentRoute } from "./lib/settings";
 import "./index.css";
 
@@ -86,7 +96,11 @@ function AppContent() {
   const { reset } = useDocumentEditor();
   const location = useLocation();
   const sidebarWidth = useSidebarWidth();
-  
+  const chatDockOpen = useAtomValue(chatDockOpenAtom);
+  const chatDockHistoryOpen = useAtomValue(chatDockHistoryOpenAtom);
+  const setChatDockOpen = useSetAtom(chatDockOpenAtom);
+  const setChatConversationId = useSetAtom(chatConversationIdAtom);
+
   // Detect public routes early — skip authenticated data loading on public pages
   const isPublicRoute = location.pathname.startsWith('/public/');
 
@@ -109,6 +123,7 @@ function AppContent() {
   const COMPACT_SIDEBAR_WIDTH = 64;
   const MOBILE_NAVBAR_HEIGHT = 'var(--mobile-navbar-height, calc(64px + env(safe-area-inset-bottom)))';
   const previousMobilePathRef = useRef(location.pathname);
+  const previousUserIdRef = useRef<string | null>(user?.id ?? null);
 
   // Reload app when returning after long inactivity (tab switch, app switch, sleep/wake)
   // Only applies to the document editor — other pages stay fresh via realtime subscriptions
@@ -215,11 +230,29 @@ function AppContent() {
     };
   }, [isPublicRoute]);
 
+  // Chat state belongs to one account. Signing out (or switching accounts)
+  // drops the conversation, its stream, and the persisted dock preference.
+  useEffect(() => {
+    const previous = previousUserIdRef.current;
+    const current = user?.id ?? null;
+    if (previous && previous !== current) {
+      resetChatStore();
+      clearChatContextCaches();
+      setChatDockOpen(false);
+      setChatConversationId(null);
+    }
+    previousUserIdRef.current = current;
+  }, [user?.id, setChatDockOpen, setChatConversationId]);
+
   const shouldShowSidebar = user && !isStandalonePage;
   const isDocumentRoute = location.pathname.startsWith('/document/');
   const isChatRoute = location.pathname.startsWith('/chat');
   const shouldShowInstallPrompt = shouldShowSidebar && !isDocumentRoute;
   const shouldDockSidebar = !isMobile && window.innerWidth >= 1024;
+  const chatDockVisible = shouldShowSidebar && chatDockOpen && !isChatRoute && !isPublicRoute;
+  const chatDockWidth = !isMobile && chatDockVisible
+    ? (chatDockHistoryOpen ? 656 : 400)
+    : 0;
   const routeDirection = isMobile
     ? getMobileRouteDirection(previousMobilePathRef.current, location.pathname)
     : 'none';
@@ -231,6 +264,17 @@ function AppContent() {
 
     previousMobilePathRef.current = location.pathname;
   }, [isMobile, location.pathname]);
+
+  // The editor footer is portalled to <body> and pins itself to the viewport
+  // edge. A CSS hook lets the dock shift it without editing the footer.
+  useEffect(() => {
+    document.body.style.setProperty('--nana-chat-dock-width', `${chatDockWidth}px`);
+    document.body.dataset.chatDockOpen = chatDockWidth > 0 ? 'true' : 'false';
+    return () => {
+      delete document.body.dataset.chatDockOpen;
+      document.body.style.removeProperty('--nana-chat-dock-width');
+    };
+  }, [chatDockWidth]);
 
   const mobileAnimationName = routeDirection === 'left'
     ? 'mobile-route-enter-from-right'
@@ -253,8 +297,11 @@ function AppContent() {
         className={`flex w-full min-w-0 flex-1 flex-col overflow-x-hidden ${isMobile && (isDocumentRoute || isChatRoute) ? 'overflow-y-hidden' : isPublicRoute ? 'overflow-y-auto' : 'overflow-y-auto md:overflow-hidden'}`}
         style={{
           paddingLeft: `${dockedContentInset}px`,
+          paddingRight: chatDockWidth > 0 ? `${chatDockWidth}px` : '0px',
           paddingBottom: shouldShowSidebar && isMobile && !isDocumentRoute ? MOBILE_NAVBAR_HEIGHT : '0px',
-          transition: sidebarResizing ? 'none' : 'padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          transition: sidebarResizing
+            ? 'none'
+            : 'padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding-right 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
         <div
@@ -287,6 +334,8 @@ function AppContent() {
               <Route path="/folders/trash/:trashFolderId" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/folders/shared" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
               <Route path="/folders/:folderId" element={<ProtectedRoute><FolderViewPage /></ProtectedRoute>} />
+              <Route path="/shared" element={<ProtectedRoute><SharedPage /></ProtectedRoute>} />
+              <Route path="/shared/folders/:folderId" element={<ProtectedRoute><SharedFolderPage /></ProtectedRoute>} />
               <Route path="/timeline" element={<ProtectedRoute><TimelinePage /></ProtectedRoute>} />
               <Route path="/board" element={<Navigate to="/timeline" replace />} />
               <Route path="/board/archive" element={<ProtectedRoute><BoardArchivePage /></ProtectedRoute>} />
@@ -310,6 +359,7 @@ function AppContent() {
       {shouldShowInstallPrompt && <InstallBanner />}
       <ToastHost />
       <AddToBoardHost />
+      {shouldShowSidebar && <ChatDock />}
     </div>
   );
 }

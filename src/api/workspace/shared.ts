@@ -6,7 +6,7 @@ import {
     type ToolFailure,
     type ToolResult,
 } from "../pocketbase/client";
-import { ApiError, badRequest, forbidden, notFound, unauthorized, upstream } from "./errors";
+import { ApiError, badRequest, conflict, forbidden, notFound, unauthorized, upstream } from "./errors";
 import {
     folderIsLocked,
     loadWorkspaceVisibility,
@@ -34,6 +34,8 @@ export function apiErrorFromToolFailure(failure: ToolFailure): ApiError {
             return notFound(failure.message);
         case "invalid_input":
             return badRequest(failure.message);
+        case "conflict":
+            return conflict(failure.message);
         default:
             return upstream(failure.message);
     }

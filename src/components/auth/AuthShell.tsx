@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { PencilSquareIcon, Square3Stack3DIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { Button } from '../ui';
+import logo from '../../assets/nana-favicon.svg';
 
 interface AuthShellProps {
   children: ReactNode;
@@ -37,9 +38,13 @@ export function AuthShell({ children, footer }: AuthShellProps) {
         <section className="relative flex flex-col justify-between overflow-hidden bg-cover px-6 py-10 text-cover-ink sm:px-10 lg:col-span-6 lg:min-h-screen lg:border-r lg:border-cover-line lg:px-14 lg:py-14">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-cover-ink text-[16px] font-semibold lowercase leading-none text-cover" aria-hidden="true">
-                n
-              </span>
+              <img
+                src={logo}
+                alt=""
+                className="h-8 w-8 shrink-0"
+                draggable={false}
+                aria-hidden="true"
+              />
               <div className="min-w-0">
                 <h1 className="text-[15px] font-semibold leading-none tracking-[-0.02em] text-cover-ink">
                   Nana

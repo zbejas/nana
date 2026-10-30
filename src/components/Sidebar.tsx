@@ -13,6 +13,7 @@ import {
   ChevronDownIcon,
   PlusIcon,
   FolderPlusIcon,
+  UsersIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from "../lib/auth";
 import { useSidebar, useToasts } from "../state/hooks";
@@ -33,6 +34,7 @@ import {
   resetEditorAtom,
   startNewDocumentAtom,
   selectDocumentAtom,
+  chatDockOpenAtom,
 } from "../state/atoms";
 import { FolderContextMenu } from "./file-folder-handling/context-menu/FolderContextMenu";
 import { DocumentContextMenu } from "./file-folder-handling/context-menu/DocumentContextMenu";
@@ -52,17 +54,17 @@ import { useDialogState } from "./sidebar/useDialogState";
 import { useMobileState } from "./sidebar/useMobileState";
 import { CompactSidebar } from "./sidebar/CompactSidebar";
 import { useContextMenuState, useContextMenuHandlers } from "./file-folder-handling";
-import { PublicSharePanel } from "./modals/PublicSharePanel";
-import { usePublicSharePanelState } from "./modals/usePublicSharePanelState";
+import { SharePanel, useSharePanel } from "./sharing";
 import { useSidebarWidth } from "../lib/settings";
 import { IconButton } from "./ui";
-import logo from '../assets/nana.svg';
+import { BrandMark } from "./BrandMark";
 
 const noopLoadFolderDocuments = async (_folderId: string, _isTrash?: boolean) => {};
 
 const NAV_ITEMS = [
   { key: 'timeline', label: 'Timeline', path: '/timeline', icon: ClockIcon },
   { key: 'folders', label: 'Folders', path: '/folders', icon: FolderIcon },
+  { key: 'shared', label: 'Shared', path: '/shared', icon: UsersIcon },
   { key: 'chat', label: 'Chat', path: '/chat', icon: ChatBubbleLeftRightIcon },
 ] as const;
 
@@ -93,6 +95,8 @@ export function Sidebar() {
   const expandedFolders = useAtomValue(expandedFoldersAtom);
   const isDataLoading = useAtomValue(isDataLoadingAtom);
   const selectedDocument = useAtomValue(selectedDocumentAtom);
+  const chatDockOpen = useAtomValue(chatDockOpenAtom);
+  const setChatDockOpen = useSetAtom(chatDockOpenAtom);
   const saveCallback = useAtomValue(saveCallbackAtom);
   const toggleFolder = useSetAtom(toggleFolderAtom);
   const select = useSetAtom(selectDocumentAtom);
@@ -128,7 +132,7 @@ export function Sidebar() {
     showDeleteDialog, deleteDialogConfig, openDeleteDialog, closeDeleteDialog,
     showLogoutDialog, setShowLogoutDialog
   } = useDialogState();
-  const publicSharePanel = usePublicSharePanelState();
+  const sharePanel = useSharePanel();
 
   const contextMenuHandlers = useContextMenuHandlers({
     contextMenu,
@@ -257,7 +261,7 @@ export function Sidebar() {
                 className="-ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-control text-left md:min-h-0"
                 aria-label="Nana home"
               >
-                <img src={logo} alt="" className="h-8 w-8 shrink-0" draggable={false} />
+                <BrandMark className="h-8 w-8 shrink-0" />
                 <span className="min-w-0">
                   <span className="block truncate text-[14px] font-semibold leading-none tracking-[-0.02em] text-ink">
                     Nana
@@ -295,12 +299,26 @@ export function Sidebar() {
           <nav className="px-2 pb-2" aria-label="Primary">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
-              const active = isNavActive(location.pathname, item.path);
+              const isChat = item.key === 'chat';
+              const onChatRoute = location.pathname.startsWith('/chat');
+              const active = isNavActive(location.pathname, item.path) || (isChat && chatDockOpen && !onChatRoute);
+              const handleClick = () => {
+                if (!isChat || onChatRoute) {
+                  handleViewNavigation(item.path);
+                  return;
+                }
+                if (isMobile) {
+                  prepareForNavigation();
+                  toggle();
+                }
+                setChatDockOpen((open) => !open);
+              };
               return (
                 <button
                   key={item.key}
-                  onClick={() => handleViewNavigation(item.path)}
-                  aria-current={active ? 'page' : undefined}
+                  onClick={handleClick}
+                  aria-current={isNavActive(location.pathname, item.path) ? 'page' : undefined}
+                  aria-pressed={isChat ? chatDockOpen : undefined}
                   className={`group relative mb-0.5 flex h-8 w-full items-center gap-2.5 rounded-control border px-2.5 text-[13px] font-medium transition-colors ${
                     active
                       ? 'border-line bg-surface text-ink'
@@ -474,7 +492,11 @@ export function Sidebar() {
           onRenameDocument={contextMenuHandlers.handleRenameDocument}
           onMakePublicDocument={() => {
             if (contextMenu?.documentId) {
-              void publicSharePanel.openDocument(contextMenu.documentId);
+              sharePanel.openSharePanel({
+                targetType: 'document',
+                targetId: contextMenu.documentId,
+                targetTitle: 'Note',
+              });
               closeContextMenu();
             }
           }}
@@ -509,7 +531,11 @@ export function Sidebar() {
           onRenameFolder={contextMenuHandlers.handleRenameFolder}
           onMakePublicFolder={() => {
             if (contextMenu?.folderId) {
-              void publicSharePanel.openFolder(contextMenu.folderId);
+              sharePanel.openSharePanel({
+                targetType: 'folder',
+                targetId: contextMenu.folderId,
+                targetTitle: contextMenu.folderName || 'Folder',
+              });
               closeContextMenu();
             }
           }}
@@ -554,7 +580,11 @@ export function Sidebar() {
           }}
           onShareBoard={() => {
             if (contextMenu.boardId) {
-              void publicSharePanel.openBoard(contextMenu.boardId);
+              sharePanel.openSharePanel({
+                targetType: 'board',
+                targetId: contextMenu.boardId,
+                targetTitle: contextMenu.boardName || 'Board',
+              });
               closeContextMenu();
             }
           }}
@@ -592,13 +622,18 @@ export function Sidebar() {
         onLogoutCancel={() => setShowLogoutDialog(false)}
       />
 
-      <PublicSharePanel
-        target={publicSharePanel.target}
-        isOpen={publicSharePanel.isOpen}
-        isSaving={publicSharePanel.isSaving}
-        onClose={publicSharePanel.close}
-        onSave={publicSharePanel.save}
-      />
+      {sharePanel.target && (
+        <SharePanel
+          open
+          onClose={sharePanel.closeSharePanel}
+          targetType={sharePanel.target.targetType}
+          targetId={sharePanel.target.targetId}
+          targetTitle={sharePanel.target.targetTitle}
+          folderId={sharePanel.target.folderId}
+          folderName={sharePanel.target.folderName}
+          onChanged={sharePanel.target.onChanged}
+        />
+      )}
     </>
   );
 }

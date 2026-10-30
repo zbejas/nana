@@ -37,7 +37,7 @@ src/
   api/mcp/              Stateless MCP server and its folder/note/board/task tools
   api/workspace/        Shared workspace services and the AI visibility lock
   api/pocketbase/       Caller-token PocketBase client shared by REST, MCP, chat
-  api/chat/tools/       Read-only, privacy-locked note/board tools (user token)
+  api/chat/tools/       Privacy-locked read tools plus edit-mode note/board/task tools (user token)
   components/           UI components (editor, sidebar, folder view, boards, modals, PWA)
   pages/                Route-level pages (timeline, boards, archive, chat, settings)
   state/                Jotai atoms + data/realtime/lazy-loading hooks
@@ -85,7 +85,7 @@ Bun :3000 ── src/index.ts
   ├── /pb, /pb/* ─────────▶ 404 (public PocketBase proxy removed)
   ├── /docs, /docs/json ──▶ OpenAPI spec + self-hosted Scalar reference (public)
   ├── /mcp ───────────────▶ MCP Streamable HTTP ──▶ workspace services ──▶ PB REST (user token)
-  ├── /api/chat/* ────────▶ AI SDK providers + read tools ──▶ PB REST (user token)
+  ├── /api/chat/* ────────▶ AI SDK providers + read/write tools ──▶ PB REST (user token)
   ├── /api/export ────────▶ PB documents/attachments → Markdown/ZIP
   ├── /api/app/version ───▶ GitHub Releases API
   └── /* ─────────────────▶ React SPA (dev: HMR, prod: dist/)
@@ -112,7 +112,7 @@ Bun :3000 ── src/index.ts
 17. **Use semantic tokens, not raw colours.** The Graphite tokens are defined in `src/index.css` and documented in [`DESIGN.md`](DESIGN.md). Use `bg-surface`, `border-line`, `text-ink`, `text-ink-secondary`, `text-ink-muted`, `bg-signal-bright`, `bg-signal-soft`, `text-signal`, `text-warning`, `text-success`, `text-danger`, etc. No `gray`/`stone`/`blue` families, no `dark:`/`light:` variants, no gradients, grain, glass, or serif faces. Use one family (`Geist`) for interface text; reserve `Geist Mono` for code and identifiers.
 18. **Tasks are separate from documents.** Tasks belong to an author-scoped `boards` record through the required `board` relation; a task may reference one document. Notes and tasks do not cascade into each other. Do not turn notes into tasks by overloading `documents`.
 19. **Boards archive before delete.** Permanent delete is allowed only for archived boards, and PocketBase cascades that board's tasks. Never add a client-side task-deletion loop or loosen the delete rule.
-20. **Chat tools are read-only; MCP is the separate write surface.** `src/api/chat/tools/` uses the caller's token, never the superuser, and every read is owner-scoped (`author`, or `board.author` for tasks) and private-locked. Keep chat read-only. MCP tools use the caller's refreshed session token or the user token minted for an API key, owner scoping, `surface: "ai"`, and the private lock through `src/api/workspace/`; they do not extend the chat tool set.
+20. **Chat reads and edits; MCP is the separate external write surface.** `src/api/chat/tools/` uses the caller's token, never the superuser, and every read is owner-scoped (`author`, or `board.author` for tasks) and private-locked. Chat write tools (`create_note`, `append_note`, `edit_note`, `update_note`, `create_board`, `create_task`, `update_task`, `move_task`) are registered only for `mode: "edit"`; they go through `src/api/workspace/` with revision checks and record `chat_edits`. Chat has no delete, move, publish, share, privacy, column, or label tools. MCP tools use the caller's refreshed session token or the user token minted for an API key, owner scoping, `surface: "ai"`, and the private lock through `src/api/workspace/`; they do not extend the chat tool set.
 21. **Private records stay hidden from every AI surface.** Private notes, private boards, private folders, and every descendant of a private folder are invisible to chat and MCP: omitted from lists, `not_found` by id, and refused for writes. `/api/v1` is the owner surface and deliberately still shows private records to their owner. API key scope is an additional envelope on top of this rule; it never bypasses the private lock.
 22. **Typed workspace writes go through the shared services; browser writes go through the facade adapter.** Typed REST and MCP call `src/api/workspace/` with a `ToolContext`; they do not call PocketBase directly. Every service honors `context.apiKey` access and scope. The browser facade calls PocketBase only through `src/api/rest/browser/` with its collection allowlist, author injection, relation checks, and sanitization. New `/api/v1` routes belong in the Elysia app, and new MCP tools belong in `src/api/mcp/`, not in `/api` aliases.
 23. **Boards in folders never cascade.** `boards.folder` uses `cascadeDelete: false`; folder trash and permanent delete rehome boards to the root. Incoming folder, parent, board, and note relations go through `pocketbase/pb_hooks/guards/relation_guards.js`, which checks ownership, trashed state, and folder cycles.

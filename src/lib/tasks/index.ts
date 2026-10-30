@@ -144,12 +144,23 @@ export interface TaskActivity extends RecordModel {
   task: string;
   board: string;
   actor?: string;
+  actor_type?: 'user' | 'ai' | 'system';
+  actor_label?: string;
   type: TaskActivityType;
   data: Record<string, unknown>;
   created: string;
   expand?: {
     actor?: TaskUser;
   };
+}
+
+/** An owner-defined label. Tasks store label names; this collection owns colours. */
+export interface TaskLabel extends RecordModel {
+  author: string;
+  name: string;
+  color: string;
+  created: string;
+  updated: string;
 }
 
 export interface TaskComment extends RecordModel {
@@ -173,6 +184,7 @@ export interface TaskCommentsResult {
 const COLLECTION = 'tasks';
 const RELATIONS_COLLECTION = 'task_relations';
 const ACTIVITY_COLLECTION = 'task_activity';
+const LABELS_COLLECTION = 'labels';
 const SHARING_COMMENTS_PATH = '/sharing/comments';
 
 function normalizeLabels(value: unknown): string[] {
@@ -405,16 +417,33 @@ export async function createTaskRelation(
     throw new Error('Choose a relation type.');
   }
 
-  const record = await pb.collection(RELATIONS_COLLECTION).create<TaskRelation>({
-    source: data.source,
-    target: data.target,
-    type: data.type,
+  // The browser facade keeps `task_relations` read-only; writes go through the
+  // typed workspace route, which applies the same access and privacy checks as
+  // the rest of `/api/v1`.
+  const dto = await pb.send<{
+    id: string;
+    sourceTaskId: string;
+    targetTaskId: string;
+    type: TaskRelationType;
+    created: string;
+    updated: string;
+  }>(`/tasks/${encodeURIComponent(data.source)}/relations`, {
+    method: 'POST',
+    body: { targetTaskId: data.target, type: data.type },
   });
-  return record;
+
+  return {
+    id: dto.id,
+    source: dto.sourceTaskId,
+    target: dto.targetTaskId,
+    type: dto.type,
+    created: dto.created,
+    updated: dto.updated,
+  };
 }
 
 export async function deleteTaskRelation(id: string): Promise<void> {
-  await pb.collection(RELATIONS_COLLECTION).delete(id);
+  await pb.send(`/task-relations/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 /** Task activity, newest first. The server appends rows; nothing here writes. */
@@ -431,6 +460,44 @@ export async function listTaskActivity(taskId: string): Promise<TaskActivity[]> 
   });
 
   return records;
+}
+
+// ── Labels ──────────────────────────────────────────────────────────
+
+function normalizeLabel(record: TaskLabel): TaskLabel {
+  return {
+    ...record,
+    author: record.author ?? '',
+    name: (record.name ?? '').trim(),
+    color: (record.color ?? '').trim() || 'ash',
+    created: record.created ?? '',
+    updated: record.updated ?? '',
+  };
+}
+
+/** The signed-in owner's label definitions. Grantees see task names only. */
+export async function listLabels(): Promise<TaskLabel[]> {
+  const records = await pb.collection(LABELS_COLLECTION).getFullList<TaskLabel>({
+    sort: 'name',
+    requestKey: null,
+  });
+
+  return records.map(normalizeLabel);
+}
+
+/** Create an owner label. The facade injects the owner as `author`. */
+export async function createLabel(name: string, color = 'ash'): Promise<TaskLabel> {
+  const cleanName = name.trim().slice(0, 40);
+  if (!cleanName) {
+    throw new Error('Give the label a name.');
+  }
+
+  const record = await pb.collection(LABELS_COLLECTION).create<TaskLabel>({
+    name: cleanName,
+    color: color.trim() || 'ash',
+  });
+
+  return normalizeLabel(record);
 }
 
 // ── Comments ────────────────────────────────────────────────────────

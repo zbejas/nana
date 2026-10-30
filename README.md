@@ -32,8 +32,8 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 
 - Self-hosted by default. Your data stays on your server.
 - Markdown-first editing with live preview and attachments.
-- Multiple kanban boards for the work around your notes, with an archive.
-- Built-in AI chat that reads your notes and boards.
+- Multiple kanban boards with custom columns, labels, assignees, comments, and board/list/calendar views.
+- Built-in AI chat that reads and edits notes and boards, with section-level undo.
 - A first-class Elysia `/api/v1` API with self-hosted Scalar docs, plus an MCP endpoint for external AI clients.
 - A calm, paper-like interface with night and daylight themes.
 - Modern stack: Bun, React, TailwindCSS, and PocketBase.
@@ -44,11 +44,11 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | | |
 |---|---|
 | **Markdown editor** | Live preview, rich formatting, and attachment support. |
-| **Boards** | Multiple four-column kanbans with drag-and-drop, note import, folders, private boards, public read-only board links, an archive, and permanent delete for archived boards. |
-| **AI chat** | Ask about your notes and boards. The assistant reads them on demand with OpenAI, Google, or Ollama, and never writes to your workspace. |
+| **Boards** | Multiple kanbans with custom columns, drag-and-drop, board/list/calendar views, labels, assignees, subtasks, relations, comments, note import, folders, private boards, public read-only links, an archive, and permanent delete for archived boards. |
+| **AI chat** | Ask about your notes and boards, or switch to Edit mode to create and update notes, boards, and tasks. Note edits are section-scoped and undoable; destructive, sharing, and privacy changes stay out of chat. |
 | **API and MCP** | Reach the same workspace from your own tools with a JSON API and a stateless MCP endpoint. Private records stay hidden from AI. |
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline of recent notes and boards. |
-| **Public sharing** | Share documents, boards, or entire folders (with their notes and boards) via link, with optional expiration. |
+| **Sharing** | Share notes, boards, and folders with other people at view, comment, or edit access, or publish a public read-only link with optional expiration. |
 | **Version history** | Save snapshots and restore earlier states when needed. |
 | **Trash system** | Recover deleted notes and folders intact, including attachments and version history; permanent delete is a separate step. |
 | **Mobile-friendly** | Clean, responsive interface across screen sizes, with dark and light themes. |
@@ -57,7 +57,9 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 
 Boards live in the same folder tree as notes. The timeline, sidebar library, and folder view show boards beside their notes; drag a board into another folder, choose **New board** in a folder to file it there, or move it from the board's settings. Right-click a board to open, edit, or share it. A public board link opens a read-only page with its tasks, while private boards stay out of every public and AI surface. Boards are archived before they can be deleted, and a folder never deletes the boards inside it: move a folder to trash and its boards return to the root with their tasks.
 
-Mark a note, board, or folder **Private** to keep it out of AI chat and MCP. It stays in your workspace and you can still open and edit it.
+Open a note, board, or folder’s **Share** panel to invite another account at **Can view**, **Can comment**, or **Can edit**. Folder access flows down to its notes, boards, and subfolders; inherited access is shown in the panel. **Shared with me** collects everything another account has shared with you. Sharing is between accounts on the same Nana instance.
+
+Mark a note, board, or folder **Private** to keep it out of AI chat and MCP and to prevent people-sharing it. It stays in your workspace and you can still open and edit it.
 
 ## API and MCP
 

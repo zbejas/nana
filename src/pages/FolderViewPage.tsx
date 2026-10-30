@@ -8,8 +8,7 @@ import { FolderViewHeader } from '../components/folder-view/FolderViewHeader';
 import { FolderViewList } from '../components/folder-view/FolderViewList';
 import { FolderViewGrid } from '../components/folder-view/FolderViewGrid';
 import { useFolderViewState } from '../components/folder-view/useFolderViewState';
-import { PublicSharePanel } from '../components/modals/PublicSharePanel';
-import { usePublicSharePanelState } from '../components/modals/usePublicSharePanelState';
+import { SharePanel, useSharePanel } from '../components/sharing';
 import {
   TrashIcon,
   GlobeAltIcon,
@@ -29,7 +28,7 @@ import {
 } from '../components/ui';
 
 export function FolderViewPage() {
-  const publicSharePanel = usePublicSharePanelState();
+  const sharePanel = useSharePanel();
   const setAddToBoardRequest = useSetAtom(addToBoardRequestAtom);
   const {
     viewMode,
@@ -400,7 +399,11 @@ export function FolderViewPage() {
             onRenameDocument={handleRenameDocument}
             onMakePublicDocument={() => {
               if (contextMenu?.documentId) {
-                void publicSharePanel.openDocument(contextMenu.documentId);
+                sharePanel.openSharePanel({
+                  targetType: 'document',
+                  targetId: contextMenu.documentId,
+                  targetTitle: 'Note',
+                });
                 closeContextMenu();
               }
             }}
@@ -432,7 +435,11 @@ export function FolderViewPage() {
             onRenameFolder={handleRenameFolder}
             onMakePublicFolder={() => {
               if (contextMenu?.folderId) {
-                void publicSharePanel.openFolder(contextMenu.folderId);
+                sharePanel.openSharePanel({
+                  targetType: 'folder',
+                  targetId: contextMenu.folderId,
+                  targetTitle: contextMenu.folderName || 'Folder',
+                });
                 closeContextMenu();
               }
             }}
@@ -469,7 +476,11 @@ export function FolderViewPage() {
             onEditBoard={() => handleOpenEditBoard(contextMenu.boardId)}
             onShareBoard={() => {
               if (contextMenu.boardId) {
-                void publicSharePanel.openBoard(contextMenu.boardId);
+                sharePanel.openSharePanel({
+                  targetType: 'board',
+                  targetId: contextMenu.boardId,
+                  targetTitle: contextMenu.boardName || 'Board',
+                });
                 closeContextMenu();
               }
             }}
@@ -489,13 +500,18 @@ export function FolderViewPage() {
         onCancel={handleCancelDelete}
       />
 
-      <PublicSharePanel
-        target={publicSharePanel.target}
-        isOpen={publicSharePanel.isOpen}
-        isSaving={publicSharePanel.isSaving}
-        onClose={publicSharePanel.close}
-        onSave={publicSharePanel.save}
-      />
+      {sharePanel.target && (
+        <SharePanel
+          open
+          onClose={sharePanel.closeSharePanel}
+          targetType={sharePanel.target.targetType}
+          targetId={sharePanel.target.targetId}
+          targetTitle={sharePanel.target.targetTitle}
+          folderId={sharePanel.target.folderId}
+          folderName={sharePanel.target.folderName}
+          onChanged={sharePanel.target.onChanged}
+        />
+      )}
     </PageShell>
   );
 }

@@ -39,8 +39,12 @@ Authorization: Bearer <nana_api_key>
 | `src/api/workspace/privacy.ts` | `loadAiVisibility()`, `aiVisibilityConditions()`, and the record lock helpers. |
 | `src/api/pocketbase/client.ts` | Caller-token PocketBase REST client and status mapping. |
 | `src/api/auth.ts` | `verifyAuth()` and `AuthError`. |
-| `src/api/chat/index.ts` | Chat request parsing, SSE response, conversation dispatch. |
-| `src/api/chat/tools/` | Read-only `list_notes`, `read_note`, `list_boards`, `read_board`, shared with MCP reads. |
+| `src/api/chat/index.ts` | Chat request parsing, mode/context validation, SSE response, conversation dispatch. |
+| `src/api/chat/context.ts` | Server-side document/board/folder context resolution with ownership, trash, and private-lock checks. |
+| `src/api/chat/stream.ts` | Named SSE events, legacy AI-SDK chunks, and stream accumulation. |
+| `src/api/chat/edits.ts` | `chat_edits` recording, edit-card listing, and undo. |
+| `src/api/chat/tool-names.ts` | Persisted read/write chat tool allowlists. |
+| `src/api/chat/tools/` | Read tools plus edit-mode write tools for notes, boards, and tasks. |
 | `src/api/export/` | Markdown and ZIP export. |
 | `src/api/app-version.ts` | Cached GitHub Releases lookup. |
 | `src/lib/pocketbase.ts` | Browser client over `/api/v1`; preserves the small `pb.collection` / `pb.authStore` / `pb.files` surface the SPA uses. |
@@ -65,7 +69,7 @@ Authorization: Bearer <nana_api_key>
 | Application API errors | Bun handlers return `{ "error": "message" }`; PocketBase returns its standard error envelope. |
 | Auth failure | Missing or invalid user token (`401`); authenticated non-admin on an admin route (`403`). |
 | Rate limit | `429` with `Retry-After` when `settings.rate_limits.enabled` is true. `/api/v1` uses the API bucket (`pbMaxPerMinute`); everything else uses the app bucket (`appMaxPerMinute`). |
-| SSE | `/api/chat/send` and `/api/v1/realtime` disable the Bun request timeout. Chat streams the AI SDK UI message protocol; realtime relays PocketBase SSE. |
+| SSE | `/api/chat/send` and `/api/v1/realtime` disable the Bun request timeout. Chat emits named events and, for mode-less requests, legacy AI-SDK UI chunks; realtime relays PocketBase SSE. |
 | Browser URLs | Always same-origin `/api/v1`, never `:8090`. |
 
 ### Elysia `/api/v1`
@@ -107,16 +111,24 @@ Path ids must match `[A-Za-z0-9]{1,64}`.
 | `PATCH` | `/api/v1/notes/:id` | Same fields as create | `200` note DTO. |
 | `DELETE` | `/api/v1/notes/:id` | — | `200 { "trashDocumentId": "id" }`. |
 | `GET` | `/api/v1/boards` | `includeArchived`, `folderId`, `page`, `perPage` | `200` paged board DTOs. |
-| `POST` | `/api/v1/boards` | `{ name, description?, folderId?, isPrivate? }` | `201` board DTO. |
-| `GET` | `/api/v1/boards/:id` | — | `200` board DTO. |
-| `PATCH` | `/api/v1/boards/:id` | `{ name?, description?, archived?, folderId?, isPrivate? }` | `200` board DTO. |
+| `POST` | `/api/v1/boards` | `{ name, description?, folderId?, icon?, isPrivate? }` | `201` board DTO. |
+| `GET` | `/api/v1/boards/:id` | — | `200` board DTO including ordered `columns`. |
+| `PATCH` | `/api/v1/boards/:id` | `{ name?, description?, icon?, archived?, folderId?, isPrivate? }` | `200` board DTO. |
 | `DELETE` | `/api/v1/boards/:id` | — | `204`; only when archived. |
+| `GET` | `/api/v1/boards/:id/columns` | — | `200` ordered workflow columns. |
+| `POST` | `/api/v1/boards/:id/columns` | `{ name, slug?, position?, icon?, color?, isFinal? }` | `201` column DTO. |
+| `POST` | `/api/v1/boards/:id/columns/reorder` | `{ orderedIds }` | `200` ordered columns. |
+| `PATCH` | `/api/v1/board-columns/:id` | `{ name?, position?, icon?, color?, isFinal? }` | `200` column DTO. |
+| `DELETE` | `/api/v1/board-columns/:id` | — | `204`; blocked while tasks reference the column. |
 | `GET` | `/api/v1/boards/:id/tasks` | `status`, `page`, `perPage` | `200` paged task DTOs, ordered by `board_order`, then `created`. |
-| `POST` | `/api/v1/boards/:id/tasks` | `{ title, description?, status?, priority?, dueDate?, boardOrder?, labels?, noteId? }` | `201` task DTO. |
+| `POST` | `/api/v1/boards/:id/tasks` | `{ title, description?, status?, priority?, assignee?, startDate?, dueDate?, recurrence?, boardOrder?, labels?, noteId? }` | `201` task DTO. |
 | `POST` | `/api/v1/boards/:id/notes` | `{ noteId, status? }` | `201` task DTO copied from the note. |
 | `GET` | `/api/v1/tasks/:id` | — | `200` task DTO. |
-| `PATCH` | `/api/v1/tasks/:id` | `{ title?, description?, status?, priority?, dueDate?, boardOrder?, labels?, noteId?, boardId? }` | `200` task DTO. |
+| `PATCH` | `/api/v1/tasks/:id` | `{ title?, description?, status?, priority?, assignee?, startDate?, dueDate?, recurrence?, boardOrder?, labels?, noteId? }` | `200` task DTO; a task never changes board. |
 | `DELETE` | `/api/v1/tasks/:id` | — | `204`; permanent. |
+| `GET/POST` | `/api/v1/tasks/:id/relations` | `{ targetId, type }` | `200` relations or `201` relation. |
+| `DELETE` | `/api/v1/task-relations/:id` | — | `204`. |
+| `GET` | `/api/v1/tasks/:id/activity` | — | `200` activity rows with actor type/label. |
 | `GET` | `/api/v1/api-keys` | — | `200` array of key metadata; session token only. |
 | `POST` | `/api/v1/api-keys` | `{ name, access, scope, folderIds? }` | `201 { token, apiKey }`; plaintext shown once. Session token only. |
 | `DELETE` | `/api/v1/api-keys/:id` | — | `204`; revokes immediately. Session token only. |
@@ -212,7 +224,7 @@ Revoking a key deletes its record and invalidates the next request immediately. 
 | `401` | Missing, invalid, expired, or revoked user token or API key. |
 | `403` | The credential is valid but cannot perform this action, such as a read-only key attempting a write. |
 | `404` | Unknown route, or a record the caller cannot see or is outside the key's scope. Another user's record and a missing record look identical. |
-| `409` | The action conflicts with state: deleting an active board, or writing a task on an archived board. |
+| `409` | The action conflicts with state: deleting an active board, writing a task on an archived board, a stale note revision, or undoing a chat edit after newer work. |
 | `422` | Elysia schema validation failed. |
 | `500` | Unexpected server failure; the body is generic. |
 | `502` | PocketBase was unreachable or returned an unreadable response. |
@@ -257,7 +269,15 @@ The browser facade is the replacement for `/pb`. It is public-facing Elysia code
 | `GET` | `/api/v1/public/documents/:token/files/:filename` | public | Public attachment. |
 | `GET` | `/api/v1/public/folders/:token` | public | Public folder tree, documents, and boards. |
 | `GET` | `/api/v1/public/folders/:token/files/:documentId/:filename` | public | Public folder attachment. |
-| `GET` | `/api/v1/public/boards/:token` | public | Public board and tasks. |
+| `GET` | `/api/v1/public/boards/:token` | public | Public board columns and tasks. |
+| `GET` | `/api/v1/sharing/users` | user | Name/avatar directory; email only for an exact address. |
+| `GET` | `/api/v1/sharing/shared` | user | Direct and inherited records shared with the caller, bounded and paged. |
+| `GET` | `/api/v1/sharing/access` | user | Effective `view`/`comment`/`edit`/`owner` access for a target. |
+| `GET` | `/api/v1/sharing/folders/:id` | user | Shared folder contents. |
+| `GET/POST` | `/api/v1/sharing/links` | owner | List or upsert a direct grant. |
+| `DELETE` | `/api/v1/sharing/links/:id` | owner | Revoke a grant. |
+| `GET/POST` | `/api/v1/sharing/comments` | user | List or create a document/board/task comment. |
+| `PATCH/DELETE` | `/api/v1/sharing/comments/:id` | author/owner | Edit or delete a comment. |
 
 ¹ `POST /records/users` is public for first-user onboarding; PocketBase locks public signup after the first account.
 
@@ -268,7 +288,11 @@ Allowed record collections:
 | `documents` | yes | yes | `content` is sanitized by Elysia; `author` is injected; `folder` must be owned. |
 | `folders` | yes | yes | `parent` must be owned; cycles/self-parent are rejected. |
 | `boards` | yes | yes | `folder` must be owned; archive-before-delete stays in PocketBase. |
-| `tasks` | yes | yes | `board` must be owned and active; `document` must be owned. |
+| `board_columns` | yes | yes | Owner-only writes; slugs are unique/reserved-safe. |
+| `tasks` | yes | yes | `board` is create-only; status must match a board column or a virtual status; `document` must be owned. |
+| `labels` | yes | yes | Author-scoped label definitions. |
+| `task_relations` | yes | no | Writes go through typed REST; reads are symmetric. |
+| `task_activity` | yes | no | Server writes only. |
 | `document_versions` | yes | no | Read-only through the facade. |
 | `trash_documents`, `trash_folders` | yes | no | Mutations only through `/trash/:action`. |
 | `users` | yes | self/admin | Self updates exclude `admin`/`verified`; admin routes use the custom admin endpoints. |
@@ -300,7 +324,7 @@ Browser facade behavior:
 | Rate limit | The Bun app limiter applies before the MCP handler. |
 | CORS | None. The endpoint is same-origin, like the rest of the app. |
 
-The server registers tools for folders, notes, boards, and tasks; the table below is the contract. Read tools reuse the chat executors, including their bounds, author checks, and private lock. Write tools call the shared workspace services with `surface: "ai"`.
+The server registers tools for folders, notes, boards, and tasks; the table below is the contract. The note and board read tools reuse the chat executors, including their bounds, author checks, and private lock. Write tools call the shared workspace services with `surface: "ai"`.
 
 | Family | Tools | Behavior |
 | --- | --- | --- |
@@ -342,6 +366,21 @@ Requires auth. Request:
 
 At least one document or folder is required. A single document with no attachments returns `text/markdown`; everything else returns a ZIP containing Markdown and attachments. Folder exports include descendants. See `src/api/export/`.
 
+#### `GET /api/chat/status`
+
+Requires auth. Reports whether a provider/model is configured without exposing keys or base URLs:
+
+```json
+{
+  "configured": true,
+  "model": "gpt-4o-mini",
+  "provider": "openai",
+  "local": false
+}
+```
+
+`local` is true for Ollama. A settings-read failure returns `200` with `configured: false` and null model/provider rather than an error.
+
 #### `POST /api/chat/send`
 
 Requires auth. Request:
@@ -350,36 +389,54 @@ Requires auth. Request:
 {
   "conversationId": "optional-existing-id",
   "message": "user text",
+  "mode": "ask",
+  "context": { "type": "document", "id": "optional-record-id" },
   "regenerate": false
 }
 ```
 
-- Omit `conversationId` to create a conversation. The first message seeds the title; a background title call refines it after the first reply.
+- `mode` is `"ask"` or `"edit"`; omit it for `"ask"`. Ask registers only read tools. Edit adds note, board, and task write tools.
+- `context` is optional and accepts only `{ type: "document" | "board" | "folder", id }`. Bun resolves the title, ownership, trash state, and private lock with the caller's token, then persists `messages.context` with the resolved title on the user message. A missing, foreign, trashed, private, or hidden record is `404`; a malformed type/id is `400`; an unreadable visibility snapshot is `503`. Client-supplied titles and bodies are ignored.
+- Omit `conversationId` to create a conversation. The first message seeds the title; a background title call refines it after the first reply when the stream is not stopped and has no error.
 - `regenerate: true` trims the previous user/assistant exchange before re-sending.
-- There is no `documentIds` field and no attachment payload. Chat reads notes and boards only through tools.
-- Only message role and content are sent to the model; stored reasoning, tool activity, and model metadata stay out of the prompt.
-- Chat remains read-only. `/mcp` is the separate write-capable AI surface.
+- There is no `documentIds` field and no attachment payload. Context is metadata only; tools read notes, boards, and tasks on demand.
+- Chat history sends only role and content. Stored reasoning, tool activity, sources, context metadata, and model metadata stay out of the prompt; the resolved context contributes a short system note.
+- In edit mode, writes go through the workspace services with the caller's token and `X-Nana-Actor: ai`; note edits carry revision checks. Chat has no delete, archive/restore, move-between-folders/boards, publish, share, privacy, column, or label tools. See [`ai.md`](ai.md) for the write contract.
 
-The response is an SSE stream from `toUIMessageStreamResponse()` with these headers:
+The response is an SSE stream with these headers:
 
 | Header | Meaning |
 | --- | --- |
 | `X-Conversation-Id` | Conversation to continue. |
 | `X-Is-New-Conversation` | `"true"` when a new conversation was created. |
 | `X-Model-Name` | Active model name. |
+| `X-Chat-Mode` | `ask` or `edit`. |
 
-There is no `X-RAG-Sources` header. Sources, embeddings, and retrieval metadata are not part of the chat contract.
+The dock reads named SSE events. Every `data:` payload also carries `type`:
 
-`onFinish` persists the assistant message with `content`, optional `reasoning`, optional `tools`, and `model`. Persisted tool activity is only `{ name, status }` with `status` `success` or `error`; names are restricted to `CHAT_TOOL_NAMES`. See [`ai.md`](ai.md) for the tool contracts, bounds, and prompt-injection stance.
+| Event | Payload |
+| --- | --- |
+| `text` | `{ type: "text", delta }`. |
+| `reasoning` | `{ type: "reasoning", delta }`. |
+| `tool` | `{ type: "tool", id, name, status, error? }`; `status` is `running`, `success`, or `error`. |
+| `sources` | `{ type: "sources", sources }`; each source is a document or board with `{ id, title }`. |
+| `edit` | `{ type: "edit", edit }`; one applied write, emitted before the model's next token where possible. |
+| `done` | `{ type: "done", conversationId, messageId, stopped, model, sources }`; `messageId` is `null` if persistence failed. |
+| `error` | `{ type: "error", message, errorText }`. |
+
+A request that omits `mode` also receives legacy AI-SDK UI chunks for text, reasoning, tools, completion, and errors: `text-delta`, `reasoning-delta`, `tool-input-start`, `tool-output-available`/`tool-output-error`, `finish`, `[DONE]`, and `error`. A request that sends `mode` (the dock) receives only the named events. There is no `X-RAG-Sources` header; sources travel as the `sources` event and the persisted `sources` field. There are no embeddings or retrieval metadata.
+
+After the model stream ends, the pump persists the assistant message with `content`, optional `reasoning`, optional `tools`, optional `sources`, optional `stopped`, and `model`. Persisted tool activity is only `{ name, status }` with `status` `success` or `error`; names are restricted to `CHAT_TOOL_NAMES`. See [`ai.md`](ai.md) for the tool contracts, bounds, and prompt-injection stance.
 
 Chat errors:
 
 | Status | Meaning |
 | --- | --- |
-| `400` | Invalid JSON or empty `message`. |
+| `400` | Invalid JSON, empty `message`, invalid `mode`, or malformed `context`. |
 | `401` | Missing or invalid user token. |
-| `502` | The provider failed before or during the stream; the message is mapped by `getAIErrorMessage()`. |
-| `503` | `ai_config` is missing, no provider is active, or the provider has no model. |
+| `404` | The context record is missing, trashed, foreign, or hidden; or the conversation is missing or foreign. |
+| `502` | The provider failed before the SSE stream started; the message is mapped by `getAIErrorMessage()`. Failures after streaming begins arrive as an `error` event. |
+| `503` | `ai_config` is missing, no provider is active, the provider has no model, or the context visibility snapshot could not be loaded. |
 
 #### Chat conversations
 
@@ -387,9 +444,24 @@ Chat errors:
 | --- | --- | --- |
 | `/api/chat/conversations` | GET | The current user's conversations, newest first. |
 | `/api/chat/conversations/:id` | GET | `{ conversation, messages }`. |
+| `/api/chat/conversations/:id` | PATCH | `{ conversation }`; body `{ title }`, trimmed, 1–120 characters. |
 | `/api/chat/conversations/:id` | DELETE | `204` on success. |
 
-Conversation list/view/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, then writes each turn to the `messages` collection. Every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. `GET /api/chat/conversations/:id` returns `{ conversation, messages }`, with messages ordered by `position` and sanitized on read.
+Conversation list/view/rename/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, then writes each turn to the `messages` collection. Every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. `GET /api/chat/conversations/:id` returns `{ conversation, messages }`, with messages ordered by `position` and sanitized on read. Messages may carry `context`, `sources`, and `stopped` metadata; see [`ai.md`](ai.md) for the persisted shapes.
+
+#### Chat edits and undo
+
+| Route | Method | Response |
+| --- | --- | --- |
+| `/api/chat/conversations/:id/edits` | GET | `{ edits }`, oldest first. |
+| `/api/chat/edits/:id/undo` | POST | `{ edit, alreadyUndone }`. |
+
+An edit card carries `id`, `conversationId`, `messageId`, `target { type, id, title, url }`, `tool`, `summary`, `status`, `actorType: "ai"`, `actorLabel`, `changed { sections?, fields? }`, `undo { kind, available }`, and timestamps. `status` is `applied`, `undone`, or `failed`; `undo.kind` is `trash`, `restore`, or `none`.
+
+- Both routes require the conversation owner. Another user's conversation or edit returns `404`, matching a missing record.
+- `create_note` undo moves the created note to trash. `append_note`, `edit_note`, and `update_note` undo restore the pre-edit snapshot. Board and task edits have `undo.kind: "none"` and `available: false`; undoing one returns `409`.
+- Note-edit undo is revision-aware. If the note changed after Nana's edit, the route returns `409` instead of overwriting newer work. Created-note undo trashes the target without a revision check. A second undo of a successful edit returns `alreadyUndone: true` and does not apply the edit twice.
+- A note-edit undo with no saved revision or snapshot returns `409`. An applied non-AI audit row returns `409`; only Nana edits are undoable from chat.
 
 #### Admin
 
@@ -581,10 +653,14 @@ Folder response includes `rootFolder`, `folders`, `documents`, `boards`, and `en
 - **Scalar renders only tags listed in `x-tagGroups`.** When the extension is present, the sidebar is built from each group's tag names; a tag declared in `tags` but omitted from every group disappears from the nav. Add new reference tags to the `Workspace` group in `src/api/rest/openapi.ts`.
 - **MCP is POST-only and stateless.** There is no session to continue. Every request authenticates, builds a server, handles one payload, and closes the transport.
 - **MCP tool failures are model-facing, not HTTP failures.** An `isError` text result still returns `200`; only auth, parse, and transport failures return HTTP errors.
-- **Chat has no `documentIds`.** A request containing extra fields is ignored; only `conversationId`, `message`, and `regenerate` are read.
-- **No RAG headers or sources.** Clients must not expect `X-RAG-Sources` or a `sources` field in new assistant messages.
-- **Chat tool errors are model-facing, not HTTP errors.** `list_notes` etc. return `{ ok: false, code, message }` inside the stream; the chat `POST` still succeeds.
-- **Persisted chat tool activity is allowlisted.** Only `CHAT_TOOL_NAMES` entries and `success`/`error` statuses survive `sanitizeTools()`; args and outputs are never stored. MCP tool activity is not persisted in conversations.
+- **Chat context is metadata, not retrieval.** `POST /api/chat/send` accepts only `{ type, id }` and resolves the title server-side. There are no `documentIds` or attachments; extra request fields are ignored.
+- **Chat mode gates writes.** Ask mode has only the read tools. Edit mode adds the note/board/task write tools. The mode lives in the request and the tool registry, not in the prompt.
+- **Chat note edits require a revision.** `read_note` returns `revision` and `versionToken`; the note update tools pass one back. A stale value is a `conflict` tool result, not a silent overwrite.
+- **`published: true` is a version request.** Chat note update tools set it so the PocketBase hook snapshots the old state, then the hook resets it. `create_note` starts a new revision instead. It does not make the note public.
+- **`chat_edits` is server-owned.** It has no public create/update/delete rules. Bun writes it after checking conversation ownership; board/task cards are informational and cannot be undone.
+- **Sources are event data.** No `X-RAG-Sources` header exists, but new assistant messages do carry server-collected `sources` in the stream and in `messages.sources`. Do not derive sources from model text.
+- **Chat tool errors are model-facing, not HTTP errors.** `list_notes` etc. return `{ ok: false, code, message }` inside the stream; the chat `POST` still succeeds. Undo and other JSON routes do use HTTP statuses, including `409` for newer work.
+- **Persisted chat tool activity is allowlisted.** Only `CHAT_TOOL_NAMES` entries (read and write) and `success`/`error` statuses survive `sanitizeTools()`; args and outputs are never stored. MCP tool activity is not persisted in conversations.
 - **Messages are records.** `conversations.messages` no longer exists. Appending a message writes a `messages` row and touches the conversation's `updated` timestamp so the sidebar order stays current.
 - **Deleting an active board fails.** Archive it first, then delete from `/board/archive` or `DELETE /api/v1/boards/:id`.
 - **Task deletion still works on an archived board.** The archived-board rule blocks create/update, not delete; this is intentional so cleanup stays possible.

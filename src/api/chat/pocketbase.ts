@@ -2,8 +2,16 @@ import { serverConfig } from "../../lib/config";
 import { getSuperuserToken, invalidateSuperuserToken } from "./superuser";
 import { sanitizeHtml } from "../../lib/sanitize";
 import type { AIConfig } from "../../lib/ai/types";
-import type { PBConversation, PBMessage, ChatMessage, ChatToolActivity, PBListResponse } from "./types";
-import { CHAT_TOOL_NAMES } from "./tools";
+import type {
+    PBConversation,
+    PBMessage,
+    ChatContext,
+    ChatMessage,
+    ChatSource,
+    ChatToolActivity,
+    PBListResponse,
+} from "./types";
+import { CHAT_TOOL_NAMES } from "./tool-names";
 
 const POCKETBASE_URL = serverConfig.pocketbaseUrl;
 
@@ -25,6 +33,14 @@ export class PocketBaseRequestError extends Error {
  * Generic PocketBase REST fetch helper.
  * Throws on non-OK responses with the error body.
  */
+export async function pbFetchWithToken<T>(
+    path: string,
+    authHeader: string,
+    options?: RequestInit,
+): Promise<T> {
+    return pbFetch<T>(path, authHeader, options);
+}
+
 async function pbFetch<T>(path: string, authHeader: string, options?: RequestInit): Promise<T> {
     const response = await fetch(`${POCKETBASE_URL}${path}`, {
         ...options,
@@ -117,9 +133,60 @@ function sanitizeTools(value: unknown): ChatToolActivity[] {
 }
 
 /**
+ * Context is metadata only. The title is resolved server-side, and ids/types
+ * are allowlisted so a crafted message cannot persist arbitrary HTML or fields.
+ */
+function sanitizeContext(value: unknown): ChatContext | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const candidate = value as Partial<ChatContext>;
+    if (
+        candidate.type !== "document"
+        && candidate.type !== "board"
+        && candidate.type !== "folder"
+    ) {
+        return undefined;
+    }
+    if (typeof candidate.id !== "string" || !/^[A-Za-z0-9]{1,64}$/.test(candidate.id)) {
+        return undefined;
+    }
+    const title = typeof candidate.title === "string"
+        ? candidate.title.replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 200)
+        : "";
+    return { type: candidate.type, id: candidate.id, title: title || "Untitled" };
+}
+
+function sanitizeSources(value: unknown): ChatSource[] {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set<string>();
+    const sources: ChatSource[] = [];
+
+    for (const entry of value) {
+        if (!entry || typeof entry !== "object") continue;
+        const { type, id, title } = entry as { type?: unknown; id?: unknown; title?: unknown };
+        if (type !== "document" && type !== "board") continue;
+        if (typeof id !== "string" || !/^[A-Za-z0-9]{1,64}$/.test(id)) continue;
+        const key = `${type}:${id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const cleanTitle = typeof title === "string"
+            ? title.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 200)
+            : "";
+        sources.push({
+            type,
+            id,
+            title: cleanTitle
+                || (type === "document" ? "Untitled note" : "Untitled board"),
+        });
+        if (sources.length >= 50) break;
+    }
+
+    return sources;
+}
+
+/**
  * Build a safe stored message: keep only known fields and sanitize content.
- * Older stored messages may contain extra fields (for example `sources`); they
- * are tolerated on read and simply not written back.
+ * Older stored messages may contain extra fields; they are tolerated on read
+ * and only the allowlisted fields below are written back.
  */
 async function sanitizeMessage(msg: ChatMessage): Promise<ChatMessage> {
     const sanitized: ChatMessage = {
@@ -138,6 +205,14 @@ async function sanitizeMessage(msg: ChatMessage): Promise<ChatMessage> {
     if (tools.length > 0) {
         sanitized.tools = tools;
     }
+
+    const context = sanitizeContext(msg.context);
+    if (context) sanitized.context = context;
+
+    const sources = sanitizeSources(msg.sources);
+    if (sources.length > 0) sanitized.sources = sources;
+
+    if (msg.stopped === true) sanitized.stopped = true;
 
     return sanitized;
 }
@@ -253,6 +328,9 @@ export async function appendMessage(
             ...(sanitizedMessage.reasoning ? { reasoning: sanitizedMessage.reasoning } : {}),
             ...(sanitizedMessage.model ? { model: sanitizedMessage.model } : {}),
             ...(sanitizedMessage.tools?.length ? { tools: sanitizedMessage.tools } : {}),
+            ...(sanitizedMessage.context ? { context: sanitizedMessage.context } : {}),
+            ...(sanitizedMessage.sources?.length ? { sources: sanitizedMessage.sources } : {}),
+            ...(sanitizedMessage.stopped ? { stopped: true } : {}),
             position,
         }),
     });
@@ -285,6 +363,11 @@ export async function getConversationMessages(
             if (typeof row.model === "string" && row.model) message.model = row.model;
             const tools = sanitizeTools(row.tools);
             if (tools.length > 0) message.tools = tools;
+            const context = sanitizeContext(row.context);
+            if (context) message.context = context;
+            const sources = sanitizeSources(row.sources);
+            if (sources.length > 0) message.sources = sources;
+            if (row.stopped === true) message.stopped = true;
             messages.push(message);
         }
 

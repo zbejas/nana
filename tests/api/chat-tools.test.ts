@@ -287,6 +287,9 @@ describe("read_note", () => {
         expect(result.hasMore).toBe(true);
         expect(result.nextOffset).toBe(4);
         expect(result.truncated).toBe(false);
+        expect(result.revision).toBeGreaterThanOrEqual(1);
+        expect(result.versionToken).toMatch(/^[a-f0-9]{32}$/);
+        expect(result.updated).toBeTruthy();
     });
 
     test("clips long lines and reports truncation", async () => {

@@ -97,6 +97,35 @@ export const addToBoardRequestAtom = atom<{ documentId: string; title?: string }
 export const creationSessionIdAtom = atom(0);
 
 // ============================================================================
+// Chat dock
+// ============================================================================
+
+/**
+ * The global chat dock, mounted once in AppContent. Persisted so a reload
+ * reopens the same conversation, but never opened automatically by a route.
+ */
+export const chatDockOpenAtom = atomWithStorage<boolean>(
+    'nana-chat-dock-open',
+    false,
+    undefined,
+    { getOnInit: true }
+);
+
+/** The conversation the dock and /chat page are currently showing. */
+export const chatConversationIdAtom = atomWithStorage<string | null>(
+    'nana-chat-conversation',
+    null,
+    undefined,
+    { getOnInit: true }
+);
+
+/**
+ * The desktop history column inside the dock. Not persisted: history is a
+ * temporary inspection surface, not a layout preference.
+ */
+export const chatDockHistoryOpenAtom = atom(false);
+
+// ============================================================================
 // Data State Atoms
 // ============================================================================
 

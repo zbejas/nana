@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EllipsisVerticalIcon, ShareIcon, ArrowDownTrayIcon, TrashIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
+import { EllipsisVerticalIcon, ShareIcon, ArrowDownTrayIcon, SparklesIcon, TrashIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import { IconButton, MenuItem, MenuSeparator, MenuSurface } from '../ui';
 
 interface EditorContextMenuProps {
@@ -7,11 +7,22 @@ interface EditorContextMenuProps {
   onExport: () => void;
   onDelete: () => void;
   onHideHeader?: () => void;
+  onAskNana?: () => void;
+  askNanaDisabled?: boolean;
   disabled?: boolean;
   isNewDocument?: boolean;
 }
 
-export function EditorContextMenu({ onShare, onExport, onDelete, onHideHeader, disabled, isNewDocument }: EditorContextMenuProps) {
+export function EditorContextMenu({
+  onShare,
+  onExport,
+  onDelete,
+  onHideHeader,
+  onAskNana,
+  askNanaDisabled,
+  disabled,
+  isNewDocument,
+}: EditorContextMenuProps) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState({ top: 0, right: 0 });
@@ -57,6 +68,17 @@ export function EditorContextMenu({ onShare, onExport, onDelete, onHideHeader, d
         ariaLabel="Note actions"
         className="w-48"
       >
+        {onAskNana && (
+          <>
+            <MenuItem
+              icon={<SparklesIcon />}
+              label="Ask about this note"
+              disabled={askNanaDisabled}
+              onClick={() => handleItem(onAskNana)}
+            />
+            <MenuSeparator />
+          </>
+        )}
         <MenuItem
           icon={<ShareIcon />}
           label="Share…"

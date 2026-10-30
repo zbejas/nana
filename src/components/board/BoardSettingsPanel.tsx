@@ -4,6 +4,7 @@ import {
   archiveBoard,
   updateBoard,
   type Board,
+  type BoardColumn,
 } from '../../lib/boards';
 import { getAllFolders, type Folder } from '../../lib/folders';
 import {
@@ -16,6 +17,7 @@ import {
   Switch,
   Textarea,
 } from '../ui';
+import { BoardColumnsPanel } from './BoardColumnsPanel';
 
 interface BoardSettingsPanelProps {
   board: Board;
@@ -25,9 +27,12 @@ interface BoardSettingsPanelProps {
   /** True only for a provisional board created by the global New action. */
   newBoard?: boolean;
   taskCount?: number;
+  columns?: BoardColumn[];
+  taskCounts?: Record<string, number>;
   onClose: () => void;
   onSaved: (board: Board) => void;
   onArchived?: (board: Board) => void;
+  onColumnsChanged?: () => void | Promise<void>;
 }
 
 function folderPath(folder: Folder, byId: Map<string, Folder>): string {
@@ -54,9 +59,12 @@ export function BoardSettingsPanel({
   autoFocus = false,
   newBoard = false,
   taskCount,
+  columns = [],
+  taskCounts = {},
   onClose,
   onSaved,
   onArchived,
+  onColumnsChanged,
 }: BoardSettingsPanelProps) {
   const [name, setName] = useState(board.name);
   const [description, setDescription] = useState(board.description);
@@ -267,6 +275,13 @@ export function BoardSettingsPanel({
             description="Hidden from AI chat and MCP. It stays in your workspace and can still be opened here."
             checked={isPrivate}
             onChange={setIsPrivate}
+          />
+
+          <BoardColumnsPanel
+            boardId={board.id}
+            columns={columns}
+            taskCounts={taskCounts}
+            onChanged={() => onColumnsChanged?.()}
           />
 
           {(formError || archiveError) && (

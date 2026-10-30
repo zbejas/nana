@@ -34,8 +34,7 @@ import { useTimelinePageState } from '../components/timeline/useTimelinePageStat
 import { useContextMenuState } from '../components/file-folder-handling';
 import { BoardContextMenu } from '../components/file-folder-handling/context-menu/BoardContextMenu';
 import { DocumentContextMenu } from '../components/file-folder-handling/context-menu/DocumentContextMenu';
-import { PublicSharePanel } from '../components/modals/PublicSharePanel';
-import { usePublicSharePanelState } from '../components/modals/usePublicSharePanelState';
+import { SharePanel, useSharePanel } from '../components/sharing';
 import { Button, Card, ConfirmDialog, EmptyState, Input, PageHeader, PageShell, SegmentedControl, Spinner } from '../components/ui';
 
 export function TimelinePage() {
@@ -46,7 +45,7 @@ export function TimelinePage() {
   const setRefreshTrigger = useSetAtom(refreshTriggerAtom);
   const folders = useAtomValue(foldersAtom);
   const { showToast } = useToasts();
-  const publicSharePanel = usePublicSharePanelState();
+  const sharePanel = useSharePanel();
   const [deleteConfirmState, setDeleteConfirmState] = useState<{ id: string; title: string } | null>(null);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [isCreatingBoard, setIsCreatingBoard] = useState(false);
@@ -629,7 +628,11 @@ export function TimelinePage() {
             onRenameDocument={() => undefined}
             onMakePublicDocument={() => {
               if (contextMenu?.documentId) {
-                void publicSharePanel.openDocument(contextMenu.documentId);
+                sharePanel.openSharePanel({
+                  targetType: 'document',
+                  targetId: contextMenu.documentId,
+                  targetTitle: 'Note',
+                });
                 closeContextMenu();
               }
             }}
@@ -672,7 +675,11 @@ export function TimelinePage() {
             }}
             onShareBoard={() => {
               if (contextMenu.boardId) {
-                void publicSharePanel.openBoard(contextMenu.boardId);
+                sharePanel.openSharePanel({
+                  targetType: 'board',
+                  targetId: contextMenu.boardId,
+                  targetTitle: contextMenu.boardName || 'Board',
+                });
                 closeContextMenu();
               }
             }}
@@ -696,13 +703,18 @@ export function TimelinePage() {
         onCancel={() => setDeleteConfirmState(null)}
       />
 
-      <PublicSharePanel
-        target={publicSharePanel.target}
-        isOpen={publicSharePanel.isOpen}
-        isSaving={publicSharePanel.isSaving}
-        onClose={publicSharePanel.close}
-        onSave={publicSharePanel.save}
-      />
+      {sharePanel.target && (
+        <SharePanel
+          open
+          onClose={sharePanel.closeSharePanel}
+          targetType={sharePanel.target.targetType}
+          targetId={sharePanel.target.targetId}
+          targetTitle={sharePanel.target.targetTitle}
+          folderId={sharePanel.target.folderId}
+          folderName={sharePanel.target.folderName}
+          onChanged={sharePanel.target.onChanged}
+        />
+      )}
 
       <NewContentMenu
         open={newMenuOpen}

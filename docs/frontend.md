@@ -34,14 +34,20 @@ The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth
 | `src/components/file-folder-handling/useFileFolderDnD.ts` | Note, folder, and board drag state; board drops call `updateBoard({ folder })`. |
 | `src/components/file-folder-handling/context-menu/BoardContextMenu.tsx` | Board context menu: Open board, Edit board, Share. |
 | `src/components/file-folder-handling/context-menu/FolderContextMenu.tsx` | Folder context menu, including `New board` filed in that folder. |
-| `src/pages/ChatPage.tsx` | Chat empty state, messages, tool activity, composer, history. |
+| `src/pages/ChatPage.tsx` | Full-page chat route; shares the chat store with the dock. |
+| `src/components/chat/ChatDock.tsx` | Persistent right-side chat dock, mounted outside the keyed route tree; full-width overlay on mobile. |
+| `src/components/chat/ChatThread.tsx` | Shared message thread, composer, context chip, streaming, and edit cards for the page and dock. |
+| `src/components/chat/ChatEditCard.tsx` | Applied-write card with target link, changed sections/fields, status, and Undo. |
+| `src/lib/chat/store.ts` | Chat conversation, streaming, mode, context, sources, and edit/undo state shared by the page and dock. |
+| `src/lib/chat/context.ts` | Route-to-context derivation, private-branch check, and `{ type, id }` payload building. |
 | `src/components/board/useBoardState.ts` | Task load, realtime refresh, create/edit/delete, drag state, optimistic reorder. |
 | `src/components/board/useBoardSummaries.ts` | Timeline/folder/archive board data and realtime refresh. |
 | `src/components/board/AddToBoardHost.tsx` | The single root picker host driven by `addToBoardRequestAtom`. |
 | `src/components/board/AddToBoardPanel.tsx` | Non-modal board picker for a note; creates a board inline. |
 | `src/components/board/ImportNotePanel.tsx` | Board-scoped note import from the board header, as a side panel. |
 | `src/components/board/BoardSettingsPanel.tsx` | Inline create/edit board form: name, description, folder, private switch, archive confirmation. |
-| `src/components/board/TaskEditor.tsx` | Inline task composer and side-panel task editor: column, priority, due date, labels, linked note, delete confirmation. |
+| `src/components/board/TaskPanel.tsx` | Non-modal task inspector: title, Milkdown description, properties, subtasks, relations, activity, comments, duplicate/move/delete. |
+| `src/components/board/TaskComposer.tsx` | Compact per-lane task composer for rapid entry. |
 | `src/components/board/TaskCard.tsx` | Ledger task row: title, excerpt, priority code, due date, linked note, labels. |
 | `src/components/NewContentMenu.tsx` | Shared New menu: New note / New board for the sidebar and timeline. |
 | `src/components/sidebar/BoardItem.tsx` | Board row in the sidebar Library tree. |
@@ -129,7 +135,7 @@ Initial load order is recent documents, root documents, folders + trash folders,
 - A segmented **All / Notes / Boards** control filters the feed. Boards-only skips the note paging cutoff; notes-only skips the initial board wait. The labels and the rail count the records available in the current view.
 - **New** in the header opens the shared New menu (`NewContentMenu`): New note starts the editor; New board creates a provisional “Untitled board”, opens it, and focuses the inline naming panel.
 - Note cards keep the document context menu and add-to-board flow. Board cards open `/board/:id` and show the private lock, public-share icon, folder, and open/done counts; archived boards stay out of the feed.
-- Board cards match note-card interaction: right-click, the overflow button, or a touch long-press opens `BoardContextMenu` with Open board, Edit board, and Share. Editing navigates to the board with its inline settings panel open; sharing opens the `PublicSharePanel`.
+- Board cards match note-card interaction: right-click, the overflow button, or a touch long-press opens `BoardContextMenu` with Open board, Edit board, and Share. Editing navigates to the board with its inline settings panel open; sharing opens the owner-only `SharePanel`.
 - The rail counts notes, boards, and folders in the current view. Its lower action opens `/board/archive`.
 - Realtime note changes bump `timelineRealtimeTickAtom`; `useBoardSummaries()` refreshes boards from its board and task subscriptions.
 - There is no separate boards index. `/board` redirects to `/timeline`; archived boards remain at `/board/archive` and are linked from the timeline rail and the Library header.
@@ -149,18 +155,19 @@ Boards are created and opened from the surfaces that already hold them.
 
 - `getBoard(boardId)` loads the board; a `404` renders “That board is not here”.
 - `useBoardState(activeBoardId)` only receives an id when the board is loaded and not archived. An archived board therefore loads no tasks and renders a restore state.
-- Header actions for an active board: `Import note`, `New task`, a share icon that opens `PublicSharePanel`, and an edit icon that toggles the inline board settings panel.
+- Header actions for an active board: `Import note`, `New task`, a share icon that opens the owner-only `SharePanel`, and an edit icon that toggles the inline board settings panel. Effective access comes from `useResourceAccess('board', id)`: view and comment grantees get a read-only board; edit grantees can create and edit tasks; only the owner sees sharing, board settings, archive, and column management.
+- `TaskPanel` receives `canEdit`, `canDelete`, and `canComment` from the board shell. The server remains authoritative; hiding controls is a UX layer, not the permission boundary.
 - A private board shows a lock beside the title; a publicly shared board shows a share icon. `BoardSettingsPanel` has a `Private` switch; changing it updates `is_private` without moving the board.
 - The header back link returns to the timeline. Archived boards and missing boards offer timeline actions, not a boards index.
-- Columns are fixed: `backlog`, `next`, `progress`, `done`, labelled Backlog, Next up, In progress, Done. Each lane has a status dot; only In progress is signal-coloured.
-- `xl` is a four-column grid. Below that, lanes are a horizontal snap row (`w-[min(86vw,340px)]`); mouse users scroll, touch users swipe.
+- Columns are board-owned and ordered (`board_columns`): name, stable slug, colour/icon, position, and `is_final`. New boards seed Backlog, Next up, In progress, and Done; settings can add, rename, recolour, reorder, and remove unused columns, plus choose the final column. `planned` and `archived` are virtual statuses for the backlog, not columns.
+- Board view lays the ordered lanes out in a responsive grid; below the wide breakpoint the lanes become a horizontal snap row (`w-[min(86vw,340px)]`). The toolbar switches between Board, List, Backlog, Calendar, and Gantt views, with filters, sort, and display preferences per board.
 - Task cards are rounded `surface` panels inside a `surface-sunken` lane. They show title, a plain-text excerpt, a `P0`–`P3` priority chip, due date (danger when overdue and not done), a linked-note title, and up to two label chips. Done titles are muted and struck through.
 - Dragging changes `status` and reindexes `board_order`; the UI updates optimistically and reloads on failure. Dragging is paused while the search filter is active, because a filtered index does not match stored order.
 - HTML5 drag-and-drop is pointer-only. On touch, the task edit panel's column select is the movement path.
 - Search filters title, description, and labels locally.
 - An empty board shows “No tasks yet” with a `New task` action.
 - `BoardSettingsPanel` is a page-level inline form; when it is open the board content is replaced, so the page can scroll instead of compressing the kanban. Archive is confirmed with `ConfirmDialog` and explained as “nothing is deleted”.
-- `TaskEditor` has two surfaces. Create mode is a compact composer at the bottom of each lane: Enter adds and keeps the composer open for rapid entry, and “Add details” reveals notes, column, priority, due date, and labels. Edit mode opens in a non-modal `SidePanel` with the same fields, linked-note opening, and delete confirmation.
+- Task creation uses the compact `TaskComposer` at the bottom of each lane: Enter adds and keeps the composer open for rapid entry. Editing opens `TaskPanel`, a non-modal right-side inspector with the title, Milkdown description, status/priority/assignee/date/label/recurrence properties, subtasks, relations, activity, comments, duplicate/move/delete, and close-flush saves. On mobile it becomes full-width; on desktop it is a 44rem panel.
 - `ImportNotePanel` is board-scoped: it lists notes, marks notes already on this board via `existingDocumentIds`, and creates a task linked to the chosen note.
 - Realtime task changes refresh the board after a debounce; a skip flag suppresses echo refresh during a local drag write.
 
@@ -202,15 +209,18 @@ The board detail header uses a different flow: `ImportNotePanel` imports into th
 
 ### Chat surface
 
-`/chat` and `/chat/:conversationId` render the assistant.
+Chat has two entry points that share one store: the full page at `/chat` and `/chat/:conversationId`, and the persistent `ChatDock` mounted at the app root outside the keyed route tree. The dock is hidden while the chat page is open; on desktop it is a right-side panel, and on mobile it is a full-width overlay. A reply started in one entry point remains available in the other.
 
-- The route uses the shared `PageHeader`; the conversation body is a 920px reading column. The empty state is `Ask your notes.`, with a short explanation and four prompt cards in a 2×2 grid. There is no document picker and no attachment control.
-- Assistant messages are document text in a 68ch column, with Markdown rendered through `MarkdownPreview` (sanitized). User messages are right-aligned in a bordered `surface-raised` block.
-- Tool activity is one quiet pill above the answer: “Searched notes”, “Read a note”, “Read a board”, “Checked boards”, or “Checked the workspace” for unknown names. While a tool runs it reads “Looking through your workspace…” with a pulsing signal dot.
-- The client keeps a local `running` status and call id while streaming; the server persists only terminal `{ name, status }`, and the history view shows only names/statuses.
+- Both use `ChatThread`. The composer has an Ask/Edit segmented control. Ask sends `mode: "ask"` and exposes read tools; Edit sends `mode: "edit"` and can create or update notes, boards, and tasks.
+- The dock derives context from the current route: a note, board, or folder id. It sends only `{ type, id }` at send time and shows a context chip; the server resolves the authoritative title and rejects private, trashed, or foreign records. Private pages and unavailable lookups are not attached.
+- The chat page uses the shared `PageHeader`; its conversation body is an 800px reading column. The empty state is `Ask your notes.`, with four prompt cards in a 2×2 grid. There is no document picker and no attachment control.
+- Assistant messages are document text in a readable column, with Markdown rendered through `MarkdownPreview` (sanitized). User messages are right-aligned in a bordered `surface-raised` block.
+- Tool activity is one quiet pill above the answer, summarized from streamed tool parts. It shows read/write verbs and titles when known; persisted history keeps only terminal `{ name, status }` with no inputs or outputs.
+- Sources are rendered under the answer as note and board links collected by the server from read tools and successful creations. They are not model-invented citations.
+- Applied writes render as edit cards with the target, changed sections or fields, status, and an Undo action when available. Note creations and note edits are undoable; board/task cards are informational.
 - Reasoning is a collapsible details block; an empty streaming answer shows “Thinking…”.
 - The composer is a 12px bordered shell with `Enter to send · Shift+Enter for a new line`; the placeholder is `Ask about your notes or board...`.
-- Conversation history is a right-side panel (collapsible desktop, overlay mobile) with new-chat and delete actions.
+- Conversation history is a right-side panel on desktop, an in-dock panel in the dock, and an overlay sheet on mobile, with new-chat and delete actions.
 - A module-level `streamStore` survives navigation so a reply can finish while the page is unmounted; re-entering the conversation rehydrates from it.
 - The empty-response fallback is `CHAT_EMPTY_RESPONSE_FALLBACK` from `src/api/chat/types.ts`.
 
@@ -231,7 +241,8 @@ The board detail header uses a different flow: `ImportNotePanel` imports into th
 - API keys (`src/components/settings/ApiKeysTab.tsx`) are self-service for every user. Create expands an inline form asking for a name, `read`/`write` access, and a scope (`workspace`, `root`, or selected folders). Folder selection is a checkbox tree loaded from the regular folder collection; selected roots include their descendants. The created secret is shown once in an inline “Copy your key now” callout with copy and a warning; list rows show the prefix, access/scope badges, folder names, last use, and revoke. The tab also shows the `/mcp` Bearer header. Management always uses the session token, never a key.
 - Public pages fetch through `/api/v1/public/...` and skip authenticated app data; `AppContent` disables `useDocumentData()` for `/public/`. Documents, folders, and boards each have a public reader route; a folder share lists its notes and boards in the contents tree and opens either reader inline, while `PublicBoardPage` renders the board description and status-grouped tasks without task-note links.
 - Stored Markdown that still contains `/pb/api/files/...` is rewritten to `/api/v1/files/...` by the Markdown `img`/`a` renderers (`src/lib/legacy-urls.ts`). There is no compatibility `/pb` route.
-- The `PublicSharePanel` supports documents, folders, and boards. Boards hide the attachment switch because they have no files. The `Private` switch hides the record from AI chat and MCP and from shared parents; a private board cannot be public. It does not hide the record from its owner.
+- `SharePanel` supports documents, folders, and boards. It combines direct people grants (`view`/`comment`/`edit`), the inherited-folder explanation, and the public-link controls; the public section hides the attachment switch for boards. A `Private` switch hides the record from AI chat and MCP and from shared parents; a private record cannot be public. It does not hide the record from its owner.
+- `/shared` is the “Shared with me” index with All/Boards/Notes/Folders tabs, search, and rows that open the normal readers. `/shared/folders/:folderId` shows a shared folder; inherited access badges come from the effective access endpoint. The sidebar nav exposes `/shared`, and share actions read `sharePanel` state locally on timeline, folder, and sidebar surfaces; the note editor and board header use the same panel.
 - The default homepage setting no longer offers a separate boards page; stored `board` preferences open the timeline instead.
 - PWA: the manifest and `/sw.js` are served by `src/index.ts`; `InstallBanner` uses `useInstallPrompt()` and renders a non-modal bottom banner above mobile navigation; the service worker is intentionally minimal.
 
@@ -297,8 +308,10 @@ Performance:
 - **There is one AddToBoard picker.** `AddToBoardHost` is mounted at the app root; call sites only set `addToBoardRequestAtom`.
 - **The board header import is board-scoped.** It uses `ImportNotePanel` and `existingDocumentIds`, not the root picker. Don't merge the two flows.
 - **Archived boards are absent from the add-to-board picker.** `AddToBoardPanel` filters `!board.archived`; a stale request cannot target one.
-- **Chat has no attachments.** There is no document picker, no `documentIds`, and no source chips. Adding one requires a new retrieval design, not a UI-only change.
-- **Tool activity is not a citation list.** It shows names and statuses only; the answer must cite titles in its own text.
+- **Chat has no attachments.** There is no document picker, no `documentIds`, and no upload control. The dock's page context is `{ type, id }` metadata only; adding attachments or note bodies requires a new retrieval design, not a UI-only change.
+- **Chat writes are mode-gated.** Ask mode sends `mode: "ask"` and is read-only. Edit mode sends `mode: "edit"`; the server adds the write tools and returns edit cards. Do not infer write access from the UI alone.
+- **Edit cards are not a general undo stack.** Only note creation (trash) and note edits (snapshot restore) are undoable. Board/task cards have no Undo, and a newer note revision makes undo return `409`.
+- **Tool activity is not a citation list.** It shows names/statuses and target titles only. The answer must cite titles in its own text; source links are the server-collected `sources` list.
 - **`PageHeader` accepts an eyebrow it does not render.** The prop is kept for compatibility; adding an eyebrow back is a design change, not a styling tweak. `EmptyState.icon` is rendered as a neutral tile when not compact.
 - **Mobile drag is not available.** HTML5 drag-and-drop is pointer-only, so note, folder, task, and board moves are desktop paths. The task edit panel's column select is the supported touch path for tasks; board folder moves use the board settings folder selector.
 - **The 20-second initial-load timeout is deliberate.** It unblocks a slow PocketBase; removing it can leave the shell on a spinner.
@@ -308,6 +321,6 @@ Performance:
 - [`architecture.md`](architecture.md) — request flow and process topology.
 - [`api.md`](api.md) — chat, export, board/task collection payloads.
 - [`pocketbase.md`](pocketbase.md) — schema, hooks, and rules behind the UI.
-- [`ai.md`](ai.md) — chat tools, providers, and persistence.
+- [`ai.md`](ai.md) — chat ask/edit tools, write path, providers, and persistence.
 - [`development.md`](development.md) — build and verification commands.
 - [`../DESIGN.md`](../DESIGN.md) — Graphite tokens, type, components, motion.

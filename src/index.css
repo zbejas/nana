@@ -745,3 +745,22 @@ body.public-route-active {
   border-left-color: var(--line-strong) !important;
   color: var(--ink-secondary) !important;
 }
+
+/* ------------------------------------------------------------------ */
+/* Chat dock                                                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The editor footer is portalled to <body> and pinned to the viewport edge.
+ * When the desktop dock reserves space, the footer should stop at the dock.
+ */
+body[data-chat-dock-open="true"] > footer {
+  right: var(--nana-chat-dock-width, 0px) !important;
+  transition: right 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (max-width: 767px) {
+  body[data-chat-dock-open="true"] > footer {
+    right: 0 !important;
+  }
+}

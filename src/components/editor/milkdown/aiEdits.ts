@@ -1,120 +1,115 @@
 import { editorViewCtx, type Editor } from '@milkdown/kit/core';
-import { replaceEditorMarkdown } from './createEditor';
+import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model';
+import { replaceEditorMarkdown, setAiHighlights, type AiHighlightRange } from './createEditor';
 
 export interface AiChangedSection {
-  heading?: string;
+  heading?: string | null;
   path?: string[];
   from?: number;
   to?: number;
 }
 
-const HEADING_SELECTOR = 'h1,h2,h3,h4,h5,h6';
-const EDIT_CLASS = 'nana-ai-edited';
-const BADGE_ATTR = 'data-nana-ai-heading';
-
-function headingText(element: Element): string {
-  return (element.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+interface Block {
+  from: number;
+  to: number;
+  level: number;
+  keys: string[];
 }
 
-function headingKeys(element: Element): string[] {
-  const text = headingText(element);
-  const keys = [text];
-  const trail: string[] = [];
-  let current: Element | null = element;
-  while (current) {
-    if (current.matches?.(HEADING_SELECTOR)) {
-      trail.unshift(headingText(current));
-    }
-    current = current.previousElementSibling;
-  }
-  if (trail.length > 1) {
-    keys.push(trail.join(' > '));
-    keys.push(trail.join(' / '));
-  }
-  return keys;
+function normalize(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-function levelOf(element: Element): number {
-  return Number(element.tagName.slice(1)) || 6;
-}
-
-function clearHighlights(root: HTMLElement): void {
-  root.querySelectorAll(`.${EDIT_CLASS}`).forEach((element) => {
-    element.classList.remove(EDIT_CLASS);
-    element.removeAttribute(BADGE_ATTR);
-  });
+function textOf(node: ProseMirrorNode): string {
+  return normalize(node.textBetween(0, node.content.size, ' '));
 }
 
 /**
- * Reveals the sections changed by an AI edit. The Markdown is applied in one
- * transaction so the document stays consistent; the visual layer then marks
- * exactly the changed section ranges, scrolls the first one into view, and
- * fades the wash after ~2.4s. Reduced-motion users get the mark without the
- * animation.
+ * Walks the top-level blocks once, keeping the heading trail so a section can
+ * be matched by its leaf heading or a `Parent > Child` path. Body blocks keep
+ * level 0; a heading's level closes the previous section at the same or
+ * shallower level.
  */
-export function revealAiSections(root: HTMLElement, sections: AiChangedSection[]): void {
-  if (typeof window === 'undefined' || sections.length === 0) return;
-  clearHighlights(root);
+function blocksOf(doc: ProseMirrorNode): Block[] {
+  const blocks: Block[] = [];
+  const trail: Array<{ level: number; text: string }> = [];
 
-  const headings = Array.from(root.querySelectorAll<HTMLElement>(HEADING_SELECTOR));
-  const marked: HTMLElement[] = [];
+  doc.forEach((node, offset) => {
+    const from = offset;
+    const to = offset + node.nodeSize;
+
+    if (node.type.name !== 'heading') {
+      blocks.push({ from, to, level: 0, keys: [] });
+      return;
+    }
+
+    const level = Number(node.attrs.level) || 6;
+    const text = textOf(node);
+    while (trail.length > 0 && (trail[trail.length - 1]?.level ?? 0) >= level) {
+      trail.pop();
+    }
+    const path = [...trail.map((item) => item.text), text].join(' > ');
+    trail.push({ level, text });
+    blocks.push({ from, to, level, keys: [text, path] });
+  });
+
+  return blocks;
+}
+
+function rangesFor(doc: ProseMirrorNode, sections: AiChangedSection[]): AiHighlightRange[] {
+  if (sections.length === 0) return [];
+
+  const blocks = blocksOf(doc);
+  const ranges = new Map<string, AiHighlightRange>();
 
   for (const section of sections) {
-    if (!section.heading) continue;
-    const wanted = section.heading.replace(/\s+/g, ' ').trim().toLowerCase();
-    const path = section.path?.join(' > ').replace(/\s+/g, ' ').trim().toLowerCase();
-    const heading = headings.find((candidate) => {
-      const keys = headingKeys(candidate);
-      return keys.includes(wanted) || (path ? keys.includes(path) : false);
+    const wanted = section.heading ? normalize(section.heading) : '';
+    const path = (section.path?.join(' > ') ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!wanted && !path) continue;
+
+    const headingIndex = blocks.findIndex((block) => {
+      if (block.level === 0) return false;
+      return block.keys.includes(wanted) || (path ? block.keys.includes(path) : false);
     });
+    if (headingIndex === -1) continue;
+
+    const heading = blocks[headingIndex];
     if (!heading) continue;
+    ranges.set(`${heading.from}:${heading.to}`, { from: heading.from, to: heading.to, heading: true });
 
-    const level = levelOf(heading);
-    heading.classList.add(EDIT_CLASS);
-    heading.setAttribute(BADGE_ATTR, 'true');
-    marked.push(heading);
-
-    let sibling = heading.nextElementSibling;
-    while (sibling) {
-      if (sibling.matches(HEADING_SELECTOR) && levelOf(sibling) <= level) break;
-      sibling.classList.add(EDIT_CLASS);
-      marked.push(sibling as HTMLElement);
-      sibling = sibling.nextElementSibling;
+    for (let index = headingIndex + 1; index < blocks.length; index += 1) {
+      const block = blocks[index];
+      if (!block) break;
+      if (block.level > 0 && block.level <= heading.level) break;
+      ranges.set(`${block.from}:${block.to}`, { from: block.from, to: block.to });
     }
   }
 
-  if (marked.length === 0) {
-    // Append edits may not have a new heading; mark the last block so the
-    // change is still visible.
-    const last = root.lastElementChild as HTMLElement | null;
-    if (last) {
-      last.classList.add(EDIT_CLASS);
-      marked.push(last);
-    }
+  if (ranges.size === 0 && blocks.length > 0) {
+    // Appends and text replacements may not add a heading. Mark the final
+    // block so the user still sees what changed.
+    const last = blocks[blocks.length - 1];
+    if (last) ranges.set(`${last.from}:${last.to}`, { from: last.from, to: last.to });
   }
 
-  marked[0]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-
-  window.setTimeout(() => {
-    for (const element of marked) {
-      element.classList.remove(EDIT_CLASS);
-      element.removeAttribute(BADGE_ATTR);
-    }
-  }, 2600);
+  return [...ranges.values()].sort((left, right) => left.from - right.from);
 }
 
 /**
- * Replaces the editor document with the AI-applied Markdown and animates the
- * changed sections. Call this from the chat edit event when the open note is
- * the edit target; ordinary external value sync should keep using the
- * controlled `value` path.
+ * Replaces the editor document with the AI-applied Markdown and highlights the
+ * changed sections through ProseMirror decorations. Scrolling and the fade are
+ * owned by `setAiHighlights`.
  */
 export function applyAiMarkdown(
   editor: Editor,
   markdown: string,
-  sections: AiChangedSection[]
+  sections: AiChangedSection[],
 ): void {
   editor.action((ctx) => replaceEditorMarkdown(ctx, markdown));
   const view = editor.action((ctx) => ctx.get(editorViewCtx));
-  window.requestAnimationFrame(() => revealAiSections(view.dom as HTMLElement, sections));
+
+  window.requestAnimationFrame(() => {
+    if (view.isDestroyed) return;
+    setAiHighlights(view, rangesFor(view.state.doc, sections));
+  });
 }

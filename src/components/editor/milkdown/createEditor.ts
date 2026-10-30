@@ -18,7 +18,7 @@ import { upload, uploadConfig } from '@milkdown/kit/plugin/upload';
 import { $prose, $view } from '@milkdown/kit/utils';
 import { Fragment, Slice } from '@milkdown/kit/prose/model';
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
-import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view';
 import { prism } from '@milkdown/plugin-prism';
 import { rewriteLegacyFileUrl } from '../../../lib/legacy-urls';
 import { normalizeMarkdown } from './helpers';
@@ -111,6 +111,75 @@ function placeholderPlugin(placeholderRef: { current: string }) {
         },
       }),
   );
+}
+
+const AI_HIGHLIGHT_KEY = new PluginKey<DecorationSet>('NANA_AI_HIGHLIGHT');
+const aiHighlightTimers = new WeakMap<EditorView, number>();
+
+function aiHighlightPlugin() {
+  return $prose(
+    () =>
+      new Plugin<DecorationSet>({
+        key: AI_HIGHLIGHT_KEY,
+        state: {
+          init: () => DecorationSet.empty,
+          apply(tr, previous) {
+            const next = tr.getMeta(AI_HIGHLIGHT_KEY) as DecorationSet | undefined;
+            if (next) return next;
+            return previous.map(tr.mapping, tr.doc);
+          },
+        },
+        props: {
+          decorations(state) {
+            return AI_HIGHLIGHT_KEY.getState(state) ?? null;
+          },
+        },
+      }),
+  );
+}
+
+export interface AiHighlightRange {
+  from: number;
+  to: number;
+  heading?: boolean;
+}
+
+/**
+ * Applies the AI-edit wash through ProseMirror decorations rather than DOM
+ * classes. Milkdown re-renders node DOM after transactions; a class added
+ * directly to the DOM can disappear before the user sees it.
+ */
+export function setAiHighlights(view: EditorView, ranges: AiHighlightRange[], duration = 2600): void {
+  if (view.isDestroyed || ranges.length === 0) return;
+
+  const decorations = ranges.map((range) =>
+    Decoration.node(range.from, range.to, {
+      class: 'nana-ai-edited',
+      ...(range.heading ? { 'data-nana-ai-heading': 'true' } : {}),
+    }),
+  );
+
+  view.dispatch(
+    view.state.tr.setMeta(AI_HIGHLIGHT_KEY, DecorationSet.create(view.state.doc, decorations)),
+  );
+
+  const first = ranges[0];
+  if (first) {
+    const node = view.nodeDOM(first.from);
+    if (node instanceof HTMLElement) {
+      node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }
+
+  const previousTimer = aiHighlightTimers.get(view);
+  if (previousTimer !== undefined) window.clearTimeout(previousTimer);
+
+  const timer = window.setTimeout(() => {
+    aiHighlightTimers.delete(view);
+    if (view.isDestroyed) return;
+    view.dispatch(view.state.tr.setMeta(AI_HIGHLIGHT_KEY, DecorationSet.empty));
+  }, duration);
+  aiHighlightTimers.set(view, timer);
 }
 
 function taskListClickPlugin() {
@@ -244,6 +313,7 @@ export async function createMilkdownEditor(options: CreateMilkdownEditorOptions)
   editor.use(legacyImageView);
   editor.use(legacyLinkPlugin());
   editor.use(placeholderPlugin(options.placeholderRef));
+  editor.use(aiHighlightPlugin());
   editor.use(taskListClickPlugin());
   editor.use(documentChangePlugin(options.onDocChangeRef));
   if (options.enableSlash !== false) editor.use(slashPlugin(options.onSlashRef));

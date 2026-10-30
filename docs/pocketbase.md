@@ -69,7 +69,7 @@ Groups:
 
 ### Migrations
 
-Files are sequential and zero-padded. **The next migration is `0000025_<description>.js`.**
+Files are sequential and zero-padded. **The next migration is `0000029_<description>.js`.**
 
 | Migration | Purpose |
 | --- | --- |
@@ -97,6 +97,10 @@ Files are sequential and zero-padded. **The next migration is `0000025_<descript
 | `0000022_relational_remodel.js` | Soft-delete trash views, `messages` records, relation indexes/cascades, and redundant-relation removal. |
 | `0000023_user_sharing.js` | `shares`, `access_grants`, `comments`, and shared-read rules for documents, folders, boards, and tasks. |
 | `0000024_api_keys.js` | `api_keys` collection: hashed long-lived credentials, access/scope fields, folder relation, usage timestamp. |
+| `0000025_kanban_foundation.js` | Workflow columns, task status text, assignee/dates/recurrence/numbering, labels, relations, activity, task comments. |
+| `0000026_sharing_repair.js` | Grant-only shared reads, permission-shaped write rules, access-grant rebuild, and private-boundary repair. |
+| `0000027_chat_edits.js` | Document revisions/actor metadata, message context/sources/stopped, version snapshots, and `chat_edits`. |
+| `0000028_kanban_hardening.js` | Repairs missing columns, counters, completion, comments index, and hardened collection rules for existing databases. |
 
 Use the migration API, not `module.exports`:
 
@@ -124,7 +128,7 @@ Rules:
 - Guard additions/removals so retries are idempotent.
 - Never rename an existing migration. `bootstrap.js` contains a temporary compatibility hook that rewrites old filenames in the `_migrations` table.
 - For data migrations, use `findRecordsByFilter` and tolerate missing records when the schema may not be seeded yet.
-- Migrations are append-only; start the next one at `0000025`.
+- Migrations are append-only; start the next one at `0000029`.
 - View collections reject `SELECT *`; list explicit columns. When a source field is added, update the view query in the same migration.
 
 ### Collections
@@ -133,15 +137,21 @@ Rules:
 | --- | --- | --- |
 | `users` | Auth collection | `admin` boolean; first user is auto-verified and admin. |
 | `folders` | Nested folder tree | Self-referencing `parent`; soft-delete fields; sharing fields. |
-| `documents` | Markdown documents | Content, attachments, tags, stats, folder relation, soft-delete and sharing fields. |
-| `document_versions` | Version snapshots | Created when a document is saved with `published = true`. |
-| `boards` | Task boards | Author-scoped; name, description, archived flag, optional folder, private and public-share fields. |
-| `tasks` | Board work items | Board-scoped; ownership derives from `board.author`; fixed status set, optional priority/due date/labels, optional source document. |
-| `conversations` | Chat threads | Author-scoped title and timestamps; messages live in `messages`. |
-| `messages` | Chat messages | Role, content, reasoning/model metadata, tool activity, and position. |
+| `documents` | Markdown documents | Content, attachments, tags, stats, folder relation, soft-delete and sharing fields, `revision`, `last_edited_by`, `last_edit_source`. |
+| `document_versions` | Version snapshots | Created on publish or AI edit; carries `source`, `snapshot`, `actor_type`, `actor_label`. |
+| `boards` | Task boards | Author-scoped; name, description, icon, task counter, archived flag, optional folder, private and public-share fields. |
+| `board_columns` | Ordered board workflow | `board`, `name`, stable `slug`, `position`, `icon`, `color`, `is_final`. |
+| `tasks` | Board work items | Board-scoped; ownership derives from `board.author`; text `status`, priority, assignee, dates, labels, recurrence, task number, optional source document. |
+| `labels` | Owner label definitions | Name + Graphite colour; tasks keep a JSON string array of label names. |
+| `task_relations` | Task graph | `source`, `target`, `type` (`subtask|blocks|related`). |
+| `task_activity` | Task audit | Task, board, actor, actor type/label, type, JSON data. Server writes only. |
+| `conversations` | Chat threads | Author-scoped title, timestamps, rolling summary. |
+| `messages` | Chat messages | Role, content, reasoning/model metadata, tool activity, context, sources, stopped, position. |
 | `shares` | Owner-managed direct grants | One row per resource/user; created and updated by the sharing route layer. |
-| `access_grants` | Materialized inherited folder grants | Read-only to the grantee; lets collection rules resolve folder inheritance without recursion. |
-| `comments` | Internal comment storage | Custom routes enforce target access and moderation; no public collection rules. |
+| `access_grants` | Materialized direct + inherited grants | Read-only to the grantee; lets collection rules resolve folder inheritance without recursion. |
+| `comments` | Internal comment storage | Targets `document`, `board`, or `task`; custom routes enforce target access and moderation; no public collection rules. |
+| `chat_edits` | AI edit audit | Conversation, message, actor, target, tool, operations, summary, status; server writes only. |
+| `sharing_repairs` | Grant repair queue | Written by fail-closed sharing/trash transitions and retried by cron. |
 | `api_keys` | Long-lived machine credentials | `key_hash` (SHA-256), display prefix, `author`, `access`, `scope`, folder roots, `last_used_at`; no public rules. |
 | `settings` | Admin key/value store | `site_url`, `ai_config`, `rate_limits`. |
 | `trash_documents` | Read-only view | `documents WHERE deleted_at != ''`. |
@@ -160,8 +170,15 @@ Rules:
 | `document_versions` | `document` | `documents` | yes | yes | Versions die with the note. |
 | `boards` | `author` | `users` | yes | no | Owner. |
 | `boards` | `folder` | `folders` | no | no | Folder trash rehomes boards; never delete a board with a folder. |
+| `board_columns` | `board` | `boards` | yes | yes | Columns die with the board. |
 | `tasks` | `board` | `boards` | yes | yes | Task ownership derives from `board.author`. |
+| `tasks` | `assignee` | `users` | no | no | Must already have board access. |
 | `tasks` | `document` | `documents` | no | no | Permanent note delete clears the link; trash keeps it for restore. |
+| `labels` | `author` | `users` | yes | yes | Owner label definitions. |
+| `task_relations` | `source` / `target` | `tasks` | yes | yes | Self-links rejected; edits require source edit + target read. |
+| `task_activity` | `task` / `board` | `tasks` / `boards` | yes | yes | Audit rows die with the task/board. |
+| `comments` | `document` / `board` / `task` | matching record | no | yes | Exactly one target is expected; custom routes enforce it. |
+| `chat_edits` | `conversation` / `message` | conversations / messages | yes / no | yes / yes | AI edit cards and undo; messages die with the conversation. |
 | `conversations` | `author` | `users` | yes | yes | Conversations and messages follow the user. |
 | `messages` | `conversation` | `conversations` | yes | yes | Messages die with the conversation. |
 
@@ -221,6 +238,8 @@ Normal API deletes are disabled on documents and folders. `POST /api/trash/move-
 | --- | --- | --- |
 | `name` | Text | Required, max 120. |
 | `description` | Text | Optional, max 500. |
+| `icon` | Text | Optional board glyph key, max 40. |
+| `task_counter` | Number | Allocates board-scoped task numbers; written server-side. |
 | `archived` | Bool | Defaults false. |
 | `folder` | Relation → `folders` | Optional, `cascadeDelete: false`, max 1. Empty means the workspace root. |
 | `is_private` | Bool | Optional. Hides the board from chat and MCP; the owner still sees it. A private board cannot be public. |
@@ -240,10 +259,15 @@ Rules:
 
 | Operation | Rule |
 | --- | --- |
-| List / view / create / update | `@request.auth.id != '' && author = @request.auth.id` |
-| Delete | `@request.auth.id != '' && author = @request.auth.id && archived = true` |
+| List / view | Owner, or a non-private board with an `access_grants` row for the caller. Direct shares are materialized into grants by `0000026`. |
+| Create | `author = @request.auth.id`. |
+| Update | Owner or an `edit` grant; owner-only fields are enforced by `sharing/permission_guards.js`. |
+| Delete | Owner and `archived = true`. |
+| `board_columns` write | Owner only. |
 
-A board is archived with a normal `PATCH { "archived": true }`. Restore is `PATCH { "archived": false }`. Permanent delete is only possible after archiving and cascades the board's tasks. Tasks deleted this way are not moved to trash.
+A board is archived with a normal `PATCH { "archived": true }`. Restore is `PATCH { "archived": false }`. Permanent delete is only possible after archiving and cascades the board's tasks and columns. Tasks deleted this way are not moved to trash.
+
+New boards are seeded with four default columns (`backlog`, `next`, `progress`, `done`) by `pb_hooks/boards/seed_columns.js`. A column slug is immutable while tasks reference it; a column cannot be deleted while tasks use it. `tasks.status` stores the column slug, or the virtual `planned`/`archived` statuses used by the backlog.
 
 #### Board folder guard
 
@@ -263,11 +287,15 @@ The Bun workspace service and the browser facade check the same ownership before
 | --- | --- | --- |
 | `title` | Text | Required, max 240. |
 | `description` | Editor | Markdown body. |
-| `status` | Select | Required: `backlog`, `next`, `progress`, `done`. |
+| `status` | Text | Required column slug, or virtual `planned`/`archived`; validated by `tasks/status_guard.js`. |
 | `priority` | Select | Optional: `low`, `medium`, `high`, `urgent`. |
-| `due_date` | Date | Optional. |
-| `board_order` | Number | Optional, minimum 0. |
-| `labels` | JSON | String array. |
+| `assignee` | Relation → `users` | Optional; must already have board access. |
+| `start_date`, `due_date` | Date | Optional. |
+| `completed_at` | Date | Derived from `column.is_final`; cleared when the task leaves a final column. |
+| `recurrence` | JSON | Optional recurrence object. |
+| `task_number` | Number | Per-board number allocated server-side; not client-writable. |
+| `board_order` | Number | Optional, minimum 0; scoped to a column by the client. |
+| `labels` | JSON | String array of label names. |
 | `board` | Relation → `boards` | Required, `cascadeDelete: true`. |
 | `document` | Relation → `documents` | Optional, `cascadeDelete: false`. |
 
@@ -282,10 +310,11 @@ Rules:
 
 | Operation | Rule |
 | --- | --- |
-| List / view / delete | `@request.auth.id != '' && board.author = @request.auth.id` |
-| Create / update | `@request.auth.id != '' && board.author = @request.auth.id && board.archived = false` |
+| List / view | Owner, or a non-private board with an `access_grants` row for the caller. |
+| Create / update | Owner or `edit` grant, and `board.archived = false`. |
+| Delete | Owner, or an `edit` grant on an active board. |
 
-The split is deliberate: an archived board freezes task creation and updates, but the owner can still delete tasks from it. Deleting an active board is rejected before the cascade can run. Deleting an archived board cascades its tasks; deleting a note clears the `document` link when the note is permanently deleted.
+The split is deliberate: an archived board freezes task creation and updates, but the owner can still delete tasks from it. Deleting an active board is rejected before the cascade can run. Deleting an archived board cascades its tasks; deleting a note clears the `document` link when the note is permanently deleted. Task numbering, completion, and activity are maintained by `pb_hooks/tasks/lifecycle.js` and `record_activity.js`; the unique index `(board, task_number)` prevents duplicate numbers.
 
 PocketBase evaluates relation rules against the **stored** record, not the incoming relation value. Moving a task to another board therefore also passes through `guards/relation_guards.js`, which loads the new `board`, rejects archived boards, and validates a newly set or changed `document` (foreign and trashed notes are rejected). An existing link to a note that was trashed later does not block unrelated task edits. Keep that guard when changing task rules.
 
@@ -359,10 +388,31 @@ Version history is surfaced in the editor's version preview and restore UI. Vers
 | `reasoning` | Text | Optional thinking text. |
 | `model` | Text | Optional model identifier, max 120. |
 | `tools` | JSON | Sanitized tool names and terminal statuses. |
+| `context` | JSON | Optional page metadata `{ type, id, title }` on a user message. |
+| `sources` | JSON | Optional server-collected note/board links on an assistant message. |
+| `stopped` | Bool | True when the user stopped the stream before it finished. |
 | `position` | Number | Display order, minimum 0. Zero is valid, so the field is not `required`. |
 | `created` | Autodate | Managed by PocketBase. |
 
 Rules are `@request.auth.id != '' && conversation.author = @request.auth.id` for all operations. Appending a message also touches the conversation so `updated` drives the sidebar order. `trimLastExchange` deletes the newest assistant run and the preceding user turn.
+
+### User-to-user sharing
+
+`shares` is the owner-managed grant; `access_grants` materializes direct and inherited access so collection rules do not recurse. Migration `0000026` makes the shared rules grant-only:
+
+- A record is readable by its author or a non-private record with a matching `access_grants` row.
+- Direct shares are copied into grants; a private record, a private folder, and every descendant are not shareable with people.
+- Update rules require an `edit` grant; task create/update require edit and an active board; task delete allows the owner or an active-board editor.
+- `sharing/permission_guards.js` enforces owner-only fields: `author`, `folder`/`parent`, privacy/public-share fields, archive state, and board columns/labels.
+- `access_hooks.js` rebuilds grants on create/move/privacy/trash changes. A failed rebuild rolls the record write back; `sharing_repairs` and a cron retry queued repairs.
+- `/api/v1/sharing/*` is a session-only proxy. API keys and MCP remain author-scoped and do not see shared records.
+- Comments are stored in `comments` and served by custom routes; the collection has no public rules.
+
+### Chat edits and revisions
+
+`documents.revision` is the optimistic-concurrency token. `revision_guard.js` accepts an omitted revision from older clients but rejects a supplied stale one; AI note edits must supply it. Content/title/tags changes bump the revision and stamp `last_edited_by`/`last_edit_source` (`user`, `ai`, or `system`).
+
+`document_versions` snapshots the old title, content, tags, folder, and privacy when `published` is set. AI note writes use `source: "ai"`, `actor_type: "ai"`, `actor_label: "Nana"`, and the same snapshot path. `chat_edits` records the tool, target, operations, summary, and status for the chat's edit cards and undo. `messages.context` stores the open-page metadata attached at send time; `messages.sources` stores server-derived note/board links.
 
 ### Public sharing
 
@@ -417,13 +467,13 @@ On startup (not during `migrate up`):
 - Otherwise generate a random superuser and write the credentials file with mode `0600`.
 - The superuser is created/updated in `_superusers`.
 
-The Bun server reads the same credentials to obtain a token for admin-only settings, AI configuration, and API key lookup/exchange. Never commit this file or log its contents. Chat read tools and workspace `ToolContext` never receive this token; a key is exchanged for the key owner's normal user token through impersonation.
+The Bun server reads the same credentials to obtain a token for admin-only settings, AI configuration, API key lookup/exchange, and server-owned `chat_edits` rows. Never commit this file or log its contents. Chat workspace tools and `ToolContext` never receive this token; chat edit audit rows use it only after the caller's token has proved conversation ownership. A key is exchanged for the key owner's normal user token through impersonation.
 
 `bootstrap.js` also seeds `site_url` from `SITE_URL` and syncs PocketBase `meta.appURL`, which is used for OAuth redirect URIs.
 
 ### Adding backend behavior
 
-1. Add or update the schema in a new migration (`0000025+`).
+1. Add or update the schema in a new migration (`0000029+`).
 2. Add hooks/routes under the relevant `pb_hooks/` directory.
 3. Require the new module from `index.pb.js` (or from a parent module that is already required).
 4. Use `requireAdmin(c)`, `parseRequestBody(c)`, `escapeHtml()`, and `sanitizeUrl()` from `utils.js`; admin route catch blocks should return `sendError(c, err, fallbackMessage)` so known failures keep 400/401/403/404.
@@ -453,7 +503,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 - **API keys are hashed, not encrypted.** `key_hash` is SHA-256 of the full `nana_…` secret. Never add the plaintext, a reversible encoding, or the hash to an API response. The hash lookup uses the superuser only after the key itself is presented.
 - **`api_keys` has no public rules.** It is server-managed on purpose. Do not add it to the browser facade allowlist or expose it through a collection route.
 - **API keys cascade with the user.** `api_keys.author` uses `cascadeDelete: true`; `api_keys.folders` does not cascade from folders, so a deleted scope root grants nothing.
-- **The next migration is `0000025`.** `0000024` is the current head; never edit an applied migration in place.
+- **The next migration is `0000029`.** `0000028` is the current head; never edit an applied migration in place.
 
 ## Related docs
 

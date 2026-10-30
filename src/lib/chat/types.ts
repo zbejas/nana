@@ -1,0 +1,109 @@
+import type {
+  ChatContext,
+  ChatContextInput,
+  ChatContextType,
+  ChatEditChanges,
+  ChatEditDto,
+  ChatEditSection,
+  ChatEditStatus,
+  ChatEditTarget,
+  ChatMode,
+  ChatSource,
+  ChatStatusResponse,
+  ChatToolActivity,
+} from '../../api/chat/types';
+
+export type {
+  ChatContext,
+  ChatContextInput,
+  ChatContextType,
+  ChatEditChanges,
+  ChatEditDto,
+  ChatEditSection,
+  ChatEditStatus,
+  ChatEditTarget,
+  ChatMode,
+  ChatSource,
+  ChatStatusResponse,
+  ChatToolActivity,
+};
+
+/** UI-only statuses are layered on top of the persisted edit statuses. */
+export type ChatEditUiStatus = ChatEditStatus | 'applying' | 'conflict';
+
+/** One edit as rendered in a message card. */
+export interface ChatUiEdit extends Omit<ChatEditDto, 'status'> {
+  status: ChatEditUiStatus;
+  /** Local undo request in flight. */
+  undoing?: boolean;
+  /** Local failure detail when undo fails. */
+  undoError?: string;
+}
+
+/** Tool event enriched with the target title while it streams. */
+export interface ChatUiTool extends ChatToolActivity {
+  title?: string;
+  targetType?: ChatContextType;
+  targetId?: string;
+}
+
+export interface ChatUiMessage {
+  id?: string;
+  role: 'user' | 'assistant';
+  content: string;
+  reasoning?: string;
+  tools?: ChatUiTool[];
+  sources?: ChatSource[];
+  edits?: ChatUiEdit[];
+  context?: ChatContext | null;
+  model?: string;
+  streaming?: boolean;
+  stopped?: boolean;
+}
+
+export interface ChatConversation {
+  id: string;
+  title: string;
+  created: string;
+  updated: string;
+  /** Server-side hint for the pending-edit dot in history. */
+  pending_edits?: number;
+}
+
+export interface ChatError {
+  message: string;
+  code?: string;
+  status?: number;
+  /** The user text to resend with Try again. */
+  retryText?: string;
+}
+
+export interface ChatUiState {
+  conversationId: string | null;
+  conversation: ChatConversation | null;
+  messages: ChatUiMessage[];
+  /** A stream is in progress. */
+  active: boolean;
+  /** True between clicking Stop and the reader closing. */
+  stopping: boolean;
+  error: ChatError | null;
+  status: ChatStatusResponse | null;
+  statusLoading: boolean;
+  statusError: string | null;
+  conversations: ChatConversation[];
+  conversationsLoading: boolean;
+  conversationsError: string | null;
+  edits: ChatUiEdit[];
+  editsLoading: boolean;
+  mode: ChatMode;
+  loadingConversation: boolean;
+  loadedConversationId: string | null;
+  /** Derived target while Nana is writing, mirrored into presence. */
+  editing: {
+    targetType?: ChatContextType;
+    targetId?: string;
+    title?: string;
+  } | null;
+  /** Conversations with a live edit, for the history dot. */
+  pendingEditConversationIds: string[];
+}

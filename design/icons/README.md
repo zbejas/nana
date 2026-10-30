@@ -29,7 +29,7 @@ Every SVG is flat, has no external fonts or images, and uses only Graphite value
 
 The previous mark was a 145 KB illustration with a cream rabbit, brown outlines, a backpack, a pencil, and a ring-bound notebook, in a 582×606 viewBox. It was used as the sidebar glyph at 32px, in About and public pages, in the install banner, and as the favicon. At 16–32px the notebook, pencil, backpack, face, and outline collapsed into a brown-cream smudge.
 
-That illustration is gone from every surface. `src/assets/nana.svg`, `nana-icon.svg`, the PWA PNGs, the sidebar, About, the install banner, public pages, and the chat mark now use the `rabbit-note` master. The favicon is a separate transparent, tightly cropped version of the same master: cream on dark chrome, ink on light chrome, no tile. The manifest separates `any` and `maskable` icons so the mark stays inside the safe circle.
+That illustration is gone from every surface. `src/assets/nana.svg`, `nana-icon.svg`, the PWA PNGs, About, the install banner, public pages, and the chat mark now use the `rabbit-note` master. The sidebar and auth cover use the transparent, tightly cropped mark; the favicon uses the same crop with cream/ink variants. The manifest separates `any` and `maskable` icons so the mark stays inside the safe circle.
 
 ## Research: what shaped the work
 
@@ -126,14 +126,14 @@ Do not mix directions as the app icon and favicon. The shipped favicon is the sa
 
 The rabbit-note direction is wired into the app:
 
-1. **Masters.** `src/assets/nana-icon.svg` is the 512 app/PWA tile; `nana.svg` is a copy used by the sidebar, About, public pages, install banner, and chat mark. `nana-icon-maskable.svg` and `nana-icon-monochrome.svg` are separate files.
+1. **Masters.** `src/assets/nana-icon.svg` is the 512 app/PWA tile; `nana.svg` is a copy used by About, public pages, install banner, and chat mark. `nana-icon-maskable.svg` and `nana-icon-monochrome.svg` are separate files.
 2. **Favicon.** `src/assets/nana-favicon.svg` is the transparent cream version for dark chrome; `nana-favicon-light.svg` is the ink version for light chrome. Both use a tight `viewBox="68 44 376 376"` around the mark, with the eyes and nose as alpha cutouts.
 3. **Rasters.** `nana-favicon-16.png`, `-32.png`, `nana-favicon-light-16.png`, and `-32.png` are generated from the SVG geometry. `nana-192.png`, `nana-512.png`, the maskable pair, the 180px Apple touch icon, and the monochrome PNG are generated from the tile/maskable masters.
 4. **Theme swap.** `src/lib/theme.ts` updates every `link[data-favicon]` href when the resolved theme changes, so the favicon switches between the cream and ink glyphs with the app.
 5. **Manifest.** `src/index.ts` and `src/manifest.webmanifest` split `any`, `maskable`, and monochrome purposes. The app icon is `nana-icon.svg`.
 6. **HTML.** `src/index.html` links the bundled SVG/16/32 favicons with `data-favicon` slots; `/nana-favicon*` server routes provide the theme-specific files used by the swap.
 7. **Fallback.** `/favicon.ico` serves the 32px dark favicon PNG for consumers that request the legacy path. The SVG and PNG links are the primary path.
-8. **Sidebar and About.** Both use the master tile glyph. The mark is legible at 32px; the tile keeps the brand consistent with the app icon.
+8. **Sidebar, auth, and About.** The sidebar and auth cover use the transparent mark (theme-aware in the sidebar; fixed cream on the dark cover). About uses the app tile. At 32px the cropped mark is legible on both surfaces.
 
 ## Verification
 
@@ -150,7 +150,7 @@ The rabbit-note direction is wired into the app:
 - Is the rabbit's ember inner ear too warm at 512, or is it the right amount of character? It is the first thing to tune.
 - Should the monogram tile be `#faf9f7` (paper) or `#ffffff` (surface)? Paper is warmer; white is crisper on a light tab.
 - Does the note-board need a fourth, offset card to read as a stack rather than a chart at 16px? A fourth card would add detail without helping the tab.
-- Should the app icon and the in-app sidebar use the same mark? The tile works for the icon; the sidebar wants a transparent glyph. That is a two-file system, not a single file.
+- Should the app icon and the in-app sidebar use the same mark? The tile works for the app icon; the sidebar uses the transparent glyph. That is a two-file system, not a single file.
 
 ## Sources
 

@@ -47,8 +47,8 @@ export function PublicBoardPage() {
 
     const counts = useMemo(
         () => ({
-            open: data ? countOpenTasks(data.tasks) : 0,
-            done: data ? countDoneTasks(data.tasks) : 0,
+            open: data ? countOpenTasks(data.tasks, data.board.columns) : 0,
+            done: data ? countDoneTasks(data.tasks, data.board.columns) : 0,
         }),
         [data],
     );

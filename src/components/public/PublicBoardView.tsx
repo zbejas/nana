@@ -23,24 +23,28 @@ function formatDueDate(value: string | null): string | null {
     });
 }
 
-function TaskRow({ task }: { task: PublicBoardTask }) {
+function TaskRow({ task, isDone }: { task: PublicBoardTask; isDone: boolean }) {
     const dueDate = formatDueDate(task.due_date);
     const labels = task.labels.filter(Boolean);
 
     return (
         <li
             className={`rounded-[10px] border border-line bg-surface px-4 py-3.5 ${
-                task.status === 'done' ? 'opacity-75' : ''
+                isDone ? 'opacity-75' : ''
             }`}
         >
             <div className="flex items-start gap-2.5">
-                {task.status === 'done' ? (
+                {isDone ? (
                     <CheckCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
                 ) : (
                     <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ink-muted" aria-hidden="true" />
                 )}
                 <div className="min-w-0 flex-1">
-                    <h3 className="text-[14px] font-medium leading-snug tracking-[-0.01em] text-ink">
+                    <h3
+                        className={`text-[14px] font-medium leading-snug tracking-[-0.01em] ${
+                            isDone ? 'text-ink-muted line-through decoration-ink-muted/50' : 'text-ink'
+                        }`}
+                    >
                         {task.title || 'Untitled task'}
                     </h3>
 
@@ -83,7 +87,13 @@ function TaskRow({ task }: { task: PublicBoardTask }) {
  * or private relation data.
  */
 export function PublicBoardView({ board, tasks }: PublicBoardViewProps) {
-    const groups = groupPublicBoardTasks(tasks);
+    const groups = groupPublicBoardTasks(tasks, board.columns);
+    const finalSlugs = new Set(
+        (board.columns ?? [])
+            .filter((column) => column.is_final)
+            .map((column) => column.slug),
+    );
+    if (finalSlugs.size === 0) finalSlugs.add('done');
 
     return (
         <main className="overflow-hidden rounded-panel border border-line bg-surface">
@@ -122,7 +132,11 @@ export function PublicBoardView({ board, tasks }: PublicBoardViewProps) {
                                 </div>
                                 <ul className="space-y-2">
                                     {group.tasks.map((task) => (
-                                        <TaskRow key={task.id} task={task} />
+                                        <TaskRow
+                                            key={task.id}
+                                            task={task}
+                                            isDone={finalSlugs.has(task.status)}
+                                        />
                                     ))}
                                 </ul>
                             </section>

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useAtomValue, useSetAtom } from 'jotai';
+import { chatDockOpenAtom } from '../../state/atoms';
 import type { RecordModel } from '../../lib/record-model';
 import {
   ChevronRightIcon,
@@ -12,7 +14,7 @@ import {
 import { pb } from '../../lib/pocketbase';
 import { Avatar } from '../ui';
 import { ProfileContextMenu } from './ProfileContextMenu';
-import logo from '../../assets/nana.svg';
+import { BrandMark } from '../BrandMark';
 
 interface CompactSidebarProps {
   isExpanded: boolean;
@@ -45,11 +47,27 @@ export function CompactSidebar({
 }: CompactSidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const chatDockOpen = useAtomValue(chatDockOpenAtom);
+  const setChatDockOpen = useSetAtom(chatDockOpenAtom);
   const mobileNavRef = useRef<HTMLElement>(null);
   const avatarRef = useRef<HTMLButtonElement>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   const avatarUrl = user.avatar ? pb.files.getURL(user, user.avatar) : null;
+  const onChatRoute = location.pathname.startsWith('/chat');
+
+  const openView = (item: (typeof viewItems)[number]) => {
+    if (item.key === 'chat') {
+      if (onChatRoute) return;
+      setChatDockOpen((open) => !open);
+      return;
+    }
+    navigate(item.path);
+  };
+
+  const viewIsActive = (item: (typeof viewItems)[number]) =>
+    isPathActive(location.pathname, item.path)
+    || (item.key === 'chat' && chatDockOpen && !onChatRoute);
 
   useEffect(() => {
     const updateMobileNavHeight = () => {
@@ -95,22 +113,23 @@ export function CompactSidebar({
           aria-label="Expand sidebar"
           title="Expand sidebar"
         >
-          <img src={logo} alt="Nana" className="h-8 w-8" draggable={false} />
+          <BrandMark className="h-8 w-8" />
         </button>
 
         <div className="flex flex-col gap-1.5">
           {viewItems.map((item) => {
             const Icon = item.icon;
-            const isActive = isPathActive(location.pathname, item.path);
+            const isActive = viewIsActive(item);
 
             return (
               <button
                 key={item.key}
-                onClick={() => navigate(item.path)}
+                onClick={() => openView(item)}
                 className={railItemClass(isActive)}
                 title={item.label}
                 aria-label={item.label}
-                aria-current={isActive ? 'page' : undefined}
+                aria-current={isPathActive(location.pathname, item.path) ? 'page' : undefined}
+                aria-pressed={item.key === 'chat' ? chatDockOpen : undefined}
               >
                 <Icon className="h-[1.15rem] w-[1.15rem]" />
               </button>
@@ -168,15 +187,16 @@ export function CompactSidebar({
 
           {viewItems.map((item) => {
             const Icon = item.icon;
-            const isActive = isPathActive(location.pathname, item.path);
+            const isActive = viewIsActive(item);
 
             return (
               <button
                 key={item.key}
-                onClick={() => navigate(item.path)}
+                onClick={() => openView(item)}
                 className={`${itemClass(isActive)} h-14`}
                 aria-label={item.label}
-                aria-current={isActive ? 'page' : undefined}
+                aria-current={isPathActive(location.pathname, item.path) ? 'page' : undefined}
+                aria-pressed={item.key === 'chat' ? chatDockOpen : undefined}
               >
                 <Icon className={`h-5 w-5 ${isActive ? 'text-signal' : ''}`} />
                 <span className="leading-none">{item.label}</span>

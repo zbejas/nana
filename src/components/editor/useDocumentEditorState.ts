@@ -25,6 +25,7 @@ export function useDocumentEditorState() {
     const [searchParams, setSearchParams] = useSearchParams();
     const {
         selectedDocument: document,
+        setSelectedDocument,
         createInFolder: folderId,
         initialTitle,
         initialContent,
@@ -359,6 +360,7 @@ export function useDocumentEditorState() {
     return {
         urlDocumentId,
         document,
+        setSelectedDocument,
         sidebarOpen,
         sidebarWidth,
         titleInputRef,
@@ -368,6 +370,8 @@ export function useDocumentEditorState() {
         setContent,
         tags,
         setTags,
+        setPublished,
+        setGlobalUnsavedChanges,
         tagInput,
         setTagInput,
         published,

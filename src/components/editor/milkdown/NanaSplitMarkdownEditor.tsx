@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { Editor } from '@milkdown/kit/core';
 import type { EditorView as CodeMirrorView } from '@codemirror/view';
 import type { EditorView as ProseMirrorView } from '@milkdown/kit/prose/view';
 import { NanaMarkdownEditor } from './NanaMarkdownEditor';
@@ -12,6 +13,7 @@ export interface NanaSplitMarkdownEditorProps {
   placeholder?: string;
   ariaLabel?: string;
   className?: string;
+  onEditorReady?: (editor: Editor) => void;
 }
 
 /**
@@ -27,6 +29,7 @@ export function NanaSplitMarkdownEditor({
   placeholder = 'Start writing…',
   ariaLabel = 'Document content',
   className,
+  onEditorReady,
 }: NanaSplitMarkdownEditorProps) {
   const [sourceView, setSourceView] = useState<CodeMirrorView | null>(null);
   const [wysiwygView, setWysiwygView] = useState<ProseMirrorView | null>(null);
@@ -95,6 +98,7 @@ export function NanaSplitMarkdownEditor({
           ariaLabel={ariaLabel}
           enableSlash
           onViewReady={setWysiwygView}
+          onEditorReady={onEditorReady}
           className="h-full min-h-0"
         />
       </section>

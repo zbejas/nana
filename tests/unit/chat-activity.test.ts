@@ -116,4 +116,23 @@ describe("buildSystemPrompt", () => {
     test("treats a whitespace-only prompt as empty", () => {
         expect(buildSystemPrompt("  \n\t ")).toBe(buildSystemPrompt(""));
     });
+
+    test("adds write guidance only in edit mode", () => {
+        const ask = buildSystemPrompt("");
+        const edit = buildSystemPrompt("", "edit");
+        expect(ask).not.toContain("You may edit notes and boards");
+        expect(edit).toContain("You may edit notes and boards");
+        expect(edit).toContain("never replace a whole note");
+    });
+
+    test("adds a quoted, untrusted page context note", () => {
+        const prompt = buildSystemPrompt("", "ask", {
+            type: "document",
+            id: "note123",
+            title: 'Plan "Q4"',
+        });
+        expect(prompt).toContain('The user is viewing document "Plan \\"Q4\\"" (id note123)');
+        expect(prompt).toContain("Call read_note");
+        expect(prompt).toContain("untrusted data");
+    });
 });

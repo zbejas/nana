@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nana is a self-hosted document workspace: Markdown notes in folders, multiple task boards, version history, trash, public sharing, a read-only AI assistant, a JSON API, and an MCP server for external AI clients. Notes are `documents`; tasks are separate `tasks` records grouped by author-scoped `boards`. Boards live in the same folder tree as notes, can be marked private, and can be shared publicly.
+Nana is a self-hosted document workspace: Markdown notes in folders, multiple task boards, version history, trash, user-to-user and public sharing, a read/edit AI assistant, a JSON API, and an MCP server for external AI clients. Notes are `documents`; tasks are separate `tasks` records grouped by author-scoped `boards`. Boards and notes live in the same folder tree, can be marked private, and can be shared with other accounts or through a public link.
 
 The system is one deployable with two processes: **Bun** serves the SPA, the application API, the Elysia REST API at `/api/v1`, the public OpenAPI docs at `/docs`, and the MCP endpoint at `/mcp` on port `3000`; **PocketBase** serves data, auth, hooks, and admin APIs on `127.0.0.1:8090`. PocketBase is loopback-only; the browser never reaches it directly.
 
@@ -20,16 +20,24 @@ The system is one deployable with two processes: **Bun** serves the SPA, the app
 | `src/api/mcp/` | Stateless Streamable HTTP MCP server, tool registration, and per-request transport handling. |
 | `src/api/workspace/` | Shared folder, note, board, and task services used by REST and MCP; `Surface` selection and the AI visibility lock. |
 | `src/api/pocketbase/` | Caller-token PocketBase REST client shared by chat tools, REST services, and MCP. Never accepts the superuser token. |
-| `src/api/chat/` | Chat orchestration, providers, conversation persistence, read-only workspace tools. |
-| `src/api/chat/tools/` | `list_notes`, `read_note`, `list_boards`, `read_board` with bounds, author checks, and the private lock. |
+| `src/api/chat/` | Chat orchestration, providers, context resolution, SSE streaming, conversation persistence, edit cards, and ask/edit workspace tools. |
+| `src/api/chat/tools/` | Read tools plus edit-mode note/board/task write tools with bounds, author checks, revision checks, and the private lock. |
+| `src/components/chat/` | Chat dock, page thread, composer, context chip, sources, tool strip, and edit cards. |
+| `src/lib/chat/` | Chat store, route-context derivation, SSE client, history grouping, and presence. |
+| `src/lib/markdown/sections.ts` | Anchor-validated, section-scoped edits that leave untouched sections not re-sanitized. |
 | `src/lib/pocketbase.ts` | Browser client over `/api/v1`; PB-shaped `collection`, `authStore`, `files`, `filter`, and realtime helpers. |
 | `src/lib/boards/` | Board types, CRUD, archive/restore, permanent delete, folder/privacy/public-share fields, summaries, realtime subscription. |
 | `src/lib/tasks/` | Task types, CRUD, position persistence, note import, realtime subscription. |
 | `src/pages/` | Timeline, board detail/archive, chat, settings, auth, onboarding, public pages. |
-| `src/components/board/` | Board state, summaries, task cards/editor, inline board settings, add-to-board host/picker, note import. |
+| `src/components/board/` | Board state, dynamic workflow columns, task cards, task detail panel, inline settings, add-to-board host/picker, note import. |
 | `src/components/folder-view/` | Folder contents grid/list, folder state, board rows beside notes, drag targets, board create/edit entry points. |
 | `src/components/file-folder-handling/` | Note, folder, and board drag-and-drop plus the folder/document/board context menus. |
-| `src/lib/documents/` | Document and attachment CRUD, export helpers, public sharing. |
+| `src/lib/documents/` | Document and attachment CRUD, revisions, export helpers, public sharing. |
+| `src/components/editor/milkdown/` | Milkdown WYSIWYG, CodeMirror source/split, toolbar, slash menu, inline editor, AI section highlights. |
+| `src/lib/sharing/` | Session-sharing client for links, access, shared folders, and comments over `/api/v1/sharing`. |
+| `src/components/sharing/` | Owner share panel, permission controls, public-link section, shared rows, and share buttons. |
+| `src/pages/SharedPage.tsx` | “Shared with me” index at `/shared`; shared folder contents at `/shared/folders/:id`. |
+| `src/state/sharing.ts` | Shared-with-me index, effective access, and realtime invalidation atoms. |
 | `src/lib/config.ts` | `serverConfig` / `clientConfig`; the only environment-variable reader. |
 | `src/index.css` | Graphite tokens, self-hosted typefaces, global styles, motion, Markdown overrides. |
 | `src/assets/fonts/` | Self-hosted Geist and Geist Mono files plus the OFL licence. |
@@ -57,19 +65,19 @@ Bun :3000 ── src/index.ts
   ├── /docs, /docs/json ──▶ OpenAPI spec + self-hosted Scalar reference (public)
   ├── /mcp ───────────────▶ MCP Streamable HTTP ──▶ workspace services ──▶ PB REST (user token)
   │                          └── session token or nana_ API key ──▶ PB impersonation
-  ├── /api/chat/* ────────▶ AI SDK providers + read tools ──▶ PB REST (user token)
+  ├── /api/chat/* ────────▶ AI SDK providers + ask/edit tools + edit cards ──▶ PB REST (user token)
   ├── /api/export ────────▶ PB documents/attachments → Markdown/ZIP
   ├── /api/app/version ───▶ GitHub Releases API
   └── /* ─────────────────▶ React SPA (dev: Bun HMR, prod: dist/)
 ```
 
-There is no embedding service, vector store, or background indexer in the topology. Chat reads notes and boards on demand through its tool set; MCP reads and writes folders, notes, boards, and tasks through the shared workspace services.
+There is no embedding service, vector store, or background indexer in the topology. Chat reads notes, boards, and tasks on demand and writes notes, boards, and tasks in edit mode; MCP reads and writes folders, notes, boards, and tasks through the shared workspace services.
 
 ### Process responsibilities
 
 | Process | Owns | Entry point |
 | --- | --- | --- |
-| Bun | SPA serving, application API routes, Elysia `/api/v1`, public OpenAPI docs, MCP endpoint, auth verification, rate limiting, CSP, export, chat/provider orchestration, workspace services, read-only chat tools | `src/index.ts` |
+| Bun | SPA serving, application API routes, Elysia `/api/v1`, public OpenAPI docs, MCP endpoint, auth verification, rate limiting, CSP, export, chat/provider orchestration, workspace services, ask/edit chat tools, chat edit audit | `src/index.ts` |
 | PocketBase | Data, auth records, API rules, schema, hooks, custom routes, mailers, cron; loopback only | `pocketbase/pb_hooks/index.pb.js` |
 | Browser | React UI, Jotai state, `/api/v1` client calls, SSE chat client, SSE realtime relay | `src/frontend.tsx` |
 | API / MCP clients | JSON requests to `/api/v1` or `/mcp` with a PocketBase user token or a scoped `nana_…` API key; no browser session required | `src/api/rest/`, `src/api/mcp/`, `src/api/api-keys/` |
@@ -109,20 +117,21 @@ There is no embedding service, vector store, or background indexer in the topolo
 2. Auth runs before any MCP work; a missing, invalid, or revoked credential returns a plain JSON `401`.
 3. A malformed JSON body returns a JSON-RPC `-32700` parse error. Transport failures return `-32603`.
 4. Bun creates a fresh `McpServer` and a stateless `WebStandardStreamableHTTPServerTransport` for the request. Responses are JSON, not SSE. Read-only keys get only read tools; folder/root scope is carried in `ToolContext`.
-5. Tool calls run through `src/api/workspace/` with `surface: "ai"`; the read tools reuse the chat executors.
+5. Tool calls run through `src/api/workspace/` with `surface: "ai"`; the note and board read tools reuse the chat executors.
 6. A failed tool returns an MCP `isError` result whose text is `{ "error": { "code", "message" } }`. The HTTP request still succeeds.
 
-MCP is an AI surface: private records and private-folder subtrees are hidden. It is a separate write-capable surface from chat, which stays read-only. See [`ai.md`](ai.md).
+MCP is an AI surface: private records and private-folder subtrees are hidden. It is the separate external write surface; chat has its own ask/edit tool set. See [`ai.md`](ai.md).
 
 ### Chat request
 
-1. Browser posts to `/api/chat/send` with the user token.
-2. `verifyAuth()` validates the token; `fetchAIConfig()` reads `settings.ai_config` with the server superuser token.
-3. Bun creates a `conversations` record, then appends the user turn and the assistant turn to `messages`.
-4. `createChatTools()` builds `list_notes`, `read_note`, `list_boards`, and `read_board`, all using the caller's `Authorization` header and the AI visibility lock.
-5. `streamText()` runs with `stopWhen(stepCountIs(8))`; tools read PocketBase on demand, bounded and author-scoped.
-6. `onFinish` persists the assistant text, reasoning, terminal tool names/statuses, and model name as a `messages` row; appending also touches the conversation so it sorts to the top. Title generation runs in the background.
-7. The response is an SSE UI-message stream with `X-Conversation-Id`, `X-Is-New-Conversation`, and `X-Model-Name`.
+1. Browser posts to `/api/chat/send` with the user token, `message`, `mode`, and optional `conversationId`, `context`, and `regenerate`.
+2. `verifyAuth()` validates the token. A context, if present, is resolved server-side from `{ type, id }` with ownership, trash, and private-lock checks; the title is loaded from PocketBase, not trusted from the client. `fetchAIConfig()` reads `settings.ai_config` with the server superuser token.
+3. Bun creates a `conversations` record when needed, then appends the user turn with its resolved `context` to `messages`. `regenerate: true` trims the prior exchange first.
+4. `createChatTools()` builds `list_notes`, `read_note`, `list_boards`, `read_board`, `list_tasks`, and `read_task` using the caller's `Authorization` header and the AI visibility lock. In `mode: "edit"` it also builds the note/board/task write tools.
+5. `streamText()` runs with `stopWhen(stepCountIs(8))`; reads use PocketBase on demand, and writes go through `src/api/workspace/` with `actor: "ai"`. Note updates add revision checks and `published: true`; board and task writes use the normal ownership, archive, and status guards.
+6. The stream pump emits named SSE events (`text`, `reasoning`, `tool`, `sources`, `edit`, `done`, `error`) and, for mode-less requests, legacy AI-SDK chunks. After the model stream ends it persists the assistant text, reasoning, terminal tool names/statuses, sources, stopped flag, and model name as a `messages` row; appending touches the conversation so it sorts to the top.
+7. Applied writes persist server-owned `chat_edits` rows and emit `edit` cards. Title generation runs in the background for a new, non-stopped conversation with no stream error.
+8. The response carries `X-Conversation-Id`, `X-Is-New-Conversation`, `X-Model-Name`, and `X-Chat-Mode`.
 
 ### Board request
 
@@ -156,7 +165,8 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 | Browser realtime | Browser → `GET /api/v1/realtime` SSE handshake + authenticated `POST /api/v1/realtime` subscription → PB realtime |
 | Typed REST read/write | API client → `/api/v1` → Elysia handler → workspace service (`surface: "user"`) → PB REST with user token → JSON |
 | MCP tool call | MCP client → `POST /mcp` → per-request MCP server → workspace service (`surface: "ai"`) → PB REST with user token → tool result |
-| Chat | Browser → `/api/chat/send` → `streamText` + read tools → PB REST with user token → SSE |
+| Chat read | Browser → `/api/chat/send` (`mode: "ask"`) → `streamText` + read tools → PB REST with user token → named SSE |
+| Chat edit | Browser → `/api/chat/send` (`mode: "edit"`, context) → workspace services with `actor: "ai"` + revision/private checks → PB revision/version hooks → `chat_edits` → edit SSE card + undo route |
 | Export | Browser → `/api/export` → resolve documents/folders → download attachments → Markdown or ZIP |
 | Public share | Public page → `/api/v1/public/*` → PB validates token, expiry, privacy, archive state, and attachment sharing |
 | Version check | About tab → `/api/app/version` → cached GitHub Releases lookup |
@@ -176,8 +186,8 @@ Production detection is deliberate: Bun treats the app as production only when `
 - **Single origin.** Browser code never hardcodes `:8090` or calls PocketBase; it uses `/api/v1`. `/api/v1` and `/mcp` are same-origin surfaces; there is no CORS layer.
 - **Two processes, one container.** The Docker entrypoint runs PocketBase and Bun in parallel and shuts both down.
 - **Server-side admin reads.** Settings and AI configuration are admin-only; Bun reads them with the auto-provisioned superuser token.
-- **Chat tools are read-only and user-scoped.** `src/api/chat/tools/` must never use the superuser token, and every read is author-scoped and private-locked.
-- **MCP is a separate write surface.** It reuses `src/api/workspace/` with the caller's token, author scoping, and `surface: "ai"`. It is not chat and does not extend chat's tool set.
+- **Chat tools are user-scoped and mode-gated.** Workspace reads and writes in `src/api/chat/tools/` must use the caller's token. Ask mode exposes reads only; edit mode adds writes through `src/api/workspace/` with note revision checks, `X-Nana-Actor: ai`, and a server-owned `chat_edits` row.
+- **MCP is a separate external write surface.** It reuses `src/api/workspace/` with the caller's token, author scoping, and `surface: "ai"`. It is not chat and does not extend chat's tool set.
 - **REST is the owner surface.** `/api/v1` uses `surface: "user"`, so the owner sees their private records; the AI lock is deliberately not applied there.
 - **One AI visibility rule.** `src/api/workspace/privacy.ts` defines hidden folders, list conditions, and record checks. Chat and MCP both consume it.
 - **No background indexing.** Document saves and trash moves have no fire-and-forget search side effects.
@@ -196,7 +206,8 @@ Production detection is deliberate: Bun treats the app as production only when `
 | `src/api/pocketbase/client.ts` | `pbRequest()` / `pbGet()` with the caller's token; maps upstream statuses to model-safe failures. |
 | `src/api/workspace/privacy.ts` | `loadAiVisibility()`, `aiVisibilityConditions()`, `noteIsLocked()`, `boardIsLocked()`, `folderIsLocked()`. |
 | `src/api/rate-limiter.ts` | Per-IP limits loaded from `settings.rate_limits`. |
-| `src/api/chat/tools/text.ts` | Pure bounds and escaping helpers shared by the read tools and workspace services. |
+| `src/api/chat/tools/text.ts` | Pure bounds and escaping helpers shared by chat tools and workspace services. |
+| `src/lib/markdown/sections.ts` | Anchor validation, section replacement/insertion, and applied-range reporting for chat note edits. |
 | `pocketbase/pb_hooks/utils.js` | `requireAdmin`, `parseRequestBody`, `escapeHtml`, `sanitizeUrl`, site/sender helpers. |
 
 ## Gotchas & invariants
@@ -205,8 +216,10 @@ Production detection is deliberate: Bun treats the app as production only when `
 - **`server.timeout(req, 0)` is required** on `/api/chat/send` and `/api/v1/realtime`; otherwise long streams are cut off.
 - **The browser facade is an allowlist, not a proxy.** It forwards only allowlisted collections and routes, never system/schema/log/backup/superuser paths, and never injects a superuser token.
 - **PocketBase is loopback-only.** The container entrypoint binds `127.0.0.1:8090`; `/pb` returns `404`. Do not publish `8090` or add a pass-through proxy back to PocketBase.
-- **The superuser token belongs to configuration reads only.** `fetchAIConfig()` and the rate limiter use it; chat tools, REST, and MCP must use the caller's token.
-- **Chat is read-only; MCP is the write surface.** Do not add write tools to `src/api/chat/tools/`. MCP writes go through `src/api/workspace/` with a user token, author checks, and `surface: "ai"`.
+- **The superuser token belongs to configuration, credential exchange, and server-owned audit rows.** `fetchAIConfig()`, the rate limiter, API key lookup/exchange, and `chat_edits` persistence use it; chat tool workspace calls, REST, and MCP must use the caller's token.
+- **Chat writes are mode-gated; MCP has its own write surface.** Ask mode exposes reads only. Edit-mode writes go through `src/api/workspace/` with a user token, `X-Nana-Actor: ai`, `chat_edits`, and note revision checks; MCP has a separate tool list and destructive-tool design.
+- **Chat note edits are section-scoped and revision-checked.** `read_note` returns `revision` and `versionToken`; the note update tools pass one back. A stale value returns `conflict`. `src/lib/markdown/sections.ts` carries untouched sections through instead of replacing the whole note.
+- **`published: true` is a version request.** Chat note update tools set it so PocketBase snapshots the pre-edit state, then the hook resets it. It does not publish the note. `create_note` starts a new revision instead.
 - **Private means hidden from AI, not from the owner.** `/api/v1` is the owner surface and intentionally returns private notes, boards, and folder contents. Only chat and MCP apply `loadAiVisibility()`.
 - **MCP tool failures are not HTTP failures.** `POST /mcp` returns `200` with an `isError` text result; only auth, transport, and JSON-RPC errors use HTTP statuses.
 - **`/docs` is public by design.** The API itself is authenticated. The Scalar bundle and Geist fonts are served under `/docs/` from `node_modules` and `src/assets/fonts`, not a CDN.
@@ -221,14 +234,14 @@ Production detection is deliberate: Bun treats the app as production only when `
 - **`0000020` adds an optional folder relation without a backfill.** Existing boards stay at the workspace root until someone moves them.
 - **Board summaries count tasks from one query.** `listBoardSummaries()` includes boards with no tasks; don't replace it with per-board requests.
 - **`useDocumentData()` runs once.** It is called at `AppContent` and nowhere else; board pages own their own task state.
-- **Rate limits apply before the workspace surfaces.** `/api/v1`, `/docs`, and `/mcp` pass through `checkRateLimit()` at the Bun edge. REST and MCP requests get a 60-second Bun request ceiling; workspace PocketBase calls default to 30 seconds, while chat tool calls keep their 8-second signal.
-- **Migrations run on container boot.** The entrypoint runs `PB_MIGRATING=1 pocketbase migrate up` before starting either process; a fresh test database therefore includes `0000022`.
+- **Rate limits apply before the workspace surfaces.** `/api/v1`, `/docs`, and `/mcp` pass through `checkRateLimit()` at the Bun edge. REST and MCP requests get a 60-second Bun request ceiling; workspace PocketBase calls default to 30 seconds. Chat note/board reads pass an 8-second signal; task reads and chat writes use the 30-second default.
+- **Migrations run on container boot.** The entrypoint runs `PB_MIGRATING=1 pocketbase migrate up` before starting either process; a fresh test database therefore includes the current migration head (`0000028`).
 
 ## Related docs
 
 - [`api.md`](api.md) — route-level contracts for Bun application routes, Elysia `/api/v1`, MCP, and PocketBase.
 - [`frontend.md`](frontend.md) — routes, Jotai state, board/folder UI, chat UI.
-- [`ai.md`](ai.md) — chat, MCP, read tools, privacy lock, and persistence.
+- [`ai.md`](ai.md) — chat ask/edit tools, write path, MCP boundary, privacy lock, and persistence.
 - [`pocketbase.md`](pocketbase.md) — schema, rules, migrations, archive lifecycle, board folders.
 - [`security.md`](security.md) — trust boundaries, MCP authorization, CSP, secrets.
 - [`deployment.md`](deployment.md) — build, Docker, upgrades, persistence.

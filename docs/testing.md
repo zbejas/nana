@@ -15,7 +15,7 @@ The Docker suite runs both layers in an isolated container with a disposable dat
 | `tests/pocketbase/guards/` | Collection rules and request guards: users, trash views, versions, tasks, boards, relation integrity. |
 | `tests/pocketbase/hooks/` | Document hooks: stats, versions, cascades. |
 | `tests/pocketbase/routes/` | Custom PocketBase routes: trash, admin, public shares, check-users, folder board rehoming. |
-| `tests/api/` | Bun routes plus the chat read tools, Elysia `/api/v1`, and MCP: version, export, chat, security, static, rest, mcp. |
+| `tests/api/` | Bun routes plus chat read/write tools, Elysia `/api/v1`, and MCP: version, export, chat, security, static, rest, mcp. |
 | `tests/helpers/setup.ts` | URLs, credentials, auth, signup, unique names. |
 | `tests/helpers/client.ts` | HTTP and PocketBase collection helpers with status assertions. |
 | `tests/helpers/factories.ts` | Isolated users and records for integration files. |
@@ -40,8 +40,11 @@ tests/
     api-key-scope.test.ts
     board-dates.test.ts
     chat-activity.test.ts
+    chat-context.test.ts
     chat-input-schemas.test.ts
+    chat-stream.test.ts
     chat-tools-text.test.ts
+    chat-version-token.test.ts
     document-utils.test.ts
     export-documents.test.ts
     folder-tree.test.ts
@@ -68,6 +71,7 @@ tests/
   api/
     api-keys.test.ts
     chat-tools.test.ts
+    chat-write-tools.test.ts
     chat.test.ts
     export.test.ts
     mcp.test.ts
@@ -87,7 +91,7 @@ Numeric prefixes in `pocketbase/guards/` preserve the bootstrap ordering. Do not
 | --- | --- | --- | --- |
 | Unit | `tests/unit/` | Imported modules only | Parsing, formatting, bounds, schemas, sanitizers, pure builders, privacy tree walks. |
 | PocketBase integration | `tests/pocketbase/` | Real PocketBase on loopback | Rules, guards, hooks, migrations, custom PocketBase routes, folder board rehoming. |
-| Bun integration | `tests/api/` | Real Bun origin + real PocketBase | Bun routes, security headers, export, chat, read tools, typed Elysia `/api/v1`, browser facade, MCP. |
+| Bun integration | `tests/api/` | Real Bun origin + real PocketBase | Bun routes, security headers, export, chat read/write tools, typed Elysia `/api/v1`, browser facade, MCP. |
 
 Unit tests must not import a module that performs network I/O at import time. Integration tests must not replace PocketBase or Bun with a fake.
 
@@ -128,7 +132,7 @@ Do not point the test stack at real data. The entrypoint deletes and recreates i
 | 3/4 Hooks + routes | `hooks/` + `routes/` | Hooks and custom routes after bootstrap; admin tests restore global settings when done. |
 | 4/4 Bun API | `api/` | Routes, export, chat, tools, typed REST, browser facade, and MCP after PocketBase is seeded. |
 
-The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000022_relational_remodel.js` applied. There is no separate "apply migration" step in a test file.
+The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000028_kanban_hardening.js` applied. There is no separate "apply migration" step in a test file.
 
 On failure the entrypoint prints the tail of both server logs. On success it reports per-phase and total duration.
 
@@ -251,8 +255,11 @@ Rules:
 | MCP tool behavior, writes, destructive rules | `tests/api/mcp.test.ts` |
 | API key create/revoke, hashed storage, session-only management | `tests/api/api-keys.test.ts` |
 | API key access/scope on REST and MCP, read-only tool filtering | `tests/api/api-keys.test.ts` + `tests/unit/api-key-scope.test.ts` |
-| Chat route, provider validation, conversation persistence | `tests/api/chat.test.ts` |
+| Chat route, mode/context validation, provider validation, conversation persistence, status | `tests/api/chat.test.ts` |
 | Chat read tool, bounds, or scoping | `tests/api/chat-tools.test.ts` + `tests/unit/chat-*` |
+| Chat write tool, revision, edit card, or undo | `tests/api/chat-write-tools.test.ts` + `tests/unit/chat-version-token.test.ts` |
+| Chunked/named chat SSE encoding | `tests/unit/chat-stream.test.ts` |
+| Chat route context, private branch, or context payload | `tests/unit/chat-context.test.ts` |
 | AI private lock, hidden-folder subtrees, filters | `tests/unit/ai-visibility.test.ts` + `tests/unit/api-key-scope.test.ts` + `tests/api/chat-tools.test.ts` + `tests/api/mcp.test.ts` + `tests/api/rest-api.test.ts` |
 | Export format, filename, folder path, attachment | `tests/api/export.test.ts` + `tests/unit/export-documents.test.ts` |
 | Manifest, service worker, icons, SPA fallback | `tests/api/static.test.ts` |
@@ -269,7 +276,7 @@ Rules:
 | Auth/bootstrap/signup lockdown | `tests/pocketbase/bootstrap.test.ts` + `guards/00-user-guards.test.ts` |
 | Migration or schema change | Assert the collection/field exists and behaves correctly in the owning integration file |
 
-### Chat tool coverage
+### Chat read and write coverage
 
 `tests/api/chat-tools.test.ts` builds two users with independent notes, boards, and tasks, then calls the executors with each user's `ToolContext`.
 
@@ -280,7 +287,17 @@ Rules:
 | `list_boards` | Active boards by default; exact open/done/total and per-column counts; archived opt-in; paging; another user's boards never appear; private boards and boards in private folders excluded from items and totals. |
 | `read_board` | Column paging; whole-board order; task summaries expose `dueDate`, `labels`, `noteId`, sanitized excerpt; another user's board and archived boards → `not_found`; private boards and boards in private folders → `not_found`; malformed ids and columns. |
 
-The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), and API key token/scope helpers (`tests/unit/api-key-scope.test.ts`).
+`tests/api/chat-write-tools.test.ts` covers edit mode:
+
+| Area | Assertions |
+| --- | --- |
+| Registry | Ask mode omits every write tool and keeps `list_tasks`; edit mode registers the full write allowlist. |
+| Context | Server-resolved titles; foreign, private, and private-folder contexts return `404`; wrong type is `400`. |
+| Notes | `create_note` stamps `last_edit_source: "ai"`/`last_edited_by: "Nana"`; `append_note` and `edit_note` carry untouched content through and snapshot the old version; stale revisions return `conflict`; missing/ambiguous anchors abort; private notes and private-folder notes return `not_found`. |
+| Boards/tasks | Board creation, task create/update/move, archived-board conflict, invalid status, foreign task `not_found`, and `actor_type: "ai"` task activity. |
+| Cards/undo | Edit rows list oldest first; only the conversation owner can read or undo; created-note undo trashes and repeated undo is a no-op; note-edit undo restores the snapshot and repeated undo does not bump the revision again. |
+
+The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), named/legacy SSE encoding (`tests/unit/chat-stream.test.ts`), route context derivation (`tests/unit/chat-context.test.ts`), version tokens (`tests/unit/chat-version-token.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), and API key token/scope helpers (`tests/unit/api-key-scope.test.ts`).
 
 ### REST and MCP coverage
 
@@ -364,7 +381,7 @@ The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.te
 - **Expired public shares are disabled on read.** A 404 for an expired token also clears `is_public` and `public_share_token`; assert the stored record, not just the response.
 - **The suite is not mocked.** A unit test does not prove a guard, route, or tool is wired. Add the integration assertion.
 - **The suite starts from an empty database.** It exercises the current schema, not legacy upgrade paths. To verify the `0000018` task-to-board backfill, migrate a disposable data directory to `0000017`, create a user and a boardless task, apply `0000018`, then confirm the task lands on that author's `My board` with its status and order intact. To verify `0000022`, migrate a disposable directory to `0000021`, create a trashed document/folder, a version, and a conversation with messages, apply `0000022`, then confirm the rows are soft-deleted with their original ids, attachments still resolve through the trash view, the conversation messages are records, and `tasks.author`/`document_versions.created_by` are gone.
-- **The Docker suite applies `0000022` automatically.** The entrypoint runs `migrate up` on a fresh database, so REST, MCP, chat, and trash tests see soft-delete fields, the `messages` collection, the trash views, relation indexes, immutable authors, and the share-token unique indexes without an explicit migration step.
+- **The Docker suite applies the full migration head automatically.** The entrypoint runs `migrate up` on a fresh database, so REST, MCP, chat, and trash tests see soft-delete fields, the `messages` collection, the trash views, relation indexes, immutable authors, and the share-token unique indexes without an explicit migration step.
 - **Private fixtures need their owner.** The private-lock tests must read as the owner. A second user seeing `not_found` proves cross-author scoping, not the private lock; use `createUser()` and the owner's token for the private cases.
 - **MCP tests must `POST`.** A `GET /mcp` returns `405`; the test helper must send a JSON-RPC body with the user token and assert the tool result, not an HTTP error, for workspace failures.
 - **Browser fixtures use loopback PocketBase; public behavior uses Bun.** `pbRequest()` targets `127.0.0.1:8090` for setup, hook, guard, and route assertions. Public-facing browser behavior must go through `/api/v1` (`BROWSER_API`) so a deleted `/pb` route cannot hide behind a direct-PB test.
