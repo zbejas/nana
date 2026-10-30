@@ -458,7 +458,7 @@ export function AISettings() {
           <Field
             label="System prompt"
             htmlFor="ai-system-prompt"
-            hint="A global instruction sent to the AI model at the start of every chat and title generation. Leave empty for default behavior."
+            hint="A global instruction for every chat and title generation. Chat adds it before Nana's built-in workspace rules; leave empty for default behavior."
           >
             <Textarea
               id="ai-system-prompt"

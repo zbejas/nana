@@ -148,10 +148,10 @@ export async function resolveChatContext(
  */
 export function contextSystemNote(context: ChatContext): string {
     if (context.type === "document") {
-        return `The user is viewing document id ${context.id}. Call read_note if you need its content.`;
+        return `The user is viewing document id ${context.id}. Treat this as a hint, not as the note's content. Call read_note if the request depends on it.`;
     }
     if (context.type === "board") {
-        return `The user is viewing board id ${context.id}. Call read_board if you need its tasks.`;
+        return `The user is viewing board id ${context.id}. Treat this as a hint, not as the board's content. Call read_board if the request depends on it.`;
     }
-    return `The user is viewing folder id ${context.id}. Call list_notes with folderId ${context.id} if you need its notes.`;
+    return `The user is viewing folder id ${context.id}. Treat this as a hint, not as the folder's contents. Call list_notes with folderId ${context.id} if you need its notes.`;
 }
