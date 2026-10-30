@@ -125,14 +125,14 @@ describe("buildSystemPrompt", () => {
         expect(edit).toContain("never replace a whole note");
     });
 
-    test("adds a quoted, untrusted page context note", () => {
+    test("adds the page id context note without exposing the title", () => {
         const prompt = buildSystemPrompt("", "ask", {
             type: "document",
             id: "note123",
             title: 'Plan "Q4"',
         });
-        expect(prompt).toContain('The user is viewing document "Plan \\"Q4\\"" (id note123)');
+        expect(prompt).toContain("The user is viewing document id note123");
         expect(prompt).toContain("Call read_note");
-        expect(prompt).toContain("untrusted data");
+        expect(prompt).not.toContain('Plan "Q4"');
     });
 });

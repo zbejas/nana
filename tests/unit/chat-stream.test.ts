@@ -3,6 +3,7 @@ import {
     ChatStreamState,
     doneEvent,
     sseEvent,
+    stepUsage,
     textEvent,
     toolEvent,
 } from "../../src/api/chat/stream";
@@ -44,11 +45,30 @@ describe("chat SSE encoding", () => {
             stopped: true,
             model: "m",
             sources: [{ type: "document", id: "note1", title: "Note" }],
+            usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150 },
         });
         expect(block).toContain("event: done\n");
         expect(block).toContain('"stopped":true');
         expect(block).toContain('"messageId":"msg1"');
+        expect(block).toContain('"usage":{"inputTokens":120,"outputTokens":30,"totalTokens":150}');
         expect(block).toContain("data: [DONE]");
+    });
+
+    test("maps one provider step to bounded context usage", () => {
+        expect(stepUsage({
+            inputTokens: 100,
+            outputTokens: 20,
+            totalTokens: 120,
+            inputTokenDetails: { cacheReadTokens: 10 },
+            outputTokenDetails: { reasoningTokens: 5 },
+        })).toEqual({
+            inputTokens: 100,
+            outputTokens: 20,
+            totalTokens: 120,
+            reasoningTokens: 5,
+            cachedInputTokens: 10,
+        });
+        expect(stepUsage({})).toBeNull();
     });
 
     test("sseEvent rejects nothing and always adds the type", () => {

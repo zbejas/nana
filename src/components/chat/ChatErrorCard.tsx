@@ -69,7 +69,7 @@ function errorCopy(error: ChatError): ErrorCopy {
   if (error.status === 404 || code === 'not_found') {
     return {
       title: 'That page is not available',
-      body: 'It may have been moved, deleted, or made private. Remove the context chip and try again.',
+      body: 'It may have been moved, deleted, or made private. Go back to the page and try again.',
     };
   }
   return {

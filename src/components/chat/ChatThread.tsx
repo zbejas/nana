@@ -1,17 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDownIcon, LockClosedIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon } from '@heroicons/react/24/outline';
 import { ChatComposer } from './ChatComposer';
 import { ChatEmptyState } from './ChatEmptyState';
 import { ChatErrorCard } from './ChatErrorCard';
 import { ChatMessage } from './ChatMessage';
 import { ChatModelPicker } from './ChatModelPicker';
-import {
-  dismissChatContext,
-  restoreChatContext,
-  toContextInput,
-  useChatContextDismissed,
-  useChatContextTarget,
-} from '../../lib/chat/context';
+import { toContextInput, useChatContextTarget } from '../../lib/chat/context';
 import {
   cancelDelete,
   confirmDelete,
@@ -60,8 +54,7 @@ export function ChatThread({
   const editing = useChatStore((snapshot) => snapshot.editing);
 
   const target = useChatContextTarget();
-  const dismissed = useChatContextDismissed(target);
-  const contextInput = toContextInput(target, dismissed);
+  const contextInput = toContextInput(target);
   const models = chatModelOptions(status);
   const selectedModel = findChatModel(status, selectedModelId);
   const attachmentLimits = status?.limits;
@@ -166,6 +159,9 @@ export function ChatThread({
   const attachmentWarning = readyAttachments
     .map((attachment) => attachmentModelWarning(attachment.kind, selectedModel))
     .find((warning): warning is string => Boolean(warning)) ?? null;
+  const contextUsage = [...messages]
+    .reverse()
+    .find((message) => message.role === 'assistant' && message.usage)?.usage ?? null;
 
   const addFiles = useCallback((files: FileList | null) => {
     if (!files || files.length === 0 || !attachmentLimits?.enabled || active || uploadingAttachments) return;
@@ -267,9 +263,8 @@ export function ChatThread({
       ...(selectedModelId ? { modelId: selectedModelId } : {}),
       ...(refs.length > 0 ? { attachments: refs } : {}),
       context: contextInput,
-      contextTitle: target?.title,
     });
-  }, [input, readyAttachments, active, uploadingAttachments, attachmentWarning, selectedModelId, mode, contextInput, target?.title, setDraftAttachments]);
+  }, [input, readyAttachments, active, uploadingAttachments, attachmentWarning, selectedModelId, mode, contextInput, setDraftAttachments]);
 
   const prompt = useCallback((value: string) => {
     setInput(value);
@@ -368,13 +363,6 @@ export function ChatThread({
             </p>
           )}
 
-          {target?.isPrivate && !dismissed && (
-            <p className="mb-2 inline-flex items-center gap-1.5 text-[11px] text-warning">
-              <LockClosedIcon className="h-3.5 w-3.5" aria-hidden="true" />
-              Private page — context stays off.
-            </p>
-          )}
-
           <ChatComposer
             value={input}
             onChange={setInput}
@@ -383,11 +371,9 @@ export function ChatThread({
             mode={mode}
             streaming={active}
             stopping={stopping}
-            target={target}
-            contextDismissed={dismissed}
-            onRemoveContext={() => dismissChatContext(target)}
-            onRestoreContext={() => restoreChatContext(target)}
             textareaRef={inputRef}
+            contextUsage={contextUsage}
+            contextModel={selectedModel}
             modelControl={
               <ChatModelPicker
                 models={models}

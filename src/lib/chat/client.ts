@@ -1,4 +1,9 @@
-import { sanitizeAttachmentRef, type ChatAttachmentRef } from '../../api/chat/types';
+import {
+  sanitizeAttachmentRef,
+  sanitizeChatUsage,
+  type ChatAttachmentRef,
+  type ChatUsage,
+} from '../../api/chat/types';
 import type {
   ChatEditChanges,
   ChatEditSection,
@@ -62,7 +67,13 @@ export interface SendChatHandlers {
   onTool?: (tool: ChatUiTool) => void;
   onSources?: (sources: ChatSource[]) => void;
   onEdit?: (edit: ChatUiEdit) => void;
-  onDone?: (meta: { conversationId?: string; messageId?: string; stopped?: boolean; model?: string }) => void;
+  onDone?: (meta: {
+    conversationId?: string;
+    messageId?: string;
+    stopped?: boolean;
+    model?: string;
+    usage?: ChatUsage;
+  }) => void;
   onError?: (error: ChatError) => void;
 }
 
@@ -391,11 +402,13 @@ function dispatchStreamEvent(
         if (edit) handlers.onEdit?.(edit);
       }
     }
+    const usage = sanitizeChatUsage(record.usage);
     handlers.onDone?.({
       conversationId: stringValue(record.conversationId, record.conversation) || undefined,
       messageId: stringValue(record.messageId, record.message) || undefined,
       stopped: record.stopped === true,
       model: stringValue(record.model, record.modelName) || undefined,
+      ...(usage ? { usage } : {}),
     });
     return;
   }
@@ -652,6 +665,7 @@ export async function loadConversation(auth: ChatAuth, id: string): Promise<Load
       const message = asRecord(item);
       const role: 'assistant' | 'user' = message.role === 'assistant' ? 'assistant' : 'user';
       const idValue = stringValue(message.id);
+      const usage = sanitizeChatUsage(message.usage);
       return {
         ...(idValue ? { id: idValue } : {}),
         role,
@@ -676,6 +690,7 @@ export async function loadConversation(auth: ChatAuth, id: string): Promise<Load
           }
           : {}),
         ...(stringValue(message.model) ? { model: stringValue(message.model) } : {}),
+        ...(usage ? { usage } : {}),
         ...(message.stopped === true ? { stopped: true } : {}),
         streaming: false,
       };

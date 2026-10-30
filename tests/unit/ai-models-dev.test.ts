@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
+  catalogContextWindow,
   findCatalogModel,
   listCatalogModels,
   loadModelsDevCatalog,
@@ -117,6 +118,13 @@ describe("models.dev catalog", () => {
       "gpt-vision",
     ]);
     expect(models.find((model) => model.modelId === "embedding")).toBeUndefined();
+  });
+
+  test("resolves a context window for a manually configured model id", () => {
+    const catalog = parseModelsDevCatalog(rawCatalog);
+    expect(catalogContextWindow(catalog, "gpt-vision")).toBe(400000);
+    expect(catalogContextWindow(catalog, "gpt-vision", "openai")).toBe(400000);
+    expect(catalogContextWindow(catalog, "missing")).toBeNull();
   });
 
   test("searches provider, model label, and id", () => {

@@ -169,6 +169,18 @@ describe("tool registry", () => {
             title: "Second note",
         });
     });
+
+    test("list tools do not become answer sources", async () => {
+        const recorder = new ChatRunRecorder();
+        const tools = createChatTools(ownerContext, { mode: "edit", recorder });
+        const execute = tools.list_notes?.execute as unknown as (
+            input: unknown,
+            options: { toolCallId: string },
+        ) => Promise<unknown>;
+        const result = await execute({ query: "note" }, { toolCallId: "call-list" });
+        expect((result as { ok: boolean }).ok).toBe(true);
+        expect(recorder.listSources()).toEqual([]);
+    });
 });
 
 describe("context resolution", () => {

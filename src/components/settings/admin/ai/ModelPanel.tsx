@@ -7,6 +7,7 @@ import type {
   AIProviderConnection,
 } from '../../../../lib/ai/types';
 import type { CatalogModel } from '../../../../lib/ai/models-dev';
+import { formatTokenCount } from '../../../../lib/chat/context-usage';
 import {
   Badge,
   Button,
@@ -238,7 +239,7 @@ export function ModelPanel({
                         <span className="flex shrink-0 flex-wrap justify-end gap-1">
                           {result.contextWindow && (
                             <Badge tone="neutral">
-                              {Math.round(result.contextWindow / 1000)}k ctx
+                              {formatTokenCount(result.contextWindow)} ctx
                             </Badge>
                           )}
                           {result.capabilities.vision && <Badge tone="signal">Vision</Badge>}

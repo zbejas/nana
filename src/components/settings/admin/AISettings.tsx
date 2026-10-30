@@ -12,6 +12,7 @@ import {
   type AIProviderKind,
 } from '../../../lib/ai/types';
 import { normalizeAIConfig } from '../../../lib/ai/config';
+import { formatTokenCount } from '../../../lib/chat/context-usage';
 import { ConnectionPanel } from './ai/ConnectionPanel';
 import { ModelPanel } from './ai/ModelPanel';
 import { createLogger } from '../../../lib/logger';
@@ -599,7 +600,7 @@ function ConnectionCard({
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-1">
                       {model.contextWindow && (
-                        <Badge tone="neutral">{Math.round(model.contextWindow / 1000)}k ctx</Badge>
+                        <Badge tone="neutral">{formatTokenCount(model.contextWindow)} ctx</Badge>
                       )}
                       {caps.vision && <Badge tone="signal">Vision</Badge>}
                       {caps.files && <Badge tone="neutral">PDF</Badge>}

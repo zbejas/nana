@@ -23,6 +23,7 @@ import {
 import { createChatTools } from "./tools";
 import { ChatRunRecorder } from "./tools/recorder";
 import { resolveChatContext, contextSystemNote } from "./context";
+import { enrichModelContextWindows } from "./model-metadata";
 import {
     attachChatEditMessage,
     cancelChatEdit,
@@ -37,6 +38,7 @@ import {
     errorEvent,
     reasoningEvent,
     sourcesEvent,
+    stepUsage,
     textEvent,
     toolEvent,
 } from "./stream";
@@ -47,6 +49,7 @@ import type {
     ChatMessage,
     ChatSource,
     ChatToolActivity,
+    ChatUsage,
     PBChatAttachment,
 } from "./types";
 import { CHAT_EMPTY_RESPONSE_FALLBACK } from "./types";
@@ -342,7 +345,7 @@ export async function handleChat(req: Request): Promise<Response> {
  */
 async function handleStatus(): Promise<Response> {
     try {
-        const config = await fetchAIConfig();
+        const config = await enrichModelContextWindows(await fetchAIConfig());
         return jsonOk(buildChatStatus(config));
     } catch {
         return jsonOk(buildChatStatus(DEFAULT_AI_CONFIG));
@@ -442,6 +445,7 @@ function createChatStream(options: ChatStreamOptions): ReadableStream<Uint8Array
             const state = new ChatStreamState();
             let stopped = false;
             let streamError: string | null = null;
+            let usage: ChatUsage | null = null;
 
             const legacy = options.emitLegacy;
             const enqueue = (chunk: string) => {
@@ -504,6 +508,11 @@ function createChatStream(options: ChatStreamOptions): ReadableStream<Uint8Array
                             status: "error",
                             error,
                         }, legacy));
+                    } else if (part.type === "finish-step") {
+                        // The last provider step includes the full history and
+                        // tool results, so its usage is the context carried
+                        // forward. Summing steps would count that history twice.
+                        usage = stepUsage(part.usage) ?? usage;
                     } else if (part.type === "abort") {
                         stopped = true;
                         break;
@@ -557,6 +566,7 @@ function createChatStream(options: ChatStreamOptions): ReadableStream<Uint8Array
                     ...(state.reasoning ? { reasoning: state.reasoning } : {}),
                     ...(tools.length > 0 ? { tools } : {}),
                     ...(sources.length > 0 ? { sources } : {}),
+                    ...(usage ? { usage } : {}),
                     ...(stopped ? { stopped: true } : {}),
                     model: options.modelName,
                 });
@@ -581,6 +591,7 @@ function createChatStream(options: ChatStreamOptions): ReadableStream<Uint8Array
                 stopped,
                 model: options.modelName,
                 sources,
+                usage,
             }, legacy));
 
             try {

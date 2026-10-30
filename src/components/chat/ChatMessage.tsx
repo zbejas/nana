@@ -4,15 +4,12 @@ import {
   ChevronDownIcon,
   ClipboardIcon,
   DocumentTextIcon,
-  FolderIcon,
   PhotoIcon,
-  ViewColumnsIcon,
 } from '@heroicons/react/24/outline';
 import { MarkdownPreview } from '../MarkdownPreview';
 import { NanaMark } from './NanaMark';
 import { ChatSources } from './ChatSources';
 import { ChatToolStrip } from './ChatToolStrip';
-import { chatContextTypeLabel } from '../../lib/chat/context';
 import { formatChatFileSize } from '../../lib/chat/attachments';
 import type { ChatUiMessage } from '../../lib/chat/types';
 
@@ -21,17 +18,6 @@ interface ChatMessageProps {
   onUndoEdit: (id: string) => void;
   onConfirmDelete: (id: string) => void;
   onCancelDelete: (id: string) => void;
-}
-
-function userContextLabel(message: ChatUiMessage): string | null {
-  if (!message.context?.title) return null;
-  return `${chatContextTypeLabel(message.context.type)} · “${message.context.title}”`;
-}
-
-function UserContextIcon({ type }: { type: 'document' | 'board' | 'folder' }) {
-  if (type === 'board') return <ViewColumnsIcon className="h-3 w-3" aria-hidden="true" />;
-  if (type === 'folder') return <FolderIcon className="h-3 w-3" aria-hidden="true" />;
-  return <DocumentTextIcon className="h-3 w-3" aria-hidden="true" />;
 }
 
 /** One turn. User copy is plain text; answers render sanitized Markdown. */
@@ -44,16 +30,9 @@ export function ChatMessage({
   const [copied, setCopied] = useState(false);
 
   if (message.role === 'user') {
-    const context = userContextLabel(message);
     return (
       <div className="mb-7 flex flex-col items-end">
         <p className="mb-1.5 text-[11.5px] font-medium text-ink-muted">You</p>
-        {context && (
-          <span className="mb-1.5 inline-flex max-w-full items-center gap-1 text-[10.5px] text-ink-muted">
-            {message.context && <UserContextIcon type={message.context.type} />}
-            <span className="truncate">{context}</span>
-          </span>
-        )}
         {message.attachments && message.attachments.length > 0 && (
           <div className="mb-1.5 flex max-w-[85%] flex-wrap justify-end gap-1.5 sm:max-w-[78%]">
             {message.attachments.map((attachment) => (

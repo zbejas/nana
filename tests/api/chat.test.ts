@@ -309,6 +309,7 @@ describe("Chat API", () => {
                 role: "assistant",
                 content: "A partial answer",
                 sources: [{ type: "document", id: "note123", title: "Plan" }],
+                usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150 },
                 stopped: true,
             });
 
@@ -321,6 +322,11 @@ describe("Chat API", () => {
             expect(messages[1]?.sources).toEqual([
                 { type: "document", id: "note123", title: "Plan" },
             ]);
+            expect(messages[1]?.usage).toEqual({
+                inputTokens: 120,
+                outputTokens: 30,
+                totalTokens: 150,
+            });
             expect(messages[1]?.stopped).toBe(true);
         });
     });

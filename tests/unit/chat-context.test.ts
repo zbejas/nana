@@ -27,7 +27,6 @@ const {
   chatContextKey,
   deriveChatContext,
   folderInPrivateBranch,
-  formatChatContextTitle,
   toContextInput,
 } = await import('../../src/lib/chat/context');
 type ChatContextTarget = import('../../src/lib/chat/context').ChatContextTarget;
@@ -56,30 +55,23 @@ describe('deriveChatContext', () => {
   });
 });
 
-describe('context labels and payloads', () => {
+describe('context payloads', () => {
   const note: ChatContextTarget = {
     type: 'document',
     id: 'n1',
-    title: 'Launch plan',
     isPrivate: false,
   };
 
-  test('uses the design quote style', () => {
-    expect(formatChatContextTitle('document', 'Launch plan')).toBe('Note · “Launch plan”');
-    expect(formatChatContextTitle('board', 'Work')).toBe('Board · “Work”');
-    expect(formatChatContextTitle('folder', 'Research')).toBe('Folder · “Research”');
-  });
-
-  test('falls back while loading or untitled', () => {
-    expect(formatChatContextTitle('document', '', true)).toBe('Note · …');
-    expect(formatChatContextTitle('folder', null)).toBe('Folder');
-  });
-
-  test('sends only type and id, never a title', () => {
-    expect(toContextInput(note, false)).toEqual({ type: 'document', id: 'n1' });
-    expect(toContextInput({ ...note, isPrivate: true }, false)).toBeUndefined();
-    expect(toContextInput(note, true)).toBeUndefined();
+  test('sends only type and id', () => {
+    expect(toContextInput(note)).toEqual({ type: 'document', id: 'n1' });
     expect(chatContextKey(note)).toBe('document:n1');
+  });
+
+  test('omits private, loading, and unavailable pages', () => {
+    expect(toContextInput({ ...note, isPrivate: true })).toBeUndefined();
+    expect(toContextInput({ ...note, loading: true })).toBeUndefined();
+    expect(toContextInput({ ...note, unavailable: true })).toBeUndefined();
+    expect(toContextInput(null)).toBeUndefined();
   });
 });
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAtomValue } from 'jotai';
 import { pb } from '../pocketbase';
@@ -19,9 +19,8 @@ export interface RouteChatContext {
 }
 
 export interface ChatContextTarget extends RouteChatContext {
-  title: string;
   isPrivate: boolean;
-  /** True while the light title lookup is in flight. */
+  /** True while the light privacy lookup is in flight. */
   loading?: boolean;
   /** True when the record could not be resolved. */
   unavailable?: boolean;
@@ -29,36 +28,21 @@ export interface ChatContextTarget extends RouteChatContext {
 
 interface LightDocument {
   id: string;
-  title?: string;
   is_private?: boolean;
   folder?: string;
 }
 
 interface LightBoard {
   id: string;
-  name?: string;
   is_private?: boolean;
   folder?: string;
 }
 
 interface LightFolder {
   id: string;
-  name?: string;
   is_private?: boolean;
   parent?: string;
 }
-
-const TYPE_LABELS: Record<ChatContextType, string> = {
-  document: 'Note',
-  board: 'Board',
-  folder: 'Folder',
-};
-
-const TYPE_FALLBACKS: Record<ChatContextType, string> = {
-  document: 'Untitled note',
-  board: 'Untitled board',
-  folder: 'Untitled folder',
-};
 
 /**
  * Derive the page context from a route. Only the three content surfaces carry
@@ -92,22 +76,6 @@ export function deriveChatContext(pathname: string): RouteChatContext | null {
 
 export function chatContextKey(context: RouteChatContext | null): string {
   return context ? `${context.type}:${context.id}` : '';
-}
-
-export function chatContextTypeLabel(type: ChatContextType): string {
-  return TYPE_LABELS[type];
-}
-
-/** `Note · “Title”`, used by the composer chip and edit cards. */
-export function formatChatContextTitle(
-  type: ChatContextType,
-  title: string | null | undefined,
-  loading = false,
-): string {
-  const label = TYPE_LABELS[type];
-  const clean = (title ?? '').trim();
-  if (!clean) return loading ? `${label} · …` : label;
-  return `${label} · “${clean}”`;
 }
 
 export function flattenFolderTree(tree: readonly FolderTreeNode[]): Folder[] {
@@ -146,13 +114,9 @@ export function folderInPrivateBranch(
   return false;
 }
 
-function fallbackTitle(type: ChatContextType): string {
-  return TYPE_FALLBACKS[type];
-}
-
-// ── Light title lookup ───────────────────────────────────────────────
-// The chip needs a display title and privacy flag, never note content. The
-// browser facade supports field projection, so these are deliberately tiny.
+// ── Light privacy lookup ─────────────────────────────────────────────
+// Chat only needs the page id and whether the page is private. The browser
+// facade supports field projection, so these reads never load note content.
 
 const targetCache = new Map<string, ChatContextTarget>();
 const inflight = new Map<string, Promise<ChatContextTarget | null>>();
@@ -161,11 +125,10 @@ async function loadLightTarget(route: RouteChatContext): Promise<ChatContextTarg
   try {
     if (route.type === 'document') {
       const record = await pb.collection<LightDocument>('documents').getOne(route.id, {
-        fields: 'id,title,is_private,folder',
+        fields: 'id,is_private,folder',
       });
       return {
         ...route,
-        title: record.title?.trim() || fallbackTitle(route.type),
         isPrivate: record.is_private === true,
         folderId: record.folder,
       } as ChatContextTarget & { folderId?: string };
@@ -173,22 +136,20 @@ async function loadLightTarget(route: RouteChatContext): Promise<ChatContextTarg
 
     if (route.type === 'board') {
       const record = await pb.collection<LightBoard>('boards').getOne(route.id, {
-        fields: 'id,name,is_private,folder',
+        fields: 'id,is_private,folder',
       });
       return {
         ...route,
-        title: record.name?.trim() || fallbackTitle(route.type),
         isPrivate: record.is_private === true,
         folderId: record.folder,
       } as ChatContextTarget & { folderId?: string };
     }
 
     const record = await pb.collection<LightFolder>('folders').getOne(route.id, {
-      fields: 'id,name,is_private,parent',
+      fields: 'id,is_private,parent',
     });
     return {
       ...route,
-      title: record.name?.trim() || fallbackTitle(route.type),
       isPrivate: record.is_private === true,
       parentId: record.parent,
     } as ChatContextTarget & { parentId?: string };
@@ -236,9 +197,9 @@ function findDocument(
 }
 
 /**
- * Resolve the title and privacy of the page currently open. The title comes
- * from already-loaded app data when possible, otherwise from one projected
- * record fetch. Content is never read.
+ * Resolve the privacy of the page currently open. Already-loaded app data is
+ * used when possible; otherwise one projected record fetch checks the record
+ * and its folder. Content is never read.
  */
 export function useChatContextTarget(): ChatContextTarget | null {
   const location = useLocation();
@@ -265,7 +226,6 @@ export function useChatContextTarget(): ChatContextTarget | null {
       if (!document) return null;
       return {
         ...route,
-        title: document.title?.trim() || fallbackTitle(route.type),
         isPrivate:
           document.is_private === true
           || folderInPrivateBranch(document.folder, flatFolders),
@@ -277,7 +237,6 @@ export function useChatContextTarget(): ChatContextTarget | null {
       if (!folder) return null;
       return {
         ...route,
-        title: folder.name?.trim() || fallbackTitle(route.type),
         isPrivate: folderInPrivateBranch(folder.id, flatFolders),
       };
     }
@@ -310,7 +269,6 @@ export function useChatContextTarget(): ChatContextTarget | null {
     if (!route) return null;
     return {
       ...route,
-      title: '',
       isPrivate: false,
       loading: !lookupFailed,
       unavailable: lookupFailed,
@@ -334,63 +292,16 @@ export function useChatContextTarget(): ChatContextTarget | null {
   return { ...target, isPrivate };
 }
 
-// ── Per-page dismissal ───────────────────────────────────────────────
-// Removing the chip applies to the page key the user removed it on. Moving to
-// another note/board/folder presents that page's context again.
-
-const dismissed = new Set<string>();
-const dismissalListeners = new Set<() => void>();
-
-function notifyDismissal() {
-  for (const listener of dismissalListeners) listener();
-}
-
-export function dismissChatContext(target: RouteChatContext | null): void {
-  const key = chatContextKey(target);
-  if (!key || dismissed.has(key)) return;
-  dismissed.add(key);
-  notifyDismissal();
-}
-
-export function restoreChatContext(target: RouteChatContext | null): void {
-  const key = chatContextKey(target);
-  if (!key || !dismissed.delete(key)) return;
-  notifyDismissal();
-}
-
-export function isChatContextDismissed(target: RouteChatContext | null): boolean {
-  const key = chatContextKey(target);
-  return Boolean(key && dismissed.has(key));
-}
-
-export function clearChatContextDismissals(): void {
-  if (dismissed.size === 0) return;
-  dismissed.clear();
-  notifyDismissal();
-}
-
-export function subscribeChatContextDismissal(listener: () => void): () => void {
-  dismissalListeners.add(listener);
-  return () => dismissalListeners.delete(listener);
-}
-
-export function useChatContextDismissed(target: RouteChatContext | null): boolean {
-  return useSyncExternalStore(
-    subscribeChatContextDismissal,
-    () => isChatContextDismissed(target),
-    () => false,
-  );
-}
-
-/** The context payload for the next send, or undefined when removed. */
+/**
+ * The automatic context payload for the next send. Only the page id crosses
+ * the wire; the server resolves and permission-checks it. Private pages and
+ * pages whose privacy is still loading are omitted so a send never fails just
+ * because the page context is unavailable.
+ */
 export function toContextInput(
   target: ChatContextTarget | null,
-  dismissedForPage: boolean,
 ): { type: ChatContextType; id: string } | undefined {
-  if (!target || dismissedForPage || target.unavailable) return undefined;
-  // Private records are hidden from every AI surface. Do not attach a context
-  // the server is guaranteed to reject.
-  if (target.isPrivate) return undefined;
+  if (!target || target.loading || target.unavailable || target.isPrivate) return undefined;
   return { type: target.type, id: target.id };
 }
 
@@ -398,5 +309,4 @@ export function toContextInput(
 export function clearChatContextCaches(): void {
   targetCache.clear();
   inflight.clear();
-  clearChatContextDismissals();
 }

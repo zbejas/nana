@@ -1,10 +1,11 @@
 /**
  * Read-only client for the public models.dev catalog.
  *
- * The catalog is advisory metadata, not a runtime dependency: chat never
- * fetches it. The admin surface snapshots a model's limits and capabilities
- * into `ai_config`, and this module keeps a server-side cache so repeated
- * admin visits do not download the ~6 MB source each time.
+ * The catalog is advisory metadata. The admin surface snapshots a model's
+ * limits and capabilities into `ai_config`; chat status also reads the cached
+ * catalog to fill a missing context window without writing it back. This
+ * module keeps a server-side cache so repeated reads do not download the
+ * ~6 MB source each time.
  */
 
 export const MODELS_DEV_URL = "https://models.dev/api.json";
@@ -232,6 +233,32 @@ export function findCatalogModel(
   const provider = catalog[providerId];
   const model = provider?.models[modelId];
   return provider && model ? toCatalogModel(provider, model) : null;
+}
+
+/**
+ * Context window for a model id that was configured without catalog metadata.
+ * When the connection has no catalog provider, use the smallest window offered
+ * for that exact model id so a percentage never overstates the available room.
+ */
+export function catalogContextWindow(
+  catalog: ModelsDevCatalog,
+  modelId: string,
+  providerId?: string | null
+): number | null {
+  if (providerId) {
+    const exact = findCatalogModel(catalog, providerId, modelId);
+    if (exact?.contextWindow) return exact.contextWindow;
+  }
+
+  let smallest: number | null = null;
+  for (const provider of Object.values(catalog)) {
+    const model = provider.models[modelId];
+    if (!model) continue;
+    const window = model.limit?.context;
+    if (typeof window !== "number" || !Number.isFinite(window) || window <= 0) continue;
+    smallest = smallest === null ? window : Math.min(smallest, window);
+  }
+  return smallest;
 }
 
 async function downloadCatalog(fetchImpl: typeof fetch): Promise<ModelsDevCatalog> {

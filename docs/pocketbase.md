@@ -69,7 +69,7 @@ Groups:
 
 ### Migrations
 
-Files are sequential and zero-padded. **The next migration is `0000031_<description>.js`.**
+Files are sequential and zero-padded. **The next migration is `0000032_<description>.js`.**
 
 | Migration | Purpose |
 | --- | --- |
@@ -103,6 +103,7 @@ Files are sequential and zero-padded. **The next migration is `0000031_<descript
 | `0000028_kanban_hardening.js` | Repairs missing columns, counters, completion, comments index, and hardened collection rules for existing databases. |
 | `0000029_chat_actions.js` | Adds `pending`/`cancelled` chat action statuses and the `folder` edit target. |
 | `0000030_chat_attachments.js` | Adds owner-scoped `chat_attachments` with a protected file and `messages.attachments`. |
+| `0000031_message_usage.js` | Adds `messages.usage`, the final-step token accounting used by the chat context ring. |
 
 Use the migration API, not `module.exports`:
 
@@ -130,7 +131,7 @@ Rules:
 - Guard additions/removals so retries are idempotent.
 - Never rename an existing migration. `bootstrap.js` contains a temporary compatibility hook that rewrites old filenames in the `_migrations` table.
 - For data migrations, use `findRecordsByFilter` and tolerate missing records when the schema may not be seeded yet.
-- Migrations are append-only; start the next one at `0000031`.
+- Migrations are append-only; start the next one at `0000032`.
 - View collections reject `SELECT *`; list explicit columns. When a source field is added, update the view query in the same migration.
 
 ### Collections
@@ -148,7 +149,7 @@ Rules:
 | `task_relations` | Task graph | `source`, `target`, `type` (`subtask|blocks|related`). |
 | `task_activity` | Task audit | Task, board, actor, actor type/label, type, JSON data. Server writes only. |
 | `conversations` | Chat threads | Author-scoped title, timestamps, rolling summary. |
-| `messages` | Chat messages | Role, content, reasoning/model metadata, tool activity, context, attachment refs, sources, stopped, position. |
+| `messages` | Chat messages | Role, content, reasoning/model metadata, tool activity, context, attachment refs, sources, token usage, stopped, position. |
 | `chat_attachments` | Chat attachment drafts and bound files | Owner-scoped protected file, name/MIME/size/kind, optional conversation/message, server-extracted text. |
 | `shares` | Owner-managed direct grants | One row per resource/user; created and updated by the sharing route layer. |
 | `access_grants` | Materialized direct + inherited grants | Read-only to the grantee; lets collection rules resolve folder inheritance without recursion. |
@@ -396,6 +397,7 @@ Version history is surfaced in the editor's version preview and restore UI. Vers
 | `tools` | JSON | Sanitized tool names and terminal statuses. |
 | `context` | JSON | Optional page metadata `{ type, id, title }` on a user message. |
 | `attachments` | JSON | Optional safe attachment refs `{ id, name, mimeType, size, kind }` on a user message. |
+| `usage` | JSON | Optional `{ inputTokens, outputTokens, totalTokens, reasoningTokens?, cachedInputTokens? }` on an assistant message, taken from the final model step. |
 | `sources` | JSON | Optional server-collected note/board links on an assistant message. |
 | `stopped` | Bool | True when the user stopped the stream before it finished. |
 | `position` | Number | Display order, minimum 0. Zero is valid, so the field is not `required`. |
@@ -440,7 +442,7 @@ Rules are `@request.auth.id != '' && author = @request.auth.id` for list, view, 
 
 `documents.revision` is the optimistic-concurrency token. `revision_guard.js` accepts an omitted revision from older clients but rejects a supplied stale one; AI note edits must supply it. Content/title/tags changes bump the revision and stamp `last_edited_by`/`last_edit_source` (`user`, `ai`, or `system`).
 
-`document_versions` snapshots the old title, content, tags, folder, and privacy when `published` is set. AI note writes use `source: "ai"`, `actor_type: "ai"`, `actor_label: "Nana"`, and the same snapshot path. `chat_edits` records the tool, target, operations, summary, and status for the chat's edit cards and undo. `messages.context` stores the open-page metadata attached at send time; `messages.sources` stores server-derived note/board links.
+`document_versions` snapshots the old title, content, tags, folder, and privacy when `published` is set. AI note writes use `source: "ai"`, `actor_type: "ai"`, `actor_label: "Nana"`, and the same snapshot path. `chat_edits` records the tool, target, operations, summary, and status for the chat's edit cards and undo. `messages.context` stores the open-page metadata attached at send time; `messages.sources` stores server-derived note/board links; `messages.usage` stores the latest assistant turn's final-step token accounting.
 
 ### Public sharing
 
@@ -501,7 +503,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 
 ### Adding backend behavior
 
-1. Add or update the schema in a new migration (`0000031+`).
+1. Add or update the schema in a new migration (`0000032+`).
 2. Add hooks/routes under the relevant `pb_hooks/` directory.
 3. Require the new module from `index.pb.js` (or from a parent module that is already required).
 4. Use `requireAdmin(c)`, `parseRequestBody(c)`, `escapeHtml()`, and `sanitizeUrl()` from `utils.js`; admin route catch blocks should return `sendError(c, err, fallbackMessage)` so known failures keep 400/401/403/404.
@@ -531,7 +533,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 - **API keys are hashed, not encrypted.** `key_hash` is SHA-256 of the full `nana_…` secret. Never add the plaintext, a reversible encoding, or the hash to an API response. The hash lookup uses the superuser only after the key itself is presented.
 - **`api_keys` has no public rules.** It is server-managed on purpose. Do not add it to the browser facade allowlist or expose it through a collection route.
 - **API keys cascade with the user.** `api_keys.author` uses `cascadeDelete: true`; `api_keys.folders` does not cascade from folders, so a deleted scope root grants nothing.
-- **The next migration is `0000031`.** `0000030_chat_attachments` is the current head; never edit an applied migration in place.
+- **The next migration is `0000032`.** `0000031_message_usage` is the current head; never edit an applied migration in place.
 
 ## Related docs
 

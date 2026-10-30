@@ -96,6 +96,54 @@ export interface ChatToolActivity {
     status: ChatToolStatus;
 }
 
+/**
+ * Token accounting for one completed assistant turn. `inputTokens` is the
+ * final model step's prompt size, so `totalTokens` approximates the context
+ * carried into the next turn. This is deliberately not the sum of every tool
+ * step, which would count the same history repeatedly.
+ */
+export interface ChatUsage {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    reasoningTokens?: number;
+    cachedInputTokens?: number;
+}
+
+const MAX_USAGE_TOKENS = 100_000_000;
+
+function usageToken(value: unknown): number | null {
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    const token = Math.trunc(value);
+    if (token < 0 || token > MAX_USAGE_TOKENS) return null;
+    return token;
+}
+
+/** Reduce provider/stored usage to a bounded, optional assistant message field. */
+export function sanitizeChatUsage(value: unknown): ChatUsage | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const source = value as Record<string, unknown>;
+    const inputTokens = usageToken(source.inputTokens);
+    const outputTokens = usageToken(source.outputTokens);
+    const totalTokens = usageToken(source.totalTokens);
+
+    if (inputTokens === null && outputTokens === null && totalTokens === null) return null;
+
+    const input = inputTokens ?? 0;
+    const output = outputTokens ?? 0;
+    const total = Math.max(totalTokens ?? 0, input + output);
+    const reasoningTokens = usageToken(source.reasoningTokens);
+    const cachedInputTokens = usageToken(source.cachedInputTokens);
+
+    return {
+        inputTokens: input,
+        outputTokens: output,
+        totalTokens: total,
+        ...(reasoningTokens !== null ? { reasoningTokens } : {}),
+        ...(cachedInputTokens !== null ? { cachedInputTokens } : {}),
+    };
+}
+
 /** POST /api/chat/send request body */
 export interface ChatSendRequest {
     /** Existing conversation ID, or omit to create a new one */
@@ -130,6 +178,8 @@ export interface ChatMessage {
     attachments?: ChatAttachmentRef[];
     /** Server-collected note/board links attached to an assistant message. */
     sources?: ChatSource[];
+    /** Token usage for the final model step that produced this answer. */
+    usage?: ChatUsage;
     /** True when the user stopped the stream before it finished. */
     stopped?: boolean;
 }
@@ -155,6 +205,7 @@ export interface PBMessage {
     context?: ChatContext | null;
     attachments?: ChatAttachmentRef[] | null;
     sources?: ChatSource[] | null;
+    usage?: ChatUsage | null;
     stopped?: boolean;
     position: number;
     created: string;

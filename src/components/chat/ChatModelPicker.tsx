@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
 import type { AIChatModelOption } from '../../lib/ai/types';
+import { formatTokenCount } from '../../lib/chat/context-usage';
 import { useIsMobileChat } from '../../lib/chat/viewport';
 import { Badge, MenuSurface, Sheet, cn } from '../ui';
 
@@ -53,7 +54,7 @@ function ModelList({
               <span className="flex flex-wrap items-center gap-1.5">
                 <span className="truncate text-[12.5px] font-medium">{model.label}</span>
                 {model.contextWindow && (
-                  <Badge tone="neutral">{Math.round(model.contextWindow / 1000)}k ctx</Badge>
+                  <Badge tone="neutral">{formatTokenCount(model.contextWindow)} ctx</Badge>
                 )}
               </span>
               <span className="mt-0.5 block truncate text-[11px] text-ink-muted">

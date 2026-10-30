@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
 import { PaperClipIcon, PaperAirplaneIcon, StopIcon } from '@heroicons/react/24/outline';
-import { ChatContextChip } from './ChatContextChip';
 import { ChatAttachmentTray } from './ChatAttachmentTray';
+import { ChatContextUsage } from './ChatContextUsage';
 import { CHAT_ATTACHMENT_ACCEPT } from '../../lib/chat/attachments';
-import type { ChatContextTarget } from '../../lib/chat/context';
+import type { AIChatModelOption } from '../../lib/ai/types';
+import type { ChatUsage } from '../../api/chat/types';
 import type { ChatMode, PendingChatAttachment } from '../../lib/chat/types';
 
 export const CHAT_MESSAGE_LIMIT = 12_000;
@@ -17,13 +18,11 @@ interface ChatComposerProps {
   mode: ChatMode;
   streaming: boolean;
   stopping: boolean;
-  target: ChatContextTarget | null;
-  contextDismissed: boolean;
-  onRemoveContext: () => void;
-  onRestoreContext: () => void;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
   /** Model selector or other compact control in the composer toolbar. */
   modelControl?: ReactNode;
+  contextUsage?: ChatUsage | null;
+  contextModel?: AIChatModelOption | null;
   attachments?: PendingChatAttachment[];
   attachmentsEnabled?: boolean;
   uploadingAttachments?: boolean;
@@ -41,12 +40,10 @@ export function ChatComposer({
   mode,
   streaming,
   stopping,
-  target,
-  contextDismissed,
-  onRemoveContext,
-  onRestoreContext,
   textareaRef,
   modelControl,
+  contextUsage = null,
+  contextModel = null,
   attachments = [],
   attachmentsEnabled = false,
   uploadingAttachments = false,
@@ -87,12 +84,6 @@ export function ChatComposer({
   return (
     <div className="w-full">
       <div className="rounded-panel border border-line bg-surface p-1.5 transition-colors focus-within:border-signal/50 focus-within:ring-4 focus-within:ring-signal/10">
-        {target && !contextDismissed && (
-          <div className="px-2 pb-1 pt-1.5">
-            <ChatContextChip target={target} onRemove={onRemoveContext} />
-          </div>
-        )}
-
         {attachmentsEnabled && (
           <ChatAttachmentTray
             attachments={attachments}
@@ -119,15 +110,6 @@ export function ChatComposer({
 
         <div className="flex items-center justify-between gap-2 px-1.5 pb-1">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            {target && contextDismissed && (
-              <button
-                type="button"
-                onClick={onRestoreContext}
-                className="text-[11px] font-medium text-ink-muted transition-colors hover:text-ink-secondary"
-              >
-                Attach page
-              </button>
-            )}
             {attachmentsEnabled && (
               <>
                 <input
@@ -168,29 +150,32 @@ export function ChatComposer({
             )}
           </div>
 
-          {streaming ? (
-            <button
-              type="button"
-              onClick={onStop}
-              disabled={stopping}
-              aria-label="Stop response"
-              title="Stop response"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-line bg-surface-raised text-ink transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
-            >
-              <StopIcon className="h-[1.1rem] w-[1.1rem]" aria-hidden="true" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onSend}
-              disabled={!canSend}
-              aria-label="Send message"
-              title="Send message"
-              className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-control bg-signal-bright text-on-signal transition-colors hover:bg-signal-bright-strong disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
-            >
-              <PaperAirplaneIcon className="h-[1.1rem] w-[1.1rem]" aria-hidden="true" />
-            </button>
-          )}
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <ChatContextUsage usage={contextUsage} model={contextModel} />
+            {streaming ? (
+              <button
+                type="button"
+                onClick={onStop}
+                disabled={stopping}
+                aria-label="Stop response"
+                title="Stop response"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-line bg-surface-raised text-ink transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
+              >
+                <StopIcon className="h-[1.1rem] w-[1.1rem]" aria-hidden="true" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onSend}
+                disabled={!canSend}
+                aria-label="Send message"
+                title="Send message"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control bg-signal-bright text-on-signal transition-colors hover:bg-signal-bright-strong disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
+              >
+                <PaperAirplaneIcon className="h-[1.1rem] w-[1.1rem]" aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

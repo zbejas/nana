@@ -40,9 +40,9 @@ Authorization: Bearer <nana_api_key>
 | `src/api/pocketbase/client.ts` | Caller-token PocketBase REST client and status mapping. |
 | `src/api/auth.ts` | `verifyAuth()` and `AuthError`. |
 | `src/api/chat/index.ts` | Chat request parsing, mode/context/attachment validation, SSE response, conversation dispatch. |
-| `src/api/chat/context.ts` | Server-side document/board/folder context resolution with ownership, trash, and private-lock checks. |
+| `src/api/chat/context.ts` | Server-side document/board/folder context resolution with ownership, trash, and private-lock checks; the prompt note carries only the id. |
 | `src/api/chat/attachments.ts` | Multipart validation, magic-byte MIME/kind checks, PDF text extraction, draft binding/deletion, and protected-file downloads. |
-| `src/api/chat/stream.ts` | Named SSE events, legacy AI-SDK chunks, and stream accumulation. |
+| `src/api/chat/stream.ts` | Named SSE events, legacy AI-SDK chunks, final-step usage mapping, and stream accumulation. |
 | `src/api/chat/edits.ts` | `chat_edits` recording, edit-card listing, and undo. |
 | `src/api/chat/tool-names.ts` | Persisted read/write chat tool allowlists. |
 | `src/api/chat/tools/` | Read tools plus Work-mode create, rename, move, archive/restore, and confirm-first delete tools for folders, notes, boards, and tasks. |
@@ -370,7 +370,7 @@ At least one document or folder is required. A single document with no attachmen
 
 #### `GET /api/chat/status`
 
-Requires auth. Reports whether an enabled model exists and returns the model picker without exposing keys or base URLs:
+Requires auth. Reports whether an enabled model exists and returns the model picker without exposing keys or base URLs. A missing model context window is filled from the cached models.dev catalog for this response; saved values win and `ai_config` is not modified:
 
 ```json
 {
@@ -441,7 +441,7 @@ Requires auth. Request:
 - `attachmentIds` reference owner-scoped draft rows from `POST /api/chat/attachments`. The server verifies ownership, unbound state, count, per-file size, total size, and the selected model's `vision`/`files` capabilities before creating a conversation or SSE stream. Invalid/bound/too many ids are `400`; disabled attachments are `403`; size overflow is `413`; unsupported types or model capability failures are `415`; missing or foreign ids are `404`.
 - `modelId` is optional and must be an enabled id from `GET /api/chat/status.models`. Omit it to use `defaultModelId`, then the first enabled model. An explicit unknown or disabled id returns `400` with code `model_not_found` before any conversation or stream work.
 - `mode` is `"ask"` or `"edit"`; omit it for the safe read-only default. The UI's Work mode sends `"edit"` and is the default there; Ask sends `"ask"`. Edit adds create, rename, move, and update tools for folders, notes, boards, and tasks; boards can be archived/restored, and deletes use a pending confirmation card.
-- `context` is optional and accepts only `{ type: "document" | "board" | "folder", id }`. Bun resolves the title, ownership, trash state, and private lock with the caller's token, then persists `messages.context` with the resolved title on the user message. A missing, foreign, trashed, private, or hidden record is `404`; a malformed type/id is `400`; an unreadable visibility snapshot is `503`. Client-supplied titles and bodies are ignored.
+- `context` is optional and accepts only `{ type: "document" | "board" | "folder", id }`. Bun resolves the title, ownership, trash state, and private lock with the caller's token, then persists `messages.context` with the resolved title on the user message. The system prompt receives only the type and id; titles and bodies stay out. A missing, foreign, trashed, private, or hidden record is `404`; a malformed type/id is `400`; an unreadable visibility snapshot is `503`. Client-supplied titles and bodies are ignored.
 - Omit `conversationId` to create a conversation. The first message seeds the title from the user text or the first attachment name; a background title call refines it after the first reply when the stream is not stopped and has no error. Title generation never receives attachment bytes or extracted text.
 - `regenerate: true` trims the previous user/assistant exchange before re-sending.
 - There is no `documentIds` field. `attachmentIds` is the only file payload; context is metadata only and tools read notes, boards, and tasks on demand.
@@ -468,12 +468,12 @@ The dock reads named SSE events. Every `data:` payload also carries `type`:
 | `tool` | `{ type: "tool", id, name, status, error? }`; `status` is `running`, `success`, or `error`. |
 | `sources` | `{ type: "sources", sources }`; each source is a document or board with `{ id, title }`. |
 | `edit` | `{ type: "edit", edit }`; one applied write, emitted before the model's next token where possible. |
-| `done` | `{ type: "done", conversationId, messageId, stopped, model, sources }`; `messageId` is `null` if persistence failed. |
+| `done` | `{ type: "done", conversationId, messageId, stopped, model, sources, usage? }`; `messageId` is `null` if persistence failed, and `usage` is the final model step's token accounting when the provider reported it. |
 | `error` | `{ type: "error", message, errorText }`. |
 
 A request that omits `mode` also receives legacy AI-SDK UI chunks for text, reasoning, tools, completion, and errors: `text-delta`, `reasoning-delta`, `tool-input-start`, `tool-output-available`/`tool-output-error`, `finish`, `[DONE]`, and `error`. A request that sends `mode` (the dock) receives only the named events. There is no `X-RAG-Sources` header; sources travel as the `sources` event and the persisted `sources` field. There are no embeddings or retrieval metadata.
 
-After the model stream ends, the pump persists the assistant message with `content`, optional `reasoning`, optional `tools`, optional `sources`, optional `stopped`, and `model`. Persisted tool activity is only `{ name, status }` with `status` `success` or `error`; names are restricted to `CHAT_TOOL_NAMES`. See [`ai.md`](ai.md) for the tool contracts, bounds, and prompt-injection stance.
+After the model stream ends, the pump persists the assistant message with `content`, optional `reasoning`, optional `tools`, optional `sources`, optional `usage`, optional `stopped`, and `model`. Persisted tool activity is only `{ name, status }` with `status` `success` or `error`; names are restricted to `CHAT_TOOL_NAMES`. See [`ai.md`](ai.md) for the tool contracts, bounds, and prompt-injection stance.
 
 Chat errors:
 
@@ -497,7 +497,7 @@ Chat errors:
 | `/api/chat/conversations/:id` | PATCH | `{ conversation }`; body `{ title }`, trimmed, 1–120 characters. |
 | `/api/chat/conversations/:id` | DELETE | `204` on success. |
 
-Conversation list/view/rename/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, then writes each turn to the `messages` collection. Every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. `GET /api/chat/conversations/:id` returns `{ conversation, messages }`, with messages ordered by `position` and sanitized on read. Messages may carry `context`, `attachments`, `sources`, and `stopped` metadata; attachment refs contain only `{ id, name, mimeType, size, kind }`. See [`ai.md`](ai.md) for the persisted shapes.
+Conversation list/view/rename/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, then writes each turn to the `messages` collection. Every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. `GET /api/chat/conversations/:id` returns `{ conversation, messages }`, with messages ordered by `position` and sanitized on read. Messages may carry `context`, `attachments`, `sources`, `usage`, and `stopped` metadata; attachment refs contain only `{ id, name, mimeType, size, kind }`. See [`ai.md`](ai.md) for the persisted shapes.
 
 #### Chat edits and undo
 
@@ -709,12 +709,12 @@ Folder response includes `rootFolder`, `folders`, `documents`, `boards`, and `en
 - **Scalar renders only tags listed in `x-tagGroups`.** When the extension is present, the sidebar is built from each group's tag names; a tag declared in `tags` but omitted from every group disappears from the nav. Add new reference tags to the `Workspace` group in `src/api/rest/openapi.ts`.
 - **MCP is POST-only and stateless.** There is no session to continue. Every request authenticates, builds a server, handles one payload, and closes the transport.
 - **MCP tool failures are model-facing, not HTTP failures.** An `isError` text result still returns `200`; only auth, parse, and transport failures return HTTP errors.
-- **Chat context is metadata, not retrieval.** `POST /api/chat/send` accepts only `{ type, id }` and resolves the title server-side. There are no `documentIds` or attachments; extra request fields are ignored.
+- **Chat context is metadata, not retrieval.** `POST /api/chat/send` accepts only `{ type, id }` and resolves the title server-side for history. The prompt note contains only the type and id; there are no `documentIds` or attachments; extra request fields are ignored.
 - **Chat mode gates writes.** Ask mode has only the read tools. Work (`edit`) adds create, rename, move, and update tools, board archive/restore, and confirm-first deletes. The mode lives in the request and the tool registry, not in the prompt.
 - **Chat note edits require a revision.** `read_note` returns `revision` and `versionToken`; the note update tools pass one back. A stale value is a `conflict` tool result, not a silent overwrite.
 - **`published: true` is a version request.** Chat note update tools set it so the PocketBase hook snapshots the old state, then the hook resets it. `create_note` starts a new revision instead. It does not make the note public.
 - **`chat_edits` is server-owned.** It has no public create/update/delete rules. Bun writes it after checking conversation ownership; board/task cards are informational and cannot be undone.
-- **Sources are event data.** No `X-RAG-Sources` header exists, but new assistant messages do carry server-collected `sources` in the stream and in `messages.sources`. Do not derive sources from model text.
+- **Sources are event data.** No `X-RAG-Sources` header exists, but new assistant messages do carry server-collected `sources` in the stream and in `messages.sources`. Sources come from content reads and successful writes, not list-only searches. Do not derive sources from model text.
 - **Chat tool errors are model-facing, not HTTP errors.** `list_notes` etc. return `{ ok: false, code, message }` inside the stream; the chat `POST` still succeeds. Undo and other JSON routes do use HTTP statuses, including `409` for newer work.
 - **Persisted chat tool activity is allowlisted.** Only `CHAT_TOOL_NAMES` entries (read and write) and `success`/`error` statuses survive `sanitizeTools()`; args and outputs are never stored. MCP tool activity is not persisted in conversations.
 - **Messages are records.** `conversations.messages` no longer exists. Appending a message writes a `messages` row and touches the conversation's `updated` timestamp so the sidebar order stays current.

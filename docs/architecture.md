@@ -22,7 +22,7 @@ The system is one deployable with two processes: **Bun** serves the SPA, the app
 | `src/api/pocketbase/` | Caller-token PocketBase REST client shared by chat tools, REST services, and MCP. Never accepts the superuser token. |
 | `src/api/chat/` | Chat orchestration, providers, context resolution, SSE streaming, conversation persistence, edit cards, and ask/edit workspace tools. |
 | `src/api/chat/tools/` | Read tools plus edit-mode note/board/task write tools with bounds, author checks, revision checks, and the private lock. |
-| `src/components/chat/` | Chat dock, page thread, composer, context chip, sources, tool strip, and edit cards. |
+| `src/components/chat/` | Chat dock, page thread, composer, context-usage ring, sources, tool strip, and edit cards. |
 | `src/lib/chat/` | Chat store, route-context derivation, SSE client, history grouping, and presence. |
 | `src/lib/markdown/sections.ts` | Anchor-validated, section-scoped edits that leave untouched sections not re-sanitized. |
 | `src/lib/pocketbase.ts` | Browser client over `/api/v1`; PB-shaped `collection`, `authStore`, `files`, `filter`, and realtime helpers. |

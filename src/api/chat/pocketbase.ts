@@ -4,6 +4,7 @@ import { sanitizeHtml } from "../../lib/sanitize";
 import type { AIConfig } from "../../lib/ai/types";
 import {
     sanitizeAttachmentRef,
+    sanitizeChatUsage,
     type PBConversation,
     type PBMessage,
     type ChatAttachmentRef,
@@ -247,6 +248,9 @@ async function sanitizeMessage(msg: ChatMessage): Promise<ChatMessage> {
     const sources = sanitizeSources(msg.sources);
     if (sources.length > 0) sanitized.sources = sources;
 
+    const usage = sanitizeChatUsage(msg.usage);
+    if (usage) sanitized.usage = usage;
+
     if (msg.stopped === true) sanitized.stopped = true;
 
     return sanitized;
@@ -366,6 +370,7 @@ export async function appendMessage(
             ...(sanitizedMessage.context ? { context: sanitizedMessage.context } : {}),
             ...(sanitizedMessage.attachments?.length ? { attachments: sanitizedMessage.attachments } : {}),
             ...(sanitizedMessage.sources?.length ? { sources: sanitizedMessage.sources } : {}),
+            ...(sanitizedMessage.usage ? { usage: sanitizedMessage.usage } : {}),
             ...(sanitizedMessage.stopped ? { stopped: true } : {}),
             position,
         }),
@@ -405,6 +410,8 @@ export async function getConversationMessages(
             if (attachments.length > 0) message.attachments = attachments;
             const sources = sanitizeSources(row.sources);
             if (sources.length > 0) message.sources = sources;
+            const usage = sanitizeChatUsage(row.usage);
+            if (usage) message.usage = usage;
             if (row.stopped === true) message.stopped = true;
             messages.push(message);
         }

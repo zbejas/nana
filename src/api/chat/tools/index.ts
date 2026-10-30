@@ -6,7 +6,6 @@ import {
     readNote,
     readNoteInputSchema,
     type ListNotesInput,
-    type ListNotesResult,
     type ReadNoteInput,
     type ReadNoteResult,
 } from "./notes";
@@ -16,7 +15,6 @@ import {
     readBoard,
     readBoardInputSchema,
     type ListBoardsInput,
-    type ListBoardsResult,
     type ReadBoardInput,
     type ReadBoardResult,
 } from "./boards";
@@ -176,12 +174,6 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
             execute: instrument<ListNotesInput, Awaited<ReturnType<typeof listNotes>>>(
                 "list_notes",
                 (input, signal) => listNotes(context, input, signal),
-                (result) => {
-                    if (!isOk(result)) return;
-                    for (const note of (result as ListNotesResult).notes) {
-                        recorder.addSource({ type: "document", id: note.id, title: note.title });
-                    }
-                },
             ),
         }),
 
@@ -221,12 +213,6 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
             execute: instrument<ListBoardsInput, Awaited<ReturnType<typeof listBoards>>>(
                 "list_boards",
                 (input, signal) => listBoards(context, input, signal),
-                (result) => {
-                    if (!isOk(result)) return;
-                    for (const board of (result as ListBoardsResult).boards) {
-                        recorder.addSource({ type: "board", id: board.id, title: board.name });
-                    }
-                },
             ),
         }),
 

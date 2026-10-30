@@ -13,6 +13,7 @@ import type {
   ChatToolActivity,
   ChatAttachmentRef,
   ChatAttachmentKind,
+  ChatUsage,
 } from '../../api/chat/types';
 
 export type {
@@ -30,6 +31,7 @@ export type {
   ChatToolActivity,
   ChatAttachmentRef,
   ChatAttachmentKind,
+  ChatUsage,
 };
 
 /** UI-only statuses are layered on top of the persisted edit statuses. */
@@ -61,6 +63,8 @@ export interface ChatUiMessage {
   edits?: ChatUiEdit[];
   context?: ChatContext | null;
   attachments?: ChatAttachmentRef[];
+  /** Token usage from the final model step that produced this answer. */
+  usage?: ChatUsage;
   model?: string;
   streaming?: boolean;
   stopped?: boolean;

@@ -28,6 +28,7 @@ import type {
   ChatUiState,
   ChatUiTool,
   ChatAttachmentRef,
+  ChatUsage,
 } from './types';
 
 const WRITE_TOOL = /^(create|update|edit|append|move|archive|restore)_/;
@@ -259,7 +260,10 @@ function finalizeError(error: ChatError, retryText: string): void {
   clearPresence();
 }
 
-function finalizeDone(meta: { messageId?: string; stopped?: boolean; model?: string }, model?: string): void {
+function finalizeDone(
+  meta: { messageId?: string; stopped?: boolean; model?: string; usage?: ChatUsage },
+  model?: string,
+): void {
   const messages = state.messages.map((message) => {
     if (message.role !== 'assistant' || !message.streaming) return message;
     return {
@@ -271,6 +275,7 @@ function finalizeDone(meta: { messageId?: string; stopped?: boolean; model?: str
           ? ''
           : CHAT_EMPTY_RESPONSE_FALLBACK,
       ...(meta.model || model ? { model: meta.model ?? model } : {}),
+      ...(meta.usage ? { usage: meta.usage } : {}),
       streaming: false,
       ...(meta.stopped ? { stopped: true } : {}),
     };
@@ -627,8 +632,6 @@ export interface SendOptions {
   modelId?: string;
   attachments?: ChatAttachmentRef[];
   context?: ChatContextInput;
-  /** Display only; never sent to the server. */
-  contextTitle?: string;
 }
 
 export async function sendMessage(text: string, options: SendOptions = {}): Promise<void> {
@@ -646,14 +649,6 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
     role: 'user',
     content,
     ...(attachments.length > 0 ? { attachments } : {}),
-    ...(options.context
-      ? {
-        context: {
-          ...options.context,
-          title: options.contextTitle ?? '',
-        },
-      }
-      : {}),
   };
   const assistantMessage: ChatUiMessage = {
     role: 'assistant',

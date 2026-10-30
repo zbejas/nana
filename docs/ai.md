@@ -13,7 +13,8 @@ There is no embeddings pipeline and no vector store. Chat accepts per-message at
 | File | Purpose |
 | --- | --- |
 | `src/api/chat/index.ts` | `handleChat()` routing, `POST /api/chat/send`, mode/context validation, system prompt assembly, tool loop, stream pump, persistence, title generation. |
-| `src/api/chat/context.ts` | `resolveChatContext()`: caller-scoped document/board/folder lookup, trash and private-lock checks, resolved title; `contextSystemNote()`. |
+| `src/api/chat/context.ts` | `resolveChatContext()`: caller-scoped document/board/folder lookup, trash and private-lock checks, resolved title; `contextSystemNote()` adds only the page id to the prompt. |
+| `src/api/chat/model-metadata.ts` | Fills missing model context windows from the cached models.dev catalog for chat status; explicit values always win and nothing is written to `ai_config`. |
 | `src/api/chat/stream.ts` | SSE named events, legacy AI-SDK chunks, and `ChatStreamState` accumulation. |
 | `src/api/chat/edits.ts` | `recordChatEdit()`, `listChatEdits()`, `undoChatEdit()`, edit DTO mapping, and conversation-owner checks. |
 | `src/api/chat/tool-names.ts` | `CHAT_READ_TOOL_NAMES`, `CHAT_WRITE_TOOL_NAMES`, and the persisted `CHAT_TOOL_NAMES` allowlist. |
@@ -45,6 +46,7 @@ There is no embeddings pipeline and no vector store. Chat accepts per-message at
 | `pocketbase/pb_migrations/0000022_relational_remodel.js` | Adds the `messages` collection and removes the inline conversation JSON field. |
 | `pocketbase/pb_migrations/0000027_chat_edits.js` | Adds document revisions/actor metadata, message context/sources/stopped, version snapshots, and `chat_edits`. |
 | `pocketbase/pb_migrations/0000030_chat_attachments.js` | Adds the owner-scoped `chat_attachments` collection and `messages.attachments`. |
+| `pocketbase/pb_migrations/0000031_message_usage.js` | Adds `messages.usage` for the final-step token accounting used by the context ring. |
 | `tests/api/chat-tools.test.ts` | Integration coverage for the read tools, scoping, paging, truncation, error mapping, and private fixtures. |
 | `tests/api/chat-attachments.test.ts` | Integration coverage for upload auth, disabled/limit/type rejection, draft ownership/deletion, binding, and sanitized refs. |
 | `tests/api/chat-write-tools.test.ts` | Integration coverage for edit-mode gating, context resolution, writes, revisions, edit cards, and undo. |
@@ -55,6 +57,8 @@ There is no embeddings pipeline and no vector store. Chat accepts per-message at
 | `tests/unit/chat-attachments.test.ts` | Pure coverage for magic-byte detection, SVG/binary rejection, PDF text extraction, limits, capabilities, and sanitized refs. |
 | `tests/unit/ai-providers.test.ts` | Pure coverage for provider model construction, v2 selection, and disabled-model rejection. |
 | `tests/unit/chat-context.test.ts` | Pure coverage for route context derivation, private branches, and the context payload. |
+| `tests/unit/chat-context-usage.test.ts` | Token formatting, context percentages, remaining room, and warning thresholds. |
+| `tests/unit/chat-model-metadata.test.ts` | models.dev fallback for missing legacy model context windows. |
 | `tests/unit/chat-version-token.test.ts` | Pure coverage for note version tokens and revision matching. |
 | `tests/unit/chat-activity.test.ts` | Pure coverage for tool-activity summarization and status precedence. |
 | `tests/unit/chat-input-schemas.test.ts` | Pure coverage for tool input schemas and bounds. |
@@ -136,7 +140,7 @@ AI settings live in the admin-only `settings` record with key `ai_config`. The s
 
 `getAIModel(config, modelId?)` resolves an enabled v2 model and its connection; without an id it uses the default, then the first enabled model. If no v2 model is usable it falls back to the legacy `activeProvider`/`activeModel`. An explicit unknown or disabled id throws instead of silently falling back. `handleSend()` turns an unknown/disabled requested id into a `400` with code `model_not_found` before creating a conversation or opening a stream, and a missing usable model into `503`.
 
-`GET /api/chat/status` returns `{ configured, model, provider, local, defaultModelId, models, limits }`. `models` contains only enabled models and carries `id`, `label`, `model`, `provider` (connection name), `providerKind`, `local`, `contextWindow`, `maxOutputTokens`, and the four capability flags. `limits` is the normalized attachment contract. Keys, base URLs, and connection internals are never returned.
+`GET /api/chat/status` returns `{ configured, model, provider, local, defaultModelId, models, limits }`. `models` contains only enabled models and carries `id`, `label`, `model`, `provider` (connection name), `providerKind`, `local`, `contextWindow`, `maxOutputTokens`, and the four capability flags. A model with no saved context window gets one from the cached models.dev catalog for this response; explicit values always win and `ai_config` is not changed. `limits` is the normalized attachment contract. Keys, base URLs, and connection internals are never returned.
 
 ### AI visibility lock
 
@@ -170,14 +174,14 @@ The lock is structural, not prompt-based. The system instruction for chat and th
 
 1. `POST /api/chat/send` calls `verifyAuth(req)` and keeps the raw `Authorization` header.
 2. Bun parses `{ conversationId?, message, attachmentIds?, modelId?, mode, context?, regenerate? }`. `message` is trimmed and may be empty only when `attachmentIds` contains at least one id. Ids must be unique-safe `[A-Za-z0-9]{1,64}` values; the hard count ceiling is 20. `mode` defaults to `"ask"`; anything other than `"ask"` or `"edit"` returns `400`. `modelId` is optional and names an id from `GET /api/chat/status.models`.
-3. If `context` is present, it must be `{ type: "document" | "board" | "folder", id }`. `resolveChatContext()` loads the record with the caller's token, checks ownership, trash state, and the private lock, and resolves the display title from PocketBase. A missing or malformed context is `400`; a foreign, trashed, private, or hidden one is `404`; an unavailable visibility snapshot is `503`. The client cannot supply a title or body.
+3. If `context` is present, it must be `{ type: "document" | "board" | "folder", id }`. `resolveChatContext()` loads the record with the caller's token, checks ownership, trash state, and the private lock, and resolves the display title for persistence. A missing or malformed context is `400`; a foreign, trashed, private, or hidden one is `404`; an unavailable visibility snapshot is `503`. The client cannot supply a title or body.
 4. `fetchAIConfig()` loads `ai_config`, `normalizeAIConfig()` produces the v2 view, and `resolveChatModel()` picks the requested model, the default, or the first enabled model. An explicit unknown/disabled id is `400 model_not_found`; no usable model is `503`. Generation parameters (`temperature`, `maxOutputTokens`, `topP`) come from the selected model, and Ollama thinking is applied on its model instance. The old OpenAI Responses `store: false` workaround is not sent on the Chat Completions path.
 5. When `attachmentIds` are present, `resolveAttachments()` verifies the caller owns every draft row, none is already bound, the count and byte caps pass, and the selected model supports the kinds. Images require `capabilities.vision`; a PDF requires `capabilities.files` or non-empty server-extracted text. Failures return `400`, `403`, `404`, `413`, or `415` before any conversation or stream is created.
 6. Without a `conversationId`, Bun creates a conversation titled from the user text or the first attachment name and writes the user message with its resolved `context` and attachment refs. With one, it appends the user message; `regenerate: true` first trims the previous user/assistant pair. Draft rows are then bound to the new message with both `conversation` and `message`.
 7. History is loaded and reduced to `{ role, content }` plus attachment content for user messages only. Stored reasoning, tool activity, sources, context metadata, and model metadata are never sent back to the model. The resolved page context contributes a short system note instead.
 8. `buildSystemPrompt()` appends the fixed read contract to the admin `systemPrompt`, adds the attachment-untrusted instruction when any message carries attachments, adds the edit contract in edit mode, and adds the page-context note when a context was resolved.
 9. `createChatTools({ authHeader, userId }, { mode, recorder, conversationId })` builds the read-tool set, plus the write-tool set only in edit mode.
-10. `streamText()` runs with `stopWhen: stepCountIs(8)`, `maxRetries: 1`, and the request/abort signal. The selected model's upstream id is returned in `X-Model-Name`, its connection id in `X-Model-Source`, and the assistant row persists `model` as the upstream id. The stream pump emits named SSE events, records sources and applied edits, and persists the assistant message after the model stream ends.
+10. `streamText()` runs with `stopWhen: stepCountIs(8)`, `maxRetries: 1`, and the request/abort signal. The selected model's upstream id is returned in `X-Model-Name`, its connection id in `X-Model-Source`, and the assistant row persists `model` as the upstream id. The stream pump emits named SSE events, records sources and applied edits, persists the assistant message after the model stream ends, and includes the final step's `usage` in the `done` frame and the stored row.
 11. The stream pump persists the assistant row itself, links any edit cards to it, then emits `done`; it does not rely on an AI SDK `onFinish` callback. Title generation is fire-and-forget for a new, non-stopped conversation without a stream error, and uses the same selected model. It receives the user text or the first attachment name only; attachment bytes and extracted text are never passed to the title call.
 
 ### Chat attachments
@@ -301,7 +305,7 @@ Chat does **not** expose publish, share, privacy, board-column, or label tools, 
 
 ### Chat stream contract
 
-`POST /api/chat/send` returns SSE. The dock reads named events: `text`, `reasoning`, `tool`, `sources`, `edit`, `done`, and `error`. `edit` is emitted for an applied write or a pending delete card; `sources` and `done` carry the server-collected sources; `error` carries a mapped provider message. Requests that omit `mode` also receive legacy AI-SDK UI chunks (`text-delta`, `reasoning-delta`, `tool-input-*`, `tool-output-*`, `finish`, `[DONE]`, and `error`); requests that send `mode` receive only the named events. The frame fields and response headers are in [`api.md`](api.md).
+`POST /api/chat/send` returns SSE. The dock reads named events: `text`, `reasoning`, `tool`, `sources`, `edit`, `done`, and `error`. `edit` is emitted for an applied write or a pending delete card; `sources` and `done` carry the server-collected sources; `done` also carries final-step `usage` when available; `error` carries a mapped provider message. Requests that omit `mode` also receive legacy AI-SDK UI chunks (`text-delta`, `reasoning-delta`, `tool-input-*`, `tool-output-*`, `finish`, `[DONE]`, and `error`); requests that send `mode` receive only the named events. The frame fields and response headers are in [`api.md`](api.md).
 
 ### MCP write surface
 
@@ -371,13 +375,13 @@ Work mode (`mode: "edit"`) adds:
 - Do not share, publish, move a task to another board, change privacy, or change board columns or assignees who cannot access the board.
 - After a note write, say what changed and that it can be undone from chat.
 
-The resolved page context adds a quoted-title note for a document, board, or folder. Titles are untrusted data, not instructions.
+The resolved page context adds the record id and a read-tool instruction for a document, board, or folder. Titles and content stay out of the system prompt.
 
 `stopWhen(stepCountIs(8))` is required for list → read chains and multi-step edits; without it the SDK stops after one step.
 
 ### Persistence
 
-Conversations live in `conversations`; each turn is a row in `messages` with `conversation`, `role`, `content`, `position`, and optional `reasoning`, `tools`, `context`, `attachments`, `sources`, `stopped`, and `model` fields. A user message may carry:
+Conversations live in `conversations`; each turn is a row in `messages` with `conversation`, `role`, `content`, `position`, and optional `reasoning`, `tools`, `context`, `attachments`, `sources`, `usage`, `stopped`, and `model` fields. A user message may carry:
 
 ```ts
 {
@@ -397,13 +401,14 @@ An assistant message may contain:
   reasoning?: string,
   tools?: Array<{ name: string; status: "success" | "error" }>,
   sources?: Array<{ type: "document" | "board", id: string, title: string }>,
+  usage?: { inputTokens: number, outputTokens: number, totalTokens: number, reasoningTokens?: number, cachedInputTokens?: number },
   stopped?: boolean,
   model?: string
 }
 ```
 
-- `sanitizeMessage()` runs `sanitizeHtml()` on content and allowlists context, attachment refs, sources, tools, and the stopped flag before persistence. Attachment refs never carry extracted text, the stored file name, or raw bytes.
-- The assistant `sources` array is built from records read tools actually returned; successful `create_note`, `create_board`, and `create_task` also add the new note or board. It is not model output.
+- `sanitizeMessage()` runs `sanitizeHtml()` on content and allowlists context, attachment refs, sources, tools, usage, and the stopped flag before persistence. Attachment refs never carry extracted text, the stored file name, or raw bytes.
+- The assistant `sources` array is built from records whose content was actually read; successful note/board writes also add the target note or board. `list_notes` and `list_boards` metadata searches do not become sources. It is not model output.
 - Appending writes a `messages` row with the next `position` and touches the conversation's `updated` timestamp so the sidebar order stays current.
 - `getConversationMessages()` paginates and returns rows ordered by `position,created`.
 - `trimLastExchange()` reads newest-first, deletes the trailing assistant run, then the preceding user turn.
@@ -416,7 +421,7 @@ An assistant message may contain:
 
 ### Chat surface
 
-The chat surface has two entry points that share one store: the full page at `/chat` and `/chat/:conversationId`, and the persistent right-side dock mounted at the app root. The dock is hidden while the full page is open. The dock sends the open page's `{ type, id }` context at send time; the server resolves the title and applies ownership, trash, and private checks. Opening a private note, board, or folder does not attach context.
+The chat surface has two entry points that share one store: the full page at `/chat` and `/chat/:conversationId`, and the persistent right-side dock mounted at the app root. The dock is hidden while the full page is open. The dock sends the open page's `{ type, id }` context automatically at send time; there is no visible chip or dismissal state. The server resolves the record, applies ownership, trash, and private checks, and the prompt receives only the id. Opening a private note, board, or folder, or a page whose privacy lookup is still loading, does not attach context.
 
 The composer uses **Work/Ask**. Work is the default and sends `mode: "edit"`; Ask is the read-only lock and sends `mode: "ask"`. Applied writes render inside the same tool disclosure above the final answer as collapsed rows; expanding one shows its details and Undo where available. Delete tools auto-expand the disclosure and a pending approval row with explicit confirm/cancel actions. Sources render as a collapsed `Sources · N` disclosure. Tool activity is a quiet neutral summary with an optional one-line-per-tool expansion; persisted history keeps only names and statuses. See [`frontend.md`](frontend.md) for layout and the [`DESIGN.md`](../DESIGN.md) chat treatment.
 
@@ -481,8 +486,8 @@ Tool logs contain the tool name, duration, and result count only. Inputs, output
 - **Undo is idempotent; note-edit undo is conflict-aware.** A second undo of a successful edit returns `alreadyUndone: true` without applying twice. A note-edit undo returns `409` if the note has a newer revision or `updated` timestamp; created-note undo trashes the target without a revision check.
 - **A failed audit write does not roll back the workspace write.** The tool succeeded; only the card is missing. Do not report a failed edit to the model after the service returned success.
 - **Chat tool names are a persisted contract.** Adding or renaming a chat tool requires updating `CHAT_READ_TOOL_NAMES` or `CHAT_WRITE_TOOL_NAMES` and the label map in `src/components/chat/ChatToolStrip.tsx`; otherwise stored activity is dropped or shown as “Checked the workspace”. MCP tool names are not persisted.
-- **Sources are server-collected.** `sources` comes from records a read tool returned, plus the target of a successful note/board/task creation. Never parse model text to build links. The recorder caps the list at 50 and the persistence sanitizer re-checks type/id/title.
-- **Context is metadata, not retrieval.** The client sends only `{ type, id }`; Bun resolves the title and persists it. A private or unavailable page is not attached, and a foreign/private id returns `404`. Do not add note bodies or client-supplied titles to the context payload.
+- **Sources are server-collected.** `sources` comes from records whose content a read tool returned, plus the target of a successful note/board/task creation. List-only metadata searches are not sources. Never parse model text to build links. The recorder caps the list at 50 and the persistence sanitizer re-checks type/id/title.
+- **Context is metadata, not retrieval.** The client sends only `{ type, id }`; Bun resolves and persists the record title for history, while the system prompt receives only the id. A private, loading, or unavailable page is not attached, and a foreign/private id returns `404`. Do not add note bodies or client-supplied titles to the context payload.
 - **MCP keys are scoped in the services, not the prompt.** `context.apiKey` carries access and scope; `visibilityFor()`, `recordIsLocked()`, and `assertWritable()` enforce it. A key's scope never replaces the private lock.
 - **Read-only means no write tools and no service writes.** `tools/list` omits them and the workspace services return `403` if a client calls one through REST.
 - **Every AI read needs author scoping.** Lists filter on `author`; task queries use `board.author`; single-record reads check the owning record. PocketBase rules are the second line of defence, not the only one.
@@ -508,7 +513,7 @@ Tool logs contain the tool name, duration, and result count only. Inputs, output
 ## Related docs
 
 - [`api.md`](api.md) — chat routes, SSE payloads, edit/undo endpoints, REST endpoints, MCP transport, and the full MCP tool table.
-- [`frontend.md`](frontend.md) — chat page, global dock, context chip, edit cards, and tool-activity UI.
+- [`frontend.md`](frontend.md) — chat page, global dock, automatic page context, context-usage ring, edit cards, and tool-activity UI.
 - [`security.md`](security.md) — token isolation, chat write path, MCP authorization, prompt-injection stance.
 - [`pocketbase.md`](pocketbase.md) — `settings`, `conversations`, `chat_edits`, revisions, board folders, and the collections the tools read.
 - [`deployment.md`](deployment.md) — provider configuration and upgrade cleanup.

@@ -46,6 +46,7 @@ Nana exposes three public access paths through the Bun origin: the application A
 | `pocketbase/pb_migrations/0000024_api_keys.js` | `api_keys`: hashed machine credentials with no public rules, access, scope, and folder roots. |
 | `pocketbase/pb_migrations/0000027_chat_edits.js` | Document revisions/actor metadata, version snapshots, message context/sources, and the server-owned `chat_edits` audit table. |
 | `pocketbase/pb_migrations/0000030_chat_attachments.js` | Owner-scoped `chat_attachments`, protected files, server-only extracted text, and `messages.attachments`. |
+| `pocketbase/pb_migrations/0000031_message_usage.js` | Adds final-step token accounting to assistant messages; contains no note or attachment content. |
 
 ## How it works
 
@@ -283,7 +284,7 @@ The limiter is process-local, so it resets on restart and is not shared across r
 | Surface | Protection |
 | --- | --- |
 | Markdown preview | `rehype-sanitize` with an extended GitHub-style schema (`src/lib/sanitize.ts`). |
-| Chat messages | `sanitizeHtml()` before persisting to `messages`; context, sources, tools, and stopped are separately allowlisted. |
+| Chat messages | `sanitizeHtml()` before persisting to `messages`; context, sources, tools, usage, and stopped are separately allowlisted. |
 | Chat edit fragments | `sanitizeHtml()` on each section fragment before `applySectionEdits()`; untouched note sections are not re-sanitized. |
 | REST/MCP note content | `sanitizeHtml()` before creating or updating a document. |
 | Chat tool activity | Allowlist of read/write tool names and `success`/`error`; no args or outputs. |

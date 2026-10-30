@@ -97,7 +97,7 @@ export function ChatEmptyState({ target, mode, configured, onPrompt, onOpenSetti
 
   if (target?.isPrivate) {
     title = 'Ask about something else.';
-    description = `This ${privateNoun} stays private and will not be attached. Nana can still search your other notes and boards.`;
+    description = `This ${privateNoun} stays private. Nana can still search your other notes and boards.`;
   } else if (target?.type === 'document') {
     title = workMode ? 'Work on this note.' : 'Ask about this note.';
     description = workMode

@@ -1,4 +1,11 @@
-import type { ChatEditDto, ChatSource, ChatToolActivity, ChatToolStatus } from "./types";
+import {
+    sanitizeChatUsage,
+    type ChatEditDto,
+    type ChatSource,
+    type ChatToolActivity,
+    type ChatToolStatus,
+    type ChatUsage,
+} from "./types";
 
 /**
  * SSE encoding for the chat stream.
@@ -83,6 +90,28 @@ export function sourcesEvent(sources: ChatSource[]): string {
     return sseEvent("sources", { sources });
 }
 
+interface StepUsageLike {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    reasoningTokens?: number;
+    cachedInputTokens?: number;
+    inputTokenDetails?: { cacheReadTokens?: number };
+    outputTokenDetails?: { reasoningTokens?: number };
+}
+
+/** Map one AI SDK step's usage into the persisted/client shape. */
+export function stepUsage(usage: StepUsageLike | null | undefined): ChatUsage | null {
+    if (!usage) return null;
+    return sanitizeChatUsage({
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        totalTokens: usage.totalTokens,
+        reasoningTokens: usage.outputTokenDetails?.reasoningTokens ?? usage.reasoningTokens,
+        cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens ?? usage.cachedInputTokens,
+    });
+}
+
 export function editEvent(edit: ChatEditDto): string {
     return sseEvent("edit", { edit });
 }
@@ -93,8 +122,13 @@ export function doneEvent(payload: {
     stopped: boolean;
     model: string;
     sources: ChatSource[];
+    usage?: ChatUsage | null;
 }, legacy = true): string {
-    const custom = sseEvent("done", payload);
+    const { usage, ...rest } = payload;
+    const custom = sseEvent("done", {
+        ...rest,
+        ...(usage ? { usage } : {}),
+    });
     if (!legacy) return custom;
     return custom
         + legacyEvent({ type: "finish" })
