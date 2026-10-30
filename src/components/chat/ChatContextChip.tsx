@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import {
   DocumentTextIcon,
   FolderIcon,
@@ -21,6 +22,29 @@ function ContextIcon({ type }: { type: ChatContextTarget['type'] }) {
 
 /** The current-page chip above the composer, plus the "what Nana can see" note. */
 export function ChatContextChip({ target, onRemove }: ChatContextChipProps) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const details = detailsRef.current;
+      if (!details?.open || details.contains(event.target as Node)) return;
+      details.open = false;
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const details = detailsRef.current;
+      if (event.key !== 'Escape' || !details?.open) return;
+      event.preventDefault();
+      details.open = false;
+      details.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true });
+    };
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   if (target.unavailable) return null;
 
   const label = formatChatContextTitle(target.type, target.title, target.loading);
@@ -50,7 +74,7 @@ export function ChatContextChip({ target, onRemove }: ChatContextChipProps) {
         </button>
       </span>
 
-      <details className="group relative">
+      <details ref={detailsRef} className="group relative">
         <summary className="inline-flex cursor-pointer list-none items-center text-[11px] text-ink-muted transition-colors hover:text-ink-secondary [&::-webkit-details-marker]:hidden">
           What Nana can see
         </summary>
