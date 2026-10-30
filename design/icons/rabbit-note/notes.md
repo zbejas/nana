@@ -10,29 +10,34 @@ The landscape card is deliberate. A portrait page immediately reads as a documen
 
 | Role | Value |
 | --- | --- |
-| Tile | `#0c0c0d` Graphite canvas |
-| Card and ears | `#f5f3ef` Cream ink |
+| Tile | `#0c0c0d` Graphite canvas (app/PWA icons only) |
+| Card and ears | `#f5f3ef` Cream ink on dark; `#1a1a18` ink on light |
 | Fold | `#ff7048` Ember |
 
 Only the fold is ember. The eyes and nose are cut out of the paper, so they disappear cleanly at small sizes instead of turning into grey dots.
 
 ## Small-size behaviour
 
-- **16px:** the rescaled master still shows the note, two ears, the face as a soft pair of eyes and nose, and the ember fold. It is less crisp than a dedicated 16px glyph, but it is the same character and keeps the face.
-- **24–32px:** the ears, card, face, and folded corner are all visible.
+The favicon drops the tile entirely. It uses a tight `viewBox="68 44 376 376"` around the rabbit-note mark, so the drawing fills the 16×16 tab slot instead of sitting inside a wide, padded tile.
+
+- **16px:** the cropped transparent mark shows the note, both ears, the face as two cut-out eyes and a nose, and the ember fold. It is larger than the old tiled favicon and reads on both light and dark chrome.
+- **24–32px:** the ears, card, face, and folded corner are all clearer.
 - **48px+:** the hybrid is clear: a note with a rabbit's ears and face.
 
-The selected favicon is the **rescaled 512 master**, not a separate 16px drawing. A thick-ear/big-eye variant was explored and rejected: at 16px it read as a different, slightly uncanny character. The master keeps the same geometry everywhere; at 16px the face becomes a soft pixel cluster rather than being removed.
+Dark chrome uses cream paper (`favicon.svg`); light chrome uses ink paper (`favicon-light.svg`). The theme switch swaps the favicon files at runtime. At 16px the face is a soft pixel cluster, but it is the same character as the 512 master.
+
+A separate thick-ear/big-eye 16px redraw was explored and rejected: it read as a different, slightly uncanny character. The shipped favicon is the master geometry, cropped and made transparent, not a different rabbit.
 
 ## Variants
 
-- `icon.svg` — 512 rounded-square graphite tile, landscape note, rabbit ears and face, ember fold.
-- `favicon.svg` — the 512 master, used at tab size; the face is kept.
+- `icon.svg` — 512 rounded-square graphite tile, landscape note, rabbit ears and face, ember fold. App/PWA, sidebar, About, public pages.
+- `favicon.svg` — transparent cropped master for dark chrome; cream paper, alpha-cut eyes and nose.
+- `favicon-light.svg` — transparent cropped master for light chrome; ink paper, alpha-cut eyes and nose.
 - `maskable.svg` — full-bleed graphite, mark scaled to 90% and centred inside the safe circle.
 - `monochrome.svg` — solid card and ears, dog-ear cut, eyes and nose as alpha holes.
 
 ## Notes
 
 - The clearest one-sentence story of the product: notes, with the Nana rabbit.
-- At 16px the wide card softens the ear silhouette, so it is not the strongest tab icon.
-- Best used for the install prompt, About, empty states, or a marketing lockup where the mark can be 48px or larger.
+- The transparent favicon is intentionally not the tile icon. A tab is already a rounded surface; adding a second tile made the mark look small.
+- Keep the master geometry. Do not redraw the face for 16px.

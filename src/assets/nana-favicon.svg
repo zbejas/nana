@@ -1,15 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
-  <title id="title">Nana rabbit note mark</title>
-  <rect width="512" height="512" rx="112" fill="#0c0c0d"/>
-  <g fill="#f5f3ef">
-    <path d="M184 240c-16-46-18-118-4-148 8-22 32-22 40 0 16 36 12 112 8 148z"/>
-    <path d="M272 240c-8-36-12-112 4-148 8-22 32-22 40 0 14 30 12 102-4 148z"/>
-    <path d="M128 204h236l52 52v120c0 17.7-14.3 32-32 32H128c-17.7 0-32-14.3-32-32V236c0-17.7 14.3-32 32-32z"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="68 44 376 376" role="img" aria-labelledby="title">
+  <title id="title">Nana rabbit note favicon</title>
+  <defs>
+    <mask id="nana-cutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#000"/>
+      <g fill="#fff">
+        <path d="M184 240c-16-46-18-118-4-148 8-22 32-22 40 0 16 36 12 112 8 148z"/>
+        <path d="M272 240c-8-36-12-112 4-148 8-22 32-22 40 0 14 30 12 102-4 148z"/>
+        <path d="M128 204h236l52 52v120c0 17.7-14.3 32-32 32H128c-17.7 0-32-14.3-32-32V236c0-17.7 14.3-32 32-32z"/>
+      </g>
+      <g fill="#000">
+        <circle cx="214" cy="292" r="11"/>
+        <circle cx="298" cy="292" r="11"/>
+        <path d="M248 316c4-5 12-5 16 0-1 7-4 10-8 10s-7-3-8-10z"/>
+      </g>
+    </mask>
+  </defs>
+  <rect width="512" height="512" fill="#f5f3ef" mask="url(#nana-cutouts)"/>
   <path d="M364 204l52 52h-52z" fill="#ff7048"/>
-  <g fill="#0c0c0d">
-    <circle cx="214" cy="292" r="11"/>
-    <circle cx="298" cy="292" r="11"/>
-    <path d="M248 316c4-5 12-5 16 0-1 7-4 10-8 10s-7-3-8-10z"/>
-  </g>
 </svg>

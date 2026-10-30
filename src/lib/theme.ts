@@ -42,12 +42,42 @@ export function resolveTheme(preference: ThemePreference): ResolvedTheme {
   return 'dark';
 }
 
+const FAVICON_FILES = {
+  dark: {
+    svg: '/nana-favicon.svg?v=2',
+    png16: '/nana-favicon-16.png?v=2',
+    png32: '/nana-favicon-32.png?v=2',
+  },
+  light: {
+    svg: '/nana-favicon-light.svg?v=2',
+    png16: '/nana-favicon-light-16.png?v=2',
+    png32: '/nana-favicon-light-32.png?v=2',
+  },
+} as const;
+
+function applyFaviconTheme(resolved: ResolvedTheme): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const files = FAVICON_FILES[resolved];
+
+  document.querySelectorAll<HTMLLinkElement>('link[data-favicon]').forEach((link) => {
+    const slot = link.dataset.favicon;
+    const href = slot === 'svg' ? files.svg : slot === '16' ? files.png16 : files.png32;
+    if (link.getAttribute('href') !== href) {
+      link.setAttribute('href', href);
+    }
+  });
+}
+
 export function applyTheme(preference: ThemePreference = getThemePreference()): ResolvedTheme {
   const resolved = resolveTheme(preference);
   const root = document.documentElement;
 
   root.dataset.theme = resolved;
   root.style.colorScheme = resolved;
+  applyFaviconTheme(resolved);
 
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) {

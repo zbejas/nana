@@ -22,6 +22,7 @@ const distDir = resolve(import.meta.dir, "../dist");
 const iconSvg = resolve(import.meta.dir, "assets/nana.svg");
 const appIconSvg = resolve(import.meta.dir, "assets/nana-icon.svg");
 const faviconSvg = resolve(import.meta.dir, "assets/nana-favicon.svg");
+const faviconLightSvg = resolve(import.meta.dir, "assets/nana-favicon-light.svg");
 const maskableIconSvg = resolve(import.meta.dir, "assets/nana-icon-maskable.svg");
 const monochromeIconSvg = resolve(import.meta.dir, "assets/nana-icon-monochrome.svg");
 const icon180 = resolve(import.meta.dir, "assets/nana-180.png");
@@ -32,6 +33,8 @@ const maskable512 = resolve(import.meta.dir, "assets/nana-maskable-512.png");
 const monochrome512 = resolve(import.meta.dir, "assets/nana-monochrome-512.png");
 const favicon16 = resolve(import.meta.dir, "assets/nana-favicon-16.png");
 const favicon32 = resolve(import.meta.dir, "assets/nana-favicon-32.png");
+const faviconLight16 = resolve(import.meta.dir, "assets/nana-favicon-light-16.png");
+const faviconLight32 = resolve(import.meta.dir, "assets/nana-favicon-light-32.png");
 const pdfWorkerScript = resolve(import.meta.dir, "../node_modules/pdfjs-dist/build/pdf.worker.min.mjs");
 
 const manifest = {
@@ -220,6 +223,12 @@ const server = serve({
           headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" },
         })
       ),
+    "/nana-favicon-light.svg": (): Response =>
+      withSecurityHeaders(
+        new Response(Bun.file(faviconLightSvg), {
+          headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" },
+        })
+      ),
     "/nana-icon-maskable.svg": (): Response =>
       withSecurityHeaders(
         new Response(Bun.file(maskableIconSvg), {
@@ -253,6 +262,10 @@ const server = serve({
       withSecurityHeaders(new Response(Bun.file(monochrome512))),
     "/nana-favicon-16.png": (): Response => withSecurityHeaders(new Response(Bun.file(favicon16))),
     "/nana-favicon-32.png": (): Response => withSecurityHeaders(new Response(Bun.file(favicon32))),
+    "/nana-favicon-light-16.png": (): Response =>
+      withSecurityHeaders(new Response(Bun.file(faviconLight16))),
+    "/nana-favicon-light-32.png": (): Response =>
+      withSecurityHeaders(new Response(Bun.file(faviconLight32))),
 
     // REST API and OpenAPI docs (public docs, authenticated /api/v1)
     "/docs": handleRest,

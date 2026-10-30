@@ -1,8 +1,8 @@
 # Nana — app icon and favicon system
 
-**Status:** design exploration. Nothing in `src/`, `public/`, `package.json`, or `docs/` was changed. All work lives under `design/icons/`.
+**Status:** selected and shipped. `rabbit-note` is the app icon; its transparent, cropped rabbit mark is the favicon, with dark and light variants. The other three directions remain in `design/icons/` as explorations.
 
-This is a compact icon system for Nana, not a shrunken version of the existing rabbit illustration. Four directions were drawn at 512, rebuilt at 32 for the tab, and checked at 16, 24, 32, 48, 64, 128, 256, and 512 on both Graphite canvases. Each direction has a normal rounded-square icon, a tab-optimised favicon, a full-bleed maskable icon, and a single-colour monochrome mark.
+This is a compact icon system for Nana, not a shrunken version of the old rabbit illustration. Four directions were drawn at 512, rebuilt at 32 for the tab, and checked at 16, 24, 32, 48, 64, 128, 256, and 512 on both Graphite canvases. Each direction has a normal rounded-square icon, a full-bleed maskable icon, and a single-colour monochrome mark; the shipped `rabbit-note` also has transparent dark/light favicons.
 
 ## What is here
 
@@ -19,18 +19,17 @@ design/icons/
   note-board/
     icon.svg  favicon.svg  maskable.svg  monochrome.svg  notes.md
   rabbit-note/
-    icon.svg  favicon.svg  maskable.svg  monochrome.svg  notes.md
+    icon.svg  favicon.svg  favicon-light.svg  maskable.svg  monochrome.svg
+    tab-preview.html  tab-preview.png  notes.md
 ```
 
 Every SVG is flat, has no external fonts or images, and uses only Graphite values: graphite `#0c0c0d`, cream `#f5f3ef`, paper `#faf9f7`, ink `#1a1a18`, ember `#ff7048` (dark surfaces) or `#b7431e` (light surfaces). No gradients, grain, shadows, or raw blue/purple/green.
 
-## What the current icon does
+## What changed
 
-The current mark is `src/assets/nana.svg`: a 145 KB illustration with a cream rabbit, brown outlines, a backpack, a pencil, and a ring-bound notebook, in a 582×606 viewBox. It is used as the sidebar glyph at 32px, in About and public pages, in the install banner, and as the favicon. `nana-192.png` and `nana-512.png` are the same illustration at 17 KB and 61 KB.
+The previous mark was a 145 KB illustration with a cream rabbit, brown outlines, a backpack, a pencil, and a ring-bound notebook, in a 582×606 viewBox. It was used as the sidebar glyph at 32px, in About and public pages, in the install banner, and as the favicon. At 16–32px the notebook, pencil, backpack, face, and outline collapsed into a brown-cream smudge.
 
-At 16–32px, the notebook, pencil, backpack, face, and outline all collapse into a brown-cream smudge. The illustration is charming at 180px, but it is not a tab icon.
-
-The current manifest also labels the same 192px and 512px PNGs as `"purpose": "any maskable"`. Maskable icons need an opaque full-bleed field and the important art inside the central 80% circle; this art runs close to the edges. The same file cannot be both a tight `any` icon and a safe `maskable` icon without compromise.
+That illustration is gone from every surface. `src/assets/nana.svg`, `nana-icon.svg`, the PWA PNGs, the sidebar, About, the install banner, public pages, and the chat mark now use the `rabbit-note` master. The favicon is a separate transparent, tightly cropped version of the same master: cream on dark chrome, ink on light chrome, no tile. The manifest separates `any` and `maskable` icons so the mark stays inside the safe circle.
 
 ## Research: what shaped the work
 
@@ -72,7 +71,7 @@ The shared lesson: the best icons are not illustrations with the detail turned d
 - **Baked corners and transparency on Apple.** The `icon.svg` tiles are for the web/PWA; the iOS master should be a full-bleed square PNG and let iOS apply the squircle. The integration notes below call this out.
 - **An inconsistent mark across surfaces.** Each direction ships one `favicon.svg`, one `icon.svg`, one `maskable.svg`, and one `monochrome.svg` from the same geometry. Do not mix the rabbit favicon with the monogram app icon.
 
-One deliberate choice: the favicons keep their tile instead of switching colours with `prefers-color-scheme`. The tab mark is identical in light and dark chrome, and third-party favicon services that rasterise once cannot capture the wrong theme.
+One deliberate choice for the shipped favicon: the tile is removed, the mark is cropped tight, and the paper colour switches with the app theme (cream on dark, ink on light). A tab is already a rounded surface; a second tile inside it made the mark look small. Third-party services that rasterise once still get a valid transparent PNG, and the in-app theme swap keeps the silhouette legible.
 
 ## The four directions
 
@@ -104,8 +103,8 @@ Three cream note cards standing as kanban columns, sharing a baseline. The middl
 
 A landscape note card with two long ears rising from behind it; the rabbit's face is cut into the paper; the top-right corner is folded in ember. The rabbit is the note, not a character holding one.
 
-- Best for: the install prompt, About, empty states, and marketing where the mark can be 48px or larger.
-- Small-size behaviour: the favicon is the rescaled 512 master. The face survives as a soft pair of eyes and nose; the ears are thinner at 16px than a dedicated glyph, but the character stays consistent.
+- Best for: the app/PWA icon, sidebar, About, install prompt, empty states, and marketing.
+- Small-size behaviour: the favicon is the transparent, tightly cropped 512 master, not a separate redraw. The face survives as cut-out eyes and a nose; the mark fills the tab slot on both dark and light chrome.
 - Watch out: a separate thick-ear/big-eye favicon was explored and rejected because it read as a different, uncanny character. Do not replace the master with a 16px redraw unless the silhouette is unmistakably the same rabbit.
 
 ## Ranking
@@ -116,58 +115,25 @@ The first test is 16px in a tab on both paper and graphite chrome. The second is
 | --- | --- | --- | --- | --- | --- | --- |
 | **1** | **Rabbit mark** | Strong | Excellent | Strong | Strong | The only direction that carries the existing mascot into the icon, and the head-plus-ears silhouette still reads at 16px. |
 | **2** | **N monogram** | Excellent | Good | Excellent | Excellent | The most reliable tiny icon and the best contrast on both surfaces. It loses the rabbit and reads more like a publishing tool. |
-| **3** | **Rabbit + note** | Fair | Excellent | Strong | Strong | The clearest story of the product, but the wide card weakens the ear silhouette at 16px. Better at 32px and up. |
+| **3** | **Rabbit + note** | Strong (selected) | Excellent | Strong | Strong | The clearest story of the product. The shipped transparent, cropped favicon fixes the original 16px weakness of the tiled version. |
 | **4** | **Note + board** | Fair | Good | Strong | Strong | The most product-specific mark, but at 16px the fold disappears and it can read as a bar chart. Best as a secondary glyph. |
 
-**Recommendation: the rabbit mark.** It is the best balance of brand continuity, a distinctive 16px silhouette, and a safe maskable crop. The monogram is the rational fallback if the rabbit feels too soft in real tabs or if the product needs a more neutral, writing-first identity. Do not mix the two as the app icon and favicon; pick one and use its `favicon.svg` for the tab.
+**Selected: rabbit + note.** It tells the product story — a note with the Nana rabbit — and the transparent, cropped favicon now fills the tab slot instead of shrinking inside a tile. The rabbit mark was the strongest pure-16px silhouette, but the selected direction keeps the character and the note together; that is the mark the product uses everywhere.
 
-If the ranking were based on pure 16px optics alone, the monogram would be first. The rabbit wins because the app icon is the one place the mascot has to survive outside the app, and the round head plus two ears is still unmistakably Nana at 16px.
+Do not mix directions as the app icon and favicon. The shipped favicon is the same rabbit-note geometry as the master, cropped and theme-aware.
 
-## If the rabbit is picked: integration checklist
+## Shipped integration
 
-Nothing below is done yet. This is the change set I would make.
+The rabbit-note direction is wired into the app:
 
-1. **Add the masters** under `src/assets/icons/` (or another server-served asset directory): `nana-icon.svg`, `nana-favicon.svg`, `nana-maskable.svg`, `nana-monochrome.svg`.
-2. **Generate rasters** from the SVG masters:
-   - `favicon.ico` — real multi-size ICO with 16, 32, and 48px frames, generated from `favicon.svg`.
-   - `apple-touch-icon.png` — 180×180, opaque, sRGB, no baked rounded corners. Use a full-bleed square version (the maskable master is a good base; a `square.svg` with the mark at 100% is slightly larger).
-   - `nana-192.png`, `nana-512.png` — `purpose: "any"`, transparent or opaque is fine.
-   - `nana-maskable-192.png`, `nana-maskable-512.png` — `purpose: "maskable"`, opaque, full-bleed.
-   - Optional: `mstile-150.png` for legacy pinned Windows sites.
-3. **Split the manifest purposes.** The current `"any maskable"` on one tight image is the main technical risk. Use separate `any`, `maskable`, and `monochrome` entries, and add the SVG:
-   ```json
-   {
-     "id": "/",
-     "start_url": "/timeline",
-     "icons": [
-       { "src": "/nana-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-       { "src": "/nana-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-       { "src": "/nana-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
-       { "src": "/nana-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
-       { "src": "/nana.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-       { "src": "/nana-monochrome.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "monochrome" }
-     ]
-   }
-   ```
-4. **Update both manifest sources.** `src/index.ts` serves a programmatic manifest; `src/manifest.webmanifest` is the static file. They currently disagree on `start_url` (`/timeline` vs `/`). Make them identical and pick one start URL.
-5. **Update `src/index.html`:**
-   ```html
-   <link rel="icon" href="/favicon.ico" sizes="32x32">
-   <link rel="icon" type="image/svg+xml" href="/nana-favicon.svg">
-   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-   <link rel="mask-icon" href="/nana-monochrome.svg" color="#ff7048">
-   ```
-   Keep the existing `theme-color` meta; `src/lib/theme.ts` already updates it in light mode.
-6. **Serve `/favicon.ico` as a real ICO**, not the SVG with `Content-Type: image/svg+xml`. Legacy consumers and some crawlers expect an ICO or PNG.
-7. **Add Windows metadata only if pinned sites matter:**
-   ```html
-   <meta name="msapplication-TileColor" content="#0c0c0d">
-   <meta name="msapplication-config" content="/browserconfig.xml">
-   ```
-   with a 150×150 tile. Windows 11 itself uses the app icon; the tile is for legacy pinned sites.
-8. **Keep the sidebar drawing.** The 512 icon has a baked rounded tile, which is right for a favicon/PWA icon and wrong for the 32px sidebar glyph. Use the transparent `monochrome.svg` (or a `mark.svg` with `fill="currentColor"`) for the sidebar, and keep the existing illustration for About/public pages if you want the full character. Do not put the tile behind the sidebar mascot.
-9. **Test the crop.** Use Chrome DevTools → Application → Icons → “Show only the minimum safe area for maskable icons”, and Maskable.app for circle, squircle, and teardrop masks. Check the 16px tab in light and dark, the iOS home screen, Android themed icons, and a Windows pinned tile if you ship the config.
-10. **Cache.** Keep the existing cache headers; hashed/immutable asset names are preferable for the raster set.
+1. **Masters.** `src/assets/nana-icon.svg` is the 512 app/PWA tile; `nana.svg` is a copy used by the sidebar, About, public pages, install banner, and chat mark. `nana-icon-maskable.svg` and `nana-icon-monochrome.svg` are separate files.
+2. **Favicon.** `src/assets/nana-favicon.svg` is the transparent cream version for dark chrome; `nana-favicon-light.svg` is the ink version for light chrome. Both use a tight `viewBox="68 44 376 376"` around the mark, with the eyes and nose as alpha cutouts.
+3. **Rasters.** `nana-favicon-16.png`, `-32.png`, `nana-favicon-light-16.png`, and `-32.png` are generated from the SVG geometry. `nana-192.png`, `nana-512.png`, the maskable pair, the 180px Apple touch icon, and the monochrome PNG are generated from the tile/maskable masters.
+4. **Theme swap.** `src/lib/theme.ts` updates every `link[data-favicon]` href when the resolved theme changes, so the favicon switches between the cream and ink glyphs with the app.
+5. **Manifest.** `src/index.ts` and `src/manifest.webmanifest` split `any`, `maskable`, and monochrome purposes. The app icon is `nana-icon.svg`.
+6. **HTML.** `src/index.html` links the bundled SVG/16/32 favicons with `data-favicon` slots; `/nana-favicon*` server routes provide the theme-specific files used by the swap.
+7. **Fallback.** `/favicon.ico` serves the 32px dark favicon PNG for consumers that request the legacy path. The SVG and PNG links are the primary path.
+8. **Sidebar and About.** Both use the master tile glyph. The mark is legible at 32px; the tile keeps the brand consistent with the app icon.
 
 ## Verification
 

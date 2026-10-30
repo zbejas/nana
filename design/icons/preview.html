@@ -377,12 +377,12 @@
   <section class="research" id="ranking">
     <div class="eyebrow">Recommendation</div>
     <h2>Ranked for the tab bar, then the home screen.</h2>
-    <p>The first test is 16px in a tab on both paper and graphite chrome. The second is whether the mark still says Nana without the wordmark. The rabbit wins on identity; the N wins on pure optical clarity. I would ship the rabbit as the product mark and keep the monogram as the disciplined fallback if the rabbit ever feels too soft in real tabs.</p>
+    <p>The first test is 16px in a tab on both paper and graphite chrome. The second is whether the mark still says Nana without the wordmark. <strong>Rabbit + note is selected.</strong> The shipped favicon drops the tile, crops the mark tightly, and switches between cream and ink paper with the app theme. The monogram remains the disciplined fallback if the rabbit ever feels too soft in real tabs.</p>
     <div class="rank-list">
       <div class="rank-row">
         <span class="n">01</span>
         <div><h3>Rabbit mark</h3><p class="why">best brand fit · strong 16px silhouette · safe mask</p></div>
-        <p>A solid head with two tall ears is still a rabbit at 16px, and it is the only direction that carries the existing mascot into the icon. The ember inner ear is the warm detail; the silhouette does the work. <strong>Recommend as the app icon.</strong></p>
+        <p>A solid head with two tall ears is still a rabbit at 16px, and it is the safest pure-16px silhouette. The ember inner ear is the warm detail; the silhouette does the work. It remains the fallback if the selected rabbit + note ever feels too soft in a real tab.</p>
       </div>
       <div class="rank-row">
         <span class="n">02</span>
@@ -391,8 +391,8 @@
       </div>
       <div class="rank-row">
         <span class="n">03</span>
-        <div><h3>Rabbit + note</h3><p class="why">best story · strongest at 32px+</p></div>
-        <p>The rabbit peeking over a note is the clearest one-sentence description of the product. At 16px the wide card softens the ear silhouette, so it is better for the install prompt, About, and marketing than for the smallest tab.</p>
+        <div><h3>Rabbit + note</h3><p class="why">selected · transparent cropped favicon</p></div>
+        <p>The rabbit peeking over a note is the clearest one-sentence description of the product. The shipped favicon removes the tile and crops the mark so it fills the tab slot; the master keeps the same geometry for the app, sidebar, About, and public pages.</p>
       </div>
       <div class="rank-row">
         <span class="n">04</span>
@@ -419,7 +419,7 @@
   </section>
 
   <footer>
-    <span>Nana icon directions · design/icons · not integrated</span>
+    <span>Nana icon directions · rabbit + note selected · shipped</span>
     <span>SVG masters · 512 viewBox · Graphite tokens</span>
   </footer>
 </div>
@@ -462,9 +462,10 @@ const directions = [
     name: "Rabbit + note",
     tag: "Mascot as page",
     blurb: "The rabbit becomes the note: two ears rise from a page, the page has a folded ember corner, and the face is cut into the paper. Iconic at 16, characterful at 128.",
-    small: "At 16px the page is a rounded rectangle with two ears; the face disappears. The folded corner is the only ember cue left.",
+    small: "The shipped favicon removes the tile and crops tight. At 16px the page fills the slot, the eyes and nose are alpha cutouts, and the cream/ink paper switches with the theme.",
+    faviconLight: "favicon-light.svg",
     palette: ["#0c0c0d", "#f5f3ef", "#ff7048"],
-    note: "The most literal story of the product, but the square page silhouette is slightly less immediate than the round rabbit head."
+    note: "Selected. The most literal story of the product; the transparent crop fixes the original 16px weakness."
   }
 ];
 
@@ -554,7 +555,7 @@ function tabs(d) {
     <div class="panel-head"><h3>Tab test / 16px</h3><span>favicon.svg, actual size</span></div>
     <div class="tab-row">
       <div class="tabs light">
-        <div class="tab active"><img src="${d.slug}/favicon.svg" alt=""><span>Nana — Notes</span><span class="x">×</span></div>
+        <div class="tab active"><img src="${d.slug}/${d.faviconLight || "favicon.svg"}" alt=""><span>Nana — Notes</span><span class="x">×</span></div>
       </div>
       <div class="tabs dark">
         <div class="tab active"><img src="${d.slug}/favicon.svg" alt=""><span>Nana — Notes</span><span class="x">×</span></div>
@@ -613,7 +614,7 @@ zoom.innerHTML = `
       <div class="zoom-card">
         <h4>${d.rank} / ${d.name}</h4>
         <div class="zoom-pair">
-          <div class="zoom-frame light"><span class="zoom"><img src="${d.slug}/favicon.svg" alt=""></span></div>
+          <div class="zoom-frame light"><span class="zoom"><img src="${d.slug}/${d.faviconLight || "favicon.svg"}" alt=""></span></div>
           <div class="zoom-frame dark"><span class="zoom"><img src="${d.slug}/favicon.svg" alt=""></span></div>
         </div>
       </div>`).join("")}

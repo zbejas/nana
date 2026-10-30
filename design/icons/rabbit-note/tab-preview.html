@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; font: 13px/1.4 system-ui, sans-serif; background: #777; }
+  .tabs { display: flex; flex-direction: column; gap: 0; border-radius: 10px; overflow: hidden; width: 620px; }
+  .tabbar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; }
+  .tabbar.dark { background: #202124; color: #e8eaed; }
+  .tabbar.light { background: #dee1e6; color: #202124; }
+  .tab { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; min-width: 230px; }
+  .dark .tab { background: #35363a; }
+  .light .tab { background: #f8f9fa; }
+  .tab img { width: 16px; height: 16px; display: block; }
+  .tab .label { font-weight: 500; }
+  .tab .close { margin-left: auto; opacity: .55; font-size: 12px; }
+  .plus { opacity: .6; font-size: 18px; }
+  .zoom { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; width: 620px; }
+  .card { background: #fff; border-radius: 10px; padding: 14px; }
+  .card.dark { background: #202124; color: #e8eaed; }
+  .card h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+  .row { display: flex; gap: 18px; align-items: flex-end; }
+  .pixel { image-rendering: pixelated; display: block; }
+  .p16 { width: 128px; height: 128px; }
+  .p32 { width: 128px; height: 128px; }
+  .slot { width: 16px; height: 16px; display: grid; place-items: center; }
+  .slot img { width: 16px; height: 16px; image-rendering: pixelated; }
+  .foot { margin-top: 14px; font-size: 11px; opacity: .65; }
+</style>
+</head>
+<body>
+  <div class="tabs">
+    <div class="tabbar dark">
+      <div class="tab"><img src="../../../src/assets/nana-favicon-16.png" alt="" /><span class="label">Nana</span><span class="close">×</span></div>
+      <div class="tab"><span class="plus">+</span></div>
+    </div>
+    <div class="tabbar light">
+      <div class="tab"><img src="../../../src/assets/nana-favicon-light-16.png" alt="" /><span class="label">Nana</span><span class="close">×</span></div>
+      <div class="tab"><span class="plus">+</span></div>
+    </div>
+  </div>
+  <div class="zoom">
+    <div class="card dark">
+      <h3>DARK TAB — 16px and 32px, pixelated 8×</h3>
+      <div class="row">
+        <img class="pixel p16" src="../../../src/assets/nana-favicon-16.png" alt="Nana dark 16px" />
+        <img class="pixel p32" src="../../../src/assets/nana-favicon-32.png" alt="Nana dark 32px" />
+      </div>
+      <div class="foot">Cream paper on transparent. Eyes and nose are cut out.</div>
+    </div>
+    <div class="card">
+      <h3>LIGHT TAB — 16px and 32px, pixelated 8×</h3>
+      <div class="row">
+        <img class="pixel p16" src="../../../src/assets/nana-favicon-light-16.png" alt="Nana light 16px" />
+        <img class="pixel p32" src="../../../src/assets/nana-favicon-light-32.png" alt="Nana light 32px" />
+      </div>
+      <div class="foot">Ink paper on transparent. Eyes and nose are cut out.</div>
+    </div>
+  </div>
+</body>
+</html>

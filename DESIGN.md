@@ -101,7 +101,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 ### Sidebar
 
-- Brand is the rabbit mascot glyph at 32px, plus the “Nana” wordmark and “Your workspace”. The wordmark starts on the navigation label line, and the mascot marks the sidebar edge. The app icon is the separate rabbit-note mark: a landscape note with two ears and an ember folded corner. It is used for the favicon, PWA any/maskable/monochrome icons, and install surfaces; the sidebar keeps the wordmark so the character stays recognisable at chrome size.
+- Brand is the rabbit-note app glyph at 32px, plus the “Nana” wordmark and “Your workspace”. The wordmark starts on the navigation label line, and the glyph marks the sidebar edge. The mark is a landscape note with two ears and an ember folded corner; the app tile is used in the sidebar, About, public pages, install surfaces, and PWA any/maskable/monochrome icons. The favicon is the same mark, cropped tight and transparent: cream on dark chrome, ink on light chrome, with no tile.
 - A full-width inverted `ink` **New** button sits under the brand and opens a Note/Board menu. It is global chrome, not the contextual primary action; page-level primary actions take `signal-bright`.
 - Primary navigation rows are 32px with 6px radius. The active row is `surface` with a hairline and an ember icon; inactive rows are transparent with muted icons. There are no inverted navigation chips.
 - Section labels are 11.5px medium muted: “Recent”, “Library”.
@@ -264,7 +264,7 @@ Rules:
 - **The auth cover is intentionally theme-invariant.** It uses `cover` tokens, not `canvas` or `ink`. Reusing `canvas` there makes the cover flip to light in the light theme and breaks the first-screen composition.
 - **Page-level cards never carry a shadow.** Only dialogs, sheets, side panels, menus, toasts, and the install banner use `shadow-float`.
 - **One family, no mono metadata.** UI counts, dates, percentages, and priorities use Geist with `tabular-nums`. `font-mono` is reserved for code, ids, and URLs.
-- **The rabbit is not a chrome glyph.** The wordmark and ink tile lead the shell; the mascot stays in About, public pages, the install prompt, and the app icons so it is not rendered as an indistinct 24px blob.
+- **The rabbit is not a 24px chrome glyph.** The rabbit-note app tile and wordmark lead the shell; the favicon uses the tight, transparent mark, and the full mascot stays in About, public pages, the install prompt, and the app icons so it is never an indistinct blob.
 
 ## Related docs
 
