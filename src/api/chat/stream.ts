@@ -1,5 +1,6 @@
 import {
     sanitizeChatUsage,
+    sanitizeToolError,
     type ChatEditDto,
     type ChatPart,
     type ChatSource,
@@ -196,18 +197,22 @@ export class ChatStreamState {
         const entry = this.tools.get(id);
         if (!entry || entry.status === "error") return;
         entry.status = ok ? "success" : "error";
-        if (error) entry.error = error;
-        this.setPartStatus(id, entry.status);
+        if (!ok) {
+            const safeError = sanitizeToolError(error);
+            if (safeError) entry.error = safeError;
+        }
+        this.setPartStatus(id, entry.status, entry.error);
     }
 
-    addToolError(id: string, name: string, error: string): void {
+    addToolError(id: string, name: string, error?: string): void {
         if (!id) return;
         this.addToolStart(id, name);
         const entry = this.tools.get(id);
         if (!entry) return;
         entry.status = "error";
-        entry.error = error;
-        this.setPartStatus(id, "error");
+        const safeError = sanitizeToolError(error);
+        if (safeError) entry.error = safeError;
+        this.setPartStatus(id, "error", entry.error);
     }
 
     addEdit(edit: ChatEditDto): void {
@@ -229,10 +234,17 @@ export class ChatStreamState {
         return parts;
     }
 
-    private setPartStatus(id: string, status: ChatToolStatus): void {
+    private setPartStatus(id: string, status: ChatToolStatus, error?: string): void {
         const index = this.partIndexes.get(id);
         const part = index === undefined ? undefined : this.parts[index];
-        if (part?.type === "tool") part.status = status;
+        if (part?.type !== "tool") return;
+        part.status = status;
+        const safeError = status === "error" ? sanitizeToolError(error) : undefined;
+        if (safeError) {
+            part.error = safeError;
+        } else {
+            delete part.error;
+        }
     }
 
     toolEvents(): ToolEventPayload[] {
@@ -247,15 +259,23 @@ export class ChatStreamState {
             }));
     }
 
-    /** Collapse per-call statuses to the persisted name/status contract. */
-    toolActivity(): ChatToolActivity[] {
+    /**
+     * Collapse per-call statuses to the persisted name/status contract. The
+     * optional errors flag is used by the stream pump for the stored `tools`
+     * summary; the compact unit-facing default keeps the historical shape.
+     */
+    toolActivity(includeErrors = false): ChatToolActivity[] {
         const byName = new Map<string, ChatToolActivity>();
         for (const event of this.toolEvents()) {
             const existing = byName.get(event.name);
             if (!existing || event.status === "error") {
+                const status = event.status === "running" ? "error" : event.status;
                 byName.set(event.name, {
                     name: event.name,
-                    status: event.status === "running" ? "error" : event.status,
+                    status,
+                    ...(includeErrors && status === "error"
+                        ? { error: event.error ?? "The tool did not finish." }
+                        : {}),
                 });
             }
         }

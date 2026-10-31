@@ -15,7 +15,7 @@ The Docker suite runs both layers in an isolated container with a disposable dat
 | `tests/pocketbase/guards/` | Collection rules and request guards: users, trash views, tasks, boards, relation integrity. |
 | `tests/pocketbase/hooks/` | Document hooks: stats, cascades. |
 | `tests/pocketbase/routes/` | Custom PocketBase routes: trash, admin, public shares, check-users, folder board rehoming. |
-| `tests/api/` | Bun routes plus chat read/write tools, Elysia `/api/v1`, MCP, and version history: app version, versions, export, chat, security, static, rest, mcp. |
+| `tests/api/` | Bun routes plus chat read/write/group tools, Elysia `/api/v1`, MCP, and version history: app version, versions, export, chat, security, static, rest, mcp. |
 | `tests/helpers/setup.ts` | URLs, credentials, auth, signup, unique names. |
 | `tests/helpers/client.ts` | HTTP and PocketBase collection helpers with status assertions. |
 | `tests/helpers/factories.ts` | Isolated users and records for integration files. |
@@ -44,8 +44,10 @@ tests/
     chat-context.test.ts
     chat-input-schemas.test.ts
     chat-stream.test.ts
+    chat-tool-errors.test.ts
     chat-tools-text.test.ts
     chat-version-token.test.ts
+    collab-session.test.ts
     collaboration-merge.test.ts
     collaboration-text.test.ts
     document-utils.test.ts
@@ -74,9 +76,11 @@ tests/
   api/
     api-keys.test.ts
     chat-attachments.test.ts
+    chat-group.test.ts
     chat-tools.test.ts
     chat-write-tools.test.ts
     chat.test.ts
+    collab-persistence.test.ts
     collaboration.test.ts
     export.test.ts
     mcp.test.ts
@@ -97,7 +101,7 @@ Numeric prefixes in `pocketbase/guards/` preserve the bootstrap ordering. Do not
 | --- | --- | --- | --- |
 | Unit | `tests/unit/` | Imported modules only | Parsing, formatting, bounds, schemas, sanitizers, pure builders, privacy tree walks. |
 | PocketBase integration | `tests/pocketbase/` | Real PocketBase on loopback | Rules, guards, hooks, migrations, custom PocketBase routes, folder board rehoming. |
-| Bun integration | `tests/api/` | Real Bun origin + real PocketBase | Bun routes, security headers, export, chat read/write tools, typed Elysia `/api/v1`, browser facade, MCP. |
+| Bun integration | `tests/api/` | Real Bun origin + real PocketBase | Bun routes, security headers, export, chat read/write/group tools, typed Elysia `/api/v1`, browser facade, MCP. |
 
 Unit tests must not import a module that performs network I/O at import time. Integration tests must not replace PocketBase or Bun with a fake.
 
@@ -138,7 +142,7 @@ Do not point the test stack at real data. The entrypoint deletes and recreates i
 | 3/4 Hooks + routes | `hooks/` + `routes/` | Hooks and custom routes after bootstrap; admin tests restore global settings when done. |
 | 4/4 Bun API | `api/` | Routes, export, chat, tools, typed REST, browser facade, and MCP after PocketBase is seeded. |
 
-The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000034_disable_auth_alerts.js` applied. There is no separate "apply migration" step in a test file.
+The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000035_group_chat.js` applied. There is no separate "apply migration" step in a test file.
 
 On failure the entrypoint prints the tail of both server logs. On success it reports per-phase and total duration.
 
@@ -264,7 +268,13 @@ Rules:
 | Chat attachment upload, magic-byte/type checks, limits, ownership, drafts, binding | `tests/api/chat-attachments.test.ts` + `tests/unit/chat-attachments.test.ts` |
 | Chat read tool, bounds, or scoping | `tests/api/chat-tools.test.ts` + `tests/unit/chat-*` |
 | Chat write tool, revision, edit card, or undo | `tests/api/chat-write-tools.test.ts` + `tests/unit/chat-version-token.test.ts` |
+| Shared-note status/access, group conversation, sender labels, paused history | `tests/api/chat-group.test.ts` |
+| Shared-note bound-note tools and view/edit scope | `tests/api/chat-write-tools.test.ts` |
+| Shared-note group rules and unique note conversation | `tests/api/chat-group.test.ts` |
+| Live-room read flush, merge, metadata adoption, hard-error stop | `tests/api/collab-persistence.test.ts` + `tests/api/collaboration.test.ts` |
+| Bounded tool-error persistence and flattening | `tests/api/chat.test.ts` + `tests/unit/chat-tool-errors.test.ts` |
 | Chunked/named chat SSE encoding | `tests/unit/chat-stream.test.ts` |
+| Tab-resume reconnect threshold and no reload | No dedicated file yet; add to `tests/unit/collab-session.test.ts` |
 | Chat route context, private branch, or context payload | `tests/unit/chat-context.test.ts` |
 | AI private lock, hidden-folder subtrees, filters | `tests/unit/ai-visibility.test.ts` + `tests/unit/api-key-scope.test.ts` + `tests/api/chat-tools.test.ts` + `tests/api/mcp.test.ts` + `tests/api/rest-api.test.ts` |
 | Export format, filename, folder path, attachment | `tests/api/export.test.ts` + `tests/unit/export-documents.test.ts` |
@@ -303,14 +313,35 @@ Rules:
 | Area | Assertions |
 | --- | --- |
 | Registry | Ask mode omits every write tool and keeps `list_tasks`; Work mode registers the full write allowlist, including folder/note/board move, rename, and trash tools. |
-| Context | Server-resolved titles; foreign, private, and private-folder contexts return `404`; wrong type is `400`. |
+| Context | Server-resolved titles; foreign, private, and private-folder contexts return `404`; a shared document with a person grant is allowed and becomes a strict note scope; wrong type is `400`. |
 | Notes | `create_note` stamps `last_edit_source: "ai"`/`last_edited_by: "Nana"`; `append_note` and `edit_note` carry untouched content through and store the pre-edit snapshot in `chat_edits.operations.before`; stale revisions return `conflict`; missing/ambiguous anchors abort; private notes and private-folder notes return `not_found`; `move_note` changes the folder and refuses a private destination. |
 | Folders | Create, rename, and move a folder; the parent relation is persisted. |
 | Boards/tasks | Board creation, board rename/move, folder creation, task create/update/move, trashed-board conflict, invalid status, foreign task `not_found`, and `actor_type: "ai"` task activity. |
 | Delete approval | A delete tool creates `pending` and leaves the target untouched; confirm trashes the target; cancel leaves it untouched; another user cannot confirm. |
-| Cards/undo | Edit rows list oldest first; only the conversation owner can read or undo; created-note undo trashes and repeated undo is a no-op; note-edit undo restores the snapshot and repeated undo does not bump the revision again. |
+| Cards/undo | Edit rows list oldest first; undo/confirm/cancel are conversation-owner only; created-note undo trashes and repeated undo is a no-op; note-edit undo restores the snapshot and repeated undo does not bump the revision again. |
 
 The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), named/legacy SSE encoding (`tests/unit/chat-stream.test.ts`), route context derivation (`tests/unit/chat-context.test.ts`), revision tokens (`tests/unit/chat-version-token.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), API key token/scope helpers (`tests/unit/api-key-scope.test.ts`), and the git version store (`tests/unit/versioning-store.test.ts`).
+
+Shared-note chat has a dedicated integration file, `tests/api/chat-group.test.ts`:
+
+| Area | Assertions covered |
+| --- | --- |
+| Status/access | Unshared owner is `not_shared`; owner and view grantee see one enabled thread; editor sees `edit`; public-link-only note is disabled for the owner and `404` for an outsider. |
+| Group identity | Server-created conversation uses the note owner as `author`; viewer/editor starts return the same thread with `can_manage: false`; one note row is enforced by the unique index. |
+| Paused history | After unshare the owner keeps the thread and gets `409 note_not_shared` on send; the grantee's status becomes `404`; trashing the note returns `409 note_trashed`. |
+| Validation | Attachments and regeneration return `400 group_attachments_unsupported` / `400 group_regenerate_unsupported`. |
+| Sender/transcript | A user row stores `author`/`author_label`; the returned history carries `authorId`/`authorLabel`; an assistant row has no author; an outsider gets `404`/empty messages; a forged author row fails. |
+| Isolation | Another user's personal conversation is `404`/empty for a grantee. |
+
+`tests/api/chat-write-tools.test.ts` adds the registry and scope assertions: strict `view` registers only `read_note`; strict `edit` registers `read_note` plus the three note write tools and no workspace tools; a grantee can read/edit the bound note, while a view scope or a different note id returns `not_found`. `tests/api/chat.test.ts` verifies bounded tool-error persistence, and `tests/unit/chat-tool-errors.test.ts` covers flattening and the 200-character bound.
+
+`tests/api/collab-persistence.test.ts` covers the room merge, metadata-only revision adoption, hard persistence error, explicit flush, and the new `read_note` pre-read flush. These gaps remain on this branch:
+
+| Gap | Intended assertion |
+| --- | --- |
+| Unauthorized read flush | A caller without access to a live note cannot make `read_note` flush that room; the tool returns `not_found` before the flush. |
+| AI write adoption | A chat/tool write against a note with a live room merges concurrent local text, applies one server-origin diff, and returns the external/final revision; the editor does not re-apply the fetched body. |
+| Tab resume | `CollabSession` reconnects after 30 seconds hidden, keeps shorter hides connected, uses the `pagehide`/`pageshow` path, and `App.tsx` has no inactivity `window.location.reload()`. |
 
 ### REST and MCP coverage
 
@@ -397,6 +428,7 @@ The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.te
 - **The suite is not mocked.** A unit test does not prove a guard, route, or tool is wired. Add the integration assertion.
 - **The suite starts from an empty database.** It exercises the current schema, not legacy upgrade paths. To verify the `0000018` task-to-board backfill, migrate a disposable data directory to `0000017`, create a user and a boardless task, apply `0000018`, then confirm the task lands on that author's `My board` with its status and order intact. To verify `0000022`, migrate a disposable directory to `0000021`, create a trashed document/folder, a legacy version row, and a conversation with messages, apply `0000022`, then confirm the rows are soft-deleted with their original ids, attachments still resolve through the trash view, the conversation messages are records, and `tasks.author`/`document_versions.created_by` are gone. To verify `0000032`, migrate a disposable directory to `0000031`, create a note, apply `0000032`, then confirm `document_versions` and `documents.published` are gone and `trash_documents` still returns trashed notes without the removed column.
 - **The Docker suite applies the full migration head automatically.** The entrypoint runs `migrate up` on a fresh database, so REST, MCP, chat, and trash tests see soft-delete fields, the `messages` collection, the trash views, relation indexes, immutable authors, and the share-token unique indexes without an explicit migration step.
+- **`0000035` has a data backfill, not just schema.** Verify it on a disposable database migrated to `0000034` with an existing personal conversation and user/assistant messages: apply `0000035`, confirm every conversation has `scope = "personal"`, each user message has the conversation author and a name label, assistant rows have no author, and a second `scope: "note"` row for the same document is rejected by the unique index.
 - **Private fixtures need their owner.** The private-lock tests must read as the owner. A second user seeing `not_found` proves cross-author scoping, not the private lock; use `createUser()` and the owner's token for the private cases.
 - **MCP tests must `POST`.** A `GET /mcp` returns `405`; the test helper must send a JSON-RPC body with the user token and assert the tool result, not an HTTP error, for workspace failures.
 - **Browser fixtures use loopback PocketBase; public behavior uses Bun.** `pbRequest()` targets `127.0.0.1:8090` for setup, hook, guard, and route assertions. Public-facing browser behavior must go through `/api/v1` (`BROWSER_API`) so a deleted `/pb` route cannot hide behind a direct-PB test.

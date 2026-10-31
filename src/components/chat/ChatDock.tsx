@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAtom } from 'jotai';
+import { useAtom, useAtomValue } from 'jotai';
 import {
   ChatBubbleLeftRightIcon,
   PlusIcon,
@@ -17,18 +17,24 @@ import { CHAT_HISTORY_WIDTH, MIN_CHAT_DOCK_WIDTH } from '../../lib/settings';
 import { ChatDockResizeHandle } from './ChatDockResizeHandle';
 import { NanaMark } from './NanaMark';
 import { ChatHistory } from './ChatHistory';
+import { ChatScopeTabs } from './ChatScopeTabs';
 import { ChatThread } from './ChatThread';
 import { getAiEditing, setAiEditing } from '../../lib/chat/presence';
 import {
+  getChatSnapshot,
+  loadNoteChatStatus,
   refreshStatus,
   setActiveConversation,
   setChatMode,
+  setChatScope,
   startNewConversation,
   useChatStore,
 } from '../../lib/chat/store';
+import { deriveChatContext } from '../../lib/chat/context';
 import { useChatViewportHeight, useIsMobileChat } from '../../lib/chat/viewport';
 import { findChatModel } from '../../lib/chat/models';
 import { useBackToClose } from '../../lib/useBackToClose';
+import { sharingRealtimeTickAtom } from '../../state/sharing';
 
 interface ChatDockProps {
   /** Total dock width. Includes the history column when it is open. */
@@ -55,6 +61,10 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const conversationIdAtom = useChatStore((snapshot) => snapshot.conversationId);
   const conversation = useChatStore((snapshot) => snapshot.conversation);
   const mode = useChatStore((snapshot) => snapshot.mode);
+  const scope = useChatStore((snapshot) => snapshot.scope);
+  const noteChatStatus = useChatStore((snapshot) => snapshot.noteChatStatus);
+  const noteChatLoading = useChatStore((snapshot) => snapshot.noteChatLoading);
+  const noteChatError = useChatStore((snapshot) => snapshot.noteChatError);
   const status = useChatStore((snapshot) => snapshot.status);
   const selectedModelId = useChatStore((snapshot) => snapshot.selectedModelId);
   const statusLoading = useChatStore((snapshot) => snapshot.statusLoading);
@@ -68,6 +78,14 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const mounted = useRef(false);
   const lastConversationAtom = useRef<string | null>(null);
   const previousPathRef = useRef(location.pathname);
+  const noteChoice = useRef<Set<string>>(new Set());
+  const routeContext = useMemo(
+    () => deriveChatContext(location.pathname),
+    [location.pathname],
+  );
+  const noteId = routeContext?.type === 'document' ? routeContext.id : null;
+  const previousNoteId = useRef<string | null>(noteId);
+  const sharingTick = useAtomValue(sharingRealtimeTickAtom);
 
   const isChatRoute = location.pathname.startsWith('/chat');
   const visible = open && !isChatRoute;
@@ -76,6 +94,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const historyWidth = historyVisible ? CHAT_HISTORY_WIDTH : 0;
   const baseWidth = Math.max(MIN_CHAT_DOCK_WIDTH, width - historyWidth);
   const maxBaseWidth = Math.max(MIN_CHAT_DOCK_WIDTH, maxWidth - historyWidth);
+  const askOnly = scope === 'note' && noteChatStatus?.canEdit === false;
 
   const handleResizeStart = useCallback(() => setResizing(true), [setResizing]);
   const handleResizeEnd = useCallback(() => setResizing(false), [setResizing]);
@@ -125,15 +144,47 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Rehydrate the persisted conversation when the dock is opened.
+  // Rehydrate the persisted personal conversation when the dock is opened.
   useEffect(() => {
-    if (!open) return;
+    if (!open || scope === 'note') return;
     const persisted = conversationIdAtom;
     if (persisted && lastConversationAtom.current !== persisted) {
       lastConversationAtom.current = persisted;
       setActiveConversation(persisted);
     }
-  }, [open, conversationIdAtom]);
+  }, [open, conversationIdAtom, scope]);
+
+  // Load shared-chat availability when the note changes or the dock opens.
+  // Leaving a note route always returns the dock to the personal chat.
+  useEffect(() => {
+    const previous = previousNoteId.current;
+    previousNoteId.current = noteId;
+    if (scope === 'note' && previous !== noteId) {
+      setChatScope('personal');
+    }
+    if (!open || !noteId) return;
+
+    let cancelled = false;
+    void loadNoteChatStatus(noteId).then((status) => {
+      if (cancelled || !status) return;
+      const current = getChatSnapshot();
+      if (current.scope !== 'personal') return;
+      if (noteChoice.current.has(noteId) && (status.enabled || status.conversation)) {
+        setChatScope('note');
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+    // scope is read at trigger time; status changes must not re-run this load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteId, open, sharingTick]);
+
+  // A view-only shared note cannot offer Work mode.
+  useEffect(() => {
+    if (askOnly && mode === 'edit') setChatMode('ask');
+  }, [askOnly, mode]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -220,8 +271,21 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   };
 
   const newChat = () => {
+    if (noteId) noteChoice.current.delete(noteId);
     startNewConversation();
     setHistorySheetOpen(false);
+    setResetSignal((value) => value + 1);
+    setFocusSignal((value) => value + 1);
+  };
+
+  const selectScope = (next: 'personal' | 'note') => {
+    if (next === 'note') {
+      if (!noteId) return;
+      noteChoice.current.add(noteId);
+    } else if (noteId) {
+      noteChoice.current.delete(noteId);
+    }
+    setChatScope(next);
     setResetSignal((value) => value + 1);
     setFocusSignal((value) => value + 1);
   };
@@ -325,23 +389,32 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
               </div>
 
               <div className="flex items-center gap-1 px-3 pb-2.5 pt-2">
-                <SegmentedControl
-                  label="Chat mode"
-                  size="sm"
-                  className="chat-mode-control"
-                  value={mode}
-                  onChange={setChatMode}
-                  options={[
-                    { value: 'edit', label: 'Work', title: 'Work — Nana can read and change folders, notes, boards, and tasks' },
-                    { value: 'ask', label: 'Ask', title: 'Ask — Nana only reads notes and boards' },
-                  ]}
-                />
+                {askOnly ? (
+                  <span
+                    className="inline-flex h-[30px] items-center rounded-control border border-line bg-surface-sunken px-2.5 text-[12px] font-medium text-ink-muted"
+                    title="Shared chats on this note are read-only"
+                  >
+                    Ask only
+                  </span>
+                ) : (
+                  <SegmentedControl
+                    label="Chat mode"
+                    size="sm"
+                    className="chat-mode-control"
+                    value={mode}
+                    onChange={setChatMode}
+                    options={[
+                      { value: 'edit', label: 'Work', title: 'Work — Nana can read and change folders, notes, boards, and tasks' },
+                      { value: 'ask', label: 'Ask', title: 'Ask — Nana only reads notes and boards' },
+                    ]}
+                  />
+                )}
                 <div className="ml-auto flex items-center gap-0.5">
                   <button
                     type="button"
                     onClick={newChat}
                     aria-label="New chat"
-                    title="New chat"
+                    title={scope === 'note' ? 'Start a new personal chat' : 'New chat'}
                     className="flex h-11 w-11 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink sm:h-7 sm:w-7"
                   >
                     <PlusIcon className="h-4 w-4" aria-hidden="true" />
@@ -363,6 +436,21 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
                   </button>
                 </div>
               </div>
+
+              {noteId && (
+                <div className="flex min-w-0 items-center px-3 pb-2.5">
+                  <ChatScopeTabs
+                    scope={scope}
+                    onChange={selectScope}
+                    noteReady={Boolean(noteChatStatus)}
+                    noteEnabled={noteChatStatus?.enabled === true}
+                    noteLoading={noteChatLoading}
+                    noteReason={noteChatStatus?.reason ?? null}
+                    noteError={noteChatError}
+                    className="max-w-full"
+                  />
+                </div>
+              )}
             </header>
 
             <ChatThread

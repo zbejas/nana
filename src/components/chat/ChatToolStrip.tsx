@@ -13,6 +13,7 @@ interface ChatToolStripProps {
   tools: ChatUiTool[];
   edits?: ChatUiEdit[];
   streaming?: boolean;
+  canManage?: boolean;
   onUndoEdit?: (id: string) => void;
   onConfirmDelete?: (id: string) => void;
   onCancelDelete?: (id: string) => void;
@@ -77,10 +78,17 @@ function runningLabel(tool: ChatUiTool): string {
 function summarize(tools: ChatUiTool[]): string {
   if (tools.length === 0) return 'Checked the workspace';
 
+  const successful = tools.filter((tool) => tool.status === 'success' && !tool.error);
+  const failed = tools.filter((tool) => tool.status === 'error' || Boolean(tool.error));
+  if (successful.length === 0) {
+    const count = failed.length || tools.length;
+    return count === 1 ? '1 tool call failed' : `${count} tool calls failed`;
+  }
+
   const groups = new Map<string, Map<ToolMeta['noun'], number>>();
   const order: string[] = [];
 
-  for (const tool of tools) {
+  for (const tool of successful) {
     const meta = metaFor(tool.name);
     if (!groups.has(meta.verb)) {
       groups.set(meta.verb, new Map());
@@ -108,6 +116,7 @@ function summarize(tools: ChatUiTool[]): string {
     });
   }
 
+  if (failed.length > 0) parts.push(`${failed.length} failed`);
   return parts.join(' · ') || 'Checked the workspace';
 }
 
@@ -138,7 +147,7 @@ function toolStatus(tool: ChatUiTool): { label: string; className: string } {
   if (tool.status === 'running') {
     return { label: 'Running', className: 'border-signal/25 bg-signal-soft text-signal' };
   }
-  if (tool.status === 'error') {
+  if (tool.status === 'error' || tool.error) {
     return { label: 'Failed', className: 'border-danger/25 bg-danger-soft text-danger' };
   }
   return { label: 'Done', className: 'border-line bg-surface-sunken text-ink-muted' };
@@ -157,6 +166,7 @@ export function ChatToolStrip({
   tools,
   edits = [],
   streaming = false,
+  canManage = true,
   onUndoEdit,
   onConfirmDelete,
   onCancelDelete,
@@ -198,7 +208,7 @@ export function ChatToolStrip({
 
   if (tools.length === 0 && edits.length === 0) return null;
 
-  const failed = tools.some((tool) => tool.status === 'error')
+  const failed = tools.some((tool) => tool.status === 'error' || Boolean(tool.error))
     || edits.some((edit) => edit.status === 'failed' || edit.status === 'conflict');
   const pending = edits.some((edit) => edit.status === 'pending');
   const dotClass = running
@@ -213,7 +223,9 @@ export function ChatToolStrip({
     : tools.length > 0
       ? summarize(tools)
       : editSummary(edits);
-  const canExpand = edits.length > 0 || tools.length > 1;
+  const canExpand = edits.length > 0
+    || tools.length > 1
+    || tools.some((tool) => tool.status === 'error' || Boolean(tool.error));
 
   return (
     <div className="mb-3" role="status" aria-live="polite">
@@ -243,7 +255,7 @@ export function ChatToolStrip({
           {tools.map((tool, index) => {
             const presentation = toolPresentation(tool);
             const status = toolStatus(tool);
-            const dotClass = tool.status === 'error'
+            const dotClass = tool.status === 'error' || tool.error
               ? 'bg-danger'
               : tool.status === 'running'
                 ? 'bg-signal animate-pulse'
@@ -264,6 +276,11 @@ export function ChatToolStrip({
                   </span>
                   <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 </div>
+                {tool.error && (
+                  <p className="mb-1 break-words pl-[1.15rem] pr-1.5 text-[11px] leading-relaxed text-danger">
+                    {tool.error}
+                  </p>
+                )}
               </li>
             );
           })}
@@ -274,6 +291,7 @@ export function ChatToolStrip({
             <li key={edit.id}>
               <ChatEditCard
                 edit={edit}
+                canManage={canManage}
                 onUndo={(id) => onUndoEdit?.(id)}
                 onConfirm={(id) => onConfirmDelete?.(id)}
                 onCancel={(id) => onCancelDelete?.(id)}

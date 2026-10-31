@@ -5,6 +5,7 @@ import { Button, IconButton, PageHeader, PageShell, SegmentedControl, Sheet } fr
 import { ChatHistory } from '../components/chat/ChatHistory';
 import { ChatThread } from '../components/chat/ChatThread';
 import {
+  loadNoteChatStatus,
   refreshStatus,
   setActiveConversation,
   setChatMode,
@@ -33,10 +34,17 @@ export function ChatPage() {
   const storeConversationId = useChatStore((snapshot) => snapshot.conversationId);
   const initialConversationId = useRef<string | null>(conversationId ? null : storeConversationId);
   const mode = useChatStore((snapshot) => snapshot.mode);
+  const scope = useChatStore((snapshot) => snapshot.scope);
+  const noteChatStatus = useChatStore((snapshot) => snapshot.noteChatStatus);
   const status = useChatStore((snapshot) => snapshot.status);
   const selectedModelId = useChatStore((snapshot) => snapshot.selectedModelId);
   const statusLoading = useChatStore((snapshot) => snapshot.statusLoading);
   const statusError = useChatStore((snapshot) => snapshot.statusError);
+  const groupChat = scope === 'note'
+    || conversation?.scope === 'note'
+    || Boolean(conversation?.documentId);
+  const groupDocumentId = conversation?.documentId;
+  const askOnly = groupChat && noteChatStatus?.canEdit === false;
 
   useEffect(() => {
     if (conversationId) {
@@ -61,6 +69,15 @@ export function ChatPage() {
     void refreshStatus();
   }, []);
 
+  // A deep link can open a shared note conversation directly. Load its access
+  // status so the page uses the same paused/read-only rules as the dock.
+  useEffect(() => {
+    if (groupDocumentId) void loadNoteChatStatus(groupDocumentId);
+  }, [groupDocumentId]);
+
+  useEffect(() => {
+    if (askOnly && mode === 'edit') setChatMode('ask');
+  }, [askOnly, mode]);
   // A new conversation gets its id from the response header. Keep the URL in
   // sync while the stream is still running.
   useEffect(() => {
@@ -126,7 +143,9 @@ export function ChatPage() {
           <PageHeader
             title={conversation?.title || 'Chat'}
             description={conversationId
-              ? 'Grounded in your workspace.'
+              ? groupChat
+                ? 'One conversation for everyone with access to this note.'
+                : 'Grounded in your workspace.'
               : mode === 'edit'
                 ? 'Ask, or tell Nana what to change.'
                 : 'Ask your notes and boards.'}
@@ -138,16 +157,25 @@ export function ChatPage() {
             }
             actions={
               <>
-                <SegmentedControl
-                  label="Chat mode"
-                  value={mode}
-                  onChange={setChatMode}
-                  className="chat-mode-control"
-                  options={[
-                    { value: 'edit', label: 'Work', title: 'Work — Nana can read and change folders, notes, boards, and tasks' },
-                    { value: 'ask', label: 'Ask', title: 'Ask — Nana only reads notes and boards' },
-                  ]}
-                />
+                {askOnly ? (
+                  <span
+                    className="inline-flex h-8 items-center rounded-control border border-line bg-surface-sunken px-2.5 text-[12.5px] font-medium text-ink-muted"
+                    title="Shared chats on this note are read-only"
+                  >
+                    Ask only
+                  </span>
+                ) : (
+                  <SegmentedControl
+                    label="Chat mode"
+                    value={mode}
+                    onChange={setChatMode}
+                    className="chat-mode-control"
+                    options={[
+                      { value: 'edit', label: 'Work', title: 'Work — Nana can read and change folders, notes, boards, and tasks' },
+                      { value: 'ask', label: 'Ask', title: 'Ask — Nana only reads notes and boards' },
+                    ]}
+                  />
+                )}
                 <Button
                   variant="secondary"
                   icon={<PlusIcon />}

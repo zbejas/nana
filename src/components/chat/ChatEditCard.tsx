@@ -14,6 +14,8 @@ import type { ChatUiEdit } from '../../lib/chat/types';
 
 interface ChatEditCardProps {
   edit: ChatUiEdit;
+  /** False for a shared-chat grantee: writes would 404. */
+  canManage?: boolean;
   onUndo: (id: string) => void;
   onConfirm?: (id: string) => void;
   onCancel?: (id: string) => void;
@@ -85,7 +87,7 @@ function sectionLabel(heading: string | null, path: string[]): string {
 }
 
 /** One applied write or one destructive action, rendered inside the tool disclosure. */
-export function ChatEditCard({ edit, onUndo, onConfirm, onCancel }: ChatEditCardProps) {
+export function ChatEditCard({ edit, canManage = true, onUndo, onConfirm, onCancel }: ChatEditCardProps) {
   const [now, setNow] = useState(() => Date.now());
   const [expanded, setExpanded] = useState(
     edit.status === 'pending' || edit.status === 'failed' || edit.status === 'conflict',
@@ -217,7 +219,7 @@ export function ChatEditCard({ edit, onUndo, onConfirm, onCancel }: ChatEditCard
               </span>
             )}
 
-            {isPending && (
+            {isPending && canManage && (
               <div className="ml-auto flex items-center gap-1.5">
                 <Button
                   variant="ghost"
@@ -240,7 +242,13 @@ export function ChatEditCard({ edit, onUndo, onConfirm, onCancel }: ChatEditCard
               </div>
             )}
 
-            {!isPending && edit.status === 'applied' && edit.undo.available && (
+            {isPending && !canManage && (
+              <span className="ml-auto text-[11px] text-ink-muted">
+                Waiting for the note owner to confirm.
+              </span>
+            )}
+
+            {canManage && !isPending && edit.status === 'applied' && edit.undo.available && (
               <Button
                 variant="ghost"
                 size="sm"

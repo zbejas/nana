@@ -90,7 +90,7 @@ import {
 } from "./writes";
 import { ChatRunRecorder } from "./recorder";
 import type { ToolContext } from "./http";
-import type { ChatMode } from "../types";
+import type { ChatMode, ChatNoteScope } from "../types";
 
 const log = createLogger("ChatTools");
 
@@ -104,6 +104,8 @@ export interface ChatToolOptions {
     mode?: ChatMode;
     recorder?: ChatRunRecorder;
     conversationId?: string;
+    /** Strict shared-note scope: only the bound note may be read or changed. */
+    noteScope?: ChatNoteScope;
 }
 
 function resultCount(result: unknown): number {
@@ -180,12 +182,13 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
         read_note: tool({
             description:
                 "Read a bounded Markdown line window from one note id returned by list_notes. " +
+                "In a shared note chat, only the attached note is available. " +
                 "Use offset/nextOffset to page through long notes. Never guess note ids. " +
                 "The result includes `revision` and `versionToken`; pass either back as expectedRevision when editing.",
             inputSchema: readNoteInputSchema,
             execute: instrument<ReadNoteInput, Awaited<ReturnType<typeof readNote>>>(
                 "read_note",
-                (input, signal) => readNote(context, input, signal),
+                (input, signal) => readNote(context, input, signal, options.noteScope),
                 (result) => {
                     if (!isOk(result)) return;
                     const note = result as ReadNoteResult;
@@ -265,9 +268,66 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
         }),
     };
 
+    if (options.noteScope?.strict) {
+        // Shared-note chat: only the bound note exists for this model. Listing,
+        // moving, deleting, boards, tasks, and folders are not registered at
+        // all, so prompt injection cannot reach the rest of the workspace.
+        const scopedRead: ToolSet = {
+            read_note: readTools.read_note!,
+        };
+        if (mode !== "edit" || options.noteScope.accessLevel < 3) {
+            return scopedRead;
+        }
+
+        const write = {
+            context,
+            recorder,
+            conversationId: options.conversationId,
+            noteScope: options.noteScope,
+        };
+        return {
+            ...scopedRead,
+            append_note: tool({
+                description:
+                    "Append Markdown to the end of the shared note. Requires the revision or versionToken from read_note. " +
+                    "The whole edit is rejected if the note changed since it was read.",
+                inputSchema: appendNoteInputSchema,
+                execute: instrument<AppendNoteInput, Awaited<ReturnType<typeof appendNoteTool>>>(
+                    "append_note",
+                    (input) => appendNoteTool(write, input),
+                ),
+            }),
+            edit_note: tool({
+                description:
+                    "Edit the shared note by section. Read it first, then pass the current revision (or versionToken) and one or more " +
+                    "section operations. A missing or ambiguous heading aborts the whole edit; re-read and retry. " +
+                    "Untouched sections are preserved. Do not replace whole documents.",
+                inputSchema: editNoteInputSchema,
+                execute: instrument<EditNoteInput, Awaited<ReturnType<typeof editNoteTool>>>(
+                    "edit_note",
+                    (input) => editNoteTool(write, input),
+                ),
+            }),
+            update_note: tool({
+                description:
+                    "Rename the shared note or change its tags. Use edit_note for body content. Requires the current revision or versionToken.",
+                inputSchema: updateNoteInputSchema,
+                execute: instrument<UpdateNoteInput, Awaited<ReturnType<typeof updateNoteTool>>>(
+                    "update_note",
+                    (input) => updateNoteTool(write, input),
+                ),
+            }),
+        };
+    }
+
     if (mode !== "edit") return readTools;
 
-    const write = { context, recorder, conversationId: options.conversationId };
+    const write = {
+        context,
+        recorder,
+        conversationId: options.conversationId,
+        ...(options.noteScope ? { noteScope: options.noteScope } : {}),
+    };
     const writeTools: ToolSet = {
         create_folder: tool({
             description:

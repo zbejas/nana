@@ -4,7 +4,7 @@ import { createLogger } from "../../../lib/logger";
 import { applySectionEdits, MarkdownSectionError, type AppliedSectionEdit, type MarkdownEditOperation } from "../../../lib/markdown/sections";
 import { pbGet, queryString, type ToolContext } from "../../pocketbase/client";
 import { loadAiVisibility, noteIsLocked } from "../../workspace/privacy";
-import { flushLiveNoteBeforeExternalWrite } from "../../workspace/live";
+import { adoptLiveNoteContent, adoptLiveNoteRevision, flushLiveNoteBeforeExternalWrite } from "../../workspace/live";
 import { createBoard, getBoard, moveBoard, updateBoard } from "../../workspace/boards";
 import { createFolder, listFolders, updateFolder } from "../../workspace/folders";
 import {
@@ -26,6 +26,7 @@ import type {
     ChatEditSection,
     ChatEditTarget,
     ChatEditUndoKind,
+    ChatNoteScope,
 } from "../types";
 import type { ToolFailure } from "../../pocketbase/client";
 
@@ -234,10 +235,12 @@ export interface ChatWriteToolResult {
 
 export type ChatWriteResult = ChatWriteToolResult | ToolFailure;
 
-interface WriteContext {
+export interface WriteContext {
     context: ToolContext;
     recorder: ChatRunRecorder;
     conversationId?: string;
+    /** Bound note for shared-note chat; non-owners may write only this note. */
+    noteScope?: ChatNoteScope;
 }
 
 interface EditableNote {
@@ -356,13 +359,48 @@ async function persistEdit(
 async function loadEditableNote(
     context: ToolContext,
     noteId: string,
+    noteScope?: ChatNoteScope,
 ): Promise<EditableNote | ToolFailure> {
     if (!isValidRecordId(noteId)) {
         return { ok: false, code: "invalid_input", message: "That note id is not valid." };
     }
+    if (
+        noteScope
+        && (noteScope.documentId !== noteId || noteScope.accessLevel < 3)
+    ) {
+        return { ok: false, code: "not_found", message: "That note was not found." };
+    }
+
+    // Authorize before flushing a live room. A caller without access must not
+    // be able to make someone else's pending keystrokes persist by guessing a
+    // note id.
+    const accessPath = `/api/collections/documents/records/${encodeURIComponent(noteId)}${queryString({
+        fields: "id,author,is_private,folder,deleted_at",
+    })}`;
+    const accessResult = await pbGet<PBEditableNote>(accessPath, context);
+    if (!accessResult.ok) return accessResult;
+
+    const accessRecord = accessResult;
+    const owner = typeof accessRecord.id === "string" && accessRecord.author === context.userId;
+    const scoped = Boolean(
+        noteScope
+        && accessRecord.id === noteScope.documentId
+        && noteScope.accessLevel >= 3,
+    );
+    if (typeof accessRecord.id !== "string" || (!owner && !scoped)) {
+        return { ok: false, code: "not_found", message: "That note was not found." };
+    }
+
+    if (owner) {
+        const visibility = await loadAiVisibility(context);
+        if (!visibility.ok) return visibility;
+        if (noteIsLocked(visibility, accessRecord)) {
+            return { ok: false, code: "not_found", message: "That note was not found." };
+        }
+    }
 
     // Chat edit tools read the body and revision before writing. Flush the
-    // live room first so a pending keystroke is part of the snapshot.
+    // live room now that access is proven so a pending keystroke is included.
     try {
         await flushLiveNoteBeforeExternalWrite(noteId);
     } catch (error) {
@@ -376,13 +414,13 @@ async function loadEditableNote(
     if (!result.ok) return result;
 
     const record = result;
-    if (typeof record.id !== "string" || record.author !== context.userId) {
+    if (typeof record.id !== "string") {
         return { ok: false, code: "not_found", message: "That note was not found." };
     }
-
-    const visibility = await loadAiVisibility(context);
-    if (!visibility.ok) return visibility;
-    if (noteIsLocked(visibility, record)) {
+    if (owner && record.author !== context.userId) {
+        return { ok: false, code: "not_found", message: "That note was not found." };
+    }
+    if (!owner && !scoped) {
         return { ok: false, code: "not_found", message: "That note was not found." };
     }
 
@@ -650,7 +688,7 @@ export async function appendNoteTool(
         return { ok: false, code: "invalid_input", message: "Nothing to append." };
     }
 
-    const note = await loadEditableNote(write.context, parsed.data.noteId);
+    const note = await loadEditableNote(write.context, parsed.data.noteId, write.noteScope);
     if ("ok" in note) return note;
     if (!revisionMatches(parsed.data.expectedRevision, note)) return staleRevisionFailure();
 
@@ -669,9 +707,12 @@ export async function appendNoteTool(
                 revision: note.revision,
                 versionToken: note.versionToken,
                 sanitizeContent: false,
+                ...(write.noteScope ? { noteScope: write.noteScope } : {}),
             },
         );
 
+        const finalRevision = await adoptLiveNoteContent(note.id, applied.markdown, result.revision);
+        const tokenStillCurrent = finalRevision === result.revision;
         const summary = parsed.data.summary?.trim()
             || `Added a section at the end of “${truncate(note.title, 100)}”.`;
         const changed: ChatEditChanges = { sections: sectionsFromApplied(applied.changed) };
@@ -684,8 +725,10 @@ export async function appendNoteTool(
             changed,
             operations: [operation],
             before,
-            afterRevision: result.revision,
-            afterUpdated: result.note.updated,
+            afterRevision: finalRevision,
+            ...(tokenStillCurrent && result.note.updated
+                ? { afterUpdated: result.note.updated }
+                : {}),
             undoKind: "restore",
         });
         write.recorder.addSource({ type: "document", id: note.id, title: result.note.title });
@@ -696,8 +739,8 @@ export async function appendNoteTool(
             summary,
             changed,
             undo: { kind: "restore", available: editId !== null, editId },
-            revision: result.revision,
-            versionToken: result.versionToken,
+            revision: finalRevision,
+            ...(tokenStillCurrent ? { versionToken: result.versionToken } : {}),
         };
     } catch (error) {
         if (error instanceof MarkdownSectionError) {
@@ -716,7 +759,7 @@ export async function editNoteTool(
         return { ok: false, code: "invalid_input", message: "The edit request was not valid." };
     }
 
-    const note = await loadEditableNote(write.context, parsed.data.noteId);
+    const note = await loadEditableNote(write.context, parsed.data.noteId, write.noteScope);
     if ("ok" in note) return note;
     if (!revisionMatches(parsed.data.expectedRevision, note)) return staleRevisionFailure();
 
@@ -750,9 +793,12 @@ export async function editNoteTool(
                 revision: note.revision,
                 versionToken: note.versionToken,
                 sanitizeContent: false,
+                ...(write.noteScope ? { noteScope: write.noteScope } : {}),
             },
         );
 
+        const finalRevision = await adoptLiveNoteContent(note.id, applied.markdown, result.revision);
+        const tokenStillCurrent = finalRevision === result.revision;
         const summary = parsed.data.summary.trim();
         const changed: ChatEditChanges = { sections: sectionsFromApplied(applied.changed) };
         const editId = await persistEdit(write, {
@@ -764,8 +810,10 @@ export async function editNoteTool(
             changed,
             operations,
             before,
-            afterRevision: result.revision,
-            afterUpdated: result.note.updated,
+            afterRevision: finalRevision,
+            ...(tokenStillCurrent && result.note.updated
+                ? { afterUpdated: result.note.updated }
+                : {}),
             undoKind: "restore",
         });
         write.recorder.addSource({ type: "document", id: note.id, title: result.note.title });
@@ -776,8 +824,8 @@ export async function editNoteTool(
             summary,
             changed,
             undo: { kind: "restore", available: editId !== null, editId },
-            revision: result.revision,
-            versionToken: result.versionToken,
+            revision: finalRevision,
+            ...(tokenStillCurrent ? { versionToken: result.versionToken } : {}),
         };
     } catch (error) {
         return failureFromError(error);
@@ -793,7 +841,7 @@ export async function updateNoteTool(
         return { ok: false, code: "invalid_input", message: "Provide a title or tags to update." };
     }
 
-    const note = await loadEditableNote(write.context, parsed.data.noteId);
+    const note = await loadEditableNote(write.context, parsed.data.noteId, write.noteScope);
     if ("ok" in note) return note;
     if (!revisionMatches(parsed.data.expectedRevision, note)) return staleRevisionFailure();
 
@@ -814,9 +862,11 @@ export async function updateNoteTool(
             {
                 revision: note.revision,
                 versionToken: note.versionToken,
+                ...(write.noteScope ? { noteScope: write.noteScope } : {}),
             },
         );
 
+        const finalRevision = adoptLiveNoteRevision(note.id, result.revision);
         const summary = parsed.data.summary?.trim()
             || `Updated ${fields.join(" and ")} on “${truncate(result.note.title, 100)}”.`;
         const changed: ChatEditChanges = { fields };
@@ -828,8 +878,8 @@ export async function updateNoteTool(
             summary,
             changed,
             before,
-            afterRevision: result.revision,
-            afterUpdated: result.note.updated,
+            afterRevision: finalRevision,
+            ...(result.note.updated ? { afterUpdated: result.note.updated } : {}),
             undoKind: "restore",
         });
         write.recorder.addSource({ type: "document", id: note.id, title: result.note.title });
@@ -840,7 +890,7 @@ export async function updateNoteTool(
             summary,
             changed,
             undo: { kind: "restore", available: editId !== null, editId },
-            revision: result.revision,
+            revision: finalRevision,
             versionToken: result.versionToken,
         };
     } catch (error) {

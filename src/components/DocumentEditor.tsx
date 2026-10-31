@@ -133,9 +133,18 @@ export function DocumentEditor() {
           const nextContent = normalizeMarkdown(fresh.content);
           setSelectedDocument({ ...fresh, content: nextContent });
           setTitle(fresh.title);
-          applyPersistedContent(nextContent);
           setTags(fresh.tags || []);
           setGlobalUnsavedChanges(false);
+
+          // A live room owns content. Its broadcast (including the AI write
+          // adopted by the server) is the single source of truth; applying the
+          // fetched body here would duplicate the edit as a local Yjs change.
+          if (collaborationSession) {
+            setAiEdit(null);
+            return;
+          }
+
+          applyPersistedContent(nextContent);
           setAiEdit({
             id: edit.id,
             previousMarkdown,
@@ -163,6 +172,7 @@ export function DocumentEditor() {
   }, [
     document?.id,
     applyPersistedContent,
+    collaborationSession,
     setGlobalUnsavedChanges,
     setSelectedDocument,
     setTags,

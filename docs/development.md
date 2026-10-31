@@ -83,7 +83,7 @@ NODE_ENV=production bun src/index.ts
 | PocketBase hook/migration/guard/route | Full Docker suite + updated tests. |
 | Board or task behavior | Board/task guard tests and the board pages on desktop and mobile. |
 | Board folder or folder-trash behavior | `guards/05-board-folders.test.ts`, `routes/08-board-folder-trash.test.ts`, and the folder view on desktop and mobile. |
-| Chat or tool behavior | `tests/api/chat-tools.test.ts` plus the chat API tests. |
+| Chat or tool behavior | `tests/api/chat-tools.test.ts` plus the chat API tests. Shared-note access/registry changes also touch the chat and PocketBase group rules. |
 | REST `/api/v1` or OpenAPI behavior | `tests/api/rest-api.test.ts` and the `/docs` page. |
 | MCP transport or tool behavior | `tests/api/mcp.test.ts`. |
 | Private-lock behavior | `tests/unit/ai-visibility.test.ts` plus the chat, REST, and MCP integration files. |
@@ -115,7 +115,7 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 - **Styling:** theme-aware Tailwind utilities over the Graphite tokens; reuse `src/components/ui/` before adding a primitive. See [`design.md`](design.md).
 - **PocketBase hooks:** CommonJS `require()`, synchronous, `$os.getenv()`, `$app`.
 - **Bun:** stay on 1.4.4 or newer. Bun 1.3.x can emit a production `dist/index.html` that points at the wrong entry chunk, leaving the SPA blank. The Docker and CI pins are 1.4.4.
-- **Migrations:** append-only; the next free number is `0000032`. Use `migrate((app) => {}, (app) => {})`, a safe `down()`, and idempotent guards.
+- **Migrations:** append-only; the next free number is `0000036`. Use `migrate((app) => {}, (app) => {})`, a safe `down()`, and idempotent guards.
 
 ### Common tasks
 
@@ -165,7 +165,7 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 
 #### Add a migration
 
-1. Create `pocketbase/pb_migrations/0000032_<description>.js`.
+1. Create `pocketbase/pb_migrations/0000036_<description>.js`.
 2. Use the `migrate(up, down)` format.
 3. Guard field/collection additions and removals.
 4. Include a real `down()`.
@@ -190,13 +190,14 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 4. Apply the private lock. Lists use `aiVisibilityConditions()`; reads and writes check `noteIsLocked()` / `boardIsLocked()` and return `not_found` for hidden records.
 5. Keep queries bounded (`perPage`, line windows, byte caps). Note/board reads keep the 8-second signal; task reads and writes use the workspace client's 30-second default.
 6. Register read tools in `readTools`; register create/update/delete tools only in the `mode === "edit"` branch of `createChatTools()`. Ask mode must never receive a write tool. Delete tools create pending cards; do not add a direct delete path.
-7. Route chat writes through `src/api/workspace/` with `actor: "ai"`. Note edits need a revision/`versionToken`, and section edits must use `src/lib/markdown/sections.ts`; do not add whole-note replacement.
-8. Record applied writes in `chat_edits` and emit an `edit` event. Do not fail a completed workspace write because the audit row failed.
-9. If you add or rename a chat tool, update `CHAT_READ_TOOL_NAMES` or `CHAT_WRITE_TOOL_NAMES` in `src/api/chat/tool-names.ts` and the label map in `src/components/chat/ChatToolStrip.tsx`; persisted activity is allowlisted. MCP tool names are not persisted.
-10. Persist only `{ name, status }` for chat tool activity; never inputs, outputs, or note text.
-11. Keep `stopWhen(stepCountIs(8))` unless you have measured the read/write fan-out; the default stops after one step.
-12. Handle missing provider/model configuration with actionable errors.
-13. Add or update `tests/api/chat-tools.test.ts`, `tests/api/chat-write-tools.test.ts`, and `tests/api/chat.test.ts` for chat; use `tests/api/mcp.test.ts` for MCP. Verify with `DEBUG=true` when diagnosing provider failures.
+7. A strict `noteScope` is a separate registry: `read_note` only at view/comment, plus `append_note`/`edit_note`/`update_note` at edit. Do not filter the workspace tool set; remove the other tools. Force `ask` below edit access and keep the bound note server-selected.
+8. Route chat writes through `src/api/workspace/` with `actor: "ai"`. Note edits need a revision/`versionToken`, and section edits must use `src/lib/markdown/sections.ts`; do not add whole-note replacement.
+9. Record applied writes in `chat_edits` and emit an `edit` event. Do not fail a completed workspace write because the audit row failed.
+10. If you add or rename a chat tool, update `CHAT_READ_TOOL_NAMES` or `CHAT_WRITE_TOOL_NAMES` in `src/api/chat/tool-names.ts` and the label map in `src/components/chat/ChatToolStrip.tsx`; persisted activity is allowlisted. MCP tool names are not persisted.
+11. Persist only `{ name, status, error? }` for chat tool activity; `error` is bounded failure text, never raw inputs, outputs, or note text.
+12. Keep `stopWhen(stepCountIs(8))` unless you have measured the read/write fan-out; the default stops after one step.
+13. Handle missing provider/model configuration with actionable errors.
+14. Add or update `tests/api/chat-tools.test.ts`, `tests/api/chat-write-tools.test.ts`, `tests/api/chat-group.test.ts`, and `tests/api/chat.test.ts` for chat; use `tests/api/mcp.test.ts` for MCP. Verify with `DEBUG=true` when diagnosing provider failures.
 
 #### Add a frontend feature
 
@@ -253,11 +254,11 @@ For larger tasks:
 
 - **`bun run build` is mandatory before shipping**, even when the Docker suite passes. The suite runs source, not the production bundle.
 - **Docs-only changes still need a link check.** There is no docs build or Markdown linter; verify every relative link and every named path manually or with `grep`/`ls`.
-- **The next migration is `0000032`.** Do not reuse `0000018`–`0000031`; they are applied.
+- **The next migration is `0000036`.** Do not reuse applied migrations; `0000035_group_chat` is the current head.
 - **Board and task data is user data.** Never use `pb_data` fixtures from the host in tests, and never edit an applied migration in place.
 - **`useDocumentData()` is a single call site.** Moving it into a page duplicates subscriptions and breaks the initial-load order.
 - **The root AddToBoard host is the only picker.** New entry points set `addToBoardRequestAtom`; they do not open their own picker.
-- **The chat tool set is a security boundary.** Ask mode is read-only; Work mode adds the bounded create/update set and confirm-first delete tools. Chat writes must use the caller token, workspace services, note revision checks, `X-Nana-Actor: ai`, and `chat_edits`. MCP is the separate external write surface.
+- **The chat tool set is a security boundary.** Ask mode is read-only; Work mode adds the bounded create/update set and confirm-first delete tools. Chat writes must use the caller token, workspace services, note revision checks, `X-Nana-Actor: ai`, and `chat_edits`. A strict shared-note scope is a separate registry with only the bound-note tools. MCP is the separate external write surface.
 - **A folder delete never deletes boards.** `boards.folder` has `cascadeDelete: false`; the trash routes rehome boards to the root.
 - **Trash is soft delete.** Notes and folders keep their id, attachments, and versions while `deleted_at` is set. Use `/api/trash/*`; direct deletes are superuser-only.
 - **Hard-deleting a folder cascades.** `folders.parent` and `documents.folder` cascade, so permanent folder delete removes the subtree. Soft delete does not.

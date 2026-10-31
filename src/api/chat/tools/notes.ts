@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { aiVisibilityConditions, loadAiVisibility, noteIsLocked } from "../../workspace/privacy";
+import { flushLiveNoteBeforeExternalWrite } from "../../workspace/live";
+import { ApiError } from "../../workspace/errors";
 import { pbGet, queryString, type PBListResponse, type ToolContext, type ToolFailure, type ToolResult } from "./http";
+import type { ChatNoteScope } from "../types";
 import {
     MAX_LINE_CHARS,
     MAX_NOTE_BYTES,
@@ -187,13 +190,15 @@ export interface ReadNoteResult extends PBNoteSummary {
 }
 
 /**
- * Read a line window from one owned note. Output is bounded by both a line
- * limit and a character budget, and individual lines are clipped.
+ * Read a line window from one owned note, or from the one note bound to a
+ * shared-note chat scope. Output is bounded by both a line limit and a
+ * character budget, and individual lines are clipped.
  */
 export async function readNote(
     context: ToolContext,
     input: ReadNoteInput | unknown,
     abortSignal?: AbortSignal,
+    noteScope?: ChatNoteScope,
 ): Promise<ToolResult<ReadNoteResult>> {
     const parsed = readNoteInputSchema.safeParse(input);
     if (!parsed.success) {
@@ -205,22 +210,75 @@ export async function readNote(
         return invalidInput("That note id is not valid.");
     }
 
+    if (noteScope) {
+        if (
+            noteScope.documentId !== noteId
+            || !Number.isFinite(noteScope.accessLevel)
+            || noteScope.accessLevel < 1
+        ) {
+            return notFound();
+        }
+    }
+
+    // Authorize before any live-room side effect. A caller without access must
+    // not be able to flush someone else's room by guessing a note id.
+    const accessPath = `/api/collections/documents/records/${encodeURIComponent(noteId)}${queryString({
+        fields: "id,author,is_private,folder,deleted_at",
+    })}`;
+    const accessSignal = createToolSignal(abortSignal);
+    const accessResult = await pbGet<PBNoteRecord>(accessPath, context, accessSignal);
+    if (!accessResult.ok) return accessResult;
+
+    const accessRecord: PBNoteRecord = accessResult;
+    const owner = typeof accessRecord.id === "string" && accessRecord.author === context.userId;
+    const scoped = Boolean(
+        noteScope
+        && accessRecord.id === noteScope.documentId
+        && noteScope.accessLevel >= 1,
+    );
+    if (typeof accessRecord.id !== "string" || (!owner && !scoped)) {
+        return notFound();
+    }
+
+    if (owner) {
+        const visibility = await loadAiVisibility(context, accessSignal);
+        if (!visibility.ok) return visibility;
+        if (noteIsLocked(visibility, accessRecord)) return notFound();
+    }
+
+    // A live room owns the freshest body. Flush after authorization so the
+    // model never gets content that is about to be replaced, and return the
+    // normal conflict failure when the room could not persist.
+    try {
+        await flushLiveNoteBeforeExternalWrite(noteId);
+    } catch (error) {
+        if (error instanceof ApiError) {
+            return {
+                ok: false,
+                code: error.code === "conflict" ? "conflict" : "unavailable",
+                message: error.message,
+            };
+        }
+        return {
+            ok: false,
+            code: "unavailable",
+            message: "The workspace is unavailable right now.",
+        };
+    }
+
     const path = `/api/collections/documents/records/${encodeURIComponent(noteId)}${queryString({
         fields: NOTE_READ_FIELDS,
     })}`;
-
+    // Flushing can consume most of the first tool window; give the fresh read
+    // its own bounded signal so a valid read does not fail on an older timer.
     const signal = createToolSignal(abortSignal);
     const result = await pbGet<PBNoteRecord>(path, context, signal);
     if (!result.ok) return result;
 
     const record: PBNoteRecord = result;
-    if (!record || typeof record.id !== "string" || record.author !== context.userId) {
-        return notFound();
-    }
-
-    const visibility = await loadAiVisibility(context, signal);
-    if (!visibility.ok) return visibility;
-    if (noteIsLocked(visibility, record)) return notFound();
+    if (typeof record.id !== "string") return notFound();
+    if (owner && record.author !== context.userId) return notFound();
+    if (!owner && !scoped) return notFound();
 
     const rawContent = typeof record.content === "string" ? record.content : "";
     const rawBytes = new TextEncoder().encode(rawContent);

@@ -72,7 +72,7 @@ Groups:
 
 ### Migrations
 
-Files are sequential and zero-padded. **The next migration is `0000035_<description>.js`.**
+Files are sequential and zero-padded. **The next migration is `0000036_<description>.js`.**
 
 | Migration | Purpose |
 | --- | --- |
@@ -110,6 +110,7 @@ Files are sequential and zero-padded. **The next migration is `0000035_<descript
 | `0000032_remove_document_versions.js` | Drops `document_versions` and `documents.published`; rebuilds `trash_documents` without the removed column. |
 | `0000033_message_parts.js` | Adds `messages.parts`, the ordered chat timeline. |
 | `0000034_disable_auth_alerts.js` | Disables PocketBase's default "new device login" auth alert emails for users and superusers. |
+| `0000035_group_chat.js` | Adds `conversations.scope`/`document`, a unique note-conversation index, `messages.author`/`author_label`, and group-aware rules for conversations, messages, and `chat_edits`; backfills existing personal rows. |
 
 Use the migration API, not `module.exports`:
 
@@ -137,7 +138,7 @@ Rules:
 - Guard additions/removals so retries are idempotent.
 - Never rename an existing migration. `bootstrap.js` contains a temporary compatibility hook that rewrites old filenames in the `_migrations` table.
 - For data migrations, use `findRecordsByFilter` and tolerate missing records when the schema may not be seeded yet.
-- Migrations are append-only; start the next one at `0000035`.
+- Migrations are append-only; start the next one at `0000036`.
 - View collections reject `SELECT *`; list explicit columns. When a source field is added, update the view query in the same migration.
 
 ### Collections
@@ -153,8 +154,8 @@ Rules:
 | `labels` | Owner label definitions | Name + Graphite colour; tasks keep a JSON string array of label names. |
 | `task_relations` | Task graph | `source`, `target`, `type` (`subtask|blocks|related`). |
 | `task_activity` | Task audit | Task, board, actor, actor type/label, type, JSON data. Server writes only. |
-| `conversations` | Chat threads | Author-scoped title, timestamps, rolling summary. |
-| `messages` | Chat messages | Role, content, reasoning/model metadata, tool activity, ordered `parts` timeline, context, attachment refs, sources, token usage, stopped, position. |
+| `conversations` | Chat threads | Title, author, optional summary, timestamps, `scope` (`personal`/`note`), optional `document` for a shared-note thread. Personal threads are author-owned; a note thread is visible to current person grantees and managed by the note owner. |
+| `messages` | Chat messages | Role, content, sender `author`/`author_label` on shared-note user turns, reasoning/model metadata, tool activity, ordered `parts` timeline, context, attachment refs, sources, token usage, stopped, position. |
 | `chat_attachments` | Chat attachment drafts and bound files | Owner-scoped protected file, name/MIME/size/kind, optional conversation/message, server-extracted text. |
 | `shares` | Owner-managed direct grants | One row per resource/user; created and updated by the sharing route layer. |
 | `access_grants` | Materialized direct + inherited grants | Read-only to the grantee; lets collection rules resolve folder inheritance without recursion. |
@@ -190,8 +191,10 @@ Rules:
 | `chat_attachments` | `author` | `users` | yes | yes | Owner; deleting the user removes their attachment rows and files. |
 | `chat_attachments` | `conversation` | `conversations` | no | yes | Bound rows die with the conversation. |
 | `chat_attachments` | `message` | `messages` | no | yes | Bound rows die with the message. |
-| `conversations` | `author` | `users` | yes | yes | Conversations and messages follow the user. |
+| `conversations` | `author` | `users` | yes | yes | The personal owner, or the note owner for a shared-note conversation. Messages follow the conversation. |
+| `conversations` | `document` | `documents` | no | yes | Shared-note thread binding; permanent note delete removes the thread and its messages. Soft-delete/trash keeps it for owner history. |
 | `messages` | `conversation` | `conversations` | yes | yes | Messages die with the conversation. |
+| `messages` | `author` | `users` | no | no | Sender on a shared-note user turn; assistant turns leave it empty. |
 
 The trash views mirror `documents` and `folders`; they do not add relations or storage. `tasks.author` and `folders.published` do not exist after `0000022`; `documents.published` and the `document_versions` collection do not exist after `0000032`.
 
@@ -387,16 +390,21 @@ The editor surfaces this as **Version history** with preview and restore. Do not
 
 ### Chat messages
 
-`conversations` holds the thread metadata. `messages` holds one row per turn:
+`conversations` holds the thread metadata: `title`, `author`, optional `summary`, `created`/`updated`, `scope`, and `document`. `scope` is a select (`personal`, `note`) and is optional for older rows; `document` is an optional relation to `documents` with `cascadeDelete: true`. A note thread has `scope = "note"`, the note id in `document`, and the **note owner** in `author`. The partial unique index `idx_conversations_document_note` enforces one note conversation per document. Personal rows keep the author and leave `document` empty.
+
+`messages` holds one row per turn:
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `conversation` | Relation → `conversations` | Required, `cascadeDelete: true`. |
 | `role` | Select | `user` or `assistant`. |
 | `content` | Editor | Sanitized message body. |
+| `author` | Relation → `users` | Optional sender on a shared-note user turn; assistant turns leave it empty. |
+| `author_label` | Text | Optional display name, max 120; never an email. |
 | `reasoning` | Text | Optional thinking text. |
 | `model` | Text | Optional model identifier, max 120. |
-| `tools` | JSON | Sanitized tool names and terminal statuses. |
+| `tools` | JSON | Sanitized tool names, terminal statuses, and bounded error text. |
+| `parts` | JSON | Ordered text/reasoning/tool/edit timeline. |
 | `context` | JSON | Optional page metadata `{ type, id, title }` on a user message. |
 | `attachments` | JSON | Optional safe attachment refs `{ id, name, mimeType, size, kind }` on a user message. |
 | `usage` | JSON | Optional `{ inputTokens, outputTokens, totalTokens, reasoningTokens?, cachedInputTokens? }` on an assistant message, taken from the final model step. |
@@ -405,7 +413,19 @@ The editor surfaces this as **Version history** with preview and restore. Do not
 | `position` | Number | Display order, minimum 0. Zero is valid, so the field is not `required`. |
 | `created` | Autodate | Managed by PocketBase. |
 
-Rules are `@request.auth.id != '' && conversation.author = @request.auth.id` for all operations. Appending a message also touches the conversation so `updated` drives the sidebar order. `trimLastExchange` deletes the newest assistant run and the preceding user turn.
+Rules:
+
+| Collection | List / view | Create | Update / delete |
+| --- | --- | --- | --- |
+| `conversations` | Personal author, or a note thread whose document is owned by the caller or is a live non-private document with a matching `access_grants` user | Personal only: `author = @request.auth.id` and `scope` empty/`personal` | Personal author, or the note thread's `document.author`. A shared-note grantee cannot rename or delete the thread. |
+| `messages` | Personal conversation author, or a note thread the caller can access | Personal author, or note access plus a user row authored by the caller / an assistant row with an empty author | Personal author, or the note thread's document author. Grantees cannot edit or delete messages. |
+| `chat_edits` | Personal conversation author, or a note thread the caller can access | no public create rule (server writes only) | no public update/delete rule (server writes only) |
+
+The note-access fragment uses the document's person grants (`access_grants_via_document`) and requires `document.is_private = false` and `document.deleted_at = ''`; it deliberately does not reference `is_public` or `public_share_token`. Group creation is server-only: `conversations.createRule` accepts personal rows, and Bun creates a note row with the superuser credential after resolving access.
+
+Backfill in `0000035` sets every existing conversation to `scope = "personal"`, copies each personal user message's conversation author into `messages.author`, and fills `author_label` from the user's name. Assistant rows stay empty. Appending a message touches the conversation so `updated` drives the sidebar order. A participant cannot update the owner-only conversation row, so `touchConversation()` uses the server credential for `scope: "note"` after the caller's read proves participation. `trimLastExchange` deletes the newest assistant run and the preceding user turn; shared-note sends reject regeneration.
+
+Deleting a conversation cascades its messages and `chat_edits`. Permanently deleting a note cascades its note conversation through `conversations.document`; moving the note to trash does not, so the owner can still read a paused thread. Note the conversation author does not change when a grantee starts the thread: it is always the note owner.
 
 #### Chat attachments
 
@@ -445,6 +465,8 @@ Rules are `@request.auth.id != '' && author = @request.auth.id` for list, view, 
 `documents.revision` is the optimistic-concurrency token. `revision_guard.js` accepts an omitted revision from older clients but rejects a supplied stale one; AI note edits must supply it. Content/title/tags changes bump the revision and stamp `last_edited_by`/`last_edit_source` (`user`, `ai`, or `system`). The browser facade forwards the editor's `revision` on document updates; live collaboration does not add a second writer to PocketBase, so the normal autosave still takes this guard and retries with a merged body when another writer moved first.
 
 AI note writes do not create version history. Chat undo uses the pre-edit snapshot in `chat_edits.operations.before`; `chat_edits` also records the tool, target, operations, summary, and status for the edit cards. `messages.context` stores the open-page metadata attached at send time; `messages.sources` stores server-derived note/board links; `messages.usage` stores the latest assistant turn's final-step token accounting.
+
+`chat_edits` keeps its server-only create/update/delete rules. `0000035` widens list/view to a shared-note participant so every participant sees the thread's edit cards, but the undo/confirm/cancel routes still require the conversation owner (the note owner). A grantee with edit access can produce an edit card on the bound note; only the owner can undo it.
 
 ### Public sharing
 
@@ -499,13 +521,13 @@ On startup (not during `migrate up`):
 - Otherwise generate a random superuser and write the credentials file with mode `0600`.
 - The superuser is created/updated in `_superusers`.
 
-The Bun server reads the same credentials to obtain a token for admin-only settings, AI configuration, API key lookup/exchange, and server-owned `chat_edits` rows. Never commit this file or log its contents. Chat workspace tools and `ToolContext` never receive this token; chat edit audit rows use it only after the caller's token has proved conversation ownership. A key is exchanged for the key owner's normal user token through impersonation.
+The Bun server reads the same credentials to obtain a token for admin-only settings, AI configuration, API key lookup/exchange, and server-owned `chat_edits` rows. Never commit this file or log its contents. Chat workspace tools and `ToolContext` never receive this token; chat edit audit rows use it only after the caller's token has proved access to the conversation (personal owner or shared-note participant). A key is exchanged for the key owner's normal user token through impersonation.
 
 `bootstrap.js` also seeds `site_url` from `SITE_URL` and syncs PocketBase `meta.appURL`, which is used for OAuth redirect URIs.
 
 ### Adding backend behavior
 
-1. Add or update the schema in a new migration (`0000032+`).
+1. Add or update the schema in a new migration (`0000036+`).
 2. Add hooks/routes under the relevant `pb_hooks/` directory.
 3. Require the new module from `index.pb.js` (or from a parent module that is already required).
 4. Use `requireAdmin(c)`, `parseRequestBody(c)`, `escapeHtml()`, and `sanitizeUrl()` from `utils.js`; admin route catch blocks should return `sendError(c, err, fallbackMessage)` so known failures keep 400/401/403/404.
@@ -526,6 +548,11 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 - **Version history is not a collection.** `document_versions` and `documents.published` were removed by `0000032`. Versions are git repositories managed by Bun; never reintroduce a snapshot collection or a version-request flag.
 - **`folders.published` no longer exists.** Public folders use `is_public` and `public_share_token`. Do not add a second publish flag.
 - **Messages are records.** There is no `conversations.messages` JSON field. Append through `src/api/chat/pocketbase.ts`; it also touches the conversation's `updated` timestamp.
+- **A note has one shared conversation.** `idx_conversations_document_note` is a unique partial index over `document` where `scope = 'note'` and `document != ''`. Do not create note conversations through the collection API: `conversations.createRule` accepts only personal rows; Bun creates the note row server-side after resolving person access.
+- **Shared-note access is person access, not public sharing.** The group rules use `access_grants_via_document` and require `document.is_private = false`/`deleted_at = ''`; they never reference `is_public` or `public_share_token`. A public link gets no chat rows.
+- **Group messages bind the sender.** A shared-note user row must have `author = @request.auth.id`; an assistant row must have an empty author. `author_label` is display text only, never an identity or email.
+- **Only the note owner manages the group thread.** `conversations.updateRule`/`deleteRule` and `messages.updateRule`/`deleteRule` use the note's author. A grantee cannot rename/delete the thread, edit messages, or undo an edit card.
+- **Note trash does not remove the group thread.** `conversations.document` cascades only on a hard document delete. Trash keeps the thread for the owner's paused history; a grantee loses collection access while the note is private/trashed.
 - **`messages.position` is optional.** A `required` number field rejects zero in PocketBase, so position 0 is stored in an optional field and always written by the app.
 - **Owner changes are rejected by a request guard.** The update rule only sees the stored author. `relation_guards.js` compares the incoming author with the original record.
 - **Folder cycles are guarded.** The rule only sees the stored parent; the guard walks the parent chain and rejects self-parenting and deeper cycles.
@@ -535,7 +562,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 - **API keys are hashed, not encrypted.** `key_hash` is SHA-256 of the full `nana_…` secret. Never add the plaintext, a reversible encoding, or the hash to an API response. The hash lookup uses the superuser only after the key itself is presented.
 - **`api_keys` has no public rules.** It is server-managed on purpose. Do not add it to the browser facade allowlist or expose it through a collection route.
 - **API keys cascade with the user.** `api_keys.author` uses `cascadeDelete: true`; `api_keys.folders` does not cascade from folders, so a deleted scope root grants nothing.
-- **The next migration is `0000034`.** `0000033_message_parts` is the current head; never edit an applied migration in place.
+- **The next migration is `0000036`.** `0000035_group_chat` is the current head; never edit an applied migration in place.
 
 ## Related docs
 

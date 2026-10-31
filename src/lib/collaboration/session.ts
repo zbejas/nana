@@ -31,6 +31,10 @@ const UPDATE_FLUSH_MS = 70;
 const PRESENCE_FLUSH_MS = 120;
 const HEARTBEAT_MS = 15_000;
 const RECONNECT_MAX_MS = 10_000;
+// A long-suspended tab can keep a dead SSE reader without ever firing an error.
+// Re-open the stream on resume so the room's current Yjs state wins over the
+// stale local replica. Short tab switches keep the existing connection.
+const RESUME_RECONNECT_MS = 30_000;
 
 export type CollabStatus = "connecting" | "connected" | "offline";
 
@@ -224,6 +228,7 @@ export class CollabSession {
     private inflightUpdates = 0;
     private lastLocalSeq = 0;
     private pendingAck: CollabAckFrame | null = null;
+    private hiddenAt: number | null = null;
 
     constructor(private readonly options: CollabSessionOptions) {
         this.text = this.doc.getText("content");
@@ -287,6 +292,27 @@ export class CollabSession {
         void this.connect();
         this.heartbeatTimer = setInterval(() => this.flushPresence(), HEARTBEAT_MS);
         globalThis.addEventListener?.("blur", this.handleWindowBlur);
+        globalThis.addEventListener?.("pagehide", this.handlePageHide);
+        globalThis.addEventListener?.("pageshow", this.handlePageShow);
+        globalThis.document?.addEventListener?.("visibilitychange", this.handleVisibilityChange);
+    }
+
+    /**
+     * Re-open the room after a long suspension. The local replica is kept and
+     * any unsent update is reconciled by the normal reconnect sync; this only
+     * replaces a possibly dead SSE reader.
+     */
+    resume(): void {
+        if (this.destroyed || !this.synced) return;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        this.clientId = "";
+        this.abortController?.abort();
+        this.abortController = null;
+        this.reconnectAttempt = 0;
+        void this.connect();
     }
 
     /**
@@ -422,6 +448,9 @@ export class CollabSession {
         }
         if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
         globalThis.removeEventListener?.("blur", this.handleWindowBlur);
+        globalThis.removeEventListener?.("pagehide", this.handlePageHide);
+        globalThis.removeEventListener?.("pageshow", this.handlePageShow);
+        globalThis.document?.removeEventListener?.("visibilitychange", this.handleVisibilityChange);
         this.reconnectTimer = null;
         this.updateTimer = null;
         this.presenceTimer = null;
@@ -440,6 +469,31 @@ export class CollabSession {
         }
         void this.flushPresence();
     };
+
+    private handleVisibilityChange = (): void => {
+        const doc = globalThis.document;
+        if (!doc) return;
+        if (doc.hidden) {
+            this.hiddenAt = Date.now();
+            return;
+        }
+        this.resumeAfterHidden();
+    };
+
+    private handlePageHide = (): void => {
+        this.hiddenAt = Date.now();
+    };
+
+    private handlePageShow = (): void => {
+        this.resumeAfterHidden();
+    };
+
+    private resumeAfterHidden(): void {
+        const hiddenAt = this.hiddenAt;
+        this.hiddenAt = null;
+        if (hiddenAt === null || Date.now() - hiddenAt < RESUME_RECONNECT_MS) return;
+        this.resume();
+    }
 
     private handleUpdate = (update: Uint8Array, origin: unknown): void => {
         const next = this.text.toString();

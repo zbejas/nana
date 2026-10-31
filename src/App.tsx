@@ -188,65 +188,9 @@ function AppContent() {
   const previousMobilePathRef = useRef(location.pathname);
   const previousUserIdRef = useRef<string | null>(user?.id ?? null);
 
-  // Reload app when returning after long inactivity (tab switch, app switch, sleep/wake)
-  // Only applies to the document editor — other pages stay fresh via realtime subscriptions
-  const isDocumentRouteRef = useRef(location.pathname.startsWith('/document/'));
-  useEffect(() => {
-    isDocumentRouteRef.current = location.pathname.startsWith('/document/');
-  }, [location.pathname]);
-
-  const inactiveSinceRef = useRef<number | null>(null);
-  const INACTIVE_RELOAD_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
-
-  useEffect(() => {
-    const markInactive = () => {
-      if (!inactiveSinceRef.current) {
-        inactiveSinceRef.current = Date.now();
-      }
-    };
-
-    const maybeReloadAfterInactivity = () => {
-      if (!user) return;
-      const inactiveSince = inactiveSinceRef.current;
-      if (!inactiveSince) return;
-
-      const inactiveDuration = Date.now() - inactiveSince;
-      inactiveSinceRef.current = null;
-
-      if (inactiveDuration >= INACTIVE_RELOAD_THRESHOLD_MS && isDocumentRouteRef.current) {
-        window.location.reload();
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        markInactive();
-        return;
-      }
-
-      maybeReloadAfterInactivity();
-    };
-
-    const handleWindowBlur = () => markInactive();
-    const handleWindowFocus = () => maybeReloadAfterInactivity();
-    const handlePageHide = () => markInactive();
-    const handlePageShow = () => maybeReloadAfterInactivity();
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('blur', handleWindowBlur);
-    window.addEventListener('focus', handleWindowFocus);
-    window.addEventListener('pagehide', handlePageHide);
-    window.addEventListener('pageshow', handlePageShow);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('blur', handleWindowBlur);
-      window.removeEventListener('focus', handleWindowFocus);
-      window.removeEventListener('pagehide', handlePageHide);
-      window.removeEventListener('pageshow', handlePageShow);
-    };
-  }, [user]);
-
+  // Returning to a suspended tab must not reload the document. The live room
+  // reconnects and syncs itself; a hard reload would discard local drafts,
+  // selection, scroll, and the in-flight chat stream.
   // Listen for viewport changes
   useEffect(() => {
     const handleResize = () => {

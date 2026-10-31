@@ -16,6 +16,8 @@ interface ChatEmptyStateProps {
   target: ChatContextTarget | null;
   mode: ChatMode;
   configured: boolean | null;
+  /** One shared conversation for everyone with access to a note. */
+  groupChat?: boolean;
   onPrompt: (prompt: string) => void;
   onOpenSettings: () => void;
 }
@@ -66,7 +68,14 @@ function nounFor(target: ChatContextTarget): string {
   return 'folder';
 }
 
-export function ChatEmptyState({ target, mode, configured, onPrompt, onOpenSettings }: ChatEmptyStateProps) {
+export function ChatEmptyState({
+  target,
+  mode,
+  configured,
+  groupChat = false,
+  onPrompt,
+  onOpenSettings,
+}: ChatEmptyStateProps) {
   if (configured === false) {
     return (
       <div className="my-auto w-full py-4">
@@ -87,7 +96,11 @@ export function ChatEmptyState({ target, mode, configured, onPrompt, onOpenSetti
   }
 
   const privateNoun = target ? nounFor(target) : 'page';
-  const prompts = target?.isPrivate ? GENERIC_PROMPTS : promptSet(target);
+  const prompts = groupChat
+    ? NOTE_PROMPTS
+    : target?.isPrivate
+      ? GENERIC_PROMPTS
+      : promptSet(target);
 
   const workMode = mode === 'edit';
   let title = workMode ? 'Ask, or change something.' : 'Ask your notes.';
@@ -98,6 +111,16 @@ export function ChatEmptyState({ target, mode, configured, onPrompt, onOpenSetti
   if (target?.isPrivate) {
     title = 'Ask about something else.';
     description = `This ${privateNoun} stays private. Nana can still search your other notes and boards.`;
+  } else if (groupChat && !target) {
+    title = workMode ? 'Work on this note together.' : 'Talk about this note together.';
+    description = workMode
+      ? 'Everyone with access shares this conversation. Nana can read the note and make the changes you ask for.'
+      : 'Everyone with access shares this conversation. Nana can read the note when it needs to.';
+  } else if (groupChat && target?.type === 'document') {
+    title = workMode ? 'Work on this note together.' : 'Talk about this note together.';
+    description = workMode
+      ? 'Everyone with access shares this conversation. Nana can read this note and make the changes you ask for.'
+      : 'Everyone with access shares this conversation. Nana can read this note when it needs to.';
   } else if (target?.type === 'document') {
     title = workMode ? 'Work on this note.' : 'Ask about this note.';
     description = workMode

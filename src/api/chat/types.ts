@@ -13,6 +13,16 @@ export type ChatMode = "ask" | "edit";
 /** The page the user had open when they sent the message. Metadata only. */
 export type ChatContextType = "document" | "board" | "folder";
 
+/**
+ * Strict note scope for shared-note chat. `strict` is true for group chats and
+ * for personal chats opened on a document the caller does not own.
+ */
+export interface ChatNoteScope {
+    documentId: string;
+    accessLevel: number;
+    strict: boolean;
+}
+
 /** Client-supplied context. Never contains a title or body. */
 export interface ChatContextInput {
     type: ChatContextType;
@@ -94,6 +104,8 @@ export interface ChatToolActivity {
     id?: string;
     name: string;
     status: ChatToolStatus;
+    /** Bounded, safe failure text. Never raw tool inputs or outputs. */
+    error?: string;
 }
 
 /** One tool call as it appeared in the assistant turn. */
@@ -103,6 +115,23 @@ export interface ChatToolPart extends ChatToolActivity {
     title?: string;
     targetType?: ChatContextType;
     targetId?: string;
+}
+
+const MAX_TOOL_ERROR_CHARS = 200;
+
+/**
+ * Bound and flatten a tool failure for display/persistence. Tool failures are
+ * the only error text that may leave the server, and they never include raw
+ * call arguments or outputs.
+ */
+export function sanitizeToolError(value: unknown): string | undefined {
+    if (typeof value !== "string") return undefined;
+    const cleaned = value
+        .replace(/[\u0000-\u001f\u007f]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!cleaned) return undefined;
+    return cleaned.slice(0, MAX_TOOL_ERROR_CHARS);
 }
 
 /**
@@ -188,6 +217,10 @@ export interface ChatMessage {
     id?: string;
     role: "user" | "assistant";
     content: string;
+    /** Sender user id on a shared-note group message. */
+    authorId?: string;
+    /** Sender display name on a shared-note group message; never an email. */
+    authorLabel?: string;
     /** Reasoning/thinking tokens from models that support extended thinking */
     reasoning?: string;
     /** Names/statuses of tools used for this response. No inputs or outputs. */
@@ -213,8 +246,28 @@ export interface PBConversation {
     id: string;
     title: string;
     author: string;
+    /** `personal` for a user's own chat, `note` for a shared-note conversation. */
+    scope?: "personal" | "note" | "";
+    /** Bound document id for a `note` conversation. */
+    document?: string;
+    /** Server-computed: the caller is the note owner. */
+    can_manage?: boolean;
     created: string;
     updated: string;
+}
+
+/** Shared-note chat availability for one note. Never carries content or email. */
+export interface NoteChatStatus {
+    noteId: string;
+    noteTitle: string;
+    enabled: boolean;
+    reason: "not_shared" | "private" | "trashed" | "unavailable" | null;
+    shared: boolean;
+    accessRole: "owner" | "view" | "comment" | "edit";
+    accessLevel: number;
+    canEdit: boolean;
+    canManage: boolean;
+    conversation: PBConversation | null;
 }
 
 /** One persisted chat message. */
@@ -223,6 +276,8 @@ export interface PBMessage {
     conversation: string;
     role: "user" | "assistant";
     content: string;
+    author?: string;
+    author_label?: string;
     reasoning?: string;
     model?: string;
     tools?: ChatToolActivity[];
