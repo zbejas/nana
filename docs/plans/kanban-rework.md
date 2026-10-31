@@ -304,7 +304,7 @@ animation is needed for boards.
   open the shared view as a second user; open chat on a note, edit it, navigate
   to a board, and continue the same conversation; report pain points.
 - Skeptics: security review of sharing and permissions; design review of every
-  new surface against `DESIGN.md`; accessibility review of drag/keyboard/touch.
+  new surface against `docs/design.md`; accessibility review of drag/keyboard/touch.
 
 ## 7. Risks
 

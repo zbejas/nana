@@ -4,7 +4,7 @@
 
 The frontend is a React 19 SPA built with Bun, styled with TailwindCSS v4 and the Graphite tokens, and routed with React Router v7. Jotai owns shared UI and document state; data is accessed through the small client in `src/lib/pocketbase.ts`, which talks only to Elysia `/api/v1`. Board task state is route-local, not global. Boards live in the timeline, folder view, and sidebar rather than a separate index; private boards carry a lock and publicly shared boards carry a share indicator.
 
-The visual system is documented in [`../DESIGN.md`](../DESIGN.md); product truth is in [`../PRODUCT.md`](../PRODUCT.md).
+The visual system is documented in [`design.md`](design.md); product truth is in [`product.md`](product.md).
 
 ## Key files
 
@@ -235,7 +235,7 @@ Chat has two entry points that share one store: the full page at `/chat` and `/c
 ### Editor, sidebar, and settings
 
 - `src/components/DocumentEditor.tsx` is split under `src/components/editor/`: state, loader, autosave, actions, attachments, content, overlays.
-- `src/components/editor/milkdown/` owns the editor: `createEditor.ts` (Milkdown kit, GFM, prism, upload, placeholder, slash trigger, AI decorations), `aiDiff.ts` (token diff for the inline AI flash), `useMilkdownEditor.ts` (StrictMode-safe lifecycle, controlled value sync, toolbar snapshot), `NanaMarkdownEditor` (WYSIWYG + toolbar), `NanaSplitMarkdownEditor` (CodeMirror source + Milkdown, scroll-synced; pane stacking is driven by the editor container width, not the viewport), `NanaSourceEditor`, and `NanaInlineMarkdownEditor` for task descriptions and comments. `@uiw/react-markdown-preview` remains the read-only renderer for public pages, chat, and version preview.
+- `src/components/editor/milkdown/` owns the editor: `createEditor.ts` (Milkdown kit, GFM, prism, upload, placeholder, slash trigger, AI decorations), `aiDiff.ts` (token diff for the inline AI flash), `useMilkdownEditor.ts` (StrictMode-safe lifecycle, controlled value sync, toolbar snapshot), `NanaMarkdownEditor` (WYSIWYG + toolbar), `NanaSplitMarkdownEditor` (CodeMirror source + Milkdown, scroll-synced; pane stacking is driven by the editor container width, not the viewport), `NanaSourceEditor`, and `NanaInlineMarkdownEditor` for task descriptions and comments. `@uiw/react-markdown-preview` remains the read-only renderer for public pages, chat, and version preview. Browser spellcheck is off by default on both editable surfaces; **Preferences → Writing → Check spelling** enables native underlines.
 - Editor modes are `wysiwyg | text | split`; the header labels them Editor, Source, Split. Desktop defaults to split; mobile defaults to the rendered editor. The source pane is CodeMirror 6, not a textarea. Read is not a separate mode: the rendered editor is the reading surface. Split remains a desktop-only surface: the mobile header toggle cycles Editor ↔ Source and never stores or exposes an inaccessible split state.
 - GitHub alerts and raw `<details>`/`<summary>` blocks render in the editor. Details keep their source markup, but the Milkdown surface shows a collapsible summary row instead of raw tags; expanding it reveals the body without changing the Markdown. `MarkdownPreview` renders native details in chat/public output.
 - The editor header keeps the AI action, fullscreen toggle, overflow menu, and close. Share, export, save-version, and move-to-trash live in the overflow menu; the preference for fullscreen persists in `nana-editor-fullscreen`, so opening another note keeps the choice.
@@ -261,7 +261,7 @@ Chat has two entry points that share one store: the full page at `/chat` and `/c
 
 ### Styling and UI conventions
 
-- TailwindCSS v4 utilities over semantic tokens from `src/index.css`. The canonical token table, type scale, and component contracts are in [`../DESIGN.md`](../DESIGN.md).
+- TailwindCSS v4 utilities over semantic tokens from `src/index.css`. The canonical token table, type scale, and component contracts are in [`design.md`](design.md).
 - Use `bg-surface`, `border-line`, `text-ink`, `text-ink-secondary`, `text-ink-muted`, `bg-signal-bright`, `text-signal`, `bg-signal-soft`, `text-warning`, `text-success`, `text-danger`, and the `rounded-control` / `rounded-panel` / `rounded-sheet` radii.
 - Do not use raw `gray`/`stone`/`blue` families, `dark:`/`light:` variants, gradients, grain, glass blur, or serif faces.
 - Type: Geist for every interface role; Geist Mono only for code, ids, and URLs inside prose. UI counts and dates use Geist with `tabular-nums`, not mono. Labels are sentence case. Fonts are self-hosted from `src/assets/fonts/`; CSP `font-src 'self'`.
@@ -337,4 +337,4 @@ Performance:
 - [`pocketbase.md`](pocketbase.md) — schema, hooks, and rules behind the UI.
 - [`ai.md`](ai.md) — chat ask/edit tools, write path, providers, and persistence.
 - [`development.md`](development.md) — build and verification commands.
-- [`../DESIGN.md`](../DESIGN.md) — Graphite tokens, type, components, motion.
+- [`design.md`](design.md) — Graphite tokens, type, components, motion.

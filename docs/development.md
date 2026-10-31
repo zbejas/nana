@@ -112,7 +112,7 @@ The suite is the gate for behavior changes. `bun run build` is the gate for ship
 - **Server errors:** return JSON `{ error }` with an appropriate status; log details with the module logger.
 - **Auth:** `verifyAuth()` on protected Bun routes; `requireAdmin()` on admin PocketBase routes.
 - **Frontend state:** Jotai atoms; use `useAtomValue` / `useSetAtom`; keep `useDocumentData()` at `AppContent` only. Board tasks are route-local in `useBoardState`.
-- **Styling:** theme-aware Tailwind utilities over the Graphite tokens; reuse `src/components/ui/` before adding a primitive. See [`../DESIGN.md`](../DESIGN.md).
+- **Styling:** theme-aware Tailwind utilities over the Graphite tokens; reuse `src/components/ui/` before adding a primitive. See [`design.md`](design.md).
 - **PocketBase hooks:** CommonJS `require()`, synchronous, `$os.getenv()`, `$app`.
 - **Bun:** stay on 1.4.4 or newer. Bun 1.3.x can emit a production `dist/index.html` that points at the wrong entry chunk, leaving the SPA blank. The Docker and CI pins are 1.4.4.
 - **Migrations:** append-only; the next free number is `0000032`. Use `migrate((app) => {}, (app) => {})`, a safe `down()`, and idempotent guards.
@@ -157,7 +157,7 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 
 #### Change UI
 
-1. Read [`../DESIGN.md`](../DESIGN.md) and reuse the primitives in `src/components/ui/`.
+1. Read [`design.md`](design.md) and reuse the primitives in `src/components/ui/`.
 2. Use semantic tokens (`bg-surface`, `border-line`, `text-ink`, `bg-signal-soft`, `text-signal`); no raw colour families, `dark:`/`light:` variants, gradients, blur, or serif faces.
 3. Check the change in both themes and at a mobile width.
 4. If the change introduces data entry, use `InlineForm` in place or a `SidePanel`; do not open a centred dialog. `Dialog` (or `Sheet` on touch) is reserved for warnings/destructive confirmations and previews.

@@ -1,11 +1,11 @@
 # Kanban UI — implementation spec
 
 - **Plan:** [`kanban-rework.md`](kanban-rework.md)
-- **Design system:** [`../../DESIGN.md`](../../DESIGN.md)
+- **Design system:** [`../design.md`](../design.md)
 - **Status:** implementation reference
 
 This is the screen-level contract for the board and task surfaces. It is
-subordinate to `DESIGN.md`; when they disagree, `DESIGN.md` wins.
+subordinate to `docs/design.md`; when they disagree, `docs/design.md` wins.
 
 ## Frame
 

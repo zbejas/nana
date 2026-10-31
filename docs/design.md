@@ -271,8 +271,8 @@ Rules:
 
 ## Related docs
 
-- [`PRODUCT.md`](PRODUCT.md) — audience, product truth, and surfaces.
-- [`docs/frontend.md`](docs/frontend.md) — routes, state, board/chat implementation.
-- [`docs/ai.md`](docs/ai.md) — chat tools and tool-activity contract.
-- [`src/index.css`](src/index.css) — canonical token values, type, global styles, motion, and MDEditor overrides.
-- [`src/components/ui/`](src/components/ui/) — shared primitives.
+- [`product.md`](product.md) — audience, product truth, and surfaces.
+- [`frontend.md`](frontend.md) — routes, state, board/chat implementation.
+- [`ai.md`](ai.md) — chat tools and tool-activity contract.
+- [`../src/index.css`](../src/index.css) — canonical token values, type, global styles, motion, and MDEditor overrides.
+- [`../src/components/ui/`](../src/components/ui/) — shared primitives.
