@@ -5,10 +5,12 @@ const CONTEXT_MENU_EXIT_DURATION_MS = 180;
 export interface ContextMenuState {
     x: number;
     y: number;
-    type: 'empty' | 'folder' | 'document' | 'trash-document' | 'trash-folder';
+    type: 'empty' | 'folder' | 'document' | 'trash-document' | 'trash-folder' | 'board';
     folderId?: string;
     folderName?: string;
     documentId?: string;
+    boardId?: string;
+    boardName?: string;
 }
 
 export function useContextMenuState() {
@@ -33,7 +35,13 @@ export function useContextMenuState() {
     const handleContextMenu = (
         e: React.MouseEvent | React.TouchEvent,
         type: ContextMenuState['type'],
-        options?: { folderId?: string; folderName?: string; documentId?: string }
+        options?: {
+            folderId?: string;
+            folderName?: string;
+            documentId?: string;
+            boardId?: string;
+            boardName?: string;
+        }
     ) => {
         e.preventDefault();
         e.stopPropagation();

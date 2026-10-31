@@ -1,8 +1,10 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useSetAtom } from 'jotai';
 import { getDocument, type Document } from '../../lib/documents';
 import { useDocumentEditor, useSidebar, useToasts } from '../../state/hooks';
 import { createLogger } from '../../lib/logger';
+import { refreshTriggerAtom } from '../../state/atoms';
 
 const logger = createLogger('DocEditor');
 import { type ViewMode } from './EditorHeader';
@@ -14,6 +16,7 @@ import {
 } from '../../lib/settings';
 import { useDocumentLoader } from './useDocumentLoader';
 import { useAutoSave } from './useAutoSave';
+import { isSameMarkdown, normalizeMarkdown } from './milkdown/helpers';
 import { useAttachmentHandlers } from './useAttachmentHandlers';
 import { useDocumentActions } from './useDocumentActions';
 
@@ -23,6 +26,7 @@ export function useDocumentEditorState() {
     const [searchParams, setSearchParams] = useSearchParams();
     const {
         selectedDocument: document,
+        setSelectedDocument,
         createInFolder: folderId,
         initialTitle,
         initialContent,
@@ -35,6 +39,7 @@ export function useDocumentEditorState() {
         startNew,
     } = useDocumentEditor();
     const { isOpen: sidebarOpen } = useSidebar();
+    const setRefreshTrigger = useSetAtom(refreshTriggerAtom);
     const { showToast: showAppToast } = useToasts();
     const sidebarWidth = useSidebarWidth();
     const autoSaveDelay = useAutoSaveDelay();
@@ -42,10 +47,9 @@ export function useDocumentEditorState() {
     const titleInputRef = useRef<HTMLInputElement>(null);
     const [shouldSelectTitle, setShouldSelectTitle] = useState(false);
     const [title, setTitle] = useState(document?.title || initialTitle || '');
-    const [content, setContent] = useState(document?.content || initialContent || '');
+    const [content, setContent] = useState(() => normalizeMarkdown(document?.content || initialContent || ''));
     const [tags, setTags] = useState<string[]>(document?.tags || []);
     const [tagInput, setTagInput] = useState('');
-    const [published, setPublished] = useState(document?.published || false);
     const [saving, setSaving] = useState(false);
     const [publishing, setPublishing] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -58,13 +62,12 @@ export function useDocumentEditorState() {
     const titleRef = useRef(title);
     const contentRef = useRef(content);
     const tagsRef = useRef(tags);
-    const publishedRef = useRef(published);
     const prevDocumentIdRef = useRef(document?.id);
+    const remoteContentChangeRef = useRef<{ from: string; to: string } | null>(null);
 
     useEffect(() => { titleRef.current = title; }, [title]);
     useEffect(() => { contentRef.current = content; }, [content]);
     useEffect(() => { tagsRef.current = tags; }, [tags]);
-    useEffect(() => { publishedRef.current = published; }, [published]);
 
     const showToast = useCallback((message: string, type: 'error' | 'success' | 'info' = 'info') => {
         showAppToast(message, type);
@@ -113,7 +116,6 @@ export function useDocumentEditorState() {
         title,
         content,
         tags,
-        published,
         newAttachments,
         removedAttachments,
         autoSaveDelayMs: autoSaveDelay,
@@ -139,11 +141,11 @@ export function useDocumentEditorState() {
         title,
         content,
         tags,
-        published,
         newAttachments,
         removedAttachments,
         folderId,
         creationSessionId,
+        isReadOnly: isTrashDocument,
         isSavingRef,
         onSave: save,
         onReset: reset,
@@ -181,22 +183,27 @@ export function useDocumentEditorState() {
 
     const getInitialViewMode = (): ViewMode => {
         if (typeof window === 'undefined') return 'split';
-        const saved = localStorage.getItem('editorViewMode') as ViewMode | null;
-        if (saved && ['text', 'preview', 'split'].includes(saved)) {
+        const saved = localStorage.getItem('editorViewMode') as ViewMode | 'preview' | null;
+        if (saved === 'preview') return 'wysiwyg';
+        if (saved && ['wysiwyg', 'text', 'split'].includes(saved)) {
             return saved;
         }
-        return window.innerWidth < 768 ? 'text' : 'split';
+        return window.innerWidth < 768 ? 'wysiwyg' : 'split';
     };
 
     const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode());
     const [headerVisible, setHeaderVisible] = useState(true);
     const headerExpanded = isDesktop || headerVisible;
+    // Split is a desktop-only surface. Keep the stored preference untouched
+    // while the phone shows the rendered editor, and never expose a toggle
+    // step that would land on the inaccessible split state.
+    const effectiveViewMode: ViewMode = !isDesktop && viewMode === 'split' ? 'wysiwyg' : viewMode;
 
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('editorViewMode', viewMode);
-        }
-    }, [viewMode]);
+        if (typeof window === 'undefined') return;
+        if (!isDesktop && viewMode === 'split') return;
+        localStorage.setItem('editorViewMode', viewMode);
+    }, [viewMode, isDesktop]);
 
     useEffect(() => {
         const handleResizeDesktop = () => setIsDesktop(window.innerWidth >= 768);
@@ -211,21 +218,25 @@ export function useDocumentEditorState() {
     // new values, so the intermediate (stale) state never reaches the DOM.
     const [lastSyncedDocId, setLastSyncedDocId] = useState<string | undefined>(document?.id);
     const [lastSyncedSession, setLastSyncedSession] = useState(creationSessionId);
+    // The document record whose values are already reflected in local state.
+    // Same-ID realtime updates arrive through the atom before the local setters,
+    // so dirty comparison must ignore that one committed render.
+    const [syncedDocument, setSyncedDocument] = useState<Document | null>(document);
 
     if (document?.id !== lastSyncedDocId || creationSessionId !== lastSyncedSession) {
         setLastSyncedDocId(document?.id);
         setLastSyncedSession(creationSessionId);
+        setSyncedDocument(document);
+        remoteContentChangeRef.current = null;
 
         if (document) {
             setTitle(document.title || '');
-            setContent(document.content);
+            setContent(normalizeMarkdown(document.content));
             setTags(document.tags || []);
-            setPublished(document.published);
         } else {
             setTitle(initialTitle || '');
             setContent(initialContent || '');
             setTags([]);
-            setPublished(false);
         }
         setNewAttachments([]);
         setRemovedAttachments([]);
@@ -253,37 +264,56 @@ export function useDocumentEditorState() {
         // Only handle same-document content updates (ID change is handled above)
         if (document.id !== prevDocumentIdRef.current) {
             prevDocumentIdRef.current = document.id;
+            setSyncedDocument(document);
             return;
         }
+
+        // Mark the record as adopted before the dirty comparison runs. If the
+        // user has local edits, only the baseline moves; their draft is kept.
+        setSyncedDocument(document);
 
         if (hasUnsavedChanges) {
             logger.debug('Skipping realtime state sync - user has unsaved changes');
             return;
         }
 
+        const nextContent = normalizeMarkdown(document.content);
+        if (nextContent !== normalizeMarkdown(content)) {
+            // Keep the pre-realtime draft so an AI-edit event that arrives after
+            // the PocketBase broadcast can still diff against what was on screen.
+            remoteContentChangeRef.current = { from: content, to: nextContent };
+        }
         setTitle(document.title || '');
-        setContent(document.content);
+        setContent(nextContent);
         setTags(document.tags || []);
-        setPublished(document.published);
     }, [document, urlDocumentId, hasUnsavedChanges]);
 
     useEffect(() => {
+        // The atom can change one render before the realtime effect adopts it.
+        // Ignoring that intermediate render prevents a one-frame "Unsaved"
+        // flash while the local fields catch up.
+        if (document && document !== syncedDocument) return;
+
         let hasChanges = false;
 
         if (!document) {
             hasChanges = title.trim().length > 0 || content.trim().length > 0 || newAttachments.length > 0;
         } else {
+            // Compare the same values autosave writes. Milkdown strips trailing
+            // newlines and the API may return them; treating that as a user edit
+            // starts an unsaved/save loop with no visible change.
+            const normalizedTitle = title.trim() || 'Untitled';
             hasChanges =
-                title !== document.title ||
-                content !== document.content ||
-                published !== document.published ||
+                normalizedTitle !== document.title ||
+                !isSameMarkdown(content.trim(), document.content.trim()) ||
                 JSON.stringify(tags) !== JSON.stringify(document.tags || []) ||
                 newAttachments.length > 0 ||
                 removedAttachments.length > 0;
         }
 
+
         setGlobalUnsavedChanges(hasChanges);
-    }, [title, content, tags, published, newAttachments, removedAttachments, document, setGlobalUnsavedChanges]);
+    }, [title, content, tags, newAttachments, removedAttachments, document, syncedDocument, setGlobalUnsavedChanges]);
 
     const contentStats = useMemo(() => {
         const words = content.trim().split(/\s+/).filter((w) => w.length > 0);
@@ -315,11 +345,12 @@ export function useDocumentEditorState() {
             const updatedDocument = await getDocument(document.id);
             save(updatedDocument);
             setGlobalUnsavedChanges(false);
+            setRefreshTrigger((previous) => previous + 1);
         } catch (err: any) {
             logger.error('Failed to reload document after restore', { error: err.message });
             setError('Failed to reload document. Please refresh the page.');
         }
-    }, [document?.id, save, setGlobalUnsavedChanges]);
+    }, [document?.id, save, setGlobalUnsavedChanges, setRefreshTrigger]);
 
     const handleCreateNewFromVersion = useCallback((versionContent: string) => {
         const docName = document?.title || 'Untitled';
@@ -354,6 +385,8 @@ export function useDocumentEditorState() {
     return {
         urlDocumentId,
         document,
+        setSelectedDocument,
+        remoteContentChangeRef,
         sidebarOpen,
         sidebarWidth,
         titleInputRef,
@@ -363,10 +396,9 @@ export function useDocumentEditorState() {
         setContent,
         tags,
         setTags,
+        setGlobalUnsavedChanges,
         tagInput,
         setTagInput,
-        published,
-        setPublished,
         saving,
         publishing,
         loading,
@@ -375,7 +407,7 @@ export function useDocumentEditorState() {
         hasUnsavedChanges,
         isDesktop,
         MOBILE_EDITOR_HEIGHT,
-        viewMode,
+        viewMode: effectiveViewMode,
         setViewMode,
         headerVisible,
         setHeaderVisible,

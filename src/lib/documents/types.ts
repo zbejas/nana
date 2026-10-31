@@ -1,4 +1,4 @@
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from '../record-model';
 
 export interface Document extends RecordModel {
     title: string;
@@ -6,35 +6,51 @@ export interface Document extends RecordModel {
     content: string;
     attachments: string[]; // File names
     tags: string[];
-    published: boolean;
     is_public: boolean;
     is_private: boolean;
     share_attachments: boolean;
     public_share_token?: string;
     public_expires_at?: string;
+    deleted_at?: string;
+    deleted_by?: string;
     author: string; // User ID
     folder?: string; // Folder ID
     word_count: number;
     reading_time: number; // minutes
+    revision?: number;
+    last_edited_by?: string;
+    last_edit_source?: 'user' | 'ai' | 'system';
     created: string;
     updated: string;
 }
 
-export interface DocumentVersion extends RecordModel {
+/** A saved note version. `id` is an opaque version id, not a record id. */
+export interface DocumentVersion {
+    id: string;
     document: string; // Document ID
-    content: string;
+    /** Present on detail reads; list results omit the body. */
+    content?: string;
     version_number: number;
     change_summary: string;
-    created_by: string; // User ID
     source_created_at?: string;
     created: string;
+    metadata?: {
+        title: string;
+        tags: string[];
+        folder: string;
+        is_private: boolean;
+    };
+}
+
+export interface CreateDocumentVersionResult {
+    created: boolean;
+    version: DocumentVersion;
 }
 
 export interface CreateDocumentData {
     title: string;
     content: string;
     tags?: string[];
-    published?: boolean;
     folder?: string;
 }
 
@@ -42,7 +58,8 @@ export interface UpdateDocumentData {
     title?: string;
     content?: string;
     tags?: string[];
-    published?: boolean;
+    /** The revision the editor loaded. Required for conflict detection. */
+    revision?: number;
     is_public?: boolean;
     is_private?: boolean;
     share_attachments?: boolean;

@@ -138,7 +138,7 @@ export function getAttachmentUrl(document: Document, filename: string, thumb?: s
     // Then ensure it uses our proxy by checking if it's absolute
     const url = pb.files.getURL(document, filename, { thumb });
 
-    // If URL is relative, it's already correct (will use /pb base)
+    // If URL is relative, it's already correct (same-origin /api/v1 file path)
     // If URL is absolute, replace the base with our proxy
     const token = getCachedFileToken();
 

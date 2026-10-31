@@ -2,7 +2,7 @@
 
 // Admin endpoint to update attachment settings
 routerAdd("PATCH", "/api/admin/attachments", (c) => {
-	const { requireAdmin, parseRequestBody } = require(`${__hooks}/utils.js`)
+	const { requireAdmin, parseRequestBody, sendError } = require(`${__hooks}/utils.js`)
 
 	try {
 		requireAdmin(c)
@@ -21,7 +21,8 @@ routerAdd("PATCH", "/api/admin/attachments", (c) => {
 
 		const maxAttachmentSizeBytes = maxAttachmentSizeMB * 1024 * 1024
 
-		for (const collectionName of ["documents", "trash_documents"]) {
+		// Trash is a view over documents now, so one field update covers both.
+		for (const collectionName of ["documents"]) {
 			const collection = $app.findCollectionByNameOrId(collectionName)
 			const attachmentsField = collection?.fields?.getByName("attachments")
 
@@ -45,7 +46,6 @@ routerAdd("PATCH", "/api/admin/attachments", (c) => {
 			},
 		})
 	} catch (err) {
-		console.error("Failed to update attachment settings:", err)
-		return c.json(500, { error: "Failed to save attachment settings: " + String(err) })
+		return sendError(c, err, "Failed to save attachment settings")
 	}
 }, $apis.requireAuth())

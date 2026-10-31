@@ -1,11 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { XMarkIcon, ArrowPathIcon, CheckIcon, ShieldCheckIcon, ExclamationTriangleIcon, EnvelopeIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
-import { EmailChangeConfirmModal } from '../../modals/EmailChangeConfirmModal';
+import {
+  ArrowPathIcon,
+  EnvelopeIcon,
+  ExclamationTriangleIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  ShieldCheckIcon,
+} from '@heroicons/react/24/outline';
 import { useToasts } from '../../../state/hooks';
+import {
+  Button,
+  Card,
+  Checkbox,
+  ConfirmDialog,
+  Field,
+  IconButton,
+  Input,
+  SectionHeading,
+} from '../../ui';
 
 interface EditUserFormProps {
-  isOpen: boolean;
   user: {
     id: string;
     name: string;
@@ -26,7 +40,15 @@ interface EditUserFormProps {
   isCurrentUserVerified?: boolean;
 }
 
-export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onCancel, isUpdating, isSelfService = false, isCurrentUserVerified = false }: EditUserFormProps) {
+export function EditUserForm({
+  user,
+  onSubmit,
+  onRequestEmailChange,
+  onCancel,
+  isUpdating,
+  isSelfService = false,
+  isCurrentUserVerified = false,
+}: EditUserFormProps) {
   const [formData, setFormData] = useState({
     name: user.name,
     newEmail: user.email,
@@ -40,15 +62,33 @@ export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onC
   const [showPasswords, setShowPasswords] = useState(false);
   const [temporaryPasswordReveal, setTemporaryPasswordReveal] = useState(false);
   const revealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToasts();
 
   useEffect(() => {
+    nameRef.current?.focus();
     return () => {
       if (revealTimeoutRef.current) {
         clearTimeout(revealTimeoutRef.current);
       }
     };
   }, []);
+
+  // The inline form can switch to another user without unmounting.
+  useEffect(() => {
+    setFormData({
+      name: user.name,
+      newEmail: user.email,
+      oldPassword: '',
+      password: '',
+      confirmPassword: '',
+      sendPasswordEmail: false,
+      admin: user.admin || false,
+    });
+    setShowEmailChangeConfirm(false);
+    setShowPasswords(false);
+    setTemporaryPasswordReveal(false);
+  }, [user.id]);
 
   // Generate random password (12 characters with symbols)
   const generatePassword = () => {
@@ -70,8 +110,6 @@ export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onC
     }
   };
 
-  if (!isOpen) return null;
-
   const hasEmailChanged = formData.newEmail !== user.email;
 
   const handleEmailChangeRequest = async () => {
@@ -88,7 +126,7 @@ export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onC
       showToast('Passwords do not match', 'error');
       return;
     }
-    
+
     // Validate old password is provided for self-service password changes
     if (isSelfService && formData.password && !formData.oldPassword) {
       showToast('Please enter your current password', 'error');
@@ -96,7 +134,13 @@ export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onC
     }
 
     // Prepare update data
-    const updateData: { name: string; password?: string; oldPassword?: string; sendPasswordEmail?: boolean; admin?: boolean } = {
+    const updateData: {
+      name: string;
+      password?: string;
+      oldPassword?: string;
+      sendPasswordEmail?: boolean;
+      admin?: boolean;
+    } = {
       name: formData.name,
     };
 
@@ -111,7 +155,7 @@ export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onC
         updateData.sendPasswordEmail = formData.sendPasswordEmail;
       }
     }
-    
+
     // Include admin field only when a verified admin is editing another user
     if (!isSelfService && isCurrentUserVerified) {
       updateData.admin = formData.admin;
@@ -120,309 +164,249 @@ export function EditUserForm({ isOpen, user, onSubmit, onRequestEmailChange, onC
     await onSubmit(updateData);
   };
 
+  const passwordsDoNotMatch = !!formData.password && formData.password !== formData.confirmPassword;
+
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-[10000] p-4">
-      <div className="bg-black/95 backdrop-blur-sm border border-white/10 rounded-lg max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl">
-        {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Edit User</h2>
-          <button
-            onClick={onCancel}
-            disabled={isUpdating}
-            className="text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-50"
-          >
-            <XMarkIcon className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
-          <form onSubmit={handleSubmit} id="edit-user-form" className="space-y-4">
-            {/* Email Change Section (only for admin editing other users) */}
-            {!isSelfService && onRequestEmailChange && (
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">
-                  Email Address
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="email"
-                    value={formData.newEmail}
-                    onChange={(e) => setFormData({ ...formData, newEmail: e.target.value })}
-                    className="flex-1 px-3.5 py-2.5 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 focus:bg-black/40 transition-all"
-                    placeholder="user@example.com"
-                    disabled={isUpdating}
-                  />
-                  {hasEmailChanged && (
-                    <button
-                      type="button"
-                      onClick={() => setShowEmailChangeConfirm(true)}
-                      disabled={isUpdating}
-                      className="shrink-0 px-3 py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-1.5"
-                    >
-                      <EnvelopeIcon className="w-4 h-4" />
-                      <span className="hidden sm:inline">Send</span>
-                    </button>
-                  )}
-                </div>
-                <p className="mt-1.5 text-xs text-gray-500">
-                  User will receive a confirmation email to verify the new address
-                </p>
-              </div>
-            )}
-
-            {/* Email Change Section (for self-service) */}
-            {isSelfService && onRequestEmailChange && (
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">
-                  Email Address
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="email"
-                    value={formData.newEmail}
-                    onChange={(e) => setFormData({ ...formData, newEmail: e.target.value })}
-                    className="flex-1 px-3.5 py-2.5 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 focus:bg-black/40 transition-all"
-                    placeholder="user@example.com"
-                    disabled={isUpdating}
-                  />
-                  {hasEmailChanged && (
-                    <button
-                      type="button"
-                      onClick={() => setShowEmailChangeConfirm(true)}
-                      disabled={isUpdating}
-                      className="shrink-0 px-3 py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-1.5"
-                    >
-                      <EnvelopeIcon className="w-4 h-4" />
-                      <span className="hidden sm:inline">Send</span>
-                    </button>
-                  )}
-                </div>
-                <p className="mt-1.5 text-xs text-gray-500">
-                  You'll receive a confirmation email with a link. You'll need your password to complete the change.
-                </p>
-              </div>
-            )}
-
-            {/* Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5">
-                Full Name
-              </label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 focus:bg-black/40 transition-all"
-                placeholder="John Doe"
-                required
-                autoComplete="off"
-                disabled={isUpdating}
-              />
-            </div>
-
-            {/* Admin Toggle (only for verified admin editing other users) */}
-            {!isSelfService && isCurrentUserVerified && (
-              <div className="pt-1">
-                <div className="flex items-start gap-3 p-3 bg-purple-500/5 border border-purple-500/20 rounded-lg">
-                  <div className="relative flex items-center mt-0.5">
-                    <input
-                      type="checkbox"
-                      id="admin-checkbox"
-                      checked={formData.admin}
-                      onChange={(e) => setFormData({ ...formData, admin: e.target.checked })}
-                      disabled={isUpdating}
-                      className="peer w-5 h-5 bg-black/30 border border-purple-500/30 rounded cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500/40 checked:bg-purple-600 checked:border-purple-600 transition-all appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
-                    />
-                    <CheckIcon className="w-3.5 h-3.5 text-white absolute left-0.5 pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <label htmlFor="admin-checkbox" className="flex items-center gap-2 text-sm font-medium text-purple-300 cursor-pointer select-none mb-1">
-                      <ShieldCheckIcon className="w-4 h-4" />
-                      Administrator Privileges
-                    </label>
-                    <p className="text-xs text-gray-400 leading-relaxed">
-                      <ExclamationTriangleIcon className="w-3.5 h-3.5 inline mr-1 text-orange-400" />
-                      Admins have full access to manage users, documents, and system settings.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Password Section */}
-            <div className="pt-2 border-t border-white/10">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-medium text-gray-300">Change Password (Optional)</h4>
-                {!isSelfService && (
-                  <button
-                    type="button"
-                    onClick={generatePassword}
-                    disabled={isUpdating}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs bg-white/5 hover:bg-white/10 text-gray-300 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Generate random password"
-                  >
-                    <ArrowPathIcon className="w-3.5 h-3.5" />
-                    Generate
-                  </button>
-                )}
-              </div>
-              
-              <div className="space-y-3">
-                {/* Current Password (only for self-service) */}
-                {isSelfService && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1.5">
-                      Current Password
-                    </label>
-                    <input
-                      type={showPasswords ? 'text' : 'password'}
-                      value={formData.oldPassword}
-                      onChange={(e) => setFormData({ ...formData, oldPassword: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 focus:bg-black/40 transition-all"
-                      placeholder="Enter your current password"
-                      required={!!formData.password}
-                      autoComplete="current-password"
+    <>
+      <div className="animate-slideDown">
+        <Card className="p-4 sm:p-5">
+          <form id="edit-user-form" onSubmit={handleSubmit}>
+            <SectionHeading
+              title="Edit user"
+              description={
+                isSelfService
+                  ? 'Update your name, email, or password.'
+                  : "Update this person's name, email, access, or password."
+              }
+            />
+            <div className="mt-4 space-y-5">
+              {/* Email Change Section */}
+              {onRequestEmailChange && (
+                <Field
+                  label="Email address"
+                  htmlFor="edit-user-email"
+                  hint={
+                    isSelfService
+                      ? "You'll receive a confirmation email with a link. You'll need your password to complete the change."
+                      : 'User will receive a confirmation email to verify the new address'
+                  }
+                >
+                  <div className="flex items-start gap-2">
+                    <Input
+                      id="edit-user-email"
+                      type="email"
+                      value={formData.newEmail}
+                      onChange={(e) => setFormData({ ...formData, newEmail: e.target.value })}
+                      className="min-w-0 flex-1"
+                      placeholder="user@example.com"
                       disabled={isUpdating}
                     />
-                    <p className="mt-1.5 text-xs text-gray-500">Required to change your password</p>
-                  </div>
-                )}
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">
-                    New Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPasswords || temporaryPasswordReveal ? 'text' : 'password'}
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full px-3.5 py-2.5 pr-11 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 focus:bg-black/40 transition-all"
-                      placeholder="Leave blank to keep current password"
-                      minLength={8}
-                      autoComplete="new-password"
-                      disabled={isUpdating}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const nextShow = !showPasswords;
-                        setShowPasswords(nextShow);
-                        if (nextShow) {
-                          setTemporaryPasswordReveal(false);
-                          if (revealTimeoutRef.current) {
-                            clearTimeout(revealTimeoutRef.current);
-                          }
-                        }
-                      }}
-                      disabled={isUpdating}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      title={showPasswords ? 'Hide passwords' : 'Show passwords'}
-                      aria-label={showPasswords ? 'Hide passwords' : 'Show passwords'}
-                    >
-                      {showPasswords ? <EyeSlashIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  {formData.password && (
-                    <p className="mt-1.5 text-xs text-gray-500">Must be at least 8 characters long</p>
-                  )}
-                </div>
-
-                {formData.password && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1.5">
-                      Confirm New Password
-                    </label>
-                    <input
-                      type={showPasswords || temporaryPasswordReveal ? 'text' : 'password'}
-                      value={formData.confirmPassword}
-                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white/30 focus:bg-black/40 transition-all"
-                      placeholder="Confirm your new password"
-                      required={!!formData.password}
-                      minLength={8}
-                      autoComplete="new-password"
-                      disabled={isUpdating}
-                    />
-                    {formData.password !== formData.confirmPassword && formData.confirmPassword && (
-                      <p className="mt-1.5 text-xs text-red-400">Passwords do not match</p>
+                    {hasEmailChanged && (
+                      <Button
+                        variant="secondary"
+                        className="shrink-0"
+                        icon={<EnvelopeIcon />}
+                        onClick={() => setShowEmailChangeConfirm(true)}
+                        disabled={isUpdating}
+                      >
+                        Send
+                      </Button>
                     )}
                   </div>
-                )}
+                </Field>
+              )}
 
-                {/* Send Password Email Checkbox (only for admin) */}
-                {!isSelfService && (
-                  <div className="pt-2">
-                    <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <div className="relative flex items-center mt-0.5">
-                          <input
-                            type="checkbox"
-                            checked={formData.sendPasswordEmail}
-                            onChange={(e) => setFormData({ ...formData, sendPasswordEmail: e.target.checked })}
-                            disabled={isUpdating}
-                            className="peer w-4 h-4 bg-black/30 border border-blue-500/30 rounded cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/40 checked:bg-blue-600 checked:border-blue-600 transition-all appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
-                          />
-                          <CheckIcon className="w-3 h-3 text-white absolute left-0.5 pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium text-blue-300 group-hover:text-blue-200 transition-colors block mb-1">
-                            Send password to user via email
-                          </span>
-                          <p className="text-xs text-gray-400 leading-relaxed">
-                            User will receive an email with their new password
-                          </p>
-                        </div>
-                      </label>
+              {/* Name */}
+              <Field label="Full name" htmlFor="edit-user-name">
+                <Input
+                  id="edit-user-name"
+                  ref={nameRef}
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="John Doe"
+                  required
+                  autoComplete="off"
+                  disabled={isUpdating}
+                />
+              </Field>
+
+              {/* Admin Toggle (only for verified admin editing other users) */}
+              {!isSelfService && isCurrentUserVerified && (
+                <Checkbox
+                  id="admin-checkbox"
+                  checked={formData.admin}
+                  onChange={(checked) => setFormData({ ...formData, admin: checked })}
+                  disabled={isUpdating}
+                  label={
+                    <span className="flex items-center gap-2">
+                      <ShieldCheckIcon className="h-4 w-4 text-signal" aria-hidden="true" />
+                      Administrator privileges
+                    </span>
+                  }
+                  description={
+                    <>
+                      <ExclamationTriangleIcon
+                        className="mr-1 inline h-3.5 w-3.5 text-warning"
+                        aria-hidden="true"
+                      />
+                      Admins have full access to manage users, documents, and system settings.
+                    </>
+                  }
+                />
+              )}
+
+              {/* Password Section */}
+              <div className="space-y-4 border-t border-line pt-5">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium text-ink">
+                    Change password <span className="font-normal text-ink-muted">(optional)</span>
+                  </h3>
+                  {!isSelfService && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="[&>svg]:h-3.5 [&>svg]:w-3.5"
+                      icon={<ArrowPathIcon />}
+                      onClick={generatePassword}
+                      disabled={isUpdating}
+                      title="Generate random password"
+                    >
+                      Generate
+                    </Button>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  {/* Current Password (only for self-service) */}
+                  {isSelfService && (
+                    <Field
+                      label="Current password"
+                      htmlFor="edit-user-old-password"
+                      hint="Required to change your password"
+                    >
+                      <Input
+                        id="edit-user-old-password"
+                        type={showPasswords ? 'text' : 'password'}
+                        value={formData.oldPassword}
+                        onChange={(e) => setFormData({ ...formData, oldPassword: e.target.value })}
+                        placeholder="Enter your current password"
+                        required={!!formData.password}
+                        autoComplete="current-password"
+                        disabled={isUpdating}
+                      />
+                    </Field>
+                  )}
+
+                  <Field
+                    label="New password"
+                    htmlFor="edit-user-password"
+                    hint={formData.password ? 'Must be at least 8 characters long' : undefined}
+                  >
+                    <div className="relative">
+                      <Input
+                        id="edit-user-password"
+                        type={showPasswords || temporaryPasswordReveal ? 'text' : 'password'}
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        className="pr-11"
+                        placeholder="Leave blank to keep current password"
+                        minLength={8}
+                        autoComplete="new-password"
+                        disabled={isUpdating}
+                      />
+                      <IconButton
+                        label={showPasswords ? 'Hide passwords' : 'Show passwords'}
+                        size="sm"
+                        onClick={() => {
+                          const nextShow = !showPasswords;
+                          setShowPasswords(nextShow);
+                          if (nextShow) {
+                            setTemporaryPasswordReveal(false);
+                            if (revealTimeoutRef.current) {
+                              clearTimeout(revealTimeoutRef.current);
+                            }
+                          }
+                        }}
+                        disabled={isUpdating}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2"
+                      >
+                        {showPasswords ? <EyeSlashIcon /> : <EyeIcon />}
+                      </IconButton>
                     </div>
-                  </div>
-                )}
+                  </Field>
+
+                  {formData.password && (
+                    <Field
+                      label="Confirm new password"
+                      htmlFor="edit-user-confirm-password"
+                      error={passwordsDoNotMatch ? 'Passwords do not match' : undefined}
+                    >
+                      <Input
+                        id="edit-user-confirm-password"
+                        type={showPasswords || temporaryPasswordReveal ? 'text' : 'password'}
+                        value={formData.confirmPassword}
+                        onChange={(e) =>
+                          setFormData({ ...formData, confirmPassword: e.target.value })
+                        }
+                        placeholder="Confirm your new password"
+                        required={!!formData.password}
+                        minLength={8}
+                        disabled={isUpdating}
+                      />
+                    </Field>
+                  )}
+
+                  {/* Send Password Email Checkbox (only for admin) */}
+                  {!isSelfService && (
+                    <Checkbox
+                      id="edit-user-send-password-email"
+                      checked={formData.sendPasswordEmail}
+                      onChange={(checked) =>
+                        setFormData({ ...formData, sendPasswordEmail: checked })
+                      }
+                      disabled={isUpdating}
+                      label="Send password to user via email"
+                      description="User will receive an email with their new password"
+                    />
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+                <Button variant="secondary" onClick={onCancel} disabled={isUpdating}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  loading={isUpdating}
+                  disabled={isUpdating || passwordsDoNotMatch}
+                >
+                  {isUpdating ? 'Updating…' : 'Update user'}
+                </Button>
               </div>
             </div>
           </form>
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 sm:p-5 border-t border-white/10 flex gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={isUpdating}
-            className="flex-1 px-3 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="edit-user-form"
-            disabled={isUpdating || (formData.password !== formData.confirmPassword && !!formData.password)}
-            className="flex-1 px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-          >
-            {isUpdating ? (
-              <span className="flex items-center justify-center gap-2">
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                Updating...
-              </span>
-            ) : (
-              'Update User'
-            )}
-          </button>
-        </div>
+        </Card>
       </div>
 
-      {/* Email Change Confirmation Modal - Render via portal to avoid clipping */}
-      {createPortal(
-        <EmailChangeConfirmModal
-          isOpen={showEmailChangeConfirm}
-          newEmail={formData.newEmail}
-          isSelfService={isSelfService}
-          isProcessing={isUpdating}
-          onConfirm={handleEmailChangeRequest}
-          onCancel={() => setShowEmailChangeConfirm(false)}
-        />,
-        document.body
-      )}
-    </div>
+      <ConfirmDialog
+        open={showEmailChangeConfirm}
+        title="Confirm email change request"
+        description={
+          <>
+            Send a confirmation link to{' '}
+            <span className="font-medium text-ink">{formData.newEmail}</span>?{' '}
+            {isSelfService
+              ? "You'll need your password to complete the change."
+              : 'The user must click the link in that email to verify the new address.'}
+          </>
+        }
+        confirmLabel={isUpdating ? 'Sending…' : 'Send confirmation'}
+        busy={isUpdating}
+        onConfirm={() => void handleEmailChangeRequest()}
+        onCancel={() => setShowEmailChangeConfirm(false)}
+      />
+    </>
   );
 }

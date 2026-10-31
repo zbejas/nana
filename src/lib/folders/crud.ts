@@ -13,7 +13,6 @@ export async function createFolder(data: CreateFolderData): Promise<Folder> {
         const folderData: any = {
             name: data.name,
             author: getCurrentUserId(),
-            published: false,
         };
 
         // Only set optional fields if they have values (relation fields don't accept empty strings)
@@ -62,10 +61,11 @@ export async function getFolder(id: string): Promise<Folder> {
 }
 
 /**
- * Deletes a folder permanently (and all its subfolders due to cascade)
+ * Moves a folder subtree to trash. The records keep their ids; permanent
+ * delete is a separate trash action.
  */
 export async function deleteFolder(id: string): Promise<boolean> {
-    const response = await fetch('/pb/api/trash/move-folder', {
+    const response = await fetch('/api/v1/trash/move-folder', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -177,35 +177,3 @@ export async function moveFolder(folderId: string, newParentId: string | null): 
         parent: newParentId || undefined,
     });
 }
-
-/**
- * Toggles the published status of a folder
- */
-export async function setFolderPublished(folderId: string, published: boolean): Promise<Folder> {
-    try {
-        logger.debug(`${published ? 'Publishing' : 'Unpublishing'} folder`, { folderId });
-
-        const updated = await pb.collection('folders').update<Folder>(folderId, {
-            published,
-        });
-
-        logger.info(`Folder ${published ? 'published' : 'unpublished'} successfully`, { folderId });
-        return updated;
-    } catch (error: any) {
-        logger.error(`Failed to ${published ? 'publish' : 'unpublish'} folder`, {
-            folderId,
-            error: error.message
-        });
-        throw error;
-    }
-}
-
-/**
- * Publishes a folder
- */
-export const publishFolder = (folderId: string) => setFolderPublished(folderId, true);
-
-/**
- * Unpublishes a folder
- */
-export const unpublishFolder = (folderId: string) => setFolderPublished(folderId, false);

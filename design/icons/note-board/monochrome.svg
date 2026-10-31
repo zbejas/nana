@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Nana note and board monochrome icon</title>
+  <g fill="#1a1a18">
+    <rect x="106" y="168" width="84" height="224" rx="12"/>
+    <rect x="214" y="132" width="84" height="260" rx="12"/>
+    <path d="M334 184h36l36 36v160c0 6.6-5.4 12-12 12h-60c-6.6 0-12-5.4-12-12V196c0-6.6 5.4-12 12-12z"/>
+  </g>
+</svg>

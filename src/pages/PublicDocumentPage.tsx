@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { PublicDocumentView } from '../components/public/PublicDocumentView';
 import { PublicTopBar } from '../components/public/PublicTopBar';
+import { Badge, Button } from '../components/ui';
 import logo from '../assets/nana.svg';
 import {
     fetchPublicDocumentShare,
@@ -16,7 +17,6 @@ export function PublicDocumentPage() {
     const [data, setData] = useState<PublicDocumentShareResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [shareTokenCopied, setShareTokenCopied] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -32,7 +32,7 @@ export function PublicDocumentPage() {
             })
             .catch((err: Error) => {
                 if (!cancelled) {
-                    setError(err.message === 'not-found' ? 'This public document is unavailable.' : 'Failed to load public document.');
+                    setError(err.message === 'not-found' ? 'This public note is unavailable.' : 'Failed to load the public note.');
                 }
             })
             .finally(() => {
@@ -62,19 +62,13 @@ export function PublicDocumentPage() {
         );
     }, [data, shareToken]);
 
-    const handleCopyShareToken = async () => {
-        await navigator.clipboard.writeText(shareToken);
-        setShareTokenCopied(true);
-        window.setTimeout(() => setShareTokenCopied(false), 1800);
-    };
-
     if (loading) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-[#0a0908]">
-                <div className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-[#0a0908] via-[#141010] to-[#0a0908]" aria-hidden="true" />
-                <div className="flex flex-col items-center gap-3">
-                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-400" />
-                    <span className="text-sm text-stone-400">Loading public document…</span>
+            <div className="flex min-h-screen items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <img src={logo} alt="Nana" className="h-14 w-14 opacity-90" />
+                    <span className="h-6 w-6 animate-spin rounded-full border-2 border-line-strong border-t-signal" />
+                    <span className="text-sm text-ink-muted">Opening the note…</span>
                 </div>
             </div>
         );
@@ -82,70 +76,40 @@ export function PublicDocumentPage() {
 
     if (error || !data) {
         return (
-            <div className="min-h-full bg-stone-950 px-4 py-6 sm:px-6 lg:px-10">
-                <div className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-stone-950 via-stone-900 to-stone-950" aria-hidden="true" />
-                <div className="mx-auto flex min-h-full max-w-4xl items-center justify-center py-8 sm:py-14">
-                    <section className="w-full overflow-hidden rounded-2xl border border-stone-700/60 bg-stone-900/80 backdrop-blur-xl p-6 text-white shadow-2xl sm:p-10">
-                        <div>
-                            <div className="flex flex-col items-center text-center">
-                                <img src={logo} alt="Nana" className="h-16 w-16 sm:h-20 sm:w-20" />
-                                <div className="mt-4 text-[11px] uppercase tracking-[0.24em] text-amber-200/80">Nana</div>
-                                <div className="mt-3 text-4xl font-semibold tracking-[0.18em] text-amber-100 sm:text-5xl">404</div>
-                            </div>
-
-                            <h1 className="mt-8 text-center text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-                                This document was not found
-                            </h1>
-                            <p className="mx-auto mt-4 max-w-2xl text-center text-base leading-7 text-stone-300 sm:text-lg">
-                                The owner may have stopped sharing it, the public link may have expired, or this URL may no longer be valid.
-                            </p>
-
-                            <div className="mx-auto mt-8 max-w-xl rounded-lg border border-stone-700/60 bg-stone-800/50 p-4 sm:p-5">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div className="min-w-0">
-                                        <div className="text-[11px] uppercase tracking-[0.22em] text-stone-400">Share token</div>
-                                        <div className="mt-2 truncate font-mono text-sm text-stone-200">{shareToken}</div>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => { void handleCopyShareToken(); }}
-                                        className="shrink-0 rounded-lg border border-stone-700/60 bg-stone-800/50 px-3 py-2 text-sm text-white transition-colors hover:bg-stone-700/60"
-                                    >
-                                        {shareTokenCopied ? 'Copied' : 'Copy'}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
+            <div className="flex min-h-screen items-center justify-center px-4 py-10">
+                <div className="w-full max-w-md rounded-panel border border-line bg-surface p-6 text-center sm:p-8">
+                    <img src={logo} alt="Nana" className="mx-auto h-16 w-16" />
+                    <h1 className="mt-5 text-2xl text-ink">This link is not available</h1>
+                    <p className="mt-3 text-sm leading-relaxed text-ink-secondary">
+                        {error ?? 'The owner may have stopped sharing this note, or the link has expired.'}
+                    </p>
+                    <a href="/" className="mt-6 inline-block">
+                        <Button variant="secondary">Open Nana</Button>
+                    </a>
                 </div>
             </div>
         );
     }
 
     const topBarRight = (
-        <div className="flex flex-wrap items-center justify-center sm:justify-end gap-x-3 gap-y-1">
-            <div className="flex items-center gap-1.5 text-xs text-stone-300 whitespace-nowrap">
-                <ClockIcon className="h-3.5 w-3.5 text-amber-300" />
-                <span>{data.document.reading_time || 0} min</span>
-            </div>
+        <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
+            <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-muted">
+                <ClockIcon className="h-3.5 w-3.5" />
+                {data.document.reading_time || 0} min
+            </span>
             {data.document.updated && (
-                <div className="flex items-center gap-1.5 text-xs text-stone-400 whitespace-nowrap">
-                    <span>Updated {new Date(data.document.updated).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-                </div>
+                <span className="hidden text-[11.5px] text-ink-muted sm:inline">
+                    Updated {new Date(data.document.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
             )}
             {data.expiresAt && (
-                <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-100 whitespace-nowrap">
-                    Expires {new Date(data.expiresAt).toLocaleString()}
-                </div>
+                <Badge tone="warning">Expires {new Date(data.expiresAt).toLocaleDateString()}</Badge>
             )}
         </div>
     );
 
     return (
-        <div className="min-h-screen flex flex-col overflow-x-hidden bg-[#0a0908]">
-            <div className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-[#0a0908] via-[#141010] to-[#0a0908]" aria-hidden="true" />
-            <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_top,rgba(217,119,6,0.04),transparent_50%)]" aria-hidden="true" />
-
+        <div className="flex min-h-screen flex-col">
             <PublicTopBar
                 author={data.author?.name}
                 title={data.document.title || 'Untitled'}
@@ -153,17 +117,19 @@ export function PublicDocumentPage() {
                 logo={logo}
             />
 
-            <div className="relative z-10 mx-auto mt-6 mb-8 w-full max-w-6xl px-4 sm:px-6 lg:px-10 flex-1">
+            <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-7 sm:px-6 sm:py-10">
                 <PublicDocumentView
                     content={renderedContent}
                     attachments={data.shareAttachments ? data.document.attachments : []}
                     getAttachmentUrl={(filename) => getPublicDocumentAttachmentUrl(shareToken, filename)}
-                    className="p-5 sm:p-8 lg:p-10"
                 />
             </div>
 
-            <footer className="relative z-10 mt-auto pt-8 pb-5 px-4 sm:px-6 lg:px-10 text-center sm:text-right text-sm text-stone-500">
-                Powered by <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-amber-200/80 hover:text-amber-100 transition-colors">Nana</a>
+            <footer className="px-4 pb-6 pt-4 text-center text-[11.5px] text-ink-muted">
+                Published with{' '}
+                <a href="https://nana.fyi" target="_blank" rel="noopener noreferrer" className="text-signal hover:text-signal-strong">
+                    Nana
+                </a>
             </footer>
         </div>
     );

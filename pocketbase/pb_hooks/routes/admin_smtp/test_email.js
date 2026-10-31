@@ -4,7 +4,7 @@
 routerAdd("POST", "/api/admin/smtp/test", (c) => {
   // Load email template helper
   const { generateSmtpTestContent } = require(`${__hooks}/templates/smtp_test_template.js`)
-  const { requireAdmin, getSiteUrl, getSenderInfo } = require(`${__hooks}/utils.js`)
+  const { requireAdmin, getSiteUrl, getSenderInfo, sendError } = require(`${__hooks}/utils.js`)
 
   try {
     // Admin check
@@ -47,7 +47,6 @@ routerAdd("POST", "/api/admin/smtp/test", (c) => {
 
     return c.json(200, { success: true, message: "Test email sent (check inbox)" })
   } catch (err) {
-    console.error("Failed to send test email:", err)
-    return c.json(500, { error: "Failed to send test email: " + String(err) })
+    return sendError(c, err, "Failed to send test email")
   }
 }, $apis.requireAuth())

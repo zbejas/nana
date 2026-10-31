@@ -1,130 +1,408 @@
-# Testing
+# Testing — unit and integration layers
 
-Nana uses **integration tests**, not unit tests with mocks. The suite starts a real PocketBase instance and a real Bun server, then exercises HTTP endpoints the same way the browser does.
+## Overview
 
-## Run the suite
+Nana has two test layers. **Unit tests** exercise pure modules directly, run without any services, and are fast enough for a tight edit loop. **Integration tests** start a real PocketBase instance and a real Bun server, then exercise HTTP the same way the browser does. There are no mocked database or HTTP layers.
 
-```bash
-docker compose -f docker/compose.test.yml up --build --abort-on-container-exit --exit-code-from nana-test
-```
+The Docker suite runs both layers in an isolated container with a disposable database. It is the behavior gate; `bun run build` is the shipping gate.
 
-The command builds the `testing` stage, runs the suite in an isolated container, and exits with the test status. It does not expose ports or mount the host `pb_data`.
+## Key files
 
-Do not point the test stack at a real database. The entrypoint deletes and recreates its own `pb_data`.
+| File | Purpose |
+| --- | --- |
+| `tests/unit/` | Pure-function tests; no server, no PocketBase, no preload. |
+| `tests/pocketbase/bootstrap.test.ts` | First checks on a fresh database: health, credentials, schema limits. |
+| `tests/pocketbase/guards/` | Collection rules and request guards: users, trash views, tasks, boards, relation integrity. |
+| `tests/pocketbase/hooks/` | Document hooks: stats, cascades. |
+| `tests/pocketbase/routes/` | Custom PocketBase routes: trash, admin, public shares, check-users, folder board rehoming. |
+| `tests/api/` | Bun routes plus chat read/write tools, Elysia `/api/v1`, MCP, and version history: app version, versions, export, chat, security, static, rest, mcp. |
+| `tests/helpers/setup.ts` | URLs, credentials, auth, signup, unique names. |
+| `tests/helpers/client.ts` | HTTP and PocketBase collection helpers with status assertions. |
+| `tests/helpers/factories.ts` | Isolated users and records for integration files. |
+| `tests/helpers/settings.ts` | Snapshot/restore for global admin settings. |
+| `tests/preload.ts` | Waits for PocketBase and Bun before integration files run. |
+| `docker/compose.test.yml` | Isolated test container; no host ports or volumes. |
+| `docker/docker-test-entrypoint.sh` | Resets the database, runs migrations, starts both processes, runs all phases. |
+| `.github/workflows/tests.yml` | CI: unit + build, then the Docker suite with logs on failure. |
 
-## What the entrypoint does
-
-`docker/docker-test-entrypoint.sh`:
-
-1. Deletes and recreates `/app/pocketbase/pb_data`.
-2. Runs `PB_MIGRATING=1 pocketbase migrate up`.
-3. Starts PocketBase on `:8090` and Bun on `:3000`.
-4. Waits for both to become ready.
-5. Runs three phases with `bun test`:
-
-| Phase | Files | Why separate |
-| --- | --- | --- |
-| 1 | `tests/pocketbase/bootstrap.test.ts` + `tests/pocketbase/guards/` | Fresh-database ordering matters; first-user bootstrap must run before lockdown tests. |
-| 2 | `tests/pocketbase/hooks/` + `tests/pocketbase/routes/` | Hooks and custom routes after bootstrap. |
-| 3 | `tests/api/` | Bun API routes after PocketBase is fully seeded. |
-
-`tests/preload.ts` waits for PocketBase health and the Bun server before the suite starts.
-
-## Layout
+### Layout
 
 ```text
 tests/
   preload.ts
-  helpers/setup.ts
-  api/bun-api.test.ts
+  helpers/
+    setup.ts
+    client.ts
+    factories.ts
+    settings.ts
+  unit/
+    ai-visibility.test.ts
+    api-key-scope.test.ts
+    board-dates.test.ts
+    chat-activity.test.ts
+    chat-attachments.test.ts
+    chat-context.test.ts
+    chat-input-schemas.test.ts
+    chat-stream.test.ts
+    chat-tools-text.test.ts
+    chat-version-token.test.ts
+    document-utils.test.ts
+    export-documents.test.ts
+    folder-tree.test.ts
+    public-board.test.ts
+    sanitize.test.ts
+    tasks-text.test.ts
+    timeline-items.test.ts
+    versioning-store.test.ts
   pocketbase/
     bootstrap.test.ts
     guards/
       00-user-guards.test.ts
       01-trash-guards.test.ts
-      02-version-guards.test.ts
+      03-task-rules.test.ts
+      04-board-rules.test.ts
+      05-board-folders.test.ts
+      06-relation-integrity.test.ts
     hooks/03-document-hooks.test.ts
     routes/04-trash-routes.test.ts
     routes/05-admin-routes.test.ts
     routes/06-public-shares.test.ts
     routes/07-misc-routes.test.ts
+    routes/08-board-folder-trash.test.ts
+  api/
+    api-keys.test.ts
+    chat-attachments.test.ts
+    chat-tools.test.ts
+    chat-write-tools.test.ts
+    chat.test.ts
+    export.test.ts
+    mcp.test.ts
+    rest-api.test.ts
+    security.test.ts
+    static.test.ts
+    version.test.ts
+    versions.test.ts
 ```
 
-Numeric prefixes are used when order matters. Keep the convention when adding ordered tests.
+Numeric prefixes in `pocketbase/guards/` preserve the bootstrap ordering. Do not add ordering prefixes elsewhere.
 
-## Helpers
+## How it works
 
-`tests/helpers/setup.ts` exports:
+### Layers
+
+| Layer | Location | Runs against | Use it for |
+| --- | --- | --- | --- |
+| Unit | `tests/unit/` | Imported modules only | Parsing, formatting, bounds, schemas, sanitizers, pure builders, privacy tree walks. |
+| PocketBase integration | `tests/pocketbase/` | Real PocketBase on loopback | Rules, guards, hooks, migrations, custom PocketBase routes, folder board rehoming. |
+| Bun integration | `tests/api/` | Real Bun origin + real PocketBase | Bun routes, security headers, export, chat read/write tools, typed Elysia `/api/v1`, browser facade, MCP. |
+
+Unit tests must not import a module that performs network I/O at import time. Integration tests must not replace PocketBase or Bun with a fake.
+
+### Commands
+
+| Command | What it runs |
+| --- | --- |
+| `bun run test:unit` | All unit files; no services required. |
+| `bun run test:unit:coverage` | Unit files with Bun's line coverage. |
+| `bun run test:integration` | PocketBase and Bun integration files against a stack already running on `:3000`. |
+| `bun run test:docker` | Isolated container: unit phase + all integration phases on a fresh database. |
+| `bun run test` | Full local gate: unit tests, then the Docker suite. |
+| `bun run build` | Production bundle; required before shipping. |
+
+`bun run test:docker` is the same command developers use directly:
+
+```bash
+docker compose -f docker/compose.test.yml up --build --abort-on-container-exit --exit-code-from nana-test
+```
+
+Do not point the test stack at real data. The entrypoint deletes and recreates its own `pb_data`.
+
+### Docker suite phases
+
+`docker/docker-test-entrypoint.sh`:
+
+1. Runs the unit phase.
+2. Deletes and recreates `/app/pocketbase/pb_data`.
+3. Runs `PB_MIGRATING=1 pocketbase migrate up`.
+4. Starts PocketBase on `127.0.0.1:8090` (loopback only) and Bun on `:3000`, logging to `/tmp/nana-pocketbase.log` and `/tmp/nana-bun.log`.
+5. Waits up to 30 seconds for each port.
+6. Runs the integration phases with `tests/preload.ts`.
+
+| Phase | Files | Ordering reason |
+| --- | --- | --- |
+| 1/4 Unit | `tests/unit/` | No services; quick signal on pure-logic breakage. |
+| 2/4 Bootstrap + guards | `bootstrap.test.ts` + `guards/` | First-user onboarding must reach the fresh database before lockdown and fixtures. |
+| 3/4 Hooks + routes | `hooks/` + `routes/` | Hooks and custom routes after bootstrap; admin tests restore global settings when done. |
+| 4/4 Bun API | `api/` | Routes, export, chat, tools, typed REST, browser facade, and MCP after PocketBase is seeded. |
+
+The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000030_chat_attachments.js` applied. There is no separate "apply migration" step in a test file.
+
+On failure the entrypoint prints the tail of both server logs. On success it reports per-phase and total duration.
+
+### Isolation model
+
+Integration files share one database but not fixture records.
+
+- **Create users per file.** `createUser()`, `createAdmin()`, and `createUnverifiedAdmin()` use unique emails. Never create a fixed user in a later file.
+- **The only fixed user is the onboarding user** in `00-user-guards.test.ts`, because first signup only works once. If the database already has users (for example a dev stack), those first-user assertions no-op.
+- **Create records per file.** Notes, folders, boards, tasks, and conversations come from factories. Assertions use returned IDs, not global counts.
+- **Do not depend on another file's records.** File order is fixed, but data dependency is not acceptable.
+- **Restore global settings.** Admin route tests snapshot SMTP, attachment, OAuth, and `meta` settings in `beforeAll` and restore them in `afterAll` via `tests/helpers/settings.ts`.
+- **The database is disposable.** Tables are not cleaned between files; use unique fixtures rather than cleanup loops.
+
+### Helpers
+
+`tests/helpers/setup.ts`:
+
+| Export | Purpose |
+| --- | --- |
+| `BASE_URL`, `PB_API`, `PUBLIC_API` | Origin and proxied PocketBase URLs. |
+| `TEST_PASSWORD` | Shared fixture password. |
+| `uniqueSuffix()`, `uniqueEmail(prefix)` | Collision-resistant fixture names. |
+| `authHeaders(token, json?)` | Authorization header shorthand. |
+| `waitForServer(url)` | Poll until a URL returns 200. |
+| `getSuperuserCredentials()` | Env credentials or the generated `pb_data/superuser_credentials.json`. |
+| `authenticateSuperuser()` | Superuser token. |
+| `createTestUser(superuserToken, opts)` | Low-level user create; prefer factories. |
+| `authenticateUser(email, password)` | Token plus public record. |
+| `signupUser(opts)` | Direct public signup request for lockdown tests. |
+
+`tests/helpers/client.ts`:
 
 | Helper | Purpose |
 | --- | --- |
-| `BASE_URL` | `http://127.0.0.1:3000` |
-| `PB_API` | `${BASE_URL}/pb/api` |
-| `waitForServer(url)` | Poll until a URL responds with 200. |
-| `getSuperuserCredentials()` | Read `pb_data/superuser_credentials.json`. |
-| `authenticateSuperuser()` | Get a superuser token from PocketBase. |
-| `createTestUser(token, opts)` | Create a user with the superuser token. |
-| `authenticateUser(email, password)` | Sign in and return `{ token, record }`. |
-| `signupUser(opts)` | Direct public signup request. |
+| `bunRequest(path)`, `pbRequest(path)` | Fetch through the Bun origin or the loopback PocketBase origin (fixtures and PB route/hook assertions). |
+| `expectStatus(res, status, label?)` | Assert status and include the response body on failure. |
+| `readJson(res)`, `expectJsonError(res, status, contains?)` | Parse JSON or assert the `{ error }` envelope. |
+| `postJson()`, `patchJson()` | JSON requests to Bun routes. |
+| `pbCreate()`, `pbUpdate()`, `pbDelete()`, `pbGetRecord()` | Standard collection writes and reads. |
+| `pbList()`, `pbFindFirst()`, `pbRecordExists()` | List, first-match, and existence helpers. |
 
-Always use these helpers and the `BASE_URL` / `PB_API` constants. Never hardcode hosts.
+`tests/helpers/factories.ts`:
 
-## Test style
+| Factory | Returns |
+| --- | --- |
+| `getSuperuserToken()` | Cached per test file. |
+| `createUser(prefix, opts)` | Authenticated user with `id`, `email`, `token`, `password`, `admin`, `verified`. |
+| `createAdmin(prefix)`, `createUnverifiedAdmin(prefix)` | Admin variants with the expected verified state. |
+| `createNote(user, opts)` | Document record; supports tags, folder, privacy, and share flags. |
+| `createNoteWithAttachment(user, filename, bytes, contentType?)` | Document with a real `attachments` upload. |
+| `createFolder(user, opts)` | Folder record; supports `parent` and `is_private`. |
+| `createBoard(user, opts)` | Board record; supports `archived`, `folder`, and `is_private`. |
+| `createTask(user, boardId, opts)` | Task with status, order, labels, due date, and optional note link; ownership comes from the board. |
+| `superuserUpdate(collection, id, body)` | Share flags and other privileged fixture setup. |
+| `createConversation(user, opts)` | Conversation plus its initial `messages` records. |
+
+### Writing unit tests
+
+Import the module directly and cover the behavior at its edges. Good unit candidates are the pure modules already used by the server: `src/api/chat/tools/text.ts`, `src/api/export/documents.ts`, `src/lib/tasks/text.ts`, `src/lib/folders/utils.ts`, `src/lib/documents/utils.ts`, `src/components/board/dates.ts`, and `src/lib/sanitize.ts`.
 
 ```ts
-import { describe, test, expect, beforeAll } from "bun:test";
-import { BASE_URL, authenticateSuperuser } from "../helpers/setup";
+import { expect, test } from "bun:test";
+import { sanitizeFilename } from "../../src/api/export/documents";
 
-describe("My route", () => {
-  let token: string;
-
-  beforeAll(async () => {
-    token = await authenticateSuperuser();
-  });
-
-  test("rejects unauthenticated requests", async () => {
-    const res = await fetch(`${BASE_URL}/api/my-route`, { method: "POST" });
-    expect(res.status).toBe(401);
-  });
+test("falls back to Untitled after cleaning punctuation-only names", () => {
+    expect(sanitizeFilename("...")).toBe("Untitled");
 });
 ```
 
-- One behavior per `test()`.
-- Test names should read as specifications.
-- Assert status codes and response shapes.
-- Use real HTTP; do not mock PocketBase or Bun.
-- Tests may create data and rely on the fresh database, but should not depend on cleanup between files.
+Do not add a unit test when the behavior only exists in PocketBase rules, hooks, or Bun routes; cover those in integration.
 
-## What to test
+### Writing integration tests
+
+Create fixtures, make the request, and assert status plus shape. Use `expectStatus()` so a failure includes the server body.
+
+```ts
+import { beforeAll, expect, test } from "bun:test";
+import { expectStatus, pbRequest, readJson } from "../helpers/client";
+import { createNote, createUser, type TestUser } from "../helpers/factories";
+
+let user: TestUser;
+let noteId: string;
+
+beforeAll(async () => {
+    user = await createUser("example");
+    noteId = (await createNote(user, { title: "Example" })).id;
+});
+
+test("owner can read their note", async () => {
+    const res = await pbRequest(`/collections/documents/records/${noteId}`, {
+        headers: { Authorization: user.token },
+    });
+    await expectStatus(res, 200);
+    expect(await readJson<{ title: string }>(res)).toMatchObject({ title: "Example" });
+});
+```
+
+Rules:
+
+- One behavior per `test()`. Names read as specifications.
+- Always assert the HTTP status. Do not accept `[200, 500]` or `expect(res.ok).toBe(false)` when a precise code exists.
+- Use factories and unique IDs. Do not assume a record from another file exists.
+- Use `tests/helpers/settings.ts` if a test changes instance settings.
+- Add tests in the same phase as the code: PocketBase changes under `tests/pocketbase/`, Bun changes under `tests/api/`.
+
+### Change-to-test map
 
 | Change | Add or update |
 | --- | --- |
-| New Bun API route | `tests/api/` |
-| Chat/embedding behavior | `tests/api/bun-api.test.ts` or a focused file |
+| Pure parser, formatter, bounds, schema, sanitizer | `tests/unit/` |
+| New Bun application route | `tests/api/` |
+| New typed `/api/v1` route or DTO | `tests/api/rest-api.test.ts` |
+| REST auth, validation, status mapping | `tests/api/rest-api.test.ts` |
+| New browser facade route or collection | `tests/api/browser-api.test.ts` |
+| Browser auth, records, files, realtime, trash, admin, public shares | `tests/api/browser-api.test.ts` |
+| `/pb` removal, security headers, public surface | `tests/api/security.test.ts` |
+| MCP transport, auth, JSON-RPC errors | `tests/api/mcp.test.ts` |
+| MCP tool behavior, writes, destructive rules | `tests/api/mcp.test.ts` |
+| API key create/revoke, hashed storage, session-only management | `tests/api/api-keys.test.ts` |
+| API key access/scope on REST and MCP, read-only tool filtering | `tests/api/api-keys.test.ts` + `tests/unit/api-key-scope.test.ts` |
+| Chat route, mode/context validation, provider validation, conversation persistence, status | `tests/api/chat.test.ts` |
+| Chat attachment upload, magic-byte/type checks, limits, ownership, drafts, binding | `tests/api/chat-attachments.test.ts` + `tests/unit/chat-attachments.test.ts` |
+| Chat read tool, bounds, or scoping | `tests/api/chat-tools.test.ts` + `tests/unit/chat-*` |
+| Chat write tool, revision, edit card, or undo | `tests/api/chat-write-tools.test.ts` + `tests/unit/chat-version-token.test.ts` |
+| Chunked/named chat SSE encoding | `tests/unit/chat-stream.test.ts` |
+| Chat route context, private branch, or context payload | `tests/unit/chat-context.test.ts` |
+| AI private lock, hidden-folder subtrees, filters | `tests/unit/ai-visibility.test.ts` + `tests/unit/api-key-scope.test.ts` + `tests/api/chat-tools.test.ts` + `tests/api/mcp.test.ts` + `tests/api/rest-api.test.ts` |
+| Export format, filename, folder path, attachment | `tests/api/export.test.ts` + `tests/unit/export-documents.test.ts` |
+| Manifest, service worker, icons, SPA fallback | `tests/api/static.test.ts` |
+| Save/list/read/restore version history, dedupe, stale revisions, owner scoping | `tests/api/versions.test.ts` |
+| Git store commit/tree/list/read and note locking | `tests/unit/versioning-store.test.ts` |
+| Version repository cleanup after permanent note/folder delete | `tests/api/versions.test.ts` |
 | New PocketBase hook | `tests/pocketbase/hooks/` |
-| Guard/permission change | `tests/pocketbase/guards/` |
+| Guard or permission change | `tests/pocketbase/guards/` |
 | New PocketBase route | `tests/pocketbase/routes/` |
-| Trash move/restore/delete | `tests/pocketbase/guards/01-trash-guards.test.ts` + routes |
-| Public sharing | `tests/pocketbase/routes/06-public-shares.test.ts` |
-| Migration/schema change | Assert the collection/field exists and behaves correctly |
-| Auth/bootstrap change | `tests/pocketbase/bootstrap.test.ts` + user guards |
+| Soft-delete trash move/restore/delete | `tests/pocketbase/guards/01-trash-guards.test.ts` + `routes/04-trash-routes.test.ts` |
+| Folder trash and board rehoming | `tests/pocketbase/routes/08-board-folder-trash.test.ts` |
+| Board folder ownership or `is_private` schema | `tests/pocketbase/guards/05-board-folders.test.ts` |
+| Public sharing, expiry, attachment exposure, trash disables links | `tests/pocketbase/routes/06-public-shares.test.ts` |
+| Public board payload, archive/privacy guards, task ordering | `tests/pocketbase/routes/06-public-shares.test.ts` + `tests/unit/public-board.test.ts` |
+| Task rules, board moves, ordering | `tests/pocketbase/guards/03-task-rules.test.ts` |
+| Board archive/delete/cascade | `tests/pocketbase/guards/04-board-rules.test.ts` |
+| Auth/bootstrap/signup lockdown | `tests/pocketbase/bootstrap.test.ts` + `guards/00-user-guards.test.ts` |
+| Migration or schema change | Assert the collection/field exists and behaves correctly in the owning integration file |
 
-## Debugging
+### Chat read and write coverage
 
-- Run the compose command in the foreground to see phased output.
-- `docker compose -f docker/compose.test.yml logs` shows the test container logs.
-- The test entrypoint suppresses PocketBase/Bun logs to keep output readable; temporarily remove the redirects if you need server logs.
-- If a test depends on first-user state, keep it in phase 1 or create the user explicitly with the superuser helper.
-- If a test hangs, check `tests/preload.ts` readiness and the entrypoint's 30-second server waits.
-- The test container's `pb_data` is disposable; never copy it into the host.
+`tests/api/chat-tools.test.ts` builds two users with independent notes, boards, and tasks, then calls the executors with each user's `ToolContext`.
 
-## CI
+| Area | Assertions |
+| --- | --- |
+| `list_notes` | Author scoping; metadata without `content`; paging and sorting; tag and title search; filter injection is inert; private notes and private-folder subtrees excluded from items and totals; missing token → `unauthorized`; invalid token returns an empty guest page without leaking; malformed folder id → `invalid_input`. |
+| `read_note` | Line paging and `nextOffset`; long-line clipping and `truncated`; tail read has `hasMore: false`; another user's note → generic `not_found`; private note and notes in a private subtree → `not_found`; malformed ids and out-of-range windows. |
+| `list_boards` | Active boards by default; exact open/done/total and per-column counts; archived opt-in; paging; another user's boards never appear; private boards and boards in private folders excluded from items and totals. |
+| `read_board` | Column paging; whole-board order; task summaries expose `dueDate`, `labels`, `noteId`, sanitized excerpt; another user's board and archived boards → `not_found`; private boards and boards in private folders → `not_found`; malformed ids and columns. |
 
-There is no test workflow in `.github/workflows/`; the release workflow builds images. Run the Docker suite locally before shipping behavior changes. If CI is added later, it should use the same compose command so the environment matches.
+`tests/api/chat-write-tools.test.ts` covers edit mode:
+
+| Area | Assertions |
+| --- | --- |
+| Registry | Ask mode omits every write tool and keeps `list_tasks`; Work mode registers the full write allowlist, including folder/note/board move, rename, and archive tools. |
+| Context | Server-resolved titles; foreign, private, and private-folder contexts return `404`; wrong type is `400`. |
+| Notes | `create_note` stamps `last_edit_source: "ai"`/`last_edited_by: "Nana"`; `append_note` and `edit_note` carry untouched content through and store the pre-edit snapshot in `chat_edits.operations.before`; stale revisions return `conflict`; missing/ambiguous anchors abort; private notes and private-folder notes return `not_found`; `move_note` changes the folder and refuses a private destination. |
+| Folders | Create, rename, and move a folder; the parent relation is persisted. |
+| Boards/tasks | Board creation, board rename/move/archive/restore, folder creation, task create/update/move, archived-board conflict, invalid status, foreign task `not_found`, and `actor_type: "ai"` task activity. |
+| Delete approval | A delete tool creates `pending` and leaves the target untouched; confirm trashes the target; cancel leaves it untouched; another user cannot confirm. |
+| Cards/undo | Edit rows list oldest first; only the conversation owner can read or undo; created-note undo trashes and repeated undo is a no-op; note-edit undo restores the snapshot and repeated undo does not bump the revision again. |
+
+The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), named/legacy SSE encoding (`tests/unit/chat-stream.test.ts`), route context derivation (`tests/unit/chat-context.test.ts`), revision tokens (`tests/unit/chat-version-token.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), API key token/scope helpers (`tests/unit/api-key-scope.test.ts`), and the git version store (`tests/unit/versioning-store.test.ts`).
+
+### REST and MCP coverage
+
+`tests/api/rest-api.test.ts` exercises `/api/v1` through the real Bun origin and PocketBase:
+
+| Area | Assertions |
+| --- | --- |
+| Auth | Raw and Bearer session tokens work; missing/invalid tokens return `401`. API key auth and scope live in `tests/api/api-keys.test.ts`. |
+| Docs | `/docs` serves the self-hosted Scalar reference, `/docs/json` publishes `/api/v1` paths and stable operation ids, and the Scalar bundle plus Geist fonts are self-hosted. |
+| Folders | List/create; the created folder appears in the caller's list. |
+| Notes | Metadata-only list filtered by folder and sorted by title; create/read/update/delete; sanitized content and generated slug; root move with `""`/`null`; private note remains visible to its owner; another user gets `404` and an empty list; trash result carries `trashDocumentId`. |
+| Boards | Create with folder and private flag; list with `includeArchived`/`folderId`; read/update; active delete conflict; archive; archived delete `204` and task cascade. |
+| Tasks | Create, list by status, partial update, column move, board move, `add note to board` copy semantics, permanent delete; archived-board create conflict. |
+| Errors | `422` validation, `400` parse/invalid input, `404` cross-author, `409` state conflict. |
+
+`tests/api/mcp.test.ts` exercises the MCP endpoint:
+
+| Area | Assertions |
+| --- | --- |
+| Transport | `POST` only (`405` otherwise); stateless JSON responses; malformed JSON returns the JSON-RPC parse error. |
+| Auth | Missing token returns `401` before MCP work. |
+| Discovery | The expected tool list is registered. |
+| Reads | `list_notes`, `read_note`, `list_boards`, `read_board`, `list_folders`, `list_tasks` return visible records; note lists omit content; board lists include task counts; task lists include the board's tasks. |
+| Writes | Note/board/task create, update, move, archive/restore; note delete returns `trashDocumentId`; task delete is permanent; active board delete returns a conflict. |
+| Private lock | Private notes, boards, folders, and private-folder subtrees are omitted from lists and return `not_found` for reads and writes. |
+| Failures | Tool failures are `isError` text results, not HTTP failures. |
+
+`tests/api/api-keys.test.ts` exercises long-lived credentials:
+
+| Area | Assertions |
+| --- | --- |
+| Creation | Plaintext is returned once; only the prefix is listed; the typed API accepts raw and Bearer keys; a key cannot manage keys. |
+| Scope | Folder keys list only their subtree (re-rooted in MCP), cannot read/write the root or siblings, and cannot create root folders; root keys see only root records and no folders; workspace keys see everything but MCP still hides private records. |
+| Access | Read-only keys read through REST and MCP, return `403` on REST writes, and have no write tools in `tools/list`. |
+| Validation | Empty folder scope and foreign folders return `400`; an invalid scope returns `422`. |
+| Revocation | Cross-account revoke returns `404`; owner revoke returns `204` and the next request returns `401`. |
+| Surface boundary | Invalid keys return `401`; the browser facade and `/me` reject API keys. |
+
+`tests/api/browser-api.test.ts` exercises the `/api/v1` browser facade, the replacement for `/pb`:
+
+| Area | Assertions |
+| --- | --- |
+| Auth | Login, refresh, `/me`, auth methods, bad credentials, missing token. |
+| Records | Author injection, document sanitization, foreign folder/board rejection, task board checks, self-promotion rejection, trash move/restore, multipart attachment upload. |
+| Files | File token + protected file bytes through `/api/v1/files`. |
+| Realtime | The SSE handshake returns `text/event-stream` and a `PB_CONNECT` frame. |
+| Admin/public | Settings and admin routes are admin-only; public document shares work and private shares return `404`. |
+
+`tests/api/versions.test.ts` exercises git-backed version history through the real browser facade: saving the current note, deduplicating an identical save (`created: false`), listing newest-first with pagination and no body, reading one detail, restoring a body while preserving title/tags/folder/privacy, rejecting stale revisions (`409`), hiding versions from another user, and removing repositories after permanent note and folder deletes. `tests/unit/versioning-store.test.ts` covers the store directly: first commit, tree equality, metadata changes, pagination, detail reads, note locking, and path validation.
+
+`tests/api/security.test.ts` asserts `/pb` and `/pb/*` return `404`, security headers are present, the facade requires a token, and the loopback PocketBase fixture path still works.
+
+`tests/pocketbase/guards/05-board-folders.test.ts` covers the board folder guard and `boards.is_private` field. `tests/pocketbase/guards/06-relation-integrity.test.ts` covers create ownership, immutable authors, folder cycles, foreign/trashed relation targets, message ownership, unique share tokens, and user-deletion blocking. `tests/pocketbase/routes/08-board-folder-trash.test.ts` covers folder trash rehoming, `movedBoardIds`, restore behavior, and permanent-delete preservation of rehomed boards and their tasks.
+
+### Coverage and CI
+
+`bun run test:unit:coverage` reports line coverage for the pure modules. Coverage is a signal, not a gate; integration behavior still needs an integration assertion.
+
+`.github/workflows/tests.yml` runs two jobs:
+
+- **Unit tests and production build** on the Bun version pinned in `docker/Dockerfile`. The job also runs `bun run build`.
+- **Docker integration suite** via the same compose command developers use, with container logs printed on failure.
+
+### Debugging
+
+- Run the compose command in the foreground to see phase output.
+- `docker compose -f docker/compose.test.yml logs --no-color nana-test` shows the test container's logs.
+- The entrypoint writes server logs to `/tmp/nana-pocketbase.log` and `/tmp/nana-bun.log` inside the container and prints their tails on failure.
+- To run integration tests against a running dev stack: start the dev stack, then `bun run test:integration`. `TEST_BASE_URL` overrides `http://127.0.0.1:3000`; `PB_CREDENTIALS_PATH` overrides the credentials file. This mutates the dev database with fixture records, so prefer the container.
+- If a test hangs, check `tests/preload.ts` and the entrypoint's 30-second port waits.
+- The container's `pb_data` is disposable; never copy it into the host.
+
+## Gotchas & invariants
+
+- **`tests/preload.ts` only runs when passed.** The Docker entrypoint and `bun run test:integration` pass `--preload ./tests/preload.ts`. A bare `bun test tests/api` does not wait for services and will race startup.
+- **First-user onboarding is order-sensitive.** `00-user-guards.test.ts` is the only file that may call `signupUser()` without an admin token. It no-ops when `check-users` already reports users, so do not make other tests depend on a fresh database.
+- **Never reuse a fixed email outside onboarding.** Every other user comes from `createUser()` and gets a unique email. Two files sharing `test@test.local` will fail with a 400 on the second create.
+- **Global settings are not per-test.** Admin route tests snapshot and restore SMTP, attachment, OAuth, and `meta` settings. A new admin test that mutates settings must use the same helper.
+- **Admin routes return real 403s.** `requireAdmin()` throws `ForbiddenError`, and the route handlers map known errors through `sendError()` in `pb_hooks/utils.js`. Assert `403`; a `500` means an error-mapping regression.
+- **Trash routes return `400` for every failure.** Missing IDs, unknown IDs, and records owned by someone else all come back as `400 { error }`. They do not use 403/404.
+- **Incoming relations need the request guard.** PocketBase applies relation rules to the stored record, so `guards/relation_guards.js` checks the new `folder`, `parent`, `board`, and `document` values on update. Test cross-author and archived-board moves, folder cycles, and trashed/foreign relation targets.
+- **Protected file downloads need a file token.** `GET /api/v1/files/...` with only an `Authorization` header returns 404. Create one with `POST /api/v1/files/token`, then append `?token=...`.
+- **Expired public shares are disabled on read.** A 404 for an expired token also clears `is_public` and `public_share_token`; assert the stored record, not just the response.
+- **The suite is not mocked.** A unit test does not prove a guard, route, or tool is wired. Add the integration assertion.
+- **The suite starts from an empty database.** It exercises the current schema, not legacy upgrade paths. To verify the `0000018` task-to-board backfill, migrate a disposable data directory to `0000017`, create a user and a boardless task, apply `0000018`, then confirm the task lands on that author's `My board` with its status and order intact. To verify `0000022`, migrate a disposable directory to `0000021`, create a trashed document/folder, a legacy version row, and a conversation with messages, apply `0000022`, then confirm the rows are soft-deleted with their original ids, attachments still resolve through the trash view, the conversation messages are records, and `tasks.author`/`document_versions.created_by` are gone. To verify `0000032`, migrate a disposable directory to `0000031`, create a note, apply `0000032`, then confirm `document_versions` and `documents.published` are gone and `trash_documents` still returns trashed notes without the removed column.
+- **The Docker suite applies the full migration head automatically.** The entrypoint runs `migrate up` on a fresh database, so REST, MCP, chat, and trash tests see soft-delete fields, the `messages` collection, the trash views, relation indexes, immutable authors, and the share-token unique indexes without an explicit migration step.
+- **Private fixtures need their owner.** The private-lock tests must read as the owner. A second user seeing `not_found` proves cross-author scoping, not the private lock; use `createUser()` and the owner's token for the private cases.
+- **MCP tests must `POST`.** A `GET /mcp` returns `405`; the test helper must send a JSON-RPC body with the user token and assert the tool result, not an HTTP error, for workspace failures.
+- **Browser fixtures use loopback PocketBase; public behavior uses Bun.** `pbRequest()` targets `127.0.0.1:8090` for setup, hook, guard, and route assertions. Public-facing browser behavior must go through `/api/v1` (`BROWSER_API`) so a deleted `/pb` route cannot hide behind a direct-PB test.
+- **`bun run build` is separate.** The suite runs TypeScript sources; a passing suite does not prove the production bundle builds.
+- **The test container must never mount host `pb_data`.** The entrypoint deletes and recreates its own copy.
 
 ## Related docs
 
 - [`pocketbase.md`](pocketbase.md) — hooks, guards, routes, migrations.
 - [`api.md`](api.md) — endpoint contracts.
+- [`ai.md`](ai.md) — chat tool contracts and failure modes.
+- [`security.md`](security.md) — auth, proxy, CSP, rate limits.
 - [`deployment.md`](deployment.md) — Docker stages and runtime behavior.
 - [`development.md`](development.md) — workflow and definition of done.

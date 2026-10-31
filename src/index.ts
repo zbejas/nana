@@ -3,15 +3,15 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 import index from "./index.html";
 import { serverConfig } from "./lib/config";
-import { handlePocketBaseProxy } from "./api/pocketbase-proxy";
+
 import { handleExport } from "./api/export/index";
 import { handleChat } from "./api/chat/index";
-import { handleEmbeddings } from "./api/embeddings/index";
 import { APP_VERSION, handleAppVersion } from "./api/app-version";
-import { closeAll as closeAllZvecCollections } from "./api/embeddings/zvec";
 import { createStaticFileHandler } from "./api/static-files";
 import { checkRateLimit, reloadRateLimiter } from "./api/rate-limiter";
-import { verifyAuth, AuthError } from "./api/auth";
+import { verifyAdmin, AuthError } from "./api/auth";
+import { apiApp } from "./api/rest";
+import { handleMcpRequest } from "./api/mcp";
 import { createLogger } from "./lib/logger";
 
 const log = createLogger("Server");
@@ -20,8 +20,21 @@ const log = createLogger("Server");
 const isProduction = serverConfig.isProduction && existsSync(resolve(import.meta.dir, "../dist/index.html"));
 const distDir = resolve(import.meta.dir, "../dist");
 const iconSvg = resolve(import.meta.dir, "assets/nana.svg");
+const appIconSvg = resolve(import.meta.dir, "assets/nana-icon.svg");
+const faviconSvg = resolve(import.meta.dir, "assets/nana-favicon.svg");
+const faviconLightSvg = resolve(import.meta.dir, "assets/nana-favicon-light.svg");
+const maskableIconSvg = resolve(import.meta.dir, "assets/nana-icon-maskable.svg");
+const monochromeIconSvg = resolve(import.meta.dir, "assets/nana-icon-monochrome.svg");
+const icon180 = resolve(import.meta.dir, "assets/nana-180.png");
 const icon192 = resolve(import.meta.dir, "assets/nana-192.png");
 const icon512 = resolve(import.meta.dir, "assets/nana-512.png");
+const maskable192 = resolve(import.meta.dir, "assets/nana-maskable-192.png");
+const maskable512 = resolve(import.meta.dir, "assets/nana-maskable-512.png");
+const monochrome512 = resolve(import.meta.dir, "assets/nana-monochrome-512.png");
+const favicon16 = resolve(import.meta.dir, "assets/nana-favicon-16.png");
+const favicon32 = resolve(import.meta.dir, "assets/nana-favicon-32.png");
+const faviconLight16 = resolve(import.meta.dir, "assets/nana-favicon-light-16.png");
+const faviconLight32 = resolve(import.meta.dir, "assets/nana-favicon-light-32.png");
 const pdfWorkerScript = resolve(import.meta.dir, "../node_modules/pdfjs-dist/build/pdf.worker.min.mjs");
 
 const manifest = {
@@ -30,26 +43,44 @@ const manifest = {
   start_url: "/timeline",
   scope: "/",
   display: "standalone",
-  background_color: "#0a0a0a",
-  theme_color: "#0a0a0a",
+  background_color: "#0c0c0d",
+  theme_color: "#0c0c0d",
   icons: [
     {
       src: "/nana-192.png",
       sizes: "192x192",
       type: "image/png",
-      purpose: "any maskable",
+      purpose: "any",
     },
     {
       src: "/nana-512.png",
       sizes: "512x512",
       type: "image/png",
-      purpose: "any maskable",
+      purpose: "any",
     },
     {
-      src: "/nana.svg",
+      src: "/nana-maskable-192.png",
+      sizes: "192x192",
+      type: "image/png",
+      purpose: "maskable",
+    },
+    {
+      src: "/nana-maskable-512.png",
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "maskable",
+    },
+    {
+      src: "/nana-icon.svg",
       sizes: "any",
       type: "image/svg+xml",
       purpose: "any",
+    },
+    {
+      src: "/nana-monochrome-512.png",
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "monochrome",
     },
   ],
 };
@@ -79,7 +110,7 @@ const cspPolicy = isProduction
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "connect-src 'self'",
-    "font-src 'self'",
+    "font-src 'self' data:",
     "frame-src 'none'",
     "object-src 'none'",
     "base-uri 'self'",
@@ -92,7 +123,7 @@ const cspPolicy = isProduction
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "connect-src 'self' ws: wss:",
-    "font-src 'self'",
+    "font-src 'self' data:",
     "frame-src 'none'",
     "object-src 'none'",
     "base-uri 'self'",
@@ -113,6 +144,26 @@ function withSecurityHeaders(response: Response): Response {
     statusText: response.statusText,
     headers,
   });
+}
+
+/**
+ * REST/OpenAPI surface: /api/v1, /docs, and /docs/json.
+ * Rate limits and security headers stay at the Bun edge.
+ */
+async function handleRest(req: Request): Promise<Response> {
+  const path = new URL(req.url).pathname;
+  if (path === "/api/v1/realtime") {
+    // EventSource stays open for the lifetime of the tab. Never apply the
+    // normal JSON request timeout to the SSE relay.
+    server.timeout(req, 0);
+  } else {
+    // Workspace writes can fan out into PocketBase calls; give the JSON
+    // surface more headroom than the default request timeout.
+    server.timeout(req, 60);
+  }
+  const blocked = await checkRateLimit(req, server);
+  if (blocked) return withSecurityHeaders(blocked);
+  return withSecurityHeaders(await apiApp.handle(req));
 }
 
 const server = serve({
@@ -160,8 +211,75 @@ const server = serve({
     },
 
     "/nana.svg": (): Response => withSecurityHeaders(new Response(Bun.file(iconSvg))),
+    "/nana-icon.svg": (): Response =>
+      withSecurityHeaders(
+        new Response(Bun.file(appIconSvg), {
+          headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" },
+        })
+      ),
+    "/nana-favicon.svg": (): Response =>
+      withSecurityHeaders(
+        new Response(Bun.file(faviconSvg), {
+          headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" },
+        })
+      ),
+    "/nana-favicon-light.svg": (): Response =>
+      withSecurityHeaders(
+        new Response(Bun.file(faviconLightSvg), {
+          headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" },
+        })
+      ),
+    "/nana-icon-maskable.svg": (): Response =>
+      withSecurityHeaders(
+        new Response(Bun.file(maskableIconSvg), {
+          headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" },
+        })
+      ),
+    "/nana-icon-monochrome.svg": (): Response =>
+      withSecurityHeaders(
+        new Response(Bun.file(monochromeIconSvg), {
+          headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" },
+        })
+      ),
+    // Scalar's page and browser defaults request this path directly.
+    "/favicon.ico": (): Response =>
+      withSecurityHeaders(
+        new Response(Bun.file(favicon32), {
+          headers: {
+            "Content-Type": "image/png",
+            "Cache-Control": "public, max-age=86400",
+          },
+        })
+      ),
+    "/nana-180.png": (): Response => withSecurityHeaders(new Response(Bun.file(icon180))),
     "/nana-192.png": (): Response => withSecurityHeaders(new Response(Bun.file(icon192))),
     "/nana-512.png": (): Response => withSecurityHeaders(new Response(Bun.file(icon512))),
+    "/nana-maskable-192.png": (): Response =>
+      withSecurityHeaders(new Response(Bun.file(maskable192))),
+    "/nana-maskable-512.png": (): Response =>
+      withSecurityHeaders(new Response(Bun.file(maskable512))),
+    "/nana-monochrome-512.png": (): Response =>
+      withSecurityHeaders(new Response(Bun.file(monochrome512))),
+    "/nana-favicon-16.png": (): Response => withSecurityHeaders(new Response(Bun.file(favicon16))),
+    "/nana-favicon-32.png": (): Response => withSecurityHeaders(new Response(Bun.file(favicon32))),
+    "/nana-favicon-light-16.png": (): Response =>
+      withSecurityHeaders(new Response(Bun.file(faviconLight16))),
+    "/nana-favicon-light-32.png": (): Response =>
+      withSecurityHeaders(new Response(Bun.file(faviconLight32))),
+
+    // REST API and OpenAPI docs (public docs, authenticated /api/v1)
+    "/docs": handleRest,
+    "/docs/*": handleRest,
+    "/api/v1": handleRest,
+    "/api/v1/*": handleRest,
+
+    // MCP Streamable HTTP API (POST only, authenticated)
+    "/mcp": async (req): Promise<Response> => {
+      server.timeout(req, 60);
+      const blocked = await checkRateLimit(req, server);
+      if (blocked) return withSecurityHeaders(blocked);
+      return withSecurityHeaders(await handleMcpRequest(req));
+    },
 
     // Server-side export API
     "/api/export": async (req): Promise<Response> => {
@@ -171,6 +289,19 @@ const server = serve({
     },
 
     // Chat API endpoints
+    "/api/chat/attachments": async (req): Promise<Response> => {
+      // File parsing and PDF text extraction are finite, but not instant.
+      server.timeout(req, 60);
+      const blocked = await checkRateLimit(req, server);
+      if (blocked) return withSecurityHeaders(blocked);
+      return withSecurityHeaders(await handleChat(req));
+    },
+    "/api/chat/attachments/*": async (req): Promise<Response> => {
+      server.timeout(req, 60);
+      const blocked = await checkRateLimit(req, server);
+      if (blocked) return withSecurityHeaders(blocked);
+      return withSecurityHeaders(await handleChat(req));
+    },
     "/api/chat/send": async (req): Promise<Response> => {
       server.timeout(req, 0);
       const blocked = await checkRateLimit(req, server);
@@ -187,32 +318,15 @@ const server = serve({
       if (blocked) return withSecurityHeaders(blocked);
       return withSecurityHeaders(await handleChat(req));
     },
-
-    // Embeddings API endpoints
-    "/api/embeddings/embed": async (req): Promise<Response> => {
+    "/api/chat/status": async (req): Promise<Response> => {
       const blocked = await checkRateLimit(req, server);
       if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handleEmbeddings(req));
+      return withSecurityHeaders(await handleChat(req));
     },
-    "/api/embeddings/embed-all": async (req): Promise<Response> => {
+    "/api/chat/edits/*": async (req): Promise<Response> => {
       const blocked = await checkRateLimit(req, server);
       if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handleEmbeddings(req));
-    },
-    "/api/embeddings/search": async (req): Promise<Response> => {
-      const blocked = await checkRateLimit(req, server);
-      if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handleEmbeddings(req));
-    },
-    "/api/embeddings/status": async (req): Promise<Response> => {
-      const blocked = await checkRateLimit(req, server);
-      if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handleEmbeddings(req));
-    },
-    "/api/embeddings/delete": async (req): Promise<Response> => {
-      const blocked = await checkRateLimit(req, server);
-      if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handleEmbeddings(req));
+      return withSecurityHeaders(await handleChat(req));
     },
 
     "/api/app/version": async (req): Promise<Response> => {
@@ -227,7 +341,7 @@ const server = serve({
         return withSecurityHeaders(new Response("Method Not Allowed", { status: 405 }));
       }
       try {
-        await verifyAuth(req);
+        await verifyAdmin(req);
       } catch (err) {
         const status = err instanceof AuthError ? err.status : 401;
         return withSecurityHeaders(new Response("Unauthorized", { status }));
@@ -249,12 +363,11 @@ const server = serve({
       }
     },
 
-    // Proxy all PocketBase requests through our server
-    "/pb/*": async (req): Promise<Response> => {
-      const blocked = await checkRateLimit(req, server);
-      if (blocked) return withSecurityHeaders(blocked);
-      return withSecurityHeaders(await handlePocketBaseProxy(req, server));
-    },
+    // PocketBase is loopback-only. The old public proxy is intentionally gone:
+    // every browser read/write, auth, file, realtime, trash, admin, and public
+    // share now goes through /api/v1 in Elysia.
+    "/pb": (): Response => withSecurityHeaders(new Response("Not Found", { status: 404 })),
+    "/pb/*": (): Response => withSecurityHeaders(new Response("Not Found", { status: 404 })),
 
     // Serve built files in production, or index.html in development
     "/*": isProduction
@@ -280,14 +393,9 @@ reloadRateLimiter().catch((err) => {
   log.warn("Rate limiter failed to initialise on startup", err);
 });
 
-// ── Graceful shutdown: flush & close Zvec collections ────────────────
+// ── Graceful shutdown ────────────────────────────────────────────────
 function gracefulShutdown(signal: string) {
   log.info(`Received ${signal}, shutting down…`);
-  try {
-    closeAllZvecCollections();
-  } catch (err) {
-    log.error("Error closing Zvec collections during shutdown", err);
-  }
   process.exit(0);
 }
 

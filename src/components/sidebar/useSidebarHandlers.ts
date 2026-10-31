@@ -117,7 +117,8 @@ export function useSidebarHandlers({ editorActions, sidebarActions, dataHook }: 
             navigate('/timeline');
         }
         await deleteDocument(documentId);
-    }, [reset, navigate]);
+        setRefreshTrigger((previous) => previous + 1);
+    }, [reset, navigate, setRefreshTrigger]);
 
     const handleRestoreDocument = useCallback(async (documentId: string) => {
         await restoreDocument(documentId);
@@ -126,11 +127,13 @@ export function useSidebarHandlers({ editorActions, sidebarActions, dataHook }: 
 
     const handlePermanentlyDeleteDocument = useCallback(async (documentId: string) => {
         await permanentlyDeleteDocument(documentId);
-    }, []);
+        setRefreshTrigger((previous) => previous + 1);
+    }, [setRefreshTrigger]);
 
     const handleDeleteFolder = useCallback(async (folderId: string) => {
         await deleteFolder(folderId);
-    }, []);
+        setRefreshTrigger((previous) => previous + 1);
+    }, [setRefreshTrigger]);
 
     const handleRenameFolder = useCallback(async (folderId: string, newName: string) => {
         try {
@@ -149,7 +152,8 @@ export function useSidebarHandlers({ editorActions, sidebarActions, dataHook }: 
 
     const handlePermanentlyDeleteFolder = useCallback(async (folderId: string) => {
         await permanentlyDeleteFolder(folderId);
-    }, []);
+        setRefreshTrigger((previous) => previous + 1);
+    }, [setRefreshTrigger]);
 
     const handleExportDocument = useCallback(async (documentId: string) => {
         try {
@@ -180,6 +184,8 @@ export function useSidebarHandlers({ editorActions, sidebarActions, dataHook }: 
         handleDragEnd,
         handleFolderDragStart,
         handleFolderDragEnd,
+        handleBoardDragStart,
+        handleBoardDragEnd,
         handleDragOver,
         handleDragLeave,
         handleDrop,
@@ -252,6 +258,8 @@ export function useSidebarHandlers({ editorActions, sidebarActions, dataHook }: 
         handleDragEnd,
         handleFolderDragStart,
         handleFolderDragEnd,
+        handleBoardDragStart,
+        handleBoardDragEnd,
         handleDragOver,
         handleDragLeave,
         handleDrop,

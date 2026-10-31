@@ -13,7 +13,6 @@ interface UseAutoSaveOptions {
     title: string;
     content: string;
     tags: string[];
-    published: boolean;
     newAttachments: File[];
     removedAttachments: string[];
     autoSaveDelayMs: number;
@@ -33,7 +32,6 @@ export function useAutoSave({
     title,
     content,
     tags,
-    published,
     newAttachments,
     removedAttachments,
     autoSaveDelayMs,
@@ -129,7 +127,7 @@ export function useAutoSave({
                         title: title.trim() || 'Untitled',
                         content: content.trim(),
                         tags,
-                        published,
+                        revision: document.revision,
                         attachments: newAttachments.length > 0 ? newAttachments : undefined,
                         removeAttachments: removedAttachments.length > 0 ? removedAttachments : undefined,
                     });
@@ -143,7 +141,6 @@ export function useAutoSave({
                         title: title.trim() || 'Untitled',
                         content: content.trim(),
                         tags,
-                        published,
                         folder: folderId || undefined,
                     });
 
@@ -218,7 +215,6 @@ export function useAutoSave({
         title,
         content,
         tags,
-        published,
         document?.id,
         urlDocumentId,
         hasUnsavedChanges,

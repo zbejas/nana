@@ -2,13 +2,14 @@ import { DocumentTextIcon, EllipsisVerticalIcon, LockClosedIcon, ShareIcon } fro
 import type { Document } from "../../lib/documents";
 import type { OnDragStartDocument, OnDragEnd } from '../file-folder-handling';
 
-const INDENT_PX = 20;
+const INDENT_PX = 16;
 
 interface DocumentItemProps {
   document: Document;
   draggable?: boolean;
   depth?: number;
   currentFolderId?: string;
+  active?: boolean;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent | React.TouchEvent) => void;
   onDragStart?: OnDragStartDocument;
@@ -20,60 +21,60 @@ export function DocumentItem({
   draggable = false,
   depth = 0,
   currentFolderId,
+  active = false,
   onClick,
   onContextMenu,
   onDragStart,
   onDragEnd,
 }: DocumentItemProps) {
-  const handleMenuClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onContextMenu(e);
+  const handleMenuClick = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    onContextMenu(event);
   };
 
-  // Indent: chevron-width (20px) is reserved at every level for alignment with folders
-  const indent = depth * INDENT_PX + INDENT_PX; // extra INDENT_PX to skip the chevron column
+  const indent = depth * INDENT_PX + INDENT_PX;
 
   return (
-    <div className="relative group">
+    <div className="group relative">
       <button
         draggable={draggable}
-        onDragStart={draggable && onDragStart ? (e) => onDragStart(e, document.id, currentFolderId) : undefined}
+        onDragStart={draggable && onDragStart ? (event) => onDragStart(event, document.id, currentFolderId) : undefined}
         onDragEnd={draggable && onDragEnd ? onDragEnd : undefined}
         onClick={onClick}
         onContextMenu={onContextMenu}
-        className="w-full flex items-center gap-1.5 pr-8 py-[5px] rounded-md hover:bg-white/5 active:bg-white/8 transition-colors text-left overflow-hidden active:cursor-grabbing"
-        style={{ paddingLeft: `${indent + 4}px` }}
+        className={`flex w-full items-center gap-1.5 overflow-hidden rounded-[6px] py-1 pr-7 text-left transition-colors active:cursor-grabbing ${
+          active
+            ? 'bg-signal-soft text-ink'
+            : 'text-ink-secondary hover:bg-surface-raised hover:text-ink'
+        }`}
+        style={{ paddingLeft: `${indent}px` }}
       >
-        <DocumentTextIcon className="w-4 h-4 flex-shrink-0 text-gray-500" />
-        <span className="text-[13px] text-gray-400 truncate flex-1 group-hover:text-gray-200 leading-tight">{document.title || 'Untitled'}</span>
-        {document.tags && document.tags.length > 0 && (
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {document.tags.slice(0, 2).map((tag, index) => (
-              <span
-                key={index}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 border border-white/10"
-              >
-                {tag}
-              </span>
-            ))}
-            {document.tags.length > 2 && (
-              <span className="text-[10px] text-gray-500">+{document.tags.length - 2}</span>
-            )}
-          </div>
-        )}
+        <DocumentTextIcon
+          className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-signal' : 'text-ink-muted'}`}
+          aria-hidden="true"
+        />
+        <span className="min-w-0 flex-1 truncate text-[13px] leading-5">{document.title || 'Untitled'}</span>
+        {document.tags?.slice(0, 1).map((tag) => (
+          <span
+            key={tag}
+            className="hidden shrink-0 rounded border border-line px-1 py-px text-[10px] leading-4 text-ink-muted lg:inline"
+          >
+            {tag}
+          </span>
+        ))}
         {document.is_private && (
-          <LockClosedIcon className="w-3.5 h-3.5 flex-shrink-0 text-amber-400/70" title="Private" />
+          <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />
         )}
         {document.is_public && (
-          <ShareIcon className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400/70" title="Public" />
+          <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />
         )}
       </button>
       <button
         onClick={handleMenuClick}
-        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-        aria-label="Document menu"
+        className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded p-1 text-ink-muted opacity-100 transition-all hover:bg-surface-sunken hover:text-ink md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+        aria-label={`Actions for ${document.title || 'Untitled'}`}
       >
-        <EllipsisVerticalIcon className="w-3.5 h-3.5 text-gray-500" />
+        <EllipsisVerticalIcon className="h-3.5 w-3.5" />
       </button>
     </div>
   );

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { pb } from '../../../lib/pocketbase';
-import { SettingsSelect } from '../SettingsSelect';
+import { Button, Card, Field, Input, SectionHeading, Select, Switch } from '../../ui';
 
 type SMTPForm = {
   enabled: boolean;
@@ -62,7 +62,7 @@ export function SMTPSettings() {
       setError(null);
       setMessage(null);
       try {
-        const res = await fetch('/pb/api/admin/smtp', {
+        const res = await fetch('/api/v1/admin/smtp', {
           headers: buildHeaders(),
         });
         if (!res.ok) {
@@ -118,7 +118,7 @@ export function SMTPSettings() {
         },
       };
 
-      const res = await fetch('/pb/api/admin/smtp', {
+      const res = await fetch('/api/v1/admin/smtp', {
         method: 'PATCH',
         headers: buildHeaders(),
         body: JSON.stringify(payload),
@@ -144,7 +144,7 @@ export function SMTPSettings() {
     setTestResult(null);
     setError(null);
     try {
-      const res = await fetch('/pb/api/admin/smtp/test', {
+      const res = await fetch('/api/v1/admin/smtp/test', {
         method: 'POST',
         headers: buildHeaders(),
       });
@@ -161,210 +161,182 @@ export function SMTPSettings() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white/5 rounded-lg p-6 border border-white/10">
-        <div className="flex items-center justify-between gap-2 mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-white">SMTP Configuration</h3>
-            <p className="text-xs text-gray-300 mt-1">From: <span className="text-white">{senderPreview}</span></p>
-          </div>
-          <label className="inline-flex items-center gap-2.5 text-sm text-gray-300 cursor-pointer hover:text-white transition-colors group">
-            <div className="relative inline-flex items-center justify-center flex-shrink-0">
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={(e) => handleChange('enabled', e.target.checked)}
-                className="appearance-none w-5 h-5 rounded border-2 border-white/30 bg-black/40 cursor-pointer transition-all
-                           hover:border-white/50 hover:bg-black/60
-                           focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2 focus:ring-offset-black
-                           checked:bg-blue-500 checked:border-blue-500 checked:hover:bg-blue-600 checked:hover:border-blue-600
-                           disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={toggleDisabled}
-              />
-              {form.enabled && (
-                <svg className="absolute inset-0 w-5 h-5 text-white pointer-events-none" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              )}
-            </div>
-            <span className="select-none leading-5">Enable SMTP</span>
-          </label>
+    <Card className="p-5 sm:p-6">
+      <SectionHeading
+        title="SMTP configuration"
+        description="Outgoing mail server for account email."
+      />
+      <p className="mt-2 text-xs text-ink-muted">
+        From: <span className="text-ink-secondary">{senderPreview}</span>
+      </p>
+
+      <Switch
+        id="smtp-enabled"
+        className="mt-5"
+        label="Enable SMTP"
+        checked={form.enabled}
+        onChange={(checked) => handleChange('enabled', checked)}
+        disabled={toggleDisabled}
+      />
+
+      {error && (
+        <p className="mt-4 text-sm text-danger" role="alert">
+          {error}
+        </p>
+      )}
+      {message && (
+        <p className="mt-4 text-sm text-success" role="status">
+          {message}
+        </p>
+      )}
+
+      <form className="mt-5 space-y-5" onSubmit={handleSave}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Sender name" htmlFor="smtp-sender-name">
+            <Input
+              id="smtp-sender-name"
+              type="text"
+              value={form.senderName}
+              onChange={(e) => handleChange('senderName', e.target.value)}
+              placeholder="Docs Bot"
+              disabled={formDisabled}
+            />
+          </Field>
+          <Field label="Sender address" htmlFor="smtp-sender-address">
+            <Input
+              id="smtp-sender-address"
+              type="email"
+              value={form.senderAddress}
+              onChange={(e) => handleChange('senderAddress', e.target.value)}
+              placeholder="noreply@example.com"
+              disabled={formDisabled}
+            />
+          </Field>
         </div>
 
-        {error && <div className="mb-4 rounded bg-red-900/30 border border-red-700 text-red-200 px-3 py-2 text-sm">{error}</div>}
-        {message && <div className="mb-4 rounded bg-green-900/30 border border-green-700 text-green-200 px-3 py-2 text-sm">{message}</div>}
-
-        <div className="relative">
-          <form className="space-y-4" onSubmit={handleSave}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b border-white/10 pb-4">
-            <div>
-              <label className="block text-sm text-gray-300 mb-1">
-                Sender Name
-              </label>
-              <input
-                type="text"
-                value={form.senderName}
-                onChange={(e) => handleChange('senderName', e.target.value)}
-                className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:placeholder:text-gray-500/70 disabled:border-white/20 disabled:bg-black/20"
-                placeholder="Docs Bot"
-                disabled={formDisabled}
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-300 mb-1">
-                Sender Address
-              </label>
-              <input
-                type="email"
-                value={form.senderAddress}
-                onChange={(e) => handleChange('senderAddress', e.target.value)}
-                  className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:placeholder:text-gray-500/70 disabled:border-white/20 disabled:bg-black/20"
-                placeholder="noreply@example.com"
-                disabled={formDisabled}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-300 mb-1">
-                SMTP Host
-                {!form.host && <span className="text-gray-500 ml-2 text-xs">e.g., smtp.gmail.com</span>}
-              </label>
-              <input
-                type="text"
-                value={form.host}
-                onChange={(e) => handleChange('host', e.target.value)}
-                className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:placeholder:text-gray-500/70 disabled:border-white/20 disabled:bg-black/20"
-                placeholder="smtp.example.com"
-                required={form.enabled}
-                disabled={formDisabled}
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-300 mb-1">
-                Port
-                {!form.port && <span className="text-gray-500 ml-2 text-xs">Common: 587 (TLS), 465 (SSL), 25</span>}
-              </label>
-              <input
-                type="number"
-                value={form.port}
-                onChange={(e) => handleChange('port', Number(e.target.value))}
-                className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:placeholder:text-gray-500/70 disabled:border-white/20 disabled:bg-black/20"
-                placeholder="587"
-                min={1}
-                max={65535}
-                required={form.enabled}
-                disabled={formDisabled}
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-300 mb-1">
-                Username
-                {!form.username && <span className="text-gray-500 ml-2 text-xs">Your SMTP login username</span>}
-              </label>
-              <input
-                type="text"
-                value={form.username}
-                onChange={(e) => handleChange('username', e.target.value)}
-                className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:placeholder:text-gray-500/70 disabled:border-white/20 disabled:bg-black/20"
-                placeholder="user@example.com"
-                disabled={formDisabled}
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-300 mb-1">
-                Password
-                {!form.password && <span className="text-gray-500 ml-2 text-xs">Leave blank to keep current</span>}
-              </label>
-              <input
-                type="password"
-                value={form.password}
-                onChange={(e) => handleChange('password', e.target.value)}
-                className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:placeholder:text-gray-500/70 disabled:border-white/20 disabled:bg-black/20"
-                placeholder="••••••••"
-                disabled={formDisabled}
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-300 mb-1">
-                Auth Method
-                <span className="text-gray-500 ml-2 text-xs">PLAIN is most common</span>
-              </label>
-              <SettingsSelect
-                value={form.authMethod}
-                onChange={(e) => handleChange('authMethod', e.target.value as SMTPForm['authMethod'])}
-                disabled={formDisabled}
-              >
-                <option value="PLAIN">PLAIN (default)</option>
-                <option value="LOGIN">LOGIN</option>
-              </SettingsSelect>
-            </div>
-            <div className="flex items-center gap-2 pt-6">
-              <label className="inline-flex items-center gap-2.5 cursor-pointer hover:text-white transition-colors group">
-                <div className="relative inline-flex items-center justify-center flex-shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={form.tls}
-                    onChange={(e) => handleChange('tls', e.target.checked)}
-                    className="appearance-none w-5 h-5 rounded border-2 border-white/30 bg-black/40 cursor-pointer transition-all
-                               hover:border-white/50 hover:bg-black/60
-                               focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2 focus:ring-offset-black
-                               checked:bg-blue-500 checked:border-blue-500 checked:hover:bg-blue-600 checked:hover:border-blue-600
-                               disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={formDisabled}
-                  />
-                  {form.tls && (
-                    <svg className="absolute inset-0 w-5 h-5 text-white pointer-events-none" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                </div>
-                <span className="text-sm text-gray-300 group-hover:text-white transition-colors select-none leading-5">
-                  Require TLS
-                  <span className="text-gray-500 ml-2 text-xs">Auto by default, check if your provider requires it</span>
-                </span>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">
-              Local Name (optional)
-              {!form.localName && <span className="text-gray-500 ml-2 text-xs">Used for HELO/EHLO command</span>}
-            </label>
-            <input
+        <div className="grid gap-4 border-t border-line pt-5 sm:grid-cols-2">
+          <Field
+            label="SMTP host"
+            hint={!form.host ? 'e.g., smtp.gmail.com' : undefined}
+            htmlFor="smtp-host"
+          >
+            <Input
+              id="smtp-host"
               type="text"
-              value={form.localName}
-              onChange={(e) => handleChange('localName', e.target.value)}
-              className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:placeholder:text-gray-500/70 disabled:border-white/20 disabled:bg-black/20"
-              placeholder="localhost"
+              value={form.host}
+              onChange={(e) => handleChange('host', e.target.value)}
+              placeholder="smtp.example.com"
+              required={form.enabled}
+              disabled={formDisabled}
+            />
+          </Field>
+          <Field
+            label="Port"
+            hint={!form.port ? 'Common: 587 (TLS), 465 (SSL), 25' : undefined}
+            htmlFor="smtp-port"
+          >
+            <Input
+              id="smtp-port"
+              type="number"
+              value={form.port}
+              onChange={(e) => handleChange('port', Number(e.target.value))}
+              placeholder="587"
+              min={1}
+              max={65535}
+              required={form.enabled}
+              disabled={formDisabled}
+            />
+          </Field>
+          <Field
+            label="Username"
+            hint={!form.username ? 'Your SMTP login username' : undefined}
+            htmlFor="smtp-username"
+          >
+            <Input
+              id="smtp-username"
+              type="text"
+              value={form.username}
+              onChange={(e) => handleChange('username', e.target.value)}
+              placeholder="user@example.com"
+              disabled={formDisabled}
+            />
+          </Field>
+          <Field
+            label="Password"
+            hint={!form.password ? 'Leave blank to keep current' : undefined}
+            htmlFor="smtp-password"
+          >
+            <Input
+              id="smtp-password"
+              type="password"
+              value={form.password}
+              onChange={(e) => handleChange('password', e.target.value)}
+              placeholder="••••••••"
+              disabled={formDisabled}
+            />
+          </Field>
+          <Field label="Auth method" hint="PLAIN is most common" htmlFor="smtp-auth-method">
+            <Select
+              id="smtp-auth-method"
+              value={form.authMethod}
+              onChange={(e) => handleChange('authMethod', e.target.value as SMTPForm['authMethod'])}
+              disabled={formDisabled}
+            >
+              <option value="PLAIN">PLAIN (default)</option>
+              <option value="LOGIN">LOGIN</option>
+            </Select>
+          </Field>
+          <div>
+            <Switch
+              id="smtp-tls"
+              label="Require TLS"
+              description="Auto by default. Enable if your provider requires it."
+              checked={form.tls}
+              onChange={(checked) => handleChange('tls', checked)}
               disabled={formDisabled}
             />
           </div>
-
-          <div className="flex justify-between items-center gap-3 pt-2 flex-wrap">
-            <button
-              type="button"
-              onClick={handleSendTest}
-              className="px-4 py-2 rounded bg-white/10 text-white hover:bg-white/20 disabled:opacity-50"
-              disabled={formDisabled || testing}
-            >
-              {testing ? 'Sending...' : 'Send Test to My Email'}
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded bg-white/10 text-white hover:bg-white/20 disabled:opacity-50"
-              disabled={saveDisabled}
-            >
-              {saving ? 'Saving...' : 'Save SMTP'}
-            </button>
-          </div>
-        </form>
         </div>
 
-        {testResult && <p className="text-sm text-gray-300 pt-3">{testResult}</p>}
-      </div>
-    </div>
+        <div className="border-t border-line pt-5">
+          <Field
+            label="Local name"
+            hint={!form.localName ? 'Used for HELO/EHLO command' : undefined}
+            optional
+            htmlFor="smtp-local-name"
+          >
+            <Input
+              id="smtp-local-name"
+              type="text"
+              value={form.localName}
+              onChange={(e) => handleChange('localName', e.target.value)}
+              placeholder="localhost"
+              disabled={formDisabled}
+            />
+          </Field>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5">
+          <Button
+            type="button"
+            variant="secondary"
+            loading={testing}
+            onClick={handleSendTest}
+            disabled={formDisabled}
+          >
+            Send test email
+          </Button>
+          <Button type="submit" variant="primary" loading={saving} disabled={saveDisabled}>
+            Save SMTP
+          </Button>
+        </div>
+
+        {testResult && (
+          <p className="text-sm text-success" role="status">
+            {testResult}
+          </p>
+        )}
+      </form>
+    </Card>
   );
 }

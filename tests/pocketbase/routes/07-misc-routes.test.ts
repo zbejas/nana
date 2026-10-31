@@ -1,39 +1,37 @@
-import { describe, test, expect } from "bun:test";
-import { PB_API } from "../../helpers/setup";
+import { describe, expect, test } from "bun:test";
+import { expectStatus, pbList, pbRequest, readJson } from "../../helpers/client";
+import { getSuperuserToken } from "../../helpers/factories";
 
-describe("Misc Routes", () => {
-    describe("GET /api/check-users", () => {
-        const CHECK_USERS_URL = `${PB_API}/check-users`;
+describe("GET /api/check-users", () => {
+    test("is public and returns exactly hasUsers and totalUsers", async () => {
+        const res = await pbRequest("/check-users");
+        await expectStatus(res, 200);
 
-        test("returns 200 without any auth header", async () => {
-            const res = await fetch(CHECK_USERS_URL);
-            expect(res.status).toBe(200);
-        });
+        const data = await readJson<Record<string, unknown>>(res);
+        expect(Object.keys(data).sort()).toEqual(["hasUsers", "totalUsers"]);
+        expect(typeof data.hasUsers).toBe("boolean");
+        expect(typeof data.totalUsers).toBe("number");
+    });
 
-        test("returns hasUsers: true when users exist", async () => {
-            const res = await fetch(CHECK_USERS_URL);
-            const data = await res.json();
-            expect(data.hasUsers).toBe(true);
-        });
+    test("reports a hasUsers flag that matches totalUsers", async () => {
+        const data = await readJson<{ hasUsers: boolean; totalUsers: number }>(
+            await pbRequest("/check-users"),
+        );
 
-        test("returns totalUsers as a number >= 1", async () => {
-            const res = await fetch(CHECK_USERS_URL);
-            const data = await res.json();
-            expect(typeof data.totalUsers).toBe("number");
-            expect(data.totalUsers).toBeGreaterThanOrEqual(1);
-        });
+        expect(data.hasUsers).toBe(data.totalUsers > 0);
+        expect(data.totalUsers).toBeGreaterThanOrEqual(1);
+    });
 
-        test("response has correct shape", async () => {
-            const res = await fetch(CHECK_USERS_URL);
-            const data = await res.json();
-            expect(data).toEqual(
-                expect.objectContaining({
-                    hasUsers: expect.any(Boolean),
-                    totalUsers: expect.any(Number),
-                }),
-            );
-            const keys = Object.keys(data).sort();
-            expect(keys).toEqual(["hasUsers", "totalUsers"]);
-        });
+    test("totalUsers matches the real user count", async () => {
+        const superuserToken = await getSuperuserToken();
+        const users = await pbList<{ id: string }>(superuserToken, "users");
+
+        const data = await readJson<{ totalUsers: number }>(await pbRequest("/check-users"));
+        expect(data.totalUsers).toBe(users.totalItems);
+    });
+
+    test("does not allow a write method", async () => {
+        const res = await pbRequest("/check-users", { method: "POST" });
+        expect([404, 405]).toContain(res.status);
     });
 });

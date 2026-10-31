@@ -19,7 +19,6 @@ export interface PBDocument {
     content: string;
     attachments: string[];
     tags: string[];
-    published: boolean;
     author: string;
     folder?: string;
     word_count: number;
@@ -37,7 +36,6 @@ export interface PBFolder {
     parent?: string;
     author: string;
     color?: string;
-    published: boolean;
     created: string;
     updated: string;
 }

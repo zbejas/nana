@@ -1,6 +1,6 @@
 # AGENTS.md — Nana
 
-Nana ("Not Another Notes App") is a self-hosted document workspace: a Bun server, a React 19 SPA, and PocketBase for data, auth, hooks, and admin APIs. The browser talks only to the Bun origin; browser PocketBase requests are proxied through `/pb/*`. Server-side code talks to PocketBase directly.
+Nana ("Not Another Notes App") is a self-hosted document workspace: a Bun server, a React 19 SPA, and PocketBase for data, auth, hooks, and admin APIs. Notes and boards live in folders; work lives on multiple author-scoped boards. The browser talks only to Elysia `/api/v1`; PocketBase is loopback-only and server-side code talks to it directly.
 
 **Start here, then read the subsystem doc you are touching.** The knowledge base lives in [`docs/`](docs/README.md); [`docs/architecture.md`](docs/architecture.md) is the best orientation.
 
@@ -9,15 +9,17 @@ Nana ("Not Another Notes App") is a self-hosted document workspace: a Bun server
 | Doc | Covers | Read when… |
 | --- | --- | --- |
 | [`docs/README.md`](docs/README.md) | Docs index and documentation rules | Finding the right doc |
-| [`docs/architecture.md`](docs/architecture.md) | System topology, request flow, data flows, source map | Starting any work |
-| [`docs/api.md`](docs/api.md) | Bun API routes, PocketBase routes, request/response shapes | Adding or changing an endpoint |
-| [`docs/frontend.md`](docs/frontend.md) | React app, routing, auth, Jotai, editor, UI conventions | Changing UI or client state |
-| [`docs/pocketbase.md`](docs/pocketbase.md) | Hooks, migrations, collections, settings, guards, trash, sharing | Changing schema or backend behavior |
-| [`docs/ai-and-embeddings.md`](docs/ai-and-embeddings.md) | Chat, providers, RAG, chunking, `@zvec`, auto-embed | Touching AI features |
-| [`docs/security.md`](docs/security.md) | Auth layers, proxy, CSP, rate limits, sanitization, secrets | Changing auth, access, or exposure |
-| [`docs/testing.md`](docs/testing.md) | Docker test stack, test layout, helpers, conventions | Adding or fixing tests |
+| [`docs/architecture.md`](docs/architecture.md) | System topology, request flow, data flows, key files | Starting any work |
+| [`docs/api.md`](docs/api.md) | Bun application routes, Elysia `/api/v1`, MCP, PocketBase routes, request/response shapes | Adding or changing an endpoint |
+| [`docs/frontend.md`](docs/frontend.md) | React app, routing, auth, Jotai, editor, boards in folders, chat, UI conventions | Changing UI or client state |
+| [`docs/pocketbase.md`](docs/pocketbase.md) | Hooks, migrations, collections, settings, guards, trash, board folders, sharing | Changing schema or backend behavior |
+| [`docs/ai.md`](docs/ai.md) | Chat, MCP, providers, tool contracts, privacy lock, persistence, failures | Touching AI features |
+| [`docs/security.md`](docs/security.md) | Auth layers, MCP authorization, browser facade, CSP, rate limits, sanitization, secrets | Changing auth, access, or exposure |
+| [`docs/testing.md`](docs/testing.md) | Unit and Docker integration layers, helpers, conventions | Adding or fixing tests |
 | [`docs/deployment.md`](docs/deployment.md) | Build, Docker, compose, releases, operations | Building, shipping, or debugging deploys |
 | [`docs/development.md`](docs/development.md) | Local setup, workflow, sharp edges, definition of done | Beginning implementation |
+| [`docs/product.md`](docs/product.md) | Audience, product truth, principles, surfaces | Deciding what belongs in the product |
+| [`docs/design.md`](docs/design.md) | Graphite tokens, type, components, motion, voice | Building or reviewing UI |
 
 The user-facing install and feature guide is [`README.md`](README.md).
 
@@ -28,16 +30,26 @@ src/
   index.ts              Bun HTTP server, routes, CSP, graceful shutdown
   frontend.tsx          React entry point (Jotai + AuthProvider)
   App.tsx               React Router, layout, mobile navigation, lazy pages
-  api/                  Server handlers: proxy, chat, embeddings, export, version
-  components/           UI components (editor, sidebar, folder view, modals, PWA)
-  pages/                Route-level pages
+  api/                  Server handlers: chat, export, app version, static files
+  api/rest/             Elysia /api/v1, REST auth, OpenAPI /docs, Scalar assets
+  api/rest/browser/     Browser facade: records, auth, files, realtime, trash, admin, public, versions
+  api/versioning/       Server-side git version store, per-note lock, and version service
+  api/api-keys/         Long-lived API key hashing, exchange, and owner management
+  api/mcp/              Stateless MCP server and its folder/note/board/task tools
+  api/workspace/        Shared workspace services and the AI visibility lock
+  api/pocketbase/       Caller-token PocketBase client shared by REST, MCP, chat
+  api/chat/tools/       Privacy-locked read tools plus edit-mode note/board/task tools (user token)
+  components/           UI components (editor, sidebar, folder view, boards, modals, PWA)
+  pages/                Route-level pages (timeline, boards, archive, chat, settings)
   state/                Jotai atoms + data/realtime/lazy-loading hooks
-  lib/                  Config, auth, logger, document/folder CRUD, settings
+  lib/boards/           Board CRUD, folder/privacy/public-share fields, archive/restore, summaries, realtime
+  lib/tasks/            Task CRUD, ordering, note import, realtime
+  lib/                  Config, auth, logger, document/folder CRUD, version history calls, settings
 pocketbase/
   pb_hooks/             PocketBase JSVM hooks, routes, guards, mailers, cron
   pb_migrations/        Sequential schema/data migrations
   pb_data/              Runtime data (gitignored except generated types.d.ts)
-tests/                  Integration tests (Bun test, real HTTP, Docker only)
+tests/                  Unit tests + integration tests (Bun test, real HTTP, Docker)
 docker/                 Dockerfile, entrypoints, dev/test compose files
 docs/                   Engineering knowledge base (this map)
 ```
@@ -53,7 +65,10 @@ docs/                   Engineering knowledge base (this map)
 | Production server | `NODE_ENV=production bun src/index.ts` | Requires `dist/index.html` and a running PocketBase. |
 | Production container | `docker compose up -d` | Uses `ghcr.io/zbejas/nana:latest`; mounts `./pocketbase/pb_data`. |
 | Build production image | `docker build -f docker/Dockerfile --target production .` | Multi-stage build. |
-| Integration tests | `docker compose -f docker/compose.test.yml up --build --abort-on-container-exit --exit-code-from nana-test` | Fresh PB database, runs `bun test`, exits with the test status. |
+| Integration tests | `bun run test:docker` | Fresh PB database, unit phase + three integration phases, exits with the test status. |
+| Integration against a running stack | `bun run test:integration` | Expects Bun on `:3000` and PocketBase on `:8090`; uses `tests/preload.ts`. |
+| Unit tests | `bun run test:unit` | Pure modules only; no services. |
+| Full test gate | `bun run test` | Unit tests, then the Docker suite. |
 | Follow dev logs | `docker compose -f docker/compose.dev.yml logs -f nana` | PocketBase and Bun logs are prefixed. |
 
 There is no separate lint, format, or typecheck script. `tsconfig.json` is strict; `bun run build` must succeed before shipping.
@@ -61,15 +76,18 @@ There is no separate lint, format, or typecheck script. `tsconfig.json` is stric
 ## Architecture at a glance
 
 ```text
-Browser (same origin only)
+Browser / API client / MCP client (same origin; no CORS)
   │
   ▼
 Bun :3000 ── src/index.ts
-  ├── /pb/* ──────────────▶ PocketBase :8090
+  ├── /api/v1/* ──────────▶ Elysia ──▶ workspace services / browser facade ──▶ PocketBase 127.0.0.1:8090
   │                          ├── collections + API rules
+  │                          ├── versions ──▶ version service ──▶ pb_data/versioning/*.git
   │                          └── pb_hooks: routes, guards, mailers, cron
-  ├── /api/chat/* ────────▶ AI SDK providers + PB conversations
-  ├── /api/embeddings/* ──▶ @zvec vectors + PB documents
+  ├── /pb, /pb/* ─────────▶ 404 (public PocketBase proxy removed)
+  ├── /docs, /docs/json ──▶ OpenAPI spec + self-hosted Scalar reference (public)
+  ├── /mcp ───────────────▶ MCP Streamable HTTP ──▶ workspace services ──▶ PB REST (user token)
+  ├── /api/chat/* ────────▶ AI SDK providers + read/write tools ──▶ PB REST (user token)
   ├── /api/export ────────▶ PB documents/attachments → Markdown/ZIP
   ├── /api/app/version ───▶ GitHub Releases API
   └── /* ─────────────────▶ React SPA (dev: HMR, prod: dist/)
@@ -80,25 +98,34 @@ Bun :3000 ── src/index.ts
 1. **Read the relevant doc before editing code.** [`docs/README.md`](docs/README.md) tells you which one.
 2. **The code wins over docs.** If they disagree, fix the doc in the same change.
 3. **Update docs with behavior.** Routes, schema, config, commands, or architecture changes update the affected doc(s) and any index links.
-4. **Never touch `pocketbase/pb_data/`** except the generated `types.d.ts`. It contains the live SQLite database, attachments, vector store, and credentials. Tests use a disposable copy.
+4. **Never touch `pocketbase/pb_data/`** except the generated `types.d.ts` and version repositories through `src/api/versioning/`. It contains the live SQLite database, attachments, version history, and credentials. Tests use a disposable copy.
 5. **No destructive git.** No `git reset --hard`, `git checkout --`, forced cleans, or deleting unmerged branches without preserving the work first.
-6. **All browser PocketBase access goes through `/pb`.** Client code uses the PocketBase SDK at `/pb`; server code uses `serverConfig.pocketbaseUrl`.
-7. **Use `verifyAuth()` for protected Bun APIs** and `requireAdmin()` for admin-only PocketBase routes.
+6. **The browser only talks to `/api/v1`.** Client code uses `src/lib/pocketbase.ts` (an `/api/v1` client), never PocketBase directly. PocketBase is loopback-only; server code uses `serverConfig.pocketbaseUrl`. `/pb` returns `404`.
+7. **Use `verifyAuth()` for protected Bun application APIs, `authenticateApiRequest()` for the typed `/api/v1` workspace routes and `/mcp` (session tokens and `nana_…` API keys), the browser-facade auth helper for `/api/v1/records|auth|files|realtime|trash|admin|public|documents/:id/versions` (session JWT only), and `requireAdmin()` for admin-only PocketBase routes.**
 8. **Use `serverConfig` / `clientConfig`** from `src/lib/config.ts`; never read `process.env` elsewhere.
 9. **Use `createLogger()`** instead of `console.log` in application code.
 10. **Call `useDocumentData()` exactly once**, in `AppContent` (`src/App.tsx`). Never call it in a child component.
 11. **Register every new PocketBase hook or route** in its parent module and in `pocketbase/pb_hooks/index.pb.js`.
-12. **Migrations are append-only**, numbered `0000015+`, with a safe `down()` and idempotent guards. Never rename existing migration files.
-13. **Preserve the streaming and fire-and-forget paths**: SSE chat, realtime PB proxy, auto-embed, and export caching.
+12. **Migrations are append-only**, numbered from the next free sequence, with a safe `down()` and idempotent guards. Never rename existing migration files.
+13. **Preserve the streaming paths**: SSE chat with tool streaming, `/api/v1/realtime` SSE relay, export caching. There is no auto-embed or background indexer.
 14. **No secrets in the repo.** Use environment variables and the generated credentials file under `pb_data/`.
-15. **Verify the change.** Run the Docker integration suite for behavior changes; check desktop and mobile for UI changes; build before shipping.
+15. **Verify the change.** Run `bun run test:unit` for pure logic, the Docker suite (`bun run test:docker`) for behavior changes, check desktop and mobile for UI changes, and build before shipping.
+16. **Use the shared UI primitives.** Buttons, fields, cards, dialogs, sheets, menus, toasts, and feedback live in `src/components/ui/`. Do not add a bespoke modal overlay, button style, or input. Data entry and pickers use an inline form or a non-modal `SidePanel`; centred `Dialog`s are reserved for warnings/destructive confirmations (`ConfirmDialog`) and previews.
+17. **Use semantic tokens, not raw colours.** The Graphite tokens are defined in `src/index.css` and documented in [`docs/design.md`](docs/design.md). Use `bg-surface`, `border-line`, `text-ink`, `text-ink-secondary`, `text-ink-muted`, `bg-signal-bright`, `bg-signal-soft`, `text-signal`, `text-warning`, `text-success`, `text-danger`, etc. No `gray`/`stone`/`blue` families, no `dark:`/`light:` variants, no gradients, grain, glass, or serif faces. Use one family (`Geist`) for interface text; reserve `Geist Mono` for code and identifiers.
+18. **Tasks are separate from documents.** Tasks belong to an author-scoped `boards` record through the required `board` relation; a task may reference one document. Notes and tasks do not cascade into each other. Do not turn notes into tasks by overloading `documents`.
+19. **Boards archive before delete.** Permanent delete is allowed only for archived boards, and PocketBase cascades that board's tasks. Never add a client-side task-deletion loop or loosen the delete rule.
+20. **Chat manages the workspace; MCP is the separate external write surface.** `src/api/chat/tools/` uses the caller's token, never the superuser, and every read is owner-scoped (`author`, or `board.author` for tasks) and private-locked. Work-mode chat tools create, rename, and move folders, notes, and boards; create, update, and move tasks; archive/restore boards; and edit note content with revision checks. Deletes are confirm-first: tools create a pending `chat_edits` row and a separate owner-scoped confirm/cancel request performs or discards the action. Every write goes through `src/api/workspace/` and records `chat_edits`. Chat has no public-share, privacy, board-column, or label tools. MCP tools use the caller's refreshed session token or the user token minted for an API key, owner scoping, `surface: "ai"`, and the private lock through `src/api/workspace/`; they do not extend the chat tool set.
+21. **Private records stay hidden from every AI surface.** Private notes, private boards, private folders, and every descendant of a private folder are invisible to chat and MCP: omitted from lists, `not_found` by id, and refused for writes. `/api/v1` is the owner surface and deliberately still shows private records to their owner. API key scope is an additional envelope on top of this rule; it never bypasses the private lock.
+22. **Typed workspace writes go through the shared services; browser writes go through the facade adapter.** Typed REST and MCP call `src/api/workspace/` with a `ToolContext`; they do not call PocketBase directly. Every service honors `context.apiKey` access and scope. The browser facade calls PocketBase only through `src/api/rest/browser/` with its collection allowlist, author injection, relation checks, and sanitization. New `/api/v1` routes belong in the Elysia app, and new MCP tools belong in `src/api/mcp/`, not in `/api` aliases.
+23. **Boards in folders never cascade.** `boards.folder` uses `cascadeDelete: false`; folder trash and permanent delete rehome boards to the root. Incoming folder, parent, board, and note relations go through `pocketbase/pb_hooks/guards/relation_guards.js`, which checks ownership, trashed state, and folder cycles.
+24. **Version history is explicit and git-backed.** Each note's saved versions are a bare repository at `pb_data/versioning/<noteId>.git`, managed by `src/api/versioning/`; `document_versions` and `documents.published` are gone. Only an explicit Save version commits the current title/content/tags/folder/privacy. Autosave, chat, and MCP never commit. Restore commits the current state first (when it differs from HEAD) and applies only the Markdown body; title, tags, folder, and privacy stay. Trash keeps repositories; permanent note/folder delete removes them after PocketBase succeeds. Version routes are session-only and owner-scoped; the UI says **Version history** and **Save this version**, never git terms, SHAs, or branches.
 
 ## Workflow
 
 1. **Recon** — inspect the relevant code and current git state. Do not assume old notes are current.
-2. **Plan** — for multi-file work, write a short todo list and identify cross-cutting changes (migration → hook → proxy/API → atoms/hooks → components → tests).
+2. **Plan** — for multi-file work, write a short todo list and identify cross-cutting changes (migration → hook → facade/API → atoms/hooks → components → tests).
 3. **Implement** — follow existing patterns, keep the change scoped, and avoid unrelated refactors.
-4. **Verify** — run the test suite for behavior changes, build with `bun run build`, and check UI on desktop and mobile.
+4. **Verify** — run `bun run test:unit` and the Docker suite (`bun run test:docker`), build with `bun run build`, and check UI on desktop and mobile.
 5. **Report** — list changed files, what was verified, and any remaining risk or follow-up.
 
 For larger tasks, delegate research or isolated implementation slices to subagents and review their output.
@@ -107,6 +134,6 @@ For larger tasks, delegate research or isolated implementation slices to subagen
 
 - The behavior is implemented and matches the existing architecture.
 - Relevant docs in `docs/` (and `README.md` for user-facing changes) are updated.
-- Integration tests are added or updated for API, hook, guard, migration, trash, or share changes.
-- `bun run build` succeeds; the Docker test suite passes when behavior changed.
+- Integration tests are added or updated for API, hook, guard, migration, trash, or share changes; pure logic gets a unit test in `tests/unit/`.
+- `bun run build` succeeds; `bun run test:docker` passes when behavior changed.
 - No generated files, runtime data, secrets, or unrelated changes are included.

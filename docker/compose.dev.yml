@@ -8,8 +8,8 @@ services:
         TARGETARCH: ${TARGETARCH:-amd64} # for arm, use arm64
     container_name: nana-dev
     ports:
+      # PocketBase is loopback-only inside the container. The app is the edge.
       - "3000:3000"
-      - "8090:8090"
     volumes:
       - ../pocketbase/pb_data:/app/pocketbase/pb_data
     environment:

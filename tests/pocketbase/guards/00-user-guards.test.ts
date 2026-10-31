@@ -1,273 +1,218 @@
-import { describe, test, expect, beforeAll } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
+import { expectStatus, pbRequest, readJson } from "../../helpers/client";
+import { createAdmin, createUnverifiedAdmin, createUser, getSuperuserToken, type TestUser } from "../../helpers/factories";
 import {
-    PB_API,
-    authenticateSuperuser,
-    createTestUser,
+    TEST_PASSWORD,
     authenticateUser,
     signupUser,
+    uniqueEmail,
 } from "../../helpers/setup";
 
-const TEST_PASSWORD = "testPassword123!";
-
-describe("User Guards", () => {
+describe("User guards and onboarding", () => {
     let superuserToken: string;
-    let primaryAdminEmail = "admin@test.local";
     let hadUsersBeforeSuite = false;
-    let onboardingSignupStatus: number | null = null;
-    let onboardingSignupRecordId: string | null = null;
-
-    async function resolveVerifiedAdminEmail(): Promise<string> {
-        const res = await fetch(`${PB_API}/collections/users/records?perPage=200&sort=created`, {
-            headers: { Authorization: superuserToken },
-        });
-        expect(res.status).toBe(200);
-
-        const data = (await res.json()) as {
-            items: { email: string; admin: boolean; verified: boolean }[];
-        };
-        const verifiedAdmin = data.items.find((user) => user.admin && user.verified);
-
-        if (!verifiedAdmin) {
-            throw new Error("Expected a verified admin user in the shared test database");
-        }
-
-        return verifiedAdmin.email;
-    }
+    let firstUserStatus: number | null = null;
+    let firstUserId: string | null = null;
 
     beforeAll(async () => {
-        superuserToken = await authenticateSuperuser();
+        superuserToken = await getSuperuserToken();
 
-        const checkRes = await fetch(`${PB_API}/check-users`);
-        expect(checkRes.status).toBe(200);
+        const checkRes = await pbRequest("/check-users");
+        await expectStatus(checkRes, 200);
+        const check = await readJson<{ hasUsers: boolean }>(checkRes);
+        hadUsersBeforeSuite = check.hasUsers;
 
-        const checkData = (await checkRes.json()) as { hasUsers: boolean };
-        hadUsersBeforeSuite = checkData.hasUsers;
+        if (hadUsersBeforeSuite) return;
 
-        if (!hadUsersBeforeSuite) {
-            const res = await signupUser({
-                email: primaryAdminEmail,
-                password: TEST_PASSWORD,
-                name: "Test Admin",
-            });
-
-            onboardingSignupStatus = res.status;
-            const data = (await res.json()) as { id?: string; message?: string };
-            onboardingSignupRecordId = data.id ?? null;
-
-            if (!res.ok) {
-                throw new Error(
-                    `Expected first-user signup to succeed, got ${res.status}: ${JSON.stringify(data)}`,
-                );
-            }
-        } else {
-            primaryAdminEmail = await resolveVerifiedAdminEmail();
-        }
+        // This file runs immediately after the bootstrap checks on a fresh
+        // database. Only this first signup exercises the open registration path.
+        const res = await signupUser({
+            email: "onboarding@test.local",
+            password: TEST_PASSWORD,
+            name: "Onboarding Admin",
+        });
+        firstUserStatus = res.status;
+        const data = await readJson<{ id?: string }>(res);
+        firstUserId = data.id ?? null;
     });
 
-    // ── First user onboarding flow ──────────────────────────────────
-
-    describe("first user creation (onboarding)", () => {
-        // The integration suite shares one PocketBase instance across files.
-        // Only exercise the unauthenticated first-user path when this suite reaches a fresh DB first.
-        test("allows unauthenticated first-user signup on a fresh DB", () => {
+    describe("first user onboarding", () => {
+        test("allows unauthenticated signup only when the database is empty", () => {
             if (hadUsersBeforeSuite) {
-                expect(onboardingSignupStatus).toBeNull();
+                expect(firstUserStatus).toBeNull();
                 return;
             }
 
-            expect(onboardingSignupStatus).toBe(200);
-            expect(typeof onboardingSignupRecordId).toBe("string");
+            expect(firstUserStatus).toBe(200);
+            expect(typeof firstUserId).toBe("string");
         });
 
-        test("first regular user is auto-granted admin", async () => {
-            const { record } = await authenticateUser(primaryAdminEmail, TEST_PASSWORD);
+        test("grants the first user admin and verified status", async () => {
+            if (hadUsersBeforeSuite) return;
+
+            const { record } = await authenticateUser("onboarding@test.local", TEST_PASSWORD);
             expect(record.admin).toBe(true);
-        });
-
-        test("first regular user is auto-verified", async () => {
-            const { record } = await authenticateUser(primaryAdminEmail, TEST_PASSWORD);
             expect(record.verified).toBe(true);
         });
 
-        test("check-users shows regular users exist after onboarding", async () => {
-            const res = await fetch(`${PB_API}/check-users`);
-            const data = await res.json();
+        test("check-users reports that users exist", async () => {
+            const res = await pbRequest("/check-users");
+            const data = await readJson<{ hasUsers: boolean; totalUsers: number }>(res);
+
             expect(data.hasUsers).toBe(true);
+            expect(data.totalUsers).toBeGreaterThanOrEqual(1);
         });
     });
 
-    // ── Public signup lockdown ──────────────────────────────────────
-
     describe("public signup lockdown", () => {
-        test("public signup is blocked after first user", async () => {
+        test("rejects public signup after the first user exists", async () => {
             const res = await signupUser({
-                email: "attacker@evil.local",
+                email: uniqueEmail("attacker"),
                 password: "hackPassword123!",
             });
-            // Should be rejected — either 400 or 403
+
             expect(res.ok).toBe(false);
             expect([400, 403]).toContain(res.status);
         });
 
-        test("unauthenticated user cannot create accounts", async () => {
+        test("rejects unauthenticated account creation", async () => {
             const res = await signupUser({
-                email: "sneaky@evil.local",
+                email: uniqueEmail("sneaky"),
                 password: "hackPassword123!",
             });
+
             expect(res.ok).toBe(false);
+            expect([400, 403]).toContain(res.status);
         });
     });
 
-    // ── Admin user creation ─────────────────────────────────────────
-
     describe("admin user creation", () => {
-        let adminToken: string;
+        let admin: TestUser;
 
         beforeAll(async () => {
-            const auth = await authenticateUser(primaryAdminEmail, TEST_PASSWORD);
-            adminToken = auth.token;
+            if (hadUsersBeforeSuite) {
+                admin = await createAdmin("onboarding-admin");
+                return;
+            }
+
+            const session = await authenticateUser("onboarding@test.local", TEST_PASSWORD);
+            admin = {
+                ...session.record,
+                password: TEST_PASSWORD,
+                token: session.token,
+            };
         });
 
         test("superuser can create additional users", async () => {
-            const user = await createTestUser(superuserToken, {
-                email: "user-by-su@test.local",
-                password: TEST_PASSWORD,
-                name: "Created by SU",
-            });
-            expect(user.email).toBe("user-by-su@test.local");
+            const target = await createUser("created-by-superuser");
+            expect(target.email).toContain("created-by-superuser");
+            expect(target.token.length).toBeGreaterThan(0);
         });
 
-        test("admin user can create additional users", async () => {
-            const res = await fetch(`${PB_API}/collections/users/records`, {
+        test("verified admin can create regular users", async () => {
+            const res = await pbRequest("/collections/users/records", {
                 method: "POST",
                 headers: {
+                    Authorization: admin.token,
                     "Content-Type": "application/json",
-                    Authorization: adminToken,
                 },
                 body: JSON.stringify({
-                    email: "user-by-admin@test.local",
+                    email: uniqueEmail("user-by-admin"),
                     password: TEST_PASSWORD,
                     passwordConfirm: TEST_PASSWORD,
                     name: "Created by Admin",
                 }),
             });
-            expect(res.status).toBe(200);
+
+            await expectStatus(res, 200, "admin creates user");
         });
 
-        test("verified admin can grant admin to new users", async () => {
-            const res = await fetch(`${PB_API}/collections/users/records`, {
+        test("verified admin can grant admin to a new user", async () => {
+            const res = await pbRequest("/collections/users/records", {
                 method: "POST",
                 headers: {
+                    Authorization: admin.token,
                     "Content-Type": "application/json",
-                    Authorization: adminToken,
                 },
                 body: JSON.stringify({
-                    email: "admin2@test.local",
+                    email: uniqueEmail("admin-granted"),
                     password: TEST_PASSWORD,
                     passwordConfirm: TEST_PASSWORD,
-                    name: "Second Admin",
+                    name: "Granted Admin",
                     admin: true,
                 }),
             });
-            expect(res.status).toBe(200);
-            const data = await res.json();
+
+            await expectStatus(res, 200, "verified admin grants admin");
+            const data = await readJson<{ admin: boolean }>(res);
             expect(data.admin).toBe(true);
         });
     });
 
-    // ── Non-admin restrictions ──────────────────────────────────────
-
     describe("non-admin restrictions", () => {
-        let regularUserToken: string;
-
-        beforeAll(async () => {
-            // user-by-su@test.local was created above — authenticate as them
-            const auth = await authenticateUser("user-by-su@test.local", TEST_PASSWORD);
-            regularUserToken = auth.token;
-        });
-
-        test("non-admin user cannot create users", async () => {
-            const res = await fetch(`${PB_API}/collections/users/records`, {
+        test("regular user cannot create users", async () => {
+            const regular = await createUser("regular-user");
+            const res = await pbRequest("/collections/users/records", {
                 method: "POST",
                 headers: {
+                    Authorization: regular.token,
                     "Content-Type": "application/json",
-                    Authorization: regularUserToken,
                 },
                 body: JSON.stringify({
-                    email: "forbidden@test.local",
+                    email: uniqueEmail("forbidden"),
                     password: TEST_PASSWORD,
                     passwordConfirm: TEST_PASSWORD,
                 }),
             });
+
             expect(res.ok).toBe(false);
             expect([400, 403]).toContain(res.status);
         });
     });
 
-    // ── Non-verified admin restrictions ─────────────────────────────
-
-    describe("non-verified admin restrictions", () => {
-        let unverifiedAdminToken: string;
-
-        beforeAll(async () => {
-            // admin2@test.local was created by admin but is not verified
-            // We need to authenticate them
-            const auth = await authenticateUser("admin2@test.local", TEST_PASSWORD);
-            unverifiedAdminToken = auth.token;
-        });
-
-        test("non-verified admin cannot grant admin to new users", async () => {
-            const res = await fetch(`${PB_API}/collections/users/records`, {
+    describe("unverified admin restrictions", () => {
+        test("unverified admin cannot grant admin to a new user", async () => {
+            const unverified = await createUnverifiedAdmin("unverified-admin");
+            const res = await pbRequest("/collections/users/records", {
                 method: "POST",
                 headers: {
+                    Authorization: unverified.token,
                     "Content-Type": "application/json",
-                    Authorization: unverifiedAdminToken,
                 },
                 body: JSON.stringify({
-                    email: "admin-attempt@test.local",
+                    email: uniqueEmail("admin-attempt"),
                     password: TEST_PASSWORD,
                     passwordConfirm: TEST_PASSWORD,
                     admin: true,
                 }),
             });
-            expect(res.ok).toBe(false);
-            expect([400, 403]).toContain(res.status);
+
+            await expectStatus(res, 400, "unverified admin grant");
+            const body = await readJson<{ message?: string }>(res);
+            expect(body.message).toContain("verified");
         });
     });
 
-    // ── User deletion restrictions ──────────────────────────────────
-
-    describe("verified user deletion protection", () => {
-        test("verified user cannot be deleted", async () => {
-            // Get the admin user's ID
-            const { record } = await authenticateUser(primaryAdminEmail, TEST_PASSWORD);
-
-            // Try to delete via superuser
-            const res = await fetch(`${PB_API}/collections/users/records/${record.id}`, {
+    describe("user deletion protection", () => {
+        test("verified users cannot be deleted, even by the superuser", async () => {
+            const verified = await createUser("verified-delete-target", { verified: true });
+            const res = await pbRequest(`/collections/users/records/${verified.id}`, {
                 method: "DELETE",
                 headers: { Authorization: superuserToken },
             });
-            // Guard blocks deletion of verified users (superusers bypass, but let's test through PB API)
-            // Actually, superusers bypass hasSuperuserAuth() — there's no superuser check in delete guard
-            // The guard blocks ALL deletion of verified users, no bypass
-            expect(res.ok).toBe(false);
-            expect([400, 403]).toContain(res.status);
+
+            await expectStatus(res, 400, "delete verified user");
+            expect(await readJson<{ message?: string }>(res)).toHaveProperty("message");
         });
 
-        test("unverified user can be deleted", async () => {
-            // user-by-admin@test.local is unverified — get their ID
-            const listRes = await fetch(
-                `${PB_API}/collections/users/records?filter=(email='user-by-admin@test.local')`,
-                { headers: { Authorization: superuserToken } },
-            );
-            const listData = await listRes.json();
-            const userId = listData.items[0].id;
-
-            const res = await fetch(`${PB_API}/collections/users/records/${userId}`, {
+        test("unverified users can be deleted by the superuser", async () => {
+            const unverified = await createUser("unverified-delete-target", { verified: false });
+            const res = await pbRequest(`/collections/users/records/${unverified.id}`, {
                 method: "DELETE",
                 headers: { Authorization: superuserToken },
             });
-            expect(res.status).toBe(204);
+
+            await expectStatus(res, 204, "delete unverified user");
         });
     });
 });

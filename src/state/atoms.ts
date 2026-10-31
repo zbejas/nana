@@ -16,7 +16,7 @@ export const sidebarOpenAtom = atomWithStorage<boolean>(
     true,
     {
         getItem: (key, initialValue) => {
-            if (typeof window !== 'undefined' && window.innerWidth < 768) {
+            if (typeof window !== 'undefined' && window.innerWidth < 1024) {
                 return false;
             }
 
@@ -47,6 +47,12 @@ export const sidebarOpenAtom = atomWithStorage<boolean>(
  * Used to disable transitions during resize for smooth performance
  */
 export const sidebarResizingAtom = atom(false);
+
+/** Tracks if the chat dock is being resized so layout transitions stay off. */
+export const chatDockResizingAtom = atom(false);
+
+/** Hide the workspace chrome while writing. Persisted across documents. */
+export const editorFullscreenAtom = atomWithStorage<boolean>('nana-editor-fullscreen', false);
 
 /**
  * Controls which document is currently selected for editing
@@ -84,11 +90,46 @@ export const initialDocumentTitleAtom = atom<string | undefined>(undefined);
 export const initialDocumentContentAtom = atom<string | undefined>(undefined);
 
 /**
+ * Set when a note is sent to the board picker. AddToBoardHost listens once at
+ * the app root so Timeline, Folders, and context menus share one flow.
+ */
+export const addToBoardRequestAtom = atom<{ documentId: string; title?: string } | null>(null);
+
+/**
  * Monotonically-increasing counter bumped every time a new-document session
  * starts.  Used to detect stale auto-save callbacks that complete after the
  * user has already started another new document.
  */
 export const creationSessionIdAtom = atom(0);
+
+// ============================================================================
+// Chat dock
+// ============================================================================
+
+/**
+ * The global chat dock, mounted once in AppContent. Persisted so a reload
+ * reopens the same conversation, but never opened automatically by a route.
+ */
+export const chatDockOpenAtom = atomWithStorage<boolean>(
+    'nana-chat-dock-open',
+    false,
+    undefined,
+    { getOnInit: true }
+);
+
+/** The conversation the dock and /chat page are currently showing. */
+export const chatConversationIdAtom = atomWithStorage<string | null>(
+    'nana-chat-conversation',
+    null,
+    undefined,
+    { getOnInit: true }
+);
+
+/**
+ * The desktop history column inside the dock. Not persisted: history is a
+ * temporary inspection surface, not a layout preference.
+ */
+export const chatDockHistoryOpenAtom = atom(false);
 
 // ============================================================================
 // Data State Atoms
@@ -201,78 +242,6 @@ export const expandedTrashFoldersAtom = atomWithStorage<Set<string>>(
             localStorage.removeItem(key);
         }
     }
-);
-
-export type ChatAttachedDocument = {
-    id: string;
-    title: string;
-};
-
-export const CHAT_ATTACHMENT_DRAFT_KEY = '__draft__';
-
-function normalizeChatAttachedDocuments(
-    value: unknown,
-    fallback: Record<string, ChatAttachedDocument[]>
-): Record<string, ChatAttachedDocument[]> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return fallback;
-    }
-
-    const normalized: Record<string, ChatAttachedDocument[]> = {};
-
-    for (const [scopeKey, docs] of Object.entries(value)) {
-        if (!Array.isArray(docs)) {
-            continue;
-        }
-
-        const normalizedDocs = docs.flatMap((doc) => {
-            if (!doc || typeof doc !== 'object') {
-                return [];
-            }
-
-            const { id, title } = doc as Partial<ChatAttachedDocument>;
-            if (typeof id !== 'string' || !id.trim()) {
-                return [];
-            }
-
-            return [{
-                id,
-                title: typeof title === 'string' && title.trim() ? title : 'Untitled',
-            }];
-        });
-
-        if (normalizedDocs.length > 0) {
-            normalized[scopeKey] = normalizedDocs;
-        }
-    }
-
-    return normalized;
-}
-
-export const chatAttachedDocumentsAtom = atomWithStorage<Record<string, ChatAttachedDocument[]>>(
-    'chat-attached-documents',
-    {},
-    {
-        getItem: (key, initialValue) => {
-            const value = localStorage.getItem(key);
-            if (!value) {
-                return initialValue;
-            }
-
-            try {
-                return normalizeChatAttachedDocuments(JSON.parse(value), initialValue);
-            } catch {
-                return initialValue;
-            }
-        },
-        setItem: (key, value) => {
-            localStorage.setItem(key, JSON.stringify(value));
-        },
-        removeItem: (key) => {
-            localStorage.removeItem(key);
-        }
-    },
-    { getOnInit: true }
 );
 
 /**
@@ -424,95 +393,6 @@ export const toggleTrashFolderAtom = atom(
             expanded.add(folderId);
         }
         set(expandedTrashFoldersAtom, expanded);
-    }
-);
-
-export const toggleChatAttachedDocumentAtom = atom(
-    null,
-    (get, set, payload: { scopeKey: string; doc: ChatAttachedDocument }) => {
-        const { scopeKey, doc } = payload;
-        const current = get(chatAttachedDocumentsAtom);
-        const scopedDocs = current[scopeKey] || [];
-        const nextTitle = doc.title || 'Untitled';
-        const nextDocs = scopedDocs.some((item) => item.id === doc.id)
-            ? scopedDocs.filter((item) => item.id !== doc.id)
-            : [...scopedDocs, { id: doc.id, title: nextTitle }];
-
-        if (nextDocs.length === 0) {
-            const { [scopeKey]: _removed, ...rest } = current;
-            set(chatAttachedDocumentsAtom, rest);
-            return;
-        }
-
-        set(chatAttachedDocumentsAtom, {
-            ...current,
-            [scopeKey]: nextDocs,
-        });
-    }
-);
-
-export const removeChatAttachedDocumentAtom = atom(
-    null,
-    (get, set, payload: { scopeKey: string; docId: string }) => {
-        const { scopeKey, docId } = payload;
-        const current = get(chatAttachedDocumentsAtom);
-        const scopedDocs = current[scopeKey] || [];
-        const nextDocs = scopedDocs.filter((doc) => doc.id !== docId);
-
-        if (nextDocs.length === 0) {
-            const { [scopeKey]: _removed, ...rest } = current;
-            set(chatAttachedDocumentsAtom, rest);
-            return;
-        }
-
-        set(chatAttachedDocumentsAtom, {
-            ...current,
-            [scopeKey]: nextDocs,
-        });
-    }
-);
-
-export const clearChatAttachedDocumentsAtom = atom(
-    null,
-    (get, set, scopeKey: string) => {
-        const current = get(chatAttachedDocumentsAtom);
-        if (!(scopeKey in current)) {
-            return;
-        }
-
-        const { [scopeKey]: _removed, ...rest } = current;
-        set(chatAttachedDocumentsAtom, rest);
-    }
-);
-
-export const moveChatAttachedDocumentsAtom = atom(
-    null,
-    (get, set, payload: { fromScopeKey: string; toScopeKey: string }) => {
-        const { fromScopeKey, toScopeKey } = payload;
-        if (!fromScopeKey || !toScopeKey || fromScopeKey === toScopeKey) {
-            return;
-        }
-
-        const current = get(chatAttachedDocumentsAtom);
-        const sourceDocs = current[fromScopeKey];
-        if (!sourceDocs || sourceDocs.length === 0) {
-            return;
-        }
-
-        const destinationDocs = current[toScopeKey] || [];
-        const mergedDocs = [...destinationDocs];
-
-        for (const doc of sourceDocs) {
-            if (!mergedDocs.some((existing) => existing.id === doc.id)) {
-                mergedDocs.push(doc);
-            }
-        }
-
-        const { [fromScopeKey]: _removed, ...rest } = current;
-        set(chatAttachedDocumentsAtom, {
-            ...rest,
-            [toScopeKey]: mergedDocs,
-        });
     }
 );
 

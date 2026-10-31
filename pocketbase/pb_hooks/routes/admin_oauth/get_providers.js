@@ -2,7 +2,7 @@
 
 // Admin endpoint to get OAuth2 provider configuration for the users collection
 routerAdd("GET", "/api/admin/oauth/providers", (c) => {
-  const { requireAdmin } = require(`${__hooks}/utils.js`)
+  const { requireAdmin, sendError } = require(`${__hooks}/utils.js`)
 
   try {
     requireAdmin(c)
@@ -31,7 +31,6 @@ routerAdd("GET", "/api/admin/oauth/providers", (c) => {
       mappedFields,
     })
   } catch (err) {
-    console.error("Failed to get OAuth2 settings:", err)
-    return c.json(500, { error: "Failed to load OAuth2 settings: " + String(err) })
+    return sendError(c, err, "Failed to load OAuth2 settings")
   }
 }, $apis.requireAuth())

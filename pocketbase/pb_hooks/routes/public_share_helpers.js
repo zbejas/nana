@@ -23,9 +23,13 @@ function disablePublicShare(record) {
 
 function findPublicShareRecord(collectionName, token) {
   try {
+    var filter = "public_share_token = {:token}"
+    if (collectionName === "documents" || collectionName === "folders") {
+      filter += " && deleted_at = ''"
+    }
     return $app.findFirstRecordByFilter(
       collectionName,
-      "public_share_token = {:token}",
+      filter,
       { token: token }
     )
   } catch (_) {
@@ -34,11 +38,57 @@ function findPublicShareRecord(collectionName, token) {
 }
 
 /**
+ * A public record inside a private or trashed folder is not public. Walk every
+ * ancestor because the folder state is not denormalized onto the record and
+ * the collection rules cannot express a recursive lookup.
+ */
+function ancestorsArePublic(record) {
+  const collection = String(record.collection().name || "")
+  let folderId = ""
+  if (collection === "folders") {
+    folderId = String(record.get("parent") || "")
+  } else if (collection === "documents" || collection === "boards") {
+    folderId = String(record.get("folder") || "")
+  } else {
+    return true
+  }
+
+  let steps = 0
+  while (folderId) {
+    let folder = null
+    try {
+      folder = $app.findRecordById("folders", folderId)
+    } catch (_) {
+      return false
+    }
+    if (!folder ||
+        folder.getBool("is_private") ||
+        String(folder.get("deleted_at") || "") !== "") {
+      return false
+    }
+    folderId = String(folder.get("parent") || "")
+    steps += 1
+    if (steps > 1000) return false
+  }
+  return true
+}
+
+/**
  * Validates that a record is publicly accessible:
- * is_public=true, is_private=false, and not expired.
+ * is_public=true, is_private=false, no private/trashed ancestor folder, and not
+ * expired.
  */
 function ensureActivePublicShare(record) {
-  if (!record || !record.getBool("is_public") || record.getBool("is_private")) {
+  if (
+    !record ||
+    !record.getBool("is_public") ||
+    record.getBool("is_private") ||
+    String(record.get("deleted_at") || "") !== ""
+  ) {
+    throw new NotFoundError("Public share not found")
+  }
+
+  if (!ancestorsArePublic(record)) {
     throw new NotFoundError("Public share not found")
   }
 
@@ -64,6 +114,16 @@ function serializeAuthor(authorRecord) {
   return {
     id: authorRecord.id,
     name: authorRecord.getString("name") || authorRecord.getString("email") || "Unknown",
+  }
+}
+
+// Public assignees never expose an email address. A user without a display
+// name is shown as a neutral member label instead.
+function serializePublicAssignee(assigneeRecord) {
+  if (!assigneeRecord) return null
+  return {
+    id: assigneeRecord.id,
+    name: assigneeRecord.getString("name") || "Member",
   }
 }
 
@@ -96,6 +156,110 @@ function serializeFolder(record) {
   }
 }
 
+function serializeBoard(record) {
+  var columns = []
+  var columnRecords = collectBoardColumns(record.id)
+  for (var i = 0; i < columnRecords.length; i++) {
+    columns.push(serializeBoardColumn(columnRecords[i]))
+  }
+
+  return {
+    id: record.id,
+    name: record.getString("name"),
+    description: record.getString("description") || "",
+    icon: record.getString("icon") || "",
+    author: record.getString("author"),
+    folder: record.getString("folder") || "",
+    columns: columns,
+    created: toIsoOrNull(record.get("created")),
+    updated: toIsoOrNull(record.get("updated")),
+  }
+}
+
+function serializeBoardColumn(record) {
+  return {
+    id: record.id,
+    slug: record.getString("slug"),
+    name: record.getString("name"),
+    position: record.getInt("position") || 0,
+    icon: record.getString("icon") || "",
+    color: record.getString("color") || "",
+    is_final: record.getBool("is_final"),
+  }
+}
+
+function collectBoardColumns(boardId) {
+  if (!boardId) return []
+  return $app.findRecordsByFilter(
+    "board_columns",
+    "board = {:boardId}",
+    "position,created",
+    0,
+    0,
+    { boardId: boardId }
+  )
+}
+
+/**
+ * A task's linked note is intentionally omitted from public board shares.
+ * The note has its own privacy and sharing state, so the board never exposes
+ * a relation that could point at a private record. The assignee is reduced to
+ * id and display name; its email address is never public.
+ */
+function serializeTask(record) {
+  var assignee = null
+  var assigneeId = record.getString("assignee")
+  if (assigneeId) {
+    assignee = serializePublicAssignee(findAuthorRecord(assigneeId))
+  }
+
+  return {
+    id: record.id,
+    title: record.getString("title"),
+    description: record.getString("description") || "",
+    status: record.getString("status") || "planned",
+    priority: record.getString("priority") || "",
+    due_date: toIsoOrNull(record.get("due_date")),
+    start_date: toIsoOrNull(record.get("start_date")),
+    completed_at: toIsoOrNull(record.get("completed_at")),
+    task_number: record.getInt("task_number") || null,
+    board_order: record.getInt("board_order") || 0,
+    labels: record.getStringSlice("labels"),
+    assignee: assignee,
+    created: toIsoOrNull(record.get("created")),
+    updated: toIsoOrNull(record.get("updated")),
+  }
+}
+
+/**
+ * A public folder board is the board payload plus its tasks. The tasks keep
+ * the same read-only contract as a standalone board share: no author, board,
+ * or linked note.
+ */
+function serializeBoardWithTasks(record) {
+  var serialized = serializeBoard(record)
+  var taskRecords = collectBoardTasks(record.id)
+  var tasks = []
+
+  for (var i = 0; i < taskRecords.length; i++) {
+    tasks.push(serializeTask(taskRecords[i]))
+  }
+
+  serialized.tasks = tasks
+  return serialized
+}
+
+function collectBoardTasks(boardId) {
+  return $app.findRecordsByFilter(
+    "tasks",
+    "board = {:boardId}",
+    "board_order,created",
+    0,
+    0,
+    { boardId: boardId }
+  )
+}
+
 /**
  * Collects descendant folders, skipping private subfolders and their
  * entire subtrees.
@@ -112,7 +276,7 @@ function collectFolderDescendants(folderRecord) {
 
     var children = $app.findRecordsByFilter(
       "folders",
-      "parent = {:parentId}",
+      "parent = {:parentId} && deleted_at = ''",
       "+name",
       500,
       0,
@@ -138,7 +302,7 @@ function collectFolderDocuments(folderIds) {
   for (var f = 0; f < folderIds.length; f++) {
     var folderDocuments = $app.findRecordsByFilter(
       "documents",
-      "folder = {:folderId}",
+      "folder = {:folderId} && deleted_at = ''",
       "+title",
       500,
       0,
@@ -153,6 +317,34 @@ function collectFolderDocuments(folderIds) {
   }
 
   return documents
+}
+
+/**
+ * Collects active boards in the given folder IDs. A folder share never exposes
+ * private boards, archived boards, or boards owned by someone else even if the
+ * stored folder relation is inconsistent.
+ */
+function collectFolderBoards(folderIds, authorId) {
+  var boards = []
+
+  for (var f = 0; f < folderIds.length; f++) {
+    var folderBoards = $app.findRecordsByFilter(
+      "boards",
+      "folder = {:folderId} && archived = false && author = {:authorId}",
+      "+name",
+      500,
+      0,
+      { folderId: folderIds[f], authorId: authorId }
+    )
+
+    for (var b = 0; b < folderBoards.length; b++) {
+      if (!folderBoards[b].getBool("is_private")) {
+        boards.push(folderBoards[b])
+      }
+    }
+  }
+
+  return boards
 }
 
 function buildRecordFileKey(record, filename) {
@@ -185,13 +377,22 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     toIsoOrNull: toIsoOrNull,
     findPublicShareRecord: findPublicShareRecord,
+    ancestorsArePublic: ancestorsArePublic,
     ensureActivePublicShare: ensureActivePublicShare,
     findAuthorRecord: findAuthorRecord,
     serializeAuthor: serializeAuthor,
+    serializePublicAssignee: serializePublicAssignee,
     serializeDocument: serializeDocument,
     serializeFolder: serializeFolder,
+    serializeBoard: serializeBoard,
+    serializeBoardColumn: serializeBoardColumn,
+    serializeTask: serializeTask,
+    serializeBoardWithTasks: serializeBoardWithTasks,
+    collectBoardTasks: collectBoardTasks,
+    collectBoardColumns: collectBoardColumns,
     collectFolderDescendants: collectFolderDescendants,
     collectFolderDocuments: collectFolderDocuments,
+    collectFolderBoards: collectFolderBoards,
     buildRecordFileKey: buildRecordFileKey,
     getOriginalFilename: getOriginalFilename,
     ensureAttachmentExists: ensureAttachmentExists,

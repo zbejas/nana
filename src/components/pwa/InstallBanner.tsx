@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ConfirmDialog } from '../modals/ConfirmDialog';
 import { useInstallPrompt } from './useInstallPrompt';
+import { Button, IconButton } from '../ui';
+import { XMarkIcon } from '@heroicons/react/20/solid';
+import logo from '../../assets/nana.svg';
 
 const INSTALL_DISMISSED_KEY = 'pwa-install-dismissed';
 
@@ -39,15 +41,10 @@ export function InstallBanner() {
     setIos(isIosMobile());
     setDismissed(localStorage.getItem(INSTALL_DISMISSED_KEY) === 'true');
 
-    const handleAppInstalled = () => {
-      setInstalled(true);
-    };
-
+    const handleAppInstalled = () => setInstalled(true);
     window.addEventListener('appinstalled', handleAppInstalled);
 
-    const showModal = () => {
-      window.setTimeout(() => setReadyToShow(true), 120);
-    };
+    const showModal = () => window.setTimeout(() => setReadyToShow(true), 120);
 
     if (document.readyState === 'complete') {
       showModal();
@@ -66,10 +63,6 @@ export function InstallBanner() {
     setDismissed(true);
   };
 
-  const handleInstallClick = async () => {
-    await promptInstall();
-  };
-
   if (!readyToShow || !mobile || installed || dismissed) {
     return null;
   }
@@ -79,25 +72,48 @@ export function InstallBanner() {
   }
 
   const shouldShowManualHint = ios;
-  const title = shouldShowManualHint ? 'Install Nana Manually' : 'Install Nana';
-  const baseMessage = shouldShowManualHint
-    ? ios
-      ? 'To install this app on iOS Safari, tap Share and choose "Add to Home Screen".'
-      : 'To install this app, open your browser menu and choose "Add to Home Screen".'
-    : 'Install the app for a faster, full-screen mobile experience.';
-  const message = baseMessage;
 
   return (
-    <ConfirmDialog
-      isOpen={true}
-      title={title}
-      message={message}
-      onSave={handleInstallClick}
-      onDiscard={dismissBanner}
-      onCancel={() => setDismissed(true)}
-      saveLabel={shouldShowManualHint ? '' : 'Install'}
-      discardLabel="Don't remind me"
-      cancelLabel="Close"
-    />
+    <aside
+      role="region"
+      aria-label={shouldShowManualHint ? 'Add Nana to your home screen' : 'Install Nana'}
+      className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-[900] mx-auto max-w-md animate-banner-in overflow-hidden rounded-panel border border-line bg-surface p-4 text-ink shadow-float"
+    >
+      <div className="flex items-start gap-3">
+        <img src={logo} alt="" className="h-10 w-10 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13.5px] font-semibold tracking-[-0.01em] text-ink">
+            {shouldShowManualHint ? 'Add Nana to your home screen' : 'Install Nana'}
+          </p>
+          <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">
+            {shouldShowManualHint
+              ? 'Tap Share in Safari, then choose “Add to Home Screen”. Nana runs full-screen and one tap away.'
+              : 'A full-screen, faster version with its own icon. Use the button below or your browser menu.'}
+          </p>
+        </div>
+        <IconButton
+          label="Close install prompt"
+          size="md"
+          onClick={() => setDismissed(true)}
+          className="-mr-1 -mt-1"
+        >
+          <XMarkIcon />
+        </IconButton>
+      </div>
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={dismissBanner}>
+          {shouldShowManualHint ? 'Not now' : "Don't remind me"}
+        </Button>
+        {shouldShowManualHint ? (
+          <Button variant="primary" size="sm" onClick={() => setDismissed(true)}>
+            Got it
+          </Button>
+        ) : (
+          <Button variant="primary" size="sm" onClick={() => void promptInstall()}>
+            Install Nana
+          </Button>
+        )}
+      </div>
+    </aside>
   );
 }

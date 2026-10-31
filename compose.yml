@@ -4,7 +4,8 @@ services:
     container_name: nana
     ports:
       - "3000:3000"
-    #  - "8090:8090"  # PocketBase admin port, avoid exposing in production
+    # PocketBase is bound to 127.0.0.1 inside the container. Never publish
+    # 8090: it would bypass the app's auth, rate limits, and API surface.
     environment:
       - TZ=${TZ:-Europe/Ljubljana}
     volumes:

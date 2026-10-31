@@ -4,16 +4,11 @@
 // This runs with admin privileges so it can access the users collection
 routerAdd("GET", "/api/check-users", (c) => {
   try {
-    const users = $app.findRecordsByFilter(
-      "users",
-      "",
-      "-created",
-      1
-    )
-    
+    const totalUsers = $app.countRecords("users")
+
     return c.json(200, {
-      hasUsers: users.length > 0,
-      totalUsers: users.length
+      hasUsers: totalUsers > 0,
+      totalUsers
     })
   } catch (err) {
     console.error("Failed to check users:", err)

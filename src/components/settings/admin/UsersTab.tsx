@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { PlusIcon, UserIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, UserIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../../lib/auth';
 import { pb } from '../../../lib/pocketbase';
 import { listUsers, createUser, updateUser, deleteUser, requestEmailChange, type User } from '../../../lib/users';
 import { CreateUserForm } from './CreateUserForm';
 import { EditUserForm } from './EditUserForm';
 import { UserListItem } from './UserListItem';
-import { ConfirmDialog } from '../../modals/ConfirmDialog';
+import { Button, ConfirmDialog, EmptyState, SectionHeading, Spinner } from '../../ui';
 import { createLogger } from '../../../lib/logger';
 
 const log = createLogger('UsersTab');
@@ -104,7 +104,7 @@ export function UsersTab() {
       // Send password email if requested
       if (userData.sendPasswordEmail) {
         try {
-          const response = await fetch('/pb/api/admin/smtp/send-password', {
+          const response = await fetch('/api/v1/admin/smtp/send-password', {
             method: 'POST',
             headers: buildHeaders(),
             body: JSON.stringify({
@@ -160,7 +160,7 @@ export function UsersTab() {
   const handleConfirmDelete = async () => {
     if (!deleteConfirmDialog) return;
 
-    const { userId, userName } = deleteConfirmDialog;
+    const { userId } = deleteConfirmDialog;
     setUserError(null);
     setUserSuccess(null);
     setDeleteConfirmDialog(null);
@@ -203,7 +203,7 @@ export function UsersTab() {
       // Send password email if requested and password was changed
       if (userData.password && userData.sendPasswordEmail) {
         try {
-          const response = await fetch('/pb/api/admin/smtp/send-password', {
+          const response = await fetch('/api/v1/admin/smtp/send-password', {
             method: 'POST',
             headers: buildHeaders(),
             body: JSON.stringify({
@@ -263,111 +263,118 @@ export function UsersTab() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white/5 backdrop-blur-sm rounded-lg p-4 sm:p-6 border border-white/10">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-xl font-semibold text-white">User Management</h2>
-          <button
-            onClick={() => {
-              if (showCreateUserForm) {
-                handleCloseForm();
-              } else {
-                setShowCreateUserForm(true);
-              }
-              setUserError(null);
-              setUserSuccess(null);
-            }}
-            className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
-            title="Create User"
-          >
-            <PlusIcon className="w-5 h-5" />
-          </button>
-        </div>
+    <div className="space-y-5">
+      <div>
+        <SectionHeading
+          title="User management"
+          description="Everyone with access to this workspace, and the role they hold."
+          actions={
+            <Button
+              variant={showCreateUserForm ? 'secondary' : 'primary'}
+              icon={showCreateUserForm ? <XMarkIcon /> : <PlusIcon />}
+              onClick={() => {
+                if (showCreateUserForm) {
+                  handleCloseForm();
+                } else {
+                  setEditingUser(null);
+                  setShowCreateUserForm(true);
+                }
+                setUserError(null);
+                setUserSuccess(null);
+              }}
+            >
+              {showCreateUserForm ? 'Close' : 'Create user'}
+            </Button>
+          }
+        />
 
         {/* Success/Error Messages */}
-        {userError && (
-          <div className="mb-4 p-3 bg-red-500/10 backdrop-blur-sm border border-red-500/20 rounded-lg text-red-400 text-sm">
-            {userError}
-          </div>
-        )}
-        {userSuccess && (
-          <div className="mb-4 p-3 bg-green-500/10 backdrop-blur-sm border border-green-500/20 rounded-lg text-green-400 text-sm">
-            {userSuccess}
-          </div>
-        )}
-
-        {/* Create User Form */}
-        {showCreateUserForm && (
-          <CreateUserForm
-            onSubmit={handleCreateUser}
-            onCancel={() => {
-              handleCloseForm();
-              setUserError(null);
-            }}
-            isCreating={creatingUser}
-            isClosing={isClosingForm}
-            isCurrentUserVerified={!!currentUser?.verified}
-          />
-        )}
-
-        {/* Edit User Form */}
-        {editingUser && (
-          <EditUserForm
-            isOpen={!!editingUser}
-            user={editingUser}
-            onSubmit={handleUpdateUser}
-            onRequestEmailChange={handleRequestEmailChange}
-            onCancel={() => {
-              handleCloseEditModal();
-              setUserError(null);
-            }}
-            isUpdating={updatingUser}
-            isCurrentUserVerified={!!currentUser?.verified}
-          />
-        )}
-
-        {/* Users List */}
-        {loadingUsers ? (
-          <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
-            <p className="text-gray-400 text-sm">Loading users...</p>
-          </div>
-        ) : users.length === 0 ? (
-          <div className="text-center py-8 text-gray-400">
-            <UserIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p>No users found</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {users.map((user, index) => (
-              <div key={user.id}>
-                <UserListItem
-                  user={user}
-                  isCurrentUser={user.id === currentUser?.id}
-                  onEdit={handleEditUser}
-                  onDelete={handleDeleteUser}
-                />
-                {/* Add divider after current user */}
-                {user.id === currentUser?.id && users.length > 1 && (
-                  <div className="my-6 border-t border-white/10"></div>
-                )}
-              </div>
-            ))}
+        {(userError || userSuccess) && (
+          <div className="mt-3 space-y-1.5">
+            {userError && (
+              <p className="text-sm text-danger" role="alert">
+                {userError}
+              </p>
+            )}
+            {userSuccess && (
+              <p className="text-sm text-success" role="status">
+                {userSuccess}
+              </p>
+            )}
           </div>
         )}
       </div>
 
+      {/* Create User Form */}
+      {showCreateUserForm && (
+        <CreateUserForm
+          onSubmit={handleCreateUser}
+          onCancel={() => {
+            handleCloseForm();
+            setUserError(null);
+          }}
+          isCreating={creatingUser}
+          isClosing={isClosingForm}
+          isCurrentUserVerified={!!currentUser?.verified}
+        />
+      )}
+
+      {/* Edit User Form */}
+      {editingUser && (
+        <EditUserForm
+          user={editingUser}
+          onSubmit={handleUpdateUser}
+          onRequestEmailChange={handleRequestEmailChange}
+          onCancel={() => {
+            handleCloseEditModal();
+            setUserError(null);
+          }}
+          isUpdating={updatingUser}
+          isCurrentUserVerified={!!currentUser?.verified}
+        />
+      )}
+
+      {/* Users List */}
+      {loadingUsers ? (
+        <div className="flex items-center gap-2.5 py-3 text-sm text-ink-secondary">
+          <Spinner />
+          Loading users...
+        </div>
+      ) : users.length === 0 ? (
+        <EmptyState
+          compact
+          icon={<UserIcon />}
+          title="No users found"
+          description="Create a user to give someone access to this workspace."
+        />
+      ) : (
+        <div className="space-y-2">
+          {users.map((user) => (
+            <div key={user.id}>
+              <UserListItem
+                user={user}
+                isCurrentUser={user.id === currentUser?.id}
+                onEdit={handleEditUser}
+                onDelete={handleDeleteUser}
+              />
+              {/* Add divider after current user */}
+              {user.id === currentUser?.id && users.length > 1 && (
+                <div className="mt-2 border-t border-line" aria-hidden="true" />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
-        isOpen={!!deleteConfirmDialog}
-        title="Delete User"
-        message={`Are you sure you want to delete user "${deleteConfirmDialog?.userName}"? This action cannot be undone.`}
-        onSave={handleConfirmDelete}
-        onDiscard={() => {}}
+        open={!!deleteConfirmDialog}
+        title="Delete user"
+        description={`Are you sure you want to delete user "${deleteConfirmDialog?.userName}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        tone="danger"
+        onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteConfirmDialog(null)}
-        saveLabel="Delete"
-        discardLabel=""
-        cancelLabel="Cancel"
       />
     </div>
   );

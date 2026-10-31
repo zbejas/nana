@@ -1,13 +1,15 @@
+import { getBoard, updateBoard, type Board } from './boards';
 import { getDocument, updateDocument, type Document } from './documents';
 import { buildFolderTree, getFolder, updateFolder, type Folder, type FolderTreeNode } from './folders';
+import type { TaskPriority } from './tasks';
 
-export type ShareTargetType = 'document' | 'folder';
+export type ShareTargetType = 'document' | 'folder' | 'board';
 
 export interface ShareableRecord {
     id: string;
     is_public: boolean;
     is_private: boolean;
-    share_attachments: boolean;
+    share_attachments?: boolean;
     public_share_token?: string;
     public_expires_at?: string;
 }
@@ -35,7 +37,69 @@ export interface PublicFolderShareResponse {
     rootFolder: Folder;
     folders: Folder[];
     documents: Document[];
+    boards: PublicFolderBoard[];
     entryDocumentId: string | null;
+}
+
+export interface PublicBoard {
+    id: string;
+    name: string;
+    description: string;
+    icon?: string;
+    author: string;
+    folder: string;
+    columns?: PublicBoardColumn[];
+    created: string;
+    updated: string;
+}
+
+export interface PublicBoardColumn {
+    id?: string;
+    slug: string;
+    name: string;
+    position: number;
+    icon?: string;
+    color?: string;
+    is_final: boolean;
+}
+
+export interface PublicBoardAssignee {
+    id: string;
+    name: string;
+}
+
+export interface PublicBoardTask {
+    id: string;
+    title: string;
+    description: string;
+    status: string;
+    priority: TaskPriority | '';
+    due_date: string | null;
+    start_date?: string | null;
+    completed_at?: string | null;
+    task_number?: number | null;
+    board_order: number;
+    labels: string[];
+    assignee?: PublicBoardAssignee | null;
+    created: string | null;
+    updated: string | null;
+}
+
+export interface PublicBoardShareResponse {
+    type: 'board';
+    shareToken: string;
+    expiresAt: string | null;
+    author: PublicAuthor | null;
+    board: PublicBoard;
+    tasks: PublicBoardTask[];
+}
+
+/**
+ * A board reached through a shared folder. It carries its tasks so the folder
+ * reader can render it without a separate share token.
+ */
+export interface PublicFolderBoard extends PublicBoard {
+    tasks: PublicBoardTask[];
 }
 
 export interface PublicShareUpdateOptions {
@@ -100,8 +164,12 @@ export function getPublicFolderUrl(shareToken: string) {
     return `${baseUrl()}/public/folder/${shareToken}`;
 }
 
+export function getPublicBoardUrl(shareToken: string) {
+    return `${baseUrl()}/public/board/${shareToken}`;
+}
+
 function publicFetch(path: string) {
-    return fetch(`/pb${path}`, {
+    return fetch(`/api/v1${path.replace(/^\/api/, '')}`, {
         headers: {
             Accept: 'application/json',
         },
@@ -136,12 +204,29 @@ async function updateFolderShareFields(folder: Folder, options: PublicShareUpdat
     });
 }
 
+async function updateBoardShareFields(board: Board, options: PublicShareUpdateOptions) {
+    const publicShareToken = options.enabled
+        ? board.public_share_token || generatePublicShareToken()
+        : null;
+
+    return updateBoard(board.id, {
+        is_public: options.enabled,
+        is_private: options.isPrivate,
+        public_share_token: publicShareToken,
+        public_expires_at: options.enabled ? options.expiresAt : null,
+    });
+}
+
 export async function getDocumentForPublicShare(documentId: string) {
     return getDocument(documentId);
 }
 
 export async function getFolderForPublicShare(folderId: string) {
     return getFolder(folderId);
+}
+
+export async function getBoardForPublicShare(boardId: string) {
+    return getBoard(boardId);
 }
 
 export async function updateDocumentPublicShare(document: Document, options: PublicShareUpdateOptions) {
@@ -180,6 +265,24 @@ export async function updateFolderPublicShare(folder: Folder, options: PublicSha
     throw new Error('Failed to update folder public share');
 }
 
+export async function updateBoardPublicShare(board: Board, options: PublicShareUpdateOptions) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+            const nextBoard = attempt === 0 ? board : await getBoard(board.id);
+            return await updateBoardShareFields(nextBoard, options);
+        } catch (error: any) {
+            const tokenError = error?.data?.data?.public_share_token;
+            const isUniqueConflict = tokenError?.code === 'validation_not_unique' || /unique/i.test(tokenError?.message || '');
+
+            if (!options.enabled || !isUniqueConflict || attempt === 2) {
+                throw error;
+            }
+        }
+    }
+
+    throw new Error('Failed to update board public share');
+}
+
 export async function fetchPublicDocumentShare(shareToken: string): Promise<PublicDocumentShareResponse> {
     const response = await publicFetch(`/api/public/documents/${encodeURIComponent(shareToken)}`);
 
@@ -200,12 +303,22 @@ export async function fetchPublicFolderShare(shareToken: string): Promise<Public
     return response.json() as Promise<PublicFolderShareResponse>;
 }
 
+export async function fetchPublicBoardShare(shareToken: string): Promise<PublicBoardShareResponse> {
+    const response = await publicFetch(`/api/public/boards/${encodeURIComponent(shareToken)}`);
+
+    if (!response.ok) {
+        throw new Error(response.status === 404 ? 'not-found' : 'Failed to load public board');
+    }
+
+    return response.json() as Promise<PublicBoardShareResponse>;
+}
+
 export function getPublicDocumentAttachmentUrl(shareToken: string, filename: string) {
-    return `/pb/api/public/documents/${encodeURIComponent(shareToken)}/files/${encodeURIComponent(filename)}`;
+    return `/api/v1/public/documents/${encodeURIComponent(shareToken)}/files/${encodeURIComponent(filename)}`;
 }
 
 export function getPublicFolderAttachmentUrl(shareToken: string, documentId: string, filename: string) {
-    return `/pb/api/public/folders/${encodeURIComponent(shareToken)}/files/${encodeURIComponent(documentId)}/${encodeURIComponent(filename)}`;
+    return `/api/v1/public/folders/${encodeURIComponent(shareToken)}/files/${encodeURIComponent(documentId)}/${encodeURIComponent(filename)}`;
 }
 
 function escapeRegExp(value: string) {
@@ -223,8 +336,12 @@ export function rewritePublicAttachmentUrls(
         const escapedFilename = escapeRegExp(filename);
         const escapedDocumentId = escapeRegExp(document.id);
         const patterns = [
+            // Legacy /pb content from notes saved before the Elysia cutover.
             new RegExp(`https?:\\/\\/[^\\s)"]+\\/pb\\/api\\/files\\/[^\\/]+\\/${escapedDocumentId}\\/${escapedFilename}(?:\\?[^\\s)"]*)?`, 'g'),
             new RegExp(`\\/pb\\/api\\/files\\/[^\\/]+\\/${escapedDocumentId}\\/${escapedFilename}(?:\\?[^\\s)"]*)?`, 'g'),
+            // Current same-origin file paths.
+            new RegExp(`https?:\\/\\/[^\\s)"]+\\/api\\/v1\\/files\\/[^\\/]+\\/${escapedDocumentId}\\/${escapedFilename}(?:\\?[^\\s)"]*)?`, 'g'),
+            new RegExp(`\\/api\\/v1\\/files\\/[^\\/]+\\/${escapedDocumentId}\\/${escapedFilename}(?:\\?[^\\s)"]*)?`, 'g'),
             new RegExp(`\\/api\\/files\\/[^\\/]+\\/${escapedDocumentId}\\/${escapedFilename}(?:\\?[^\\s)"]*)?`, 'g'),
         ];
 

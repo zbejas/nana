@@ -202,6 +202,40 @@ function hasExistingUsers(excludeId) {
   return existing.length > 0;
 }
 
+/**
+ * Send a consistent error response for a route handler.
+ *
+ * PocketBase's API errors carry a status, so known failures (bad input,
+ * forbidden, not found) keep their intended code. Anything else is logged and
+ * reported as a generic 500 without leaking internals to the client.
+ */
+function sendError(c, err, fallbackMessage) {
+  const status = (() => {
+    if (err && typeof err.status === "number") return err.status
+    if (err && typeof err.code === "number") return err.code
+
+    try {
+      if (typeof NotFoundError !== "undefined" && err instanceof NotFoundError) return 404
+      if (typeof ForbiddenError !== "undefined" && err instanceof ForbiddenError) return 403
+      if (typeof UnauthorizedError !== "undefined" && err instanceof UnauthorizedError) return 401
+      if (typeof BadRequestError !== "undefined" && err instanceof BadRequestError) return 400
+    } catch (_) {
+      // Error globals are not available in every runtime path.
+    }
+
+    const message = String((err && err.message) || err || "")
+    const match = message.match(/\b(400|401|403|404|422|429)\b/)
+    return match ? Number(match[1]) : 0
+  })()
+
+  if (status >= 400 && status < 500) {
+    return c.json(status, { error: (err && err.message) || fallbackMessage })
+  }
+
+  console.error(fallbackMessage, err)
+  return c.json(500, { error: fallbackMessage })
+}
+
 // Export for use in other modules
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -213,5 +247,6 @@ if (typeof module !== "undefined" && module.exports) {
     getSenderInfo,
     isVerifiedUser,
     hasExistingUsers,
+    sendError,
   }
 }

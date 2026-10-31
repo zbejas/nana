@@ -2,7 +2,7 @@
 
 // Admin endpoint to get SMTP settings
 routerAdd("GET", "/api/admin/smtp", (c) => {
-  const { requireAdmin } = require(`${__hooks}/utils.js`)
+  const { requireAdmin, sendError } = require(`${__hooks}/utils.js`)
   
   try {
     // Check if authenticated user is an admin
@@ -30,7 +30,6 @@ routerAdd("GET", "/api/admin/smtp", (c) => {
     })
     
   } catch (err) {
-    console.error("Failed to get SMTP settings:", err)
-    return c.json(500, { error: "Failed to load SMTP settings: " + String(err) })
+    return sendError(c, err, "Failed to load SMTP settings")
   }
 }, $apis.requireAuth())

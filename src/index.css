@@ -1,185 +1,382 @@
 @import "tailwindcss";
-@import "@uiw/react-md-editor/markdown-editor.css";
+@import "@milkdown/kit/prose/view/style/prosemirror.css";
+@import "@milkdown/kit/prose/tables/style/tables.css";
 @import "@uiw/react-markdown-preview/markdown.css";
+@import "./components/editor/milkdown/milkdown.css";
+
+/*
+ * Graphite — Nana's visual world.
+ * Paper and graphite neutrals, a single restrained ember, precise hairlines,
+ * and one sans voice. A quiet desk: the writing leads, the chrome recedes.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Typefaces                                                           */
+/* ------------------------------------------------------------------ */
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./assets/fonts/geist-variable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist";
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./assets/fonts/geist-variable-italic.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./assets/fonts/geist-mono-variable.woff2") format("woff2");
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-canvas-deep: var(--canvas-deep);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-muted: var(--ink-muted);
+  --color-signal: var(--signal);
+  --color-signal-strong: var(--signal-strong);
+  --color-signal-bright: var(--signal-bright);
+  --color-signal-bright-strong: var(--signal-bright-strong);
+  --color-signal-soft: var(--signal-soft);
+  --color-on-signal: var(--on-signal);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-on-danger: var(--on-danger);
+  --color-scrim: var(--scrim);
+  --color-cover: var(--cover);
+  --color-cover-surface: var(--cover-surface);
+  --color-cover-line: var(--cover-line);
+  --color-cover-ink: var(--cover-ink);
+  --color-cover-muted: var(--cover-muted);
+  --color-cover-signal: var(--cover-signal);
+
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --radius-control: 6px;
+  --radius-panel: 10px;
+  --radius-sheet: 16px;
+
+  --shadow-float: var(--float-shadow);
+}
+
+:root {
+  --canvas: #0c0c0d;
+  --canvas-deep: #080809;
+  --surface: #131315;
+  --surface-raised: #1b1b1e;
+  --surface-sunken: #0f0f10;
+  --line: rgb(255 255 255 / 0.07);
+  --line-strong: rgb(255 255 255 / 0.18);
+  --ink: #f5f5f4;
+  --ink-secondary: #a3a39e;
+  --ink-muted: #8a8a84;
+  --signal: #ff7a54;
+  --signal-strong: #ff9b7c;
+  --signal-bright: #ff7048;
+  --signal-bright-strong: #ff8a66;
+  --signal-soft: rgb(255 112 72 / 0.12);
+  --on-signal: #1a0b06;
+  --warning: #e3b25f;
+  --warning-soft: rgb(227 178 95 / 0.12);
+  --success: #74c69d;
+  --success-soft: rgb(116 198 157 / 0.12);
+  --danger: #ff7b72;
+  --danger-soft: rgb(255 123 114 / 0.12);
+  --on-danger: #200a08;
+  --alert-note: #58a6ff;
+  --alert-note-soft: rgb(56 139 253 / 0.12);
+  --alert-note-border: rgb(56 139 253 / 0.35);
+  --alert-tip: #3fb950;
+  --alert-tip-soft: rgb(63 185 80 / 0.12);
+  --alert-tip-border: rgb(63 185 80 / 0.35);
+  --alert-important: #ab7df8;
+  --alert-important-soft: rgb(171 125 248 / 0.12);
+  --alert-important-border: rgb(171 125 248 / 0.35);
+  --alert-warning: #d29922;
+  --alert-warning-soft: rgb(210 153 34 / 0.12);
+  --alert-warning-border: rgb(210 153 34 / 0.35);
+  --alert-caution: #f85149;
+  --alert-caution-soft: rgb(248 81 73 / 0.12);
+  --alert-caution-border: rgb(248 81 73 / 0.35);
+  --scrim: rgb(0 0 0 / 0.66);
+  --float-shadow:
+    0 16px 48px -16px rgb(0 0 0 / 0.7),
+    0 2px 8px -2px rgb(0 0 0 / 0.45);
+  --cover: #09090a;
+  --cover-surface: #121214;
+  --cover-line: rgb(255 255 255 / 0.08);
+  --cover-ink: #f5f5f4;
+  --cover-muted: #9b9b95;
+  --cover-signal: #ff7a54;
+  --mobile-navbar-height: calc(4.5rem + env(safe-area-inset-bottom));
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"],
+:root.light {
+  --canvas: #faf9f7;
+  --canvas-deep: #f2f1ee;
+  --surface: #ffffff;
+  --surface-raised: #f7f6f3;
+  --surface-sunken: #f3f2ef;
+  --line: rgb(26 26 24 / 0.08);
+  --line-strong: rgb(26 26 24 / 0.18);
+  --ink: #1a1a18;
+  --ink-secondary: #52524e;
+  --ink-muted: #6b6b65;
+  --signal: #b7431e;
+  --signal-strong: #943314;
+  --signal-bright: #b7431e;
+  --signal-bright-strong: #9c3718;
+  --signal-soft: rgb(183 67 30 / 0.08);
+  --on-signal: #ffffff;
+  --warning: #855600;
+  --warning-soft: rgb(133 86 0 / 0.09);
+  --success: #1f6b45;
+  --success-soft: rgb(31 107 69 / 0.09);
+  --danger: #b42318;
+  --danger-soft: rgb(180 35 24 / 0.08);
+  --on-danger: #ffffff;
+  --alert-note: #0969da;
+  --alert-note-soft: #ddf4ff;
+  --alert-note-border: #54aeff;
+  --alert-tip: #1a7f37;
+  --alert-tip-soft: #dafbe1;
+  --alert-tip-border: #4ac26b;
+  --alert-important: #8250df;
+  --alert-important-soft: #fbefff;
+  --alert-important-border: #c297ff;
+  --alert-warning: #9a6700;
+  --alert-warning-soft: #fff8c5;
+  --alert-warning-border: #d4a72c;
+  --alert-caution: #cf222e;
+  --alert-caution-soft: #ffebe9;
+  --alert-caution-border: #ff8182;
+  --scrim: rgb(20 20 18 / 0.36);
+  --float-shadow:
+    0 16px 48px -20px rgb(20 20 18 / 0.18),
+    0 2px 8px -4px rgb(20 20 18 / 0.08);
+  --cover: #09090a;
+  --cover-surface: #121214;
+  --cover-line: rgb(255 255 255 / 0.08);
+  --cover-ink: #f5f5f4;
+  --cover-muted: #9b9b95;
+  --cover-signal: #ff7a54;
+
+  color-scheme: light;
+}
 
 @layer base {
-  :root {
-    @apply text-[rgba(255,255,255,0.87)] bg-[#242424] font-sans;
-  }
-
   html,
   body,
   #root {
-    @apply w-full h-full;
+    @apply h-full w-full;
   }
 
-  html,
+  html {
+    @apply text-base antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Firefox: colour only. Chromium keeps the 10px webkit scrollbar below. */
+  @supports (-moz-appearance: none) {
+    html {
+      scrollbar-width: thin;
+      scrollbar-color: var(--line-strong) transparent;
+    }
+  }
+
   body {
+    @apply relative m-0 min-w-[320px] font-sans text-sm;
+    color: var(--ink);
+    background-color: var(--canvas);
+    caret-color: var(--signal);
     overflow: hidden;
     overscroll-behavior: none;
   }
 
-  :root.light {
-    @apply text-gray-900 bg-gray-50;
+  ::selection {
+    background: color-mix(in srgb, var(--signal-bright) 24%, transparent);
+    color: var(--ink);
   }
 
-  body {
-    @apply min-w-[320px] relative m-0;
+  :focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+  }
+
+  input,
+  textarea,
+  [contenteditable="true"] {
+    caret-color: var(--signal);
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--line-strong);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ink-muted);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink-muted);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
   }
 }
 
-/* GitHub-style alerts styling */
+body.public-route-active {
+  background-color: var(--canvas-deep);
+}
+
+/* ------------------------------------------------------------------ */
+/* Markdown                                                            */
+/* ------------------------------------------------------------------ */
+
 @layer components {
   .markdown-alert {
-    @apply p-4 rounded-r-lg my-4 border-l-4;
-  }
-
-  .markdown-alert-note {
-    @apply border-blue-500 bg-blue-500/10;
-  }
-
-  .markdown-alert-note .markdown-alert-title {
-    @apply text-blue-400 font-bold mb-2 flex items-center gap-2;
-  }
-
-  .markdown-alert-tip {
-    @apply border-green-500 bg-green-500/10;
-  }
-
-  .markdown-alert-tip .markdown-alert-title {
-    @apply text-green-400 font-bold mb-2 flex items-center gap-2;
-  }
-
-  .markdown-alert-important {
-    @apply border-purple-500 bg-purple-500/10;
-  }
-
-  .markdown-alert-important .markdown-alert-title {
-    @apply text-purple-400 font-bold mb-2 flex items-center gap-2;
-  }
-
-  .markdown-alert-warning {
-    @apply border-yellow-500 bg-yellow-500/10;
-  }
-
-  .markdown-alert-warning .markdown-alert-title {
-    @apply text-yellow-400 font-bold mb-2 flex items-center gap-2;
-  }
-
-  .markdown-alert-caution {
-    @apply border-red-500 bg-red-500/10;
-  }
-
-  .markdown-alert-caution .markdown-alert-title {
-    @apply text-red-400 font-bold mb-2 flex items-center gap-2;
+    @apply my-4 rounded-control border p-4;
   }
 
   .markdown-alert p:last-child {
     @apply mb-0;
   }
 
-  /* Markdown list styles */
-  .wmde-markdown ul,
-  .w-md-editor-preview ul {
-    @apply list-disc list-outside ml-6 my-4 space-y-2;
+  .wmde-markdown ul {
+    @apply my-4 ml-6 list-disc list-outside space-y-2;
   }
 
-  .wmde-markdown ol,
-  .w-md-editor-preview ol {
-    @apply list-decimal list-outside ml-6 my-4 space-y-2;
+  .wmde-markdown ol {
+    @apply my-4 ml-6 list-decimal list-outside space-y-2;
   }
 
-  .wmde-markdown li,
-  .w-md-editor-preview li {
-    @apply text-gray-300;
+  .wmde-markdown li {
+    color: var(--ink-secondary);
   }
 
   .wmde-markdown ul ul,
-  .wmde-markdown ol ul,
-  .w-md-editor-preview ul ul,
-  .w-md-editor-preview ol ul {
-    @apply list-disc my-2;
+  .wmde-markdown ol ul {
+    @apply my-2 list-disc;
   }
 
   .wmde-markdown ul ol,
-  .wmde-markdown ol ol,
-  .w-md-editor-preview ul ol,
-  .w-md-editor-preview ol ol {
-    @apply list-decimal my-2;
+  .wmde-markdown ol ol {
+    @apply my-2 list-decimal;
   }
 
-  /* Style default marked HTML elements */
+  .wmde-markdown {
+    color: var(--ink-secondary);
+  }
+
   strong {
-    @apply text-gray-200 font-semibold;
+    @apply font-semibold;
+    color: var(--ink);
   }
 
   em {
-    @apply text-gray-200 italic;
+    @apply italic;
+    color: var(--ink);
   }
 
   code {
-    @apply text-pink-400 bg-gray-800 px-1 py-0.5 rounded text-sm font-mono;
+    @apply rounded-[4px] border border-line px-1 py-0.5 font-mono text-[0.8125rem];
+    color: var(--ink);
+    background: var(--surface-sunken);
   }
 
   pre code {
-    @apply text-gray-300 bg-transparent p-0;
+    @apply border-0 bg-transparent p-0;
+    color: var(--ink-secondary);
+  }
+
+  blockquote {
+    border-left: 2px solid var(--line-strong);
+    color: var(--ink-secondary);
+  }
+
+  mark {
+    background: var(--signal-soft);
+    color: var(--ink);
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  hr {
+    border-color: var(--line);
   }
 }
 
-
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  opacity: 0.05;
-  background: url("./assets/nana.svg");
-  background-size: 256px;
-  background-repeat: repeat;
-  transform: rotate(-12deg) scale(1.35);
-  pointer-events: none;
-}
-
-:root.light body::before {
-  opacity: 0.03;
-}
-
-body.public-route-active {
-  background: #090909;
-}
-
-body.public-route-active::before {
-  opacity: 0;
-}
-
-@keyframes slide {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 269090816px 235204464px;
-  }
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* ------------------------------------------------------------------ */
+/* Motion                                                              */
+/* ------------------------------------------------------------------ */
 
 @keyframes slideDown {
   from {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-8px);
     max-height: 0;
   }
   to {
     opacity: 1;
     transform: translateY(0);
-    max-height: 1000px;
+    max-height: 1200px;
   }
 }
 
@@ -187,71 +384,16 @@ body.public-route-active::before {
   from {
     opacity: 1;
     transform: translateY(0);
-    max-height: 1000px;
+    max-height: 1200px;
   }
   to {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-8px);
     max-height: 0;
   }
 }
 
 @keyframes mobile-route-enter {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes mobile-route-enter-from-right {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes mobile-route-enter-from-left {
-  from {
-    opacity: 0;
-    transform: translateX(-16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes desktop-route-enter {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes desktop-content-enter {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes public-content-enter {
   from {
     opacity: 0;
     transform: translateY(6px);
@@ -262,10 +404,54 @@ body.public-route-active::before {
   }
 }
 
+@keyframes mobile-route-enter-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes mobile-route-enter-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes desktop-route-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes public-content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes public-attachment-item-enter {
   from {
     opacity: 0;
-    transform: translateY(4px) scale(0.98);
+    transform: translateY(8px) scale(0.99);
   }
   to {
     opacity: 1;
@@ -277,122 +463,289 @@ body.public-route-active::before {
   from {
     opacity: 0;
     transform: translateY(-4px);
-    max-height: 0;
   }
   to {
     opacity: 1;
     transform: translateY(0);
-    max-height: 1200px;
   }
 }
 
-.public-content-enter {
-  animation: public-content-enter 220ms ease-out;
-  will-change: opacity, transform;
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
-.public-attachment-item {
-  animation: public-attachment-item-enter 220ms ease-out backwards;
+@keyframes dialog-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
 }
 
-.public-attachment-panel-enter {
-  overflow: hidden;
-  animation: public-attachment-panel-enter 260ms ease-out forwards;
-  will-change: opacity, transform, max-height;
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-.public-chevron-rotate {
-  transition: transform 220ms ease-out;
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 
-.public-chevron-rotate.is-open {
-  transform: rotate(90deg);
+@keyframes sheet-out {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
 }
 
-.settings-tab-content-enter {
-  animation: mobile-route-enter 180ms ease-out;
-  will-change: opacity, transform;
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
-@media (min-width: 768px) {
-  .desktop-page-content-enter {
-    animation: desktop-content-enter 220ms ease-out;
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@layer utilities {
+  .animate-slideDown {
+    animation: slideDown 200ms ease-out;
+  }
+
+  .animate-banner-in {
+    animation: banner-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .animate-slideUp {
+    animation: slideUp 160ms ease-in forwards;
+  }
+
+  .public-content-enter {
+    animation: public-content-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .public-attachment-item {
+    animation: public-attachment-item-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .public-attachment-panel-enter {
+    animation: public-attachment-panel-enter 200ms ease-out both;
+  }
+
+  .public-chevron-rotate {
+    transition: transform 180ms ease;
   }
 
   .settings-tab-content-enter {
-    animation: desktop-content-enter 200ms ease-out;
+    animation: desktop-route-enter 220ms ease-out both;
+  }
+
+  .desktop-page-content-enter {
+    animation: desktop-route-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @media (min-width: 768px) {
+    .desktop-content-enter {
+      animation: desktop-route-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-autohide {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .scrollbar-autohide::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scrollbar-autohide::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  .scrollbar-autohide:hover,
+  .scrollbar-autohide.scrolling {
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
+  .scrollbar-autohide:hover::-webkit-scrollbar-thumb,
+  .scrollbar-autohide.scrolling::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+  }
+
+  .scrollbar-autohide::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /*
+   * The workspace drawer is a hard edge. Keep its scrollbar against that edge
+   * instead of inheriting the global 10px track with an inset thumb.
+   */
+  .sidebar-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    border: 0;
+    border-radius: 999px 0 0 999px;
+    background: transparent;
+    background-clip: border-box;
+  }
+
+  .sidebar-scroll:hover::-webkit-scrollbar-thumb,
+  .sidebar-scroll.scrolling::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+  }
+
+  @supports not selector(::-webkit-scrollbar) {
+    .sidebar-scroll {
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+    }
+
+    .sidebar-scroll:hover,
+    .sidebar-scroll.scrolling {
+      scrollbar-color: var(--line-strong) transparent;
+    }
+  }
+
+  .eyebrow,
+  .meta {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--ink-muted);
+  }
+
+  .meta-mono {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 500;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-muted);
   }
 }
 
-.animate-slideDown {
-  animation: slideDown 0.3s ease-out forwards;
-}
-
-.animate-slideUp {
-  animation: slideUp 0.2s ease-in forwards;
-}
-
-@media (prefers-reduced-motion) {
+@media (prefers-reduced-motion: reduce) {
   *,
-  ::before,
-  ::after {
-    animation: none !important;
-    transition: none !important;
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* Hide scrollbars */
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
+/* ------------------------------------------------------------------ */
+/* Third-party overrides                                               */
+/* ------------------------------------------------------------------ */
 
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-
-/* Auto-hiding scrollbar for preview */
-.scrollbar-autohide {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-  transition: scrollbar-color 0.3s;
-}
-
-.scrollbar-autohide:hover,
-.scrollbar-autohide.scrolling {
-  scrollbar-color: rgb(75 85 99) transparent;
-}
-
-.scrollbar-autohide::-webkit-scrollbar {
-  width: 8px;
-}
-
-.scrollbar-autohide::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.scrollbar-autohide::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 4px;
-  transition: background-color 0.3s;
-}
-
-.scrollbar-autohide:hover::-webkit-scrollbar-thumb,
-.scrollbar-autohide.scrolling::-webkit-scrollbar-thumb {
-  background-color: rgb(75 85 99);
-}
-
-.scrollbar-autohide::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(107 114 128);
-}
-
-/* Apply custom scrollbar to MDEditor components */
-.w-md-editor-text,
-.w-md-editor-preview,
 .wmde-markdown {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-  transition: scrollbar-color 0.3s;
+  --color-fg-default: var(--ink);
+  --color-fg-muted: var(--ink-muted);
+  --color-canvas-default: transparent;
+  --color-canvas-subtle: var(--surface-sunken);
+  --color-border-default: var(--line);
+  --color-border-muted: var(--line);
+  --color-accent-fg: var(--signal);
+  --color-accent-emphasis: var(--signal);
+  --color-danger-fg: var(--danger);
+  --color-success-fg: var(--success);
+  --color-attention-fg: var(--warning);
+  font-family: var(--font-sans) !important;
+}
+
+.wmde-markdown h1,
+.wmde-markdown h2,
+.wmde-markdown h3,
+.wmde-markdown h4,
+.wmde-markdown h5,
+.wmde-markdown h6 {
+  font-family: var(--font-sans) !important;
+  letter-spacing: -0.02em;
+  color: var(--ink) !important;
+  border-bottom-color: var(--line) !important;
+}
+
+.wmde-markdown p,
+.wmde-markdown li,
+.wmde-markdown td,
+.wmde-markdown th,
+.wmde-markdown dd,
+.wmde-markdown dt {
+  color: var(--ink-secondary) !important;
+}
+
+.chat-answer .wmde-markdown p,
+.chat-answer .wmde-markdown li,
+.chat-answer .wmde-markdown td,
+.chat-answer .wmde-markdown th {
+  color: var(--ink) !important;
+}
+
+.wmde-markdown {
+  background: transparent !important;
 }
 
 .wmde-markdown table {
@@ -401,47 +754,330 @@ body.public-route-active::before {
   max-width: 100%;
 }
 
-.w-md-editor-text:hover,
-.w-md-editor-text.scrolling,
-.w-md-editor-preview:hover,
-.w-md-editor-preview.scrolling,
-.wmde-markdown:hover,
-.wmde-markdown.scrolling {
-  scrollbar-color: rgb(75 85 99) transparent;
+.wmde-markdown pre {
+  background: var(--surface-sunken) !important;
+  border: 1px solid var(--line);
 }
 
-.w-md-editor-text::-webkit-scrollbar,
-.w-md-editor-preview::-webkit-scrollbar,
-.wmde-markdown::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.wmde-markdown a {
+  color: var(--signal) !important;
 }
 
-.w-md-editor-text::-webkit-scrollbar-track,
-.w-md-editor-preview::-webkit-scrollbar-track,
-.wmde-markdown::-webkit-scrollbar-track {
-  background: transparent;
+.wmde-markdown blockquote {
+  border-left-color: var(--line-strong) !important;
+  color: var(--ink-secondary) !important;
 }
 
-.w-md-editor-text::-webkit-scrollbar-thumb,
-.w-md-editor-preview::-webkit-scrollbar-thumb,
-.wmde-markdown::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 4px;
-  transition: background-color 0.3s;
+/* ------------------------------------------------------------------ */
+/* GitHub-style alerts in MarkdownPreview                              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * @uiw/react-markdown-preview ships GitHub's blue/purple alert palette in an
+ * unlayered stylesheet. Use alert-only tokens for the GitHub convention:
+ * blue Note, green Tip, purple Important, amber Warning, and red Caution.
+ * These rules sit outside @layer components so they win the cascade without
+ * !important; the rest of Graphite keeps its single ember accent.
+ */
+.wmde-markdown .markdown-alert {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--radius-control, 6px);
+  padding: 0.85rem 1rem;
+  background: var(--surface-sunken);
 }
 
-.w-md-editor-text:hover::-webkit-scrollbar-thumb,
-.w-md-editor-text.scrolling::-webkit-scrollbar-thumb,
-.w-md-editor-preview:hover::-webkit-scrollbar-thumb,
-.w-md-editor-preview.scrolling::-webkit-scrollbar-thumb,
-.wmde-markdown:hover::-webkit-scrollbar-thumb,
-.wmde-markdown.scrolling::-webkit-scrollbar-thumb {
-  background-color: rgb(75 85 99);
+.wmde-markdown .markdown-alert .markdown-alert-title {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.78em;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
-.w-md-editor-text::-webkit-scrollbar-thumb:hover,
-.w-md-editor-preview::-webkit-scrollbar-thumb:hover,
-.wmde-markdown::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(107 114 128);
+.wmde-markdown .markdown-alert.markdown-alert-note {
+  border-left-color: var(--alert-note-border);
+  background: var(--alert-note-soft);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--alert-note);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-tip {
+  border-left-color: var(--alert-tip-border);
+  background: var(--alert-tip-soft);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--alert-tip);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-important {
+  border-left-color: var(--alert-important-border);
+  background: var(--alert-important-soft);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--alert-important);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-warning {
+  border-left-color: var(--alert-warning-border);
+  background: var(--alert-warning-soft);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--alert-warning);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-caution {
+  border-left-color: var(--alert-caution-border);
+  background: var(--alert-caution-soft);
+}
+
+.wmde-markdown .markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--alert-caution);
+}
+
+.wmde-markdown details {
+  margin: 1rem 0;
+}
+
+.wmde-markdown summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.wmde-markdown details[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Responsive content in Timeline                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The timeline is the route most exposed to the sidebar + chat dock
+ * combination. Viewport `xl` is not enough: a 1354px window can leave the
+ * route with ~570px once both panels are open, and a 20rem calendar leaves
+ * the feed too narrow to read. Decide from the route content itself.
+ */
+.timeline-page {
+  container-type: inline-size;
+}
+
+.folder-view-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+}
+
+.archive-board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+}
+
+/*
+ * The split editor keeps source and preview side by side only while each pane
+ * is wide enough to read. With the sidebar and chat dock open the route can be
+ * ~570px, so stack the panes instead of forcing two ~285px columns.
+ */
+.nana-split-shell {
+  container-type: inline-size;
+}
+
+@container (max-width: 760px) {
+  .nana-split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .nana-split-pane {
+    border-right: 0;
+  }
+
+  .nana-split-pane:first-child {
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+.timeline-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 1.5rem;
+}
+
+.timeline-aside {
+  display: none;
+}
+
+@container (min-width: 820px) {
+  .timeline-layout {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    gap: 2.5rem;
+  }
+
+  .timeline-aside {
+    display: block;
+  }
+
+  .timeline-main-search,
+  .timeline-calendar-popup,
+  .timeline-dates-trigger,
+  .timeline-compact-summary {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Responsive content in Settings                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Settings can sit beside both the sidebar and the chat dock. Viewport
+ * breakpoints are the wrong signal there: the viewport may be wide while the
+ * route content is only a few hundred pixels. Use the content itself as the
+ * container so the navigation, profile row, and metadata stack before they
+ * become cramped.
+ */
+.settings-layout-shell {
+  container-type: inline-size;
+}
+
+@container (max-width: 760px) {
+  .settings-layout {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .settings-nav {
+    width: 100%;
+  }
+
+  .settings-nav-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.375rem;
+  }
+
+  .settings-account-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-account-head > button {
+    width: 100%;
+  }
+
+  .settings-account-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Chat dock                                                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The editor footer is portalled to <body> and pinned to the viewport edge.
+ * When the desktop dock reserves space, the footer should stop at the dock.
+ */
+body[data-chat-dock-open="true"] > footer {
+  right: var(--nana-chat-dock-width, 0px) !important;
+  transition: right 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (max-width: 767px) {
+  body[data-chat-dock-open="true"] > footer {
+    right: 0 !important;
+  }
+
+  /*
+   * Touch pass: keep the desktop density, but give the primary mobile
+   * controls a practical 44px hit area.
+   */
+  .sidebar-library-actions button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .sidebar-library button {
+    min-height: 44px;
+  }
+
+  .sidebar-library button[aria-label] {
+    min-width: 44px;
+  }
+
+  .sidebar-library .group > button:first-child {
+    padding-right: 3rem;
+  }
+
+  .timeline-card-action {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .timeline-page header button {
+    min-height: 44px;
+  }
+
+  .timeline-page header button[aria-label] {
+    min-width: 44px;
+  }
+
+  .timeline-filter-segments button {
+    min-height: 44px;
+    padding-inline: 0.75rem;
+  }
+
+  .calendar-filter-panel button {
+    min-height: 44px;
+  }
+
+  .calendar-filter-panel button[aria-label]:not(.calendar-day) {
+    min-width: 44px;
+  }
+
+  .calendar-filter-panel .calendar-day {
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .chat-mode-control button {
+    min-height: 44px;
+    padding-inline: 0.8rem;
+  }
+
+  .chat-page header button {
+    min-height: 44px;
+  }
+
+  .chat-page header button[aria-label] {
+    min-width: 44px;
+  }
+
+  [data-nana-editor-toolbar="full"] button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* A 320px phone cannot fit a readable title beside five editor actions. */
+@media (max-width: 360px) {
+  .editor-header-row {
+    flex-wrap: wrap;
+  }
+
+  .editor-header-title-group {
+    flex-basis: 100%;
+  }
+
+  .editor-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }

@@ -1,18 +1,35 @@
 import { createPortal } from 'react-dom';
+import { useSetAtom } from 'jotai';
+import { addToBoardRequestAtom } from '../state/atoms';
 import { DocumentContextMenu } from '../components/file-folder-handling/context-menu/DocumentContextMenu';
+import { BoardContextMenu } from '../components/file-folder-handling/context-menu/BoardContextMenu';
 import { FolderContextMenu } from '../components/file-folder-handling/context-menu/FolderContextMenu';
 import { FolderViewHeader } from '../components/folder-view/FolderViewHeader';
 import { FolderViewList } from '../components/folder-view/FolderViewList';
 import { FolderViewGrid } from '../components/folder-view/FolderViewGrid';
 import { useFolderViewState } from '../components/folder-view/useFolderViewState';
-import { ConfirmDialog } from '../components/modals/ConfirmDialog';
-import { PublicShareModal } from '../components/modals/PublicShareModal';
-import { usePublicShareModalState } from '../components/modals/usePublicShareModalState';
-import { TrashIcon, GlobeAltIcon, EllipsisHorizontalIcon, FolderPlusIcon, DocumentPlusIcon } from '@heroicons/react/24/outline';
-import { useEffect, useRef, useState as useLocalState } from 'react';
+import { SharePanel, useSharePanel } from '../components/sharing';
+import {
+  TrashIcon,
+  GlobeAltIcon,
+  FolderPlusIcon,
+  DocumentPlusIcon,
+  FolderIcon,
+  ViewColumnsIcon,
+} from '@heroicons/react/24/outline';
+import {
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  PageHeader,
+  PageShell,
+  SegmentedControl,
+  Spinner,
+} from '../components/ui';
 
 export function FolderViewPage() {
-  const publicShareModal = usePublicShareModalState();
+  const sharePanel = useSharePanel();
+  const setAddToBoardRequest = useSetAtom(addToBoardRequestAtom);
   const {
     viewMode,
     setViewMode,
@@ -22,6 +39,7 @@ export function FolderViewPage() {
     currentFolder,
     breadcrumbPath,
     displayedFolders,
+    displayedBoards,
     displayedDocuments,
     selectedFolderIds,
     selectedDocumentIds,
@@ -45,12 +63,15 @@ export function FolderViewPage() {
     handleDragEnd,
     handleFolderDragStart,
     handleFolderDragEnd,
+    handleBoardDragStart,
+    handleBoardDragEnd,
     handleDragOver,
     handleDragLeave,
     handleDrop,
     setPendingCreate,
     handleFolderClick,
     handleFolderDoubleClick,
+    handleBoardClick,
     handleNavigateUp,
     handleBreadcrumbClick,
     setFilterMode,
@@ -59,6 +80,8 @@ export function FolderViewPage() {
     handleSelectAll,
     handleAddFolder,
     handleAddDocument,
+    handleOpenCreateBoard,
+    handleOpenEditBoard,
     handleInlineCreateSubmit,
     handleInlineCreateCancel,
     setPendingRename,
@@ -74,28 +97,116 @@ export function FolderViewPage() {
     handlePermanentlyDeleteDocument,
     handleRestoreFolder,
     handlePermanentlyDeleteFolder,
-    handleExportDocument,
     handleExportFolder,
+    handleExportDocument,
     openItemMenu,
   } = useFolderViewState();
 
+  const handleAddToBoard = () => {
+    const documentId = contextMenu?.documentId;
+    if (!documentId) return;
+
+    setAddToBoardRequest({ documentId });
+    closeContextMenu();
+  };
+
+  const mode = isTrashMode ? 'trash' : isSharedMode ? 'public' : 'all';
+  const canModify = !isTrashMode && !isSharedMode;
+  const title = isTrashMode ? 'Trash' : isSharedMode ? 'Shared' : currentFolder?.name || 'Folders';
+  const description = isTrashMode
+    ? 'Deleted notes and folders stay here until you restore or remove them.'
+    : isSharedMode
+      ? 'Notes, boards, and folders with a public link.'
+      : currentFolderId
+        ? 'Notes, boards, and subfolders in this folder. Drag items to reorganise, double-click a folder to open.'
+        : 'Your library, kept in folders. Drag notes and boards between folders to organise them.';
+
+  const emptyTitle = isTrashMode
+    ? 'Trash is empty'
+    : isSharedMode
+      ? 'Nothing is shared yet'
+      : currentFolderId
+        ? 'This folder is empty'
+        : 'A fresh library';
+  const emptyDescription = isTrashMode
+    ? 'Deleted items will appear here.'
+    : isSharedMode
+      ? 'Share a note, board, or folder from its menu to see it here.'
+      : currentFolderId
+        ? 'Add a note, a board, or a subfolder to get started.'
+        : 'Create your first note, board, or folder, then keep the work moving.';
+
   return (
-    <div
-      className="h-full bg-black/40 backdrop-blur-md overflow-hidden p-4 sm:p-6"
-      onClick={(event) => {
-        if (!hasSelection) {
-          return;
-        }
+    <PageShell scroll="content" contentClassName="desktop-page-content-enter">
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        onClick={(event) => {
+          if (!hasSelection) return;
 
-        const target = event.target as HTMLElement;
-        if (target.closest('[data-selection-item="true"]') || target.closest('[data-selection-control="true"]')) {
-          return;
-        }
+          const target = event.target as HTMLElement;
+          if (target.closest('[data-selection-item="true"]') || target.closest('[data-selection-control="true"]')) {
+            return;
+          }
 
-        clearSelection();
-      }}
-    >
-      <div className="desktop-page-content-enter h-full max-w-5xl mx-auto flex flex-col gap-4">
+          clearSelection();
+        }}
+      >
+        <PageHeader
+          title={title}
+          description={description}
+          meta={
+            <>
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-[13px] font-medium tabular-nums text-ink">{displayedFolders.length}</span>
+                {displayedFolders.length === 1 ? 'folder' : 'folders'}
+              </span>
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-[13px] font-medium tabular-nums text-ink">{displayedDocuments.length}</span>
+                {displayedDocuments.length === 1 ? 'note' : 'notes'}
+              </span>
+              {!isTrashMode && (
+                <span className="inline-flex items-baseline gap-1.5">
+                  <span className="text-[13px] font-medium tabular-nums text-ink">{displayedBoards.length}</span>
+                  {displayedBoards.length === 1 ? 'board' : 'boards'}
+                </span>
+              )}
+            </>
+          }
+          actions={
+            <>
+              {canModify && (
+                <>
+                  <Button variant="secondary" icon={<FolderPlusIcon />} onClick={() => void handleAddFolder()}>
+                    New folder
+                  </Button>
+                  <Button variant="secondary" icon={<ViewColumnsIcon />} onClick={() => void handleOpenCreateBoard()}>
+                    New board
+                  </Button>
+                  <Button variant="primary" icon={<DocumentPlusIcon />} onClick={() => void handleAddDocument()}>
+                    New note
+                  </Button>
+                </>
+              )}
+            </>
+          }
+        />
+
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
+          <SegmentedControl
+            label="Library section"
+            value={mode}
+            onChange={setFilterMode}
+            options={[
+              { value: 'all', label: 'Files', icon: <FolderIcon className="h-3.5 w-3.5" /> },
+              { value: 'trash', label: 'Trash', icon: <TrashIcon className="h-3.5 w-3.5" /> },
+              { value: 'public', label: 'Shared', icon: <GlobeAltIcon className="h-3.5 w-3.5" /> },
+            ]}
+          />
+          <span className="hidden text-[11.5px] text-ink-muted sm:inline">
+            Drag notes and boards into folders to organise them.
+          </span>
+        </div>
+
         <FolderViewHeader
           viewMode={viewMode}
           currentFolderId={currentFolderId}
@@ -115,9 +226,7 @@ export function FolderViewPage() {
         />
 
         <main
-          className={`w-full min-h-0 flex-1 border rounded-lg p-4 flex flex-col overflow-hidden transition-colors ${
-            'bg-white/5 border-white/10'
-          }`}
+          className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden border-t border-line"
           onContextMenu={(event) =>
             handleContextMenu(event, 'empty', {
               folderId: currentFolderId || undefined,
@@ -125,22 +234,37 @@ export function FolderViewPage() {
             })
           }
         >
-          <FolderViewActions
-            isTrashMode={isTrashMode}
-            isSharedMode={isSharedMode}
-            onSelectMode={setFilterMode}
-            onAddFolder={() => { void handleAddFolder(); }}
-            onAddDocument={() => { void handleAddDocument(); }}
-          />
-
           <div className={`min-h-0 flex-1 ${hasItems ? 'overflow-y-auto scrollbar-autohide' : ''}`}>
             {isLoadingCurrentFolder ? (
-              <div className="h-full flex items-center justify-center text-sm text-gray-400">Loading folder...</div>
+              <div className="flex h-full items-center justify-center">
+                <Spinner label="Loading folder" />
+              </div>
             ) : !hasItems ? (
-              <div className="h-full flex items-center justify-center text-sm text-gray-500">{isSharedMode ? 'No public folders or documents.' : 'No folders or documents here.'}</div>
+              <div className="flex h-full items-center justify-center p-6">
+                <EmptyState
+                  compact
+                  icon={<FolderIcon />}
+                  title={emptyTitle}
+                  description={emptyDescription}
+                  action={
+                    canModify ? (
+                      <>
+                        <Button variant="primary" icon={<DocumentPlusIcon />} onClick={() => void handleAddDocument()}>
+                          New note
+                        </Button>
+                        <Button variant="secondary" icon={<ViewColumnsIcon />} onClick={() => void handleOpenCreateBoard()}>
+                          New board
+                        </Button>
+                      </>
+                    ) : undefined
+                  }
+                  className="w-full max-w-md"
+                />
+              </div>
             ) : viewMode === 'list' ? (
               <FolderViewList
                 displayedFolders={displayedFolders}
+                displayedBoards={displayedBoards}
                 displayedDocuments={displayedDocuments}
                 currentFolderId={currentFolderId}
                 selectedFolderIds={selectedFolderIds}
@@ -151,21 +275,18 @@ export function FolderViewPage() {
                 isRenaming={isRenaming}
                 dropZone={dropZone}
                 onPendingNameChange={(value) =>
-                  setPendingCreate((previous) =>
-                    previous ? { ...previous, name: value } : previous
-                  )
+                  setPendingCreate((previous) => (previous ? { ...previous, name: value } : previous))
                 }
                 onCreateSubmit={handleInlineCreateSubmit}
                 onCreateCancel={handleInlineCreateCancel}
                 onPendingRenameChange={(value) =>
-                  setPendingRename((previous) =>
-                    previous ? { ...previous, name: value } : previous
-                  )
+                  setPendingRename((previous) => (previous ? { ...previous, name: value } : previous))
                 }
                 onRenameSubmit={handleInlineRenameSubmit}
                 onRenameCancel={handleInlineRenameCancel}
                 onFolderClick={handleFolderClick}
                 onFolderDoubleClick={handleFolderDoubleClick}
+                onBoardClick={handleBoardClick}
                 onDocumentClick={handleDocumentClick}
                 onDocumentDoubleClick={handleDocumentDoubleClick}
                 onItemContextMenu={(event, type, options) =>
@@ -194,6 +315,8 @@ export function FolderViewPage() {
                 onDragEnd={handleDragEnd}
                 onFolderDragStart={handleFolderDragStart}
                 onFolderDragEnd={handleFolderDragEnd}
+                onBoardDragStart={handleBoardDragStart}
+                onBoardDragEnd={handleBoardDragEnd}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -201,6 +324,7 @@ export function FolderViewPage() {
             ) : (
               <FolderViewGrid
                 displayedFolders={displayedFolders}
+                displayedBoards={displayedBoards}
                 displayedDocuments={displayedDocuments}
                 currentFolderId={currentFolderId}
                 selectedFolderIds={selectedFolderIds}
@@ -211,21 +335,18 @@ export function FolderViewPage() {
                 isRenaming={isRenaming}
                 dropZone={dropZone}
                 onPendingNameChange={(value) =>
-                  setPendingCreate((previous) =>
-                    previous ? { ...previous, name: value } : previous
-                  )
+                  setPendingCreate((previous) => (previous ? { ...previous, name: value } : previous))
                 }
                 onCreateSubmit={handleInlineCreateSubmit}
                 onCreateCancel={handleInlineCreateCancel}
                 onPendingRenameChange={(value) =>
-                  setPendingRename((previous) =>
-                    previous ? { ...previous, name: value } : previous
-                  )
+                  setPendingRename((previous) => (previous ? { ...previous, name: value } : previous))
                 }
                 onRenameSubmit={handleInlineRenameSubmit}
                 onRenameCancel={handleInlineRenameCancel}
                 onFolderClick={handleFolderClick}
                 onFolderDoubleClick={handleFolderDoubleClick}
+                onBoardClick={handleBoardClick}
                 onDocumentClick={handleDocumentClick}
                 onDocumentDoubleClick={handleDocumentDoubleClick}
                 onItemContextMenu={(event, type, options) =>
@@ -254,6 +375,8 @@ export function FolderViewPage() {
                 onDragEnd={handleDragEnd}
                 onFolderDragStart={handleFolderDragStart}
                 onFolderDragEnd={handleFolderDragEnd}
+                onBoardDragStart={handleBoardDragStart}
+                onBoardDragEnd={handleBoardDragEnd}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -278,10 +401,15 @@ export function FolderViewPage() {
             onRenameDocument={handleRenameDocument}
             onMakePublicDocument={() => {
               if (contextMenu?.documentId) {
-                void publicShareModal.openDocument(contextMenu.documentId);
+                sharePanel.openSharePanel({
+                  targetType: 'document',
+                  targetId: contextMenu.documentId,
+                  targetTitle: 'Note',
+                });
                 closeContextMenu();
               }
             }}
+            onAddToBoard={handleAddToBoard}
             onDeleteDocument={handleDeleteDocument}
             onRestoreDocument={handleRestoreDocument}
             onPermanentlyDeleteDocument={handlePermanentlyDeleteDocument}
@@ -305,10 +433,15 @@ export function FolderViewPage() {
             contextMenuRef={contextMenuRef}
             onAddFolder={handleAddFolder}
             onAddDocument={handleAddDocument}
+            onAddBoard={handleOpenCreateBoard}
             onRenameFolder={handleRenameFolder}
             onMakePublicFolder={() => {
               if (contextMenu?.folderId) {
-                void publicShareModal.openFolder(contextMenu.folderId);
+                sharePanel.openSharePanel({
+                  targetType: 'folder',
+                  targetId: contextMenu.folderId,
+                  targetTitle: contextMenu.folderName || 'Folder',
+                });
                 closeContextMenu();
               }
             }}
@@ -322,141 +455,65 @@ export function FolderViewPage() {
           document.body
         )}
 
-      <ConfirmDialog
-        isOpen={!!deleteConfirmState}
-        title={deleteConfirmState?.title || 'Delete items'}
-        message={deleteConfirmState?.message || 'Move selected items to trash?'}
-        onSave={() => undefined}
-        onDiscard={() => {
-          void handleConfirmDelete();
-        }}
-        onCancel={handleCancelDelete}
-        saveLabel=""
-        discardLabel={deleteConfirmState?.isPermanent ? 'Delete Forever' : 'Delete'}
-        cancelLabel="Cancel"
-      />
-
-      <PublicShareModal
-        target={publicShareModal.target}
-        isOpen={publicShareModal.isOpen}
-        isSaving={publicShareModal.isSaving}
-        onClose={publicShareModal.close}
-        onSave={publicShareModal.save}
-      />
-    </div>
-  );
-}
-
-/* ── Dropdown actions bar ── */
-
-interface FolderViewActionsProps {
-  isTrashMode: boolean;
-  isSharedMode: boolean;
-  onSelectMode: (mode: 'all' | 'trash' | 'public') => void;
-  onAddFolder: () => void;
-  onAddDocument: () => void;
-}
-
-function FolderViewActions({ isTrashMode, isSharedMode, onSelectMode, onAddFolder, onAddDocument }: FolderViewActionsProps) {
-  const [open, setOpen] = useLocalState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  const disabled = isTrashMode || isSharedMode;
-
-  return (
-    <div className="mb-4 flex items-center gap-2">
-      {/* Left: active view badge */}
-      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-        isTrashMode
-          ? 'bg-amber-400/15 text-amber-200/90'
-          : isSharedMode
-            ? 'bg-emerald-400/15 text-emerald-200/90'
-            : 'bg-white/8 text-gray-400'
-      }`}>
-        {isTrashMode ? <TrashIcon className="w-3 h-3" /> : isSharedMode ? <GlobeAltIcon className="w-3 h-3" /> : <FolderPlusIcon className="w-3 h-3" />}
-        {isTrashMode ? 'Trash' : isSharedMode ? 'Public' : 'All files'}
-      </span>
-
-      {/* Right: single actions dropdown */}
-      <div className="relative ml-auto" ref={ref}>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
-            open
-              ? 'border-white/20 bg-white/10 text-white'
-              : 'border-white/10 bg-white/5 text-gray-200 hover:bg-white/10'
-          }`}
-          aria-haspopup="true"
-          aria-expanded={open}
-        >
-          <EllipsisHorizontalIcon className="w-4 h-4" />
-          Actions
-        </button>
-
-        {open && (
-          <div className="absolute right-0 top-full z-30 mt-1.5 w-44 overflow-hidden rounded-lg border border-white/15 bg-stone-900/95 backdrop-blur-xl shadow-xl py-1">
-            <button
-              onClick={() => { onAddFolder(); setOpen(false); }}
-              disabled={disabled}
-              className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
-                disabled ? 'text-gray-500 cursor-not-allowed' : 'text-gray-200 hover:bg-white/10'
-              }`}
-            >
-              <FolderPlusIcon className="w-4 h-4 text-gray-400" />
-              New folder
-            </button>
-            <button
-              onClick={() => { onAddDocument(); setOpen(false); }}
-              disabled={disabled}
-              className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
-                disabled ? 'text-gray-500 cursor-not-allowed' : 'text-blue-200 hover:bg-white/10'
-              }`}
-            >
-              <DocumentPlusIcon className="w-4 h-4 text-blue-400" />
-              New document
-            </button>
-
-            <div className="my-1 border-t border-white/10" />
-
-            <button
-              onClick={() => { onSelectMode('all'); setOpen(false); }}
-              className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
-                !isTrashMode && !isSharedMode ? 'text-white bg-white/10' : 'text-gray-300 hover:bg-white/10'
-              }`}
-            >
-              <FolderPlusIcon className="w-4 h-4 text-gray-400" />
-              All files
-            </button>
-            <button
-              onClick={() => { onSelectMode('trash'); setOpen(false); }}
-              className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
-                isTrashMode ? 'text-amber-200 bg-amber-400/10' : 'text-amber-200/70 hover:bg-white/10'
-              }`}
-            >
-              <TrashIcon className="w-4 h-4" />
-              Trash
-            </button>
-            <button
-              onClick={() => { onSelectMode('public'); setOpen(false); }}
-              className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium transition-colors ${
-                isSharedMode ? 'text-emerald-200 bg-emerald-400/10' : 'text-emerald-200/70 hover:bg-white/10'
-              }`}
-            >
-              <GlobeAltIcon className="w-4 h-4" />
-              Public
-            </button>
-          </div>
+      {contextMenu?.type === 'board' &&
+        createPortal(
+          <BoardContextMenu
+            contextMenu={{
+              x: contextMenu.x,
+              y: contextMenu.y,
+              type: 'board',
+              boardId: contextMenu.boardId,
+              boardName: contextMenu.boardName,
+            }}
+            contextMenuRef={contextMenuRef}
+            onOpenBoard={() => {
+              const board = contextMenu.boardId
+                ? displayedBoards.find((item) => item.id === contextMenu.boardId)
+                : undefined;
+              closeContextMenu();
+              if (board) {
+                handleBoardClick(board);
+              }
+            }}
+            onEditBoard={() => handleOpenEditBoard(contextMenu.boardId)}
+            onShareBoard={() => {
+              if (contextMenu.boardId) {
+                sharePanel.openSharePanel({
+                  targetType: 'board',
+                  targetId: contextMenu.boardId,
+                  targetTitle: contextMenu.boardName || 'Board',
+                });
+                closeContextMenu();
+              }
+            }}
+            onClose={closeContextMenu}
+            isClosing={isClosingContextMenu}
+          />,
+          document.body
         )}
-      </div>
-    </div>
+
+      <ConfirmDialog
+        open={Boolean(deleteConfirmState)}
+        title={deleteConfirmState?.title || 'Delete items'}
+        description={deleteConfirmState?.message || 'Move the selected items to trash?'}
+        confirmLabel={deleteConfirmState?.isPermanent ? 'Delete forever' : 'Move to trash'}
+        tone="danger"
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={handleCancelDelete}
+      />
+
+      {sharePanel.target && (
+        <SharePanel
+          open
+          onClose={sharePanel.closeSharePanel}
+          targetType={sharePanel.target.targetType}
+          targetId={sharePanel.target.targetId}
+          targetTitle={sharePanel.target.targetTitle}
+          folderId={sharePanel.target.folderId}
+          folderName={sharePanel.target.folderName}
+          onChanged={sharePanel.target.onChanged}
+        />
+      )}
+    </PageShell>
   );
 }

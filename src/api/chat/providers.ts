@@ -1,55 +1,91 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOllama } from "ai-sdk-ollama";
-import type { AIConfig, AIProviderKey } from "../../lib/ai/types";
-import type { LanguageModel, EmbeddingModel } from "ai";
+import { normalizeAIConfig, resolveChatModel } from "../../lib/ai/config";
+import type {
+    AIConfig,
+    AIModelConfig,
+    AIProviderConnection,
+    AIProviderKey,
+    AIProviderKind,
+} from "../../lib/ai/types";
+import type { LanguageModel } from "ai";
 
 /**
  * Create an AI SDK language model instance from the stored AI config.
- * Returns the model for the active provider with the configured activeModel.
- * Throws if no provider is active or no model is configured.
+ *
+ * A v2 model id wins when it is enabled and its connection is enabled. Without
+ * an id the default model is used, then the first enabled model. If no v2
+ * model is usable, the legacy active provider remains the fallback.
  */
-export function getAIModel(config: AIConfig): LanguageModel {
-    const { activeProvider } = config;
+export function getAIModel(config: AIConfig, modelId?: string | null): LanguageModel {
+    const normalized = normalizeAIConfig(config);
+    const resolved = resolveChatModel(normalized, modelId);
 
+    if (resolved) {
+        return createModelForConnection(resolved.connection, resolved.model);
+    }
+
+    const requested = typeof modelId === "string" ? modelId.trim() : "";
+    if (requested) {
+        throw new Error(`AI model not found or disabled: ${requested}`);
+    }
+
+    const { activeProvider } = normalized;
     if (!activeProvider) {
         throw new Error("No AI provider is active. Configure one in Settings → AI.");
     }
 
-    const providerConfig = config.providers[activeProvider];
+    const providerConfig = normalized.providers[activeProvider];
     if (!providerConfig.activeModel) {
         throw new Error(`No model configured for ${activeProvider}. Set a model in Settings → AI.`);
     }
 
-    return createModelForProvider(activeProvider, providerConfig.activeModel, providerConfig.apiKey, providerConfig.baseUrl, providerConfig.thinking);
+    return createModelForProvider(
+        activeProvider,
+        providerConfig.activeModel,
+        providerConfig.apiKey,
+        providerConfig.baseUrl,
+        providerConfig.thinking,
+    );
 }
 
 /**
- * Create an AI SDK embedding model instance from the stored AI config.
- * Returns the embedding model for the active provider.
- * Throws if no provider is active or no embedding model is configured.
+ * Provider options shared by chat calls.
+ *
+ * This is intentionally a single seam for provider-specific request options.
+ * Chat Completions, Messages, and generateContent all carry their state in the
+ * request, so none are required today. In particular, OpenAI's old Responses
+ * `store: false` workaround does not apply to the Chat Completions path.
+ * Ollama thinking is applied on the model instance instead.
  */
-export function getEmbeddingModel(config: AIConfig): EmbeddingModel {
-    const { activeProvider } = config;
+export function getAIProviderOptions(
+    provider: AIProviderKind | AIProviderKey | null,
+): undefined {
+    void provider;
+    return undefined;
+}
 
-    if (!activeProvider) {
-        throw new Error("No AI provider is active. Configure one in Settings → AI.");
-    }
-
-    const providerConfig = config.providers[activeProvider];
-    if (!providerConfig.embeddingModel) {
-        throw new Error(`No embedding model configured for ${activeProvider}. Set an embedding model in Settings → AI.`);
-    }
-
-    return createEmbeddingModelForProvider(activeProvider, providerConfig.embeddingModel, providerConfig.apiKey, providerConfig.baseUrl);
+function createModelForConnection(
+    connection: AIProviderConnection,
+    model: AIModelConfig,
+): LanguageModel {
+    return createModelForProvider(
+        connection.kind,
+        model.modelId,
+        connection.apiKey,
+        connection.baseUrl,
+        model.thinking,
+    );
 }
 
 function createModelForProvider(
-    provider: AIProviderKey,
+    provider: AIProviderKind,
     model: string,
     apiKey: string,
     baseUrl: string,
-    thinking: boolean
+    thinking: boolean,
 ): LanguageModel {
     switch (provider) {
         case "openai": {
@@ -57,7 +93,8 @@ function createModelForProvider(
                 apiKey: apiKey || undefined,
                 ...(baseUrl ? { baseURL: baseUrl } : {}),
             });
-            return openai(model);
+            // Chat Completions is the compatible path for custom OpenAI hosts.
+            return openai.chat(model);
         }
 
         case "google": {
@@ -65,7 +102,15 @@ function createModelForProvider(
                 apiKey: apiKey || undefined,
                 ...(baseUrl ? { baseURL: baseUrl } : {}),
             });
-            return google(model);
+            return google.chat(model);
+        }
+
+        case "anthropic": {
+            const anthropic = createAnthropic({
+                apiKey: apiKey || undefined,
+                ...(baseUrl ? { baseURL: baseUrl } : {}),
+            });
+            return anthropic.chat(model);
         }
 
         case "ollama": {
@@ -78,47 +123,7 @@ function createModelForProvider(
                     },
                 } : {}),
             });
-            return ollama(model, { think: thinking });
-        }
-
-        default:
-            throw new Error(`Unknown AI provider: ${provider}`);
-    }
-}
-
-function createEmbeddingModelForProvider(
-    provider: AIProviderKey,
-    model: string,
-    apiKey: string,
-    baseUrl: string
-): EmbeddingModel {
-    switch (provider) {
-        case "openai": {
-            const openai = createOpenAI({
-                apiKey: apiKey || undefined,
-                ...(baseUrl ? { baseURL: baseUrl } : {}),
-            });
-            return openai.embedding(model);
-        }
-
-        case "google": {
-            const google = createGoogleGenerativeAI({
-                apiKey: apiKey || undefined,
-                ...(baseUrl ? { baseURL: baseUrl } : {}),
-            });
-            return google.textEmbeddingModel(model);
-        }
-
-        case "ollama": {
-            const ollama = createOllama({
-                baseURL: baseUrl || "http://localhost:11434/api",
-                ...(apiKey ? {
-                    headers: {
-                        Authorization: `Bearer ${apiKey}`,
-                    },
-                } : {}),
-            });
-            return ollama.embedding(model);
+            return ollama.chat(model, { think: thinking });
         }
 
         default:

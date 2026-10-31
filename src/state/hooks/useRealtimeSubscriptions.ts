@@ -56,8 +56,6 @@ export function useRealtimeSubscriptions({
                 logger.debug('User logged out, cleaning up subscriptions');
                 pb.collection('documents').unsubscribe();
                 pb.collection('folders').unsubscribe();
-                pb.collection('trash_documents').unsubscribe();
-                pb.collection('trash_folders').unsubscribe();
                 userIdRef.current = null;
                 isSettingUpRef.current = false;
                 setInitialLoadDone(false);
@@ -133,8 +131,49 @@ export function useRealtimeSubscriptions({
             }
         };
 
+        const isDeletedDocument = (document: Document) =>
+            Boolean(document.deleted_at);
+
+        const removeFromActiveState = (documentId: string) => {
+            setRootDocuments((prev: Document[]) => prev.filter(d => d.id !== documentId));
+            setFolderDocuments((prev: Map<string, Document[]>) => {
+                const newMap = new Map(prev);
+                for (const [folderId, docs] of newMap.entries()) {
+                    const filtered = docs.filter(d => d.id !== documentId);
+                    if (filtered.length !== docs.length) {
+                        newMap.set(folderId, filtered);
+                    }
+                }
+                return newMap;
+            });
+            setRecentDocuments((prev: Document[]) => prev.filter(d => d.id !== documentId));
+        };
+
+        const removeTrashDocument = (documentId: string) => {
+            setTrashDocuments((prev: Document[]) => prev.filter(d => d.id !== documentId));
+        };
+
+        const upsertTrashDocument = (document: Document) => {
+            setTrashDocuments((prev: Document[]) => {
+                const filtered = prev.filter(d => d.id !== document.id);
+                if (document.author !== userId) return filtered;
+                return [...filtered, document].sort((a, b) =>
+                    new Date(b.deleted_at || b.updated).getTime() -
+                    new Date(a.deleted_at || a.updated).getTime()
+                );
+            });
+        };
+
         // Helper to update document in state incrementally
         const updateDocumentInState = (updatedDoc: Document) => {
+            if (isDeletedDocument(updatedDoc)) {
+                removeFromActiveState(updatedDoc.id);
+                upsertTrashDocument(updatedDoc);
+                return;
+            }
+
+            removeTrashDocument(updatedDoc.id);
+
             setRootDocuments((prev: Document[]) => {
                 const filtered = prev.filter(d => d.id !== updatedDoc.id);
                 // Add if belongs in root (active, owned, no folder)
@@ -203,40 +242,10 @@ export function useRealtimeSubscriptions({
                     if (e.action === 'create' || e.action === 'update') {
                         updateDocumentInState(updatedDoc);
                     } else if (e.action === 'delete') {
-                        // Remove from all categories
-                        setRootDocuments((prev: Document[]) => prev.filter(d => d.id !== updatedDoc.id));
-                        setFolderDocuments((prev: Map<string, Document[]>) => {
-                            const newMap = new Map(prev);
-                            for (const [folderId, docs] of newMap.entries()) {
-                                newMap.set(folderId, docs.filter(d => d.id !== updatedDoc.id));
-                            }
-                            return newMap;
-                        });
-                        setTrashDocuments((prev: Document[]) => prev.filter(d => d.id !== updatedDoc.id));
-                        setRecentDocuments((prev: Document[]) => prev.filter(d => d.id !== updatedDoc.id));
+                        removeFromActiveState(updatedDoc.id);
+                        removeTrashDocument(updatedDoc.id);
                     }
 
-                    setTimelineRealtimeTick((prev: number) => prev + 1);
-                });
-
-                await pb.collection('trash_documents').subscribe('*', async (e) => {
-                    const updatedTrashDoc = e.record as Document;
-
-                    if (e.action === 'create' || e.action === 'update') {
-                        setTrashDocuments((prev: Document[]) => {
-                            const filtered = prev.filter((doc) => doc.id !== updatedTrashDoc.id);
-                            if (updatedTrashDoc.author !== userId) {
-                                return filtered;
-                            }
-                            return [...filtered, updatedTrashDoc].sort(
-                                (a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime()
-                            );
-                        });
-                    } else if (e.action === 'delete') {
-                        setTrashDocuments((prev: Document[]) =>
-                            prev.filter((doc) => doc.id !== updatedTrashDoc.id)
-                        );
-                    }
                     setTimelineRealtimeTick((prev: number) => prev + 1);
                 });
 
@@ -253,23 +262,6 @@ export function useRealtimeSubscriptions({
                     } catch (error: any) {
                         if (!error.isAbort) {
                             logger.error('Failed to reload folders after real-time event', {
-                                error: error.message,
-                            });
-                        }
-                    }
-                });
-
-                await pb.collection('trash_folders').subscribe('*', async () => {
-                    try {
-                        const allFolders = await getAllFolders();
-                        const trashFolders = await listTrashFolders();
-                        const activeFolderTree = buildFolderTree(
-                            allFolders.filter((folder) => folder.author === userId)
-                        );
-                        onFoldersUpdateRef.current(activeFolderTree, trashFolders);
-                    } catch (error: any) {
-                        if (!error.isAbort) {
-                            logger.error('Failed to reload trash folders after real-time event', {
                                 error: error.message,
                             });
                         }
@@ -295,8 +287,6 @@ export function useRealtimeSubscriptions({
 
             pb.collection('documents').unsubscribe();
             pb.collection('folders').unsubscribe();
-            pb.collection('trash_documents').unsubscribe();
-            pb.collection('trash_folders').unsubscribe();
 
             if (userIdRef.current === userId) {
                 userIdRef.current = null;

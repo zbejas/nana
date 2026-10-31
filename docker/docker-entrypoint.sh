@@ -17,8 +17,10 @@ if [ "${NODE_ENV:-}" != "production" ]; then
     echo "Running PocketBase migrations..."
     PB_MIGRATING=1 pocketbase migrate up $PB_ARGS
     
-    # Process substitution keeps correct PIDs (piping through awk/sed loses them)
-    pocketbase serve --http=0.0.0.0:8090 $PB_ARGS > >(sed -u 's/^/[PocketBase] /') 2>&1 &
+    # Loopback only: the public edge is Bun/Elysia on :3000. Never publish
+    # :8090 or bind PocketBase to 0.0.0.0 — that would bypass the app.
+    # Process substitution keeps correct PIDs (piping through awk/sed loses them).
+    pocketbase serve --http=127.0.0.1:8090 $PB_ARGS > >(sed -u 's/^/[PocketBase] /') 2>&1 &
     PB_PID=$!
     
     bun run dev > >(sed -u 's/^/[Bun] /') 2>&1 &
@@ -34,8 +36,9 @@ else
     echo "Running PocketBase migrations..."
     PB_MIGRATING=1 pocketbase migrate up $PB_ARGS
     
-    echo "Starting PocketBase on port 8090..."
-    pocketbase serve --http=0.0.0.0:8090 $PB_ARGS > >(sed -u 's/^/[PocketBase] /') 2>&1 &
+    echo "Starting PocketBase on 127.0.0.1:8090 (internal only)..."
+    # Loopback only: Bun/Elysia is the public edge on :3000.
+    pocketbase serve --http=127.0.0.1:8090 $PB_ARGS > >(sed -u 's/^/[PocketBase] /') 2>&1 &
     PB_PID=$!
     
     echo "Starting Bun server on port 3000..."

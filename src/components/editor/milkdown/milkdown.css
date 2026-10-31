@@ -1,0 +1,755 @@
+/*
+ * Milkdown editor surfaces — Graphite only.
+ *
+ * Everything is scoped under `.nana-milkdown` or `.nana-source`; no raw colour
+ * families, no theme variants, no gradients. Tokens flip with `data-theme`.
+ */
+
+@layer components {
+  .nana-milkdown {
+    min-width: 0;
+    color: var(--ink);
+  }
+
+  .nana-milkdown-surface {
+    position: relative;
+    min-height: 0;
+  }
+
+  .nana-milkdown-surface > .milkdown {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .nana-milkdown .ProseMirror {
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1.5rem 1.25rem;
+    outline: none;
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.75;
+    color: var(--ink);
+    caret-color: var(--signal);
+    word-break: break-word;
+  }
+
+  .nana-milkdown .ProseMirror:focus-visible {
+    outline: none;
+  }
+
+  .nana-milkdown--readonly .ProseMirror {
+    caret-color: transparent;
+  }
+
+  .nana-milkdown .ProseMirror ::selection {
+    background: color-mix(in srgb, var(--signal-bright) 24%, transparent);
+  }
+
+  .nana-milkdown .ProseMirror > * {
+    margin: 0;
+  }
+
+  .nana-milkdown .ProseMirror > * + * {
+    margin-top: 0.85em;
+  }
+
+  .nana-milkdown .ProseMirror h1,
+  .nana-milkdown .ProseMirror h2,
+  .nana-milkdown .ProseMirror h3,
+  .nana-milkdown .ProseMirror h4,
+  .nana-milkdown .ProseMirror h5,
+  .nana-milkdown .ProseMirror h6 {
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  .nana-milkdown .ProseMirror h1 {
+    margin-top: 1.6em;
+    font-size: 1.9rem;
+    line-height: 1.15;
+    letter-spacing: -0.032em;
+  }
+
+  .nana-milkdown .ProseMirror h2 {
+    margin-top: 1.5em;
+    font-size: 1.48rem;
+    line-height: 1.2;
+  }
+
+  .nana-milkdown .ProseMirror h3 {
+    margin-top: 1.35em;
+    font-size: 1.2rem;
+    line-height: 1.3;
+  }
+
+  .nana-milkdown .ProseMirror h4 {
+    font-size: 1.04rem;
+  }
+
+  .nana-milkdown .ProseMirror h5,
+  .nana-milkdown .ProseMirror h6 {
+    font-size: 0.95rem;
+    color: var(--ink-secondary);
+  }
+
+  .nana-milkdown .ProseMirror > h1:first-child,
+  .nana-milkdown .ProseMirror > h2:first-child,
+  .nana-milkdown .ProseMirror > h3:first-child {
+    margin-top: 0;
+  }
+
+  .nana-milkdown .ProseMirror p {
+    position: relative;
+  }
+
+  .nana-milkdown .ProseMirror strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .nana-milkdown .ProseMirror em {
+    color: var(--ink);
+  }
+
+  .nana-milkdown .ProseMirror s,
+  .nana-milkdown .ProseMirror del {
+    color: var(--ink-muted);
+    text-decoration-thickness: 1px;
+  }
+
+  .nana-milkdown .ProseMirror a {
+    color: var(--signal);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+
+  .nana-milkdown .ProseMirror a:hover {
+    color: var(--signal-strong);
+  }
+
+  .nana-milkdown .ProseMirror ul,
+  .nana-milkdown .ProseMirror ol {
+    margin: 0.8em 0;
+    padding-left: 1.5rem;
+  }
+
+  .nana-milkdown .ProseMirror ul {
+    list-style: disc outside;
+  }
+
+  .nana-milkdown .ProseMirror ol {
+    list-style: decimal outside;
+  }
+
+  .nana-milkdown .ProseMirror li {
+    margin: 0.3em 0;
+    color: var(--ink);
+  }
+
+  .nana-milkdown .ProseMirror li::marker {
+    color: var(--ink-muted);
+  }
+
+  .nana-milkdown .ProseMirror li > p {
+    margin: 0;
+  }
+
+  .nana-milkdown .ProseMirror li > ul,
+  .nana-milkdown .ProseMirror li > ol {
+    margin: 0.25em 0;
+  }
+
+  /* Task lists have no input element; the checkbox is painted on the li and a
+     ProseMirror click plugin toggles the `checked` attribute. Normal bullets
+     in a mixed list keep their markers. */
+  .nana-milkdown .ProseMirror li[data-item-type="task"] {
+    position: relative;
+    padding-left: 1.6rem;
+    list-style: none;
+  }
+
+  .nana-milkdown .ProseMirror li[data-item-type="task"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.45em;
+    width: 0.95rem;
+    height: 0.95rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    background: var(--surface);
+    cursor: pointer;
+    transition: background-color 140ms ease, border-color 140ms ease;
+  }
+
+  .nana-milkdown .ProseMirror li[data-item-type="task"]:hover::before {
+    border-color: var(--signal);
+  }
+
+  .nana-milkdown .ProseMirror li[data-item-type="task"][data-checked="true"]::before {
+    border-color: var(--signal-bright);
+    background: var(--signal-bright);
+  }
+
+  .nana-milkdown .ProseMirror li[data-item-type="task"][data-checked="true"]::after {
+    content: "";
+    position: absolute;
+    left: 0.33rem;
+    top: 0.52em;
+    width: 0.3rem;
+    height: 0.55rem;
+    border-right: 2px solid var(--on-signal);
+    border-bottom: 2px solid var(--on-signal);
+    transform: rotate(45deg);
+    pointer-events: none;
+  }
+
+  .nana-milkdown .ProseMirror li[data-item-type="task"][data-checked="true"] > p {
+    color: var(--ink-muted);
+    text-decoration: line-through;
+    text-decoration-color: var(--line-strong);
+  }
+
+  .nana-milkdown .ProseMirror blockquote {
+    margin: 1em 0;
+    padding-left: 1rem;
+    border-left: 2px solid var(--line-strong);
+    color: var(--ink-secondary);
+  }
+
+  .nana-milkdown .ProseMirror blockquote p {
+    color: var(--ink-secondary);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert {
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--line-strong);
+    border-left-width: 3px;
+    border-radius: 6px;
+    background: var(--surface-sunken);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert::before {
+    display: block;
+    margin-bottom: 0.4rem;
+    content: attr(data-alert-label);
+    font-size: 0.78em;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert .nana-alert-marker {
+    display: none;
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-note {
+    border-left-color: var(--alert-note-border);
+    background: var(--alert-note-soft);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-note::before {
+    color: var(--alert-note);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-tip {
+    border-left-color: var(--alert-tip-border);
+    background: var(--alert-tip-soft);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-tip::before {
+    color: var(--alert-tip);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-important {
+    border-left-color: var(--alert-important-border);
+    background: var(--alert-important-soft);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-important::before {
+    color: var(--alert-important);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-warning {
+    border-left-color: var(--alert-warning-border);
+    background: var(--alert-warning-soft);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-warning::before {
+    color: var(--alert-warning);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-caution {
+    border-left-color: var(--alert-caution-border);
+    background: var(--alert-caution-soft);
+  }
+
+  .nana-milkdown .ProseMirror blockquote.nana-alert-caution::before {
+    color: var(--alert-caution);
+  }
+
+  .nana-milkdown .ProseMirror code {
+    padding: 0.12em 0.34em;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--surface-sunken);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 0.82em;
+  }
+
+  .nana-milkdown .ProseMirror pre {
+    margin: 1em 0;
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-sunken);
+    color: var(--ink-secondary);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.65;
+    white-space: pre;
+    tab-size: 2;
+  }
+
+  .nana-milkdown .ProseMirror pre code {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: inherit;
+  }
+
+  .nana-milkdown .ProseMirror hr {
+    margin: 1.6em 0;
+    border: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .nana-milkdown .ProseMirror img {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  .nana-milkdown .ProseMirror img.ProseMirror-separator {
+    display: inline !important;
+    border: 0 !important;
+    border-radius: 0;
+    margin: 0 !important;
+  }
+
+  .nana-milkdown .ProseMirror .tableWrapper {
+    margin: 1em 0;
+    overflow-x: auto;
+  }
+
+  .nana-milkdown .ProseMirror table {
+    width: 100%;
+    margin: 0;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .nana-milkdown .ProseMirror th,
+  .nana-milkdown .ProseMirror td {
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .nana-milkdown .ProseMirror th {
+    background: var(--surface-sunken);
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .nana-milkdown .ProseMirror td {
+    color: var(--ink-secondary);
+  }
+
+  .nana-milkdown .ProseMirror .column-resize-handle {
+    background-color: var(--signal);
+  }
+
+  .nana-milkdown .ProseMirror.resize-cursor {
+    cursor: col-resize;
+  }
+
+  .nana-milkdown .ProseMirror .selectedCell::after {
+    background: var(--signal-soft);
+  }
+
+  .nana-milkdown .ProseMirror .ProseMirror-selectednode {
+    outline: 2px solid var(--signal);
+  }
+
+  .nana-milkdown .ProseMirror li.ProseMirror-selectednode::after {
+    border-color: var(--signal);
+  }
+
+  /* Prism tokens. Quiet, semantic, and readable in both themes. */
+  .nana-milkdown .ProseMirror .token.comment,
+  .nana-milkdown .ProseMirror .token.prolog,
+  .nana-milkdown .ProseMirror .token.doctype,
+  .nana-milkdown .ProseMirror .token.cdata {
+    color: var(--ink-muted);
+  }
+
+  .nana-milkdown .ProseMirror .token.punctuation,
+  .nana-milkdown .ProseMirror .token.operator {
+    color: var(--ink-secondary);
+  }
+
+  .nana-milkdown .ProseMirror .token.property,
+  .nana-milkdown .ProseMirror .token.tag,
+  .nana-milkdown .ProseMirror .token.constant,
+  .nana-milkdown .ProseMirror .token.symbol,
+  .nana-milkdown .ProseMirror .token.deleted {
+    color: var(--danger);
+  }
+
+  .nana-milkdown .ProseMirror .token.boolean,
+  .nana-milkdown .ProseMirror .token.number {
+    color: var(--warning);
+  }
+
+  .nana-milkdown .ProseMirror .token.selector,
+  .nana-milkdown .ProseMirror .token.attr-name,
+  .nana-milkdown .ProseMirror .token.string,
+  .nana-milkdown .ProseMirror .token.char,
+  .nana-milkdown .ProseMirror .token.builtin,
+  .nana-milkdown .ProseMirror .token.inserted {
+    color: var(--success);
+  }
+
+  .nana-milkdown .ProseMirror .token.keyword,
+  .nana-milkdown .ProseMirror .token.atrule,
+  .nana-milkdown .ProseMirror .token.attr-value,
+  .nana-milkdown .ProseMirror .token.function,
+  .nana-milkdown .ProseMirror .token.class-name {
+    color: var(--signal);
+  }
+
+  .nana-milkdown-placeholder {
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--ink-muted);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* Inline editors grow with their content up to a reading cap. */
+  .nana-milkdown--inline .nana-milkdown-surface {
+    flex: 0 1 auto;
+    min-height: 0;
+  }
+
+  .nana-milkdown--inline .nana-milkdown-surface > .milkdown {
+    height: auto;
+  }
+
+  .nana-milkdown--inline .ProseMirror {
+    height: auto;
+    max-height: 24rem;
+    padding: 0.7rem 0.85rem;
+    overflow-y: auto;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .nana-milkdown--inline .ProseMirror > * + * {
+    margin-top: 0.65em;
+  }
+
+  .nana-milkdown--inline .ProseMirror h1 {
+    margin-top: 1em;
+    font-size: 1.35rem;
+  }
+
+  .nana-milkdown--inline .ProseMirror h2 {
+    margin-top: 0.9em;
+    font-size: 1.18rem;
+  }
+
+  .nana-milkdown--inline .ProseMirror h3 {
+    margin-top: 0.8em;
+    font-size: 1.04rem;
+  }
+
+  .nana-milkdown--inline .ProseMirror pre {
+    font-size: 12px;
+  }
+
+  /* Source pane ------------------------------------------------------- */
+
+  .nana-source,
+  .nana-source .cm-editor {
+    height: 100%;
+    min-height: 0;
+    background: transparent;
+    color: var(--ink);
+  }
+
+  .nana-source .cm-editor.cm-focused {
+    outline: none;
+  }
+
+  .nana-source .cm-scroller {
+    overflow: auto;
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .nana-source .cm-content {
+    min-height: 100%;
+    padding: 1.5rem 1.25rem;
+    caret-color: var(--signal);
+  }
+
+  .nana-source .cm-line {
+    padding: 0;
+  }
+
+  .nana-source .cm-placeholder {
+    color: var(--ink-muted);
+    font-style: normal;
+  }
+
+  .nana-source .cm-selectionBackground,
+  .nana-source .cm-content ::selection {
+    background: color-mix(in srgb, var(--signal-bright) 24%, transparent) !important;
+  }
+
+  .nana-source .cm-cursor,
+  .nana-source .cm-dropCursor {
+    border-left-color: var(--signal);
+  }
+
+  .nana-source .cm-activeLine {
+    background: transparent;
+  }
+
+  .nana-source .cm-gutters {
+    display: none;
+  }
+
+  .nana-source[data-readonly="true"] .cm-cursor {
+    display: none;
+  }
+
+  .nana-source[data-readonly="true"] .cm-scroller {
+    caret-color: transparent;
+  }
+
+  /* Split ------------------------------------------------------------- */
+
+  .nana-split {
+    min-height: 0;
+  }
+
+  .nana-split-pane {
+    min-height: 0;
+  }
+
+  .nana-split-source .nana-source {
+    position: absolute;
+    inset: 0;
+  }
+
+  .nana-split .nana-milkdown .ProseMirror {
+    padding: 1.5rem 1.25rem;
+  }
+
+  @media (min-width: 768px) {
+    .nana-milkdown .ProseMirror {
+      padding: 2rem 2.5rem;
+    }
+
+    .nana-split .nana-milkdown .ProseMirror {
+      padding: 2rem;
+    }
+
+    .nana-source .cm-content {
+      padding: 2rem;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .nana-split {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .nana-split .nana-split-pane:first-child {
+      display: none;
+    }
+
+    .nana-split .nana-split-pane:last-child {
+      border-left: 0;
+    }
+
+    .nana-split .nana-split-pane:last-child .nana-milkdown .ProseMirror {
+      padding: 1.25rem;
+    }
+  }
+
+  /* Inline AI diff: green for the new text, red strike-through for the old.
+     Decorations are visual only; the transaction never carries the marks. */
+  .nana-milkdown .ProseMirror .nana-ai-diff-insert,
+  .nana-source .nana-ai-diff-insert {
+    border-radius: 2px;
+    background: var(--success-soft);
+    box-shadow: inset 0 -1px 0 var(--success);
+    color: var(--success);
+    animation: nana-ai-diff-insert 420ms ease-out both;
+  }
+
+  .nana-milkdown .ProseMirror .nana-ai-diff-delete,
+  .nana-source .nana-ai-diff-delete {
+    border-radius: 2px;
+    background: var(--danger-soft);
+    color: var(--danger);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+    user-select: none;
+    white-space: pre-wrap;
+    animation: nana-ai-diff-delete 420ms ease-out both;
+  }
+
+  @keyframes nana-ai-diff-insert {
+    0% {
+      background: var(--success-soft);
+      box-shadow: inset 0 -1px 0 var(--success);
+    }
+    100% {
+      background: transparent;
+      box-shadow: inset 0 -1px 0 transparent;
+    }
+  }
+
+  @keyframes nana-ai-diff-delete {
+    0% {
+      background: var(--danger-soft);
+    }
+    100% {
+      background: transparent;
+    }
+  }
+
+  /* A section-level fallback for rewrites that are too large for an inline
+     diff. It keeps the same short acknowledgement window. */
+  .nana-ai-edited {
+    position: relative;
+    box-shadow: inset 2px 0 0 var(--signal);
+    animation: nana-ai-wash 700ms ease-out both;
+  }
+
+  .nana-ai-edited[data-nana-ai-heading='true']::before {
+    content: 'Nana';
+    position: absolute;
+    top: -1.15rem;
+    left: -2px;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    background: var(--signal);
+    color: var(--on-signal);
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+    pointer-events: none;
+  }
+
+  @keyframes nana-ai-wash {
+    0% {
+      background: var(--signal-soft);
+    }
+    100% {
+      background: transparent;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nana-ai-edited {
+      animation: none;
+      background: var(--signal-soft);
+    }
+
+    .nana-milkdown .ProseMirror .nana-ai-diff-insert,
+    .nana-source .nana-ai-diff-insert,
+    .nana-milkdown .ProseMirror .nana-ai-diff-delete,
+    .nana-source .nana-ai-diff-delete {
+      animation: none;
+    }
+  }
+}
+
+/* Details widgets are unlayered so ProseMirror's unlayered widget/p rules do
+   not override their display and spacing. */
+.nana-milkdown .ProseMirror .nana-details-marker,
+.nana-milkdown .ProseMirror .nana-details-close {
+  display: none;
+}
+
+.nana-milkdown .ProseMirror p:has(> .nana-details-summary) {
+  margin: 1rem 0 0.35rem;
+}
+
+.nana-milkdown .ProseMirror .nana-details-summary {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.45rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nana-milkdown .ProseMirror .nana-details-summary::before {
+  content: "▸";
+  flex: none;
+  color: var(--ink-muted);
+  font-size: 0.9em;
+  transition: transform 120ms ease;
+}
+
+.nana-milkdown .ProseMirror .nana-details-summary[aria-expanded="true"]::before {
+  transform: rotate(90deg);
+}
+
+.nana-milkdown .ProseMirror .nana-details-summary:hover {
+  color: var(--signal);
+}
+
+.nana-milkdown .ProseMirror .nana-details-summary:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+}
+
+.nana-milkdown .ProseMirror .nana-details-body {
+  margin: 0.35rem 0 0.7rem;
+  border-left: 2px solid var(--line-strong);
+  padding-left: 0.9rem;
+}
+
+.nana-milkdown .ProseMirror .nana-details-body.nana-details-closed {
+  display: none;
+}

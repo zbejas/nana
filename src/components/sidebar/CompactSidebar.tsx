@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from '../../lib/record-model';
 import {
-  ChevronRightIcon,
-  ChevronLeftIcon,
-  FolderIcon,
-  ClockIcon,
+  Bars3Icon,
   ChatBubbleLeftRightIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  FolderIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { pb } from '../../lib/pocketbase';
+import { Avatar } from '../ui';
+import { useAtom } from 'jotai';
+import { chatDockOpenAtom } from '../../state/atoms';
 import { ProfileContextMenu } from './ProfileContextMenu';
+import { BrandMark } from '../BrandMark';
 
 interface CompactSidebarProps {
   isExpanded: boolean;
@@ -22,10 +27,13 @@ interface CompactSidebarProps {
 const viewItems = [
   { key: 'timeline', label: 'Timeline', path: '/timeline', icon: ClockIcon },
   { key: 'folders', label: 'Folders', path: '/folders', icon: FolderIcon },
-  { key: 'chat', label: 'Chat', path: '/chat', icon: ChatBubbleLeftRightIcon },
 ];
 
 function isPathActive(currentPath: string, path: string): boolean {
+  if (path === '/timeline') {
+    return currentPath === '/timeline' || currentPath.startsWith('/board');
+  }
+
   return currentPath === path || currentPath.startsWith(`${path}/`);
 }
 
@@ -41,25 +49,26 @@ export function CompactSidebar({
   const mobileNavRef = useRef<HTMLElement>(null);
   const avatarRef = useRef<HTMLButtonElement>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useAtom(chatDockOpenAtom);
+  const chatRoute = location.pathname.startsWith('/chat');
+  const chatActive = chatRoute || chatOpen;
 
   const avatarUrl = user.avatar ? pb.files.getURL(user, user.avatar) : null;
-  const initials = user.name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?';
 
-  const surfaceClass = 'border-white/10 bg-white/90 dark:bg-black/55 light:bg-white/90 md:bg-black/50 dark:md:bg-black/50 light:md:bg-white/80';
+  const openView = (item: (typeof viewItems)[number]) => {
+    navigate(item.path);
+  };
 
-  const mobileNavSurfaceClass = 'border-white/10 bg-white/90 dark:bg-black/55 light:bg-white/90';
+  const toggleChat = () => {
+    if (chatRoute) return;
+    setChatOpen((open) => !open);
+  };
 
-  const baseIconButtonClass =
-    'flex items-center justify-center rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-white/20';
-
-  const getItemClass = (isActive: boolean) =>
-    `${baseIconButtonClass} ${
-      isActive
-        ? 'bg-white/10 border-white/20 text-white'
-        : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:text-white'
-    }`;
-
-  const avatarRect = avatarRef.current?.getBoundingClientRect() ?? null;
+  const viewIsActive = (item: (typeof viewItems)[number]) =>
+    isPathActive(location.pathname, item.path);
+  // Shared, Chat, Settings, and the document reader live behind the drawer.
+  // Mark Menu active there instead of leaving the bottom bar with no selection.
+  const menuActive = !viewItems.some((item) => viewIsActive(item)) && !chatActive;
 
   useEffect(() => {
     const updateMobileNavHeight = () => {
@@ -77,119 +86,151 @@ export function CompactSidebar({
     };
   }, [isExpanded]);
 
+  const itemClass = (active: boolean) =>
+    `relative flex h-12 w-full flex-col items-center justify-center gap-1 rounded-control text-[11px] font-medium transition-colors ${
+      active
+        ? 'bg-surface text-ink'
+        : 'text-ink-muted hover:bg-surface/70 hover:text-ink'
+    }`;
+
+  const railItemClass = (active: boolean) =>
+    `flex h-10 w-10 items-center justify-center rounded-control border transition-colors ${
+      active
+        ? 'border-line bg-surface text-signal'
+        : 'border-transparent text-ink-muted hover:bg-surface/70 hover:text-ink'
+    }`;
+
+  const chatRailClass = (active: boolean) =>
+    `flex h-10 w-10 items-center justify-center rounded-[10px] border transition-colors ${
+      active
+        ? 'border-signal/45 bg-signal-soft text-signal'
+        : 'border-signal/20 bg-signal-soft/30 text-signal hover:border-signal/35 hover:bg-signal-soft/60'
+    }`;
+
   return (
     <>
-      {/* Desktop collapsed rail — always rendered, expanded sidebar slides on top */}
       <aside
-        className={`hidden md:flex fixed left-0 top-0 h-full w-20 z-40 flex-col border-r md:backdrop-blur-sm px-2 py-3 transition-opacity duration-300 ${surfaceClass} ${
-          isExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        className={`fixed left-0 top-0 z-40 hidden h-full w-16 flex-col items-center border-r border-line bg-canvas-deep px-2 py-3 transition-opacity duration-300 md:flex ${
+          isExpanded ? 'pointer-events-none opacity-0' : 'opacity-100'
         }`}
+        aria-label="Workspace rail"
       >
-          {/* Top: Profile avatar */}
-          <div className="w-full mb-3 flex items-center justify-center py-1">
-            <button
-              ref={avatarRef}
-              onClick={() => setProfileMenuOpen((prev) => !prev)}
-              className="w-11 h-11 rounded-full bg-gray-700/50 backdrop-blur-sm border border-white/10 flex items-center justify-center text-gray-300 font-medium text-sm overflow-hidden hover:border-white/25 hover:bg-gray-600/50 transition-all"
-              title={user.name || user.email}
-              aria-label="Profile menu"
-              aria-expanded={profileMenuOpen}
-              aria-haspopup="true"
-            >
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={user.name || user.email}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                initials
-              )}
-            </button>
-          </div>
+        <button
+          onClick={onToggleExpanded}
+          className="mb-5 flex h-10 w-10 items-center justify-center rounded-control transition-colors hover:bg-surface"
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+        >
+          <BrandMark className="h-8 w-8" />
+        </button>
 
-          {/* Middle: View navigation */}
-          <div className="flex flex-col gap-2.5">
-            {viewItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = isPathActive(location.pathname, item.path);
-
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => navigate(item.path)}
-                  className={`${getItemClass(isActive)} h-12 w-full flex-col gap-0.5`}
-                  title={item.label}
-                  aria-label={item.label}
-                >
-                  <Icon className="w-5 h-5" />
-                  <span className="text-[10px] leading-none">{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="border-t border-white/10 my-3" />
-
-          {/* Bottom: Expand sidebar toggle */}
-          <div className="mt-auto flex flex-col gap-2.5">
-            <button
-              onClick={onToggleExpanded}
-              className={`${getItemClass(false)} h-12 w-full flex-col gap-0.5`}
-              title="Expand sidebar"
-              aria-label="Expand sidebar"
-            >
-              <ChevronRightIcon className="w-5 h-5" />
-              <span className="text-[10px] leading-none">Expand</span>
-            </button>
-          </div>
-
-          {/* Profile context menu (positioned to the right of the avatar) */}
-          <ProfileContextMenu
-            isOpen={profileMenuOpen}
-            anchorRect={avatarRect}
-            onClose={() => setProfileMenuOpen(false)}
-            onSignOut={onRequestSignOut}
-            onSettings={onNavigateSettings}
-            position="right"
-          />
-        </aside>
-
-      {/* Mobile bottom nav */}
-      <nav
-        ref={mobileNavRef}
-        className={`md:hidden fixed bottom-0 left-0 right-0 z-[45] border-t backdrop-blur-sm px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 transition-opacity duration-200 ease-in-out ${mobileNavSurfaceClass} ${isExpanded ? 'opacity-85' : 'opacity-100'}`}
-      >
-        <div className="grid grid-cols-4 gap-2">
+        <div className="flex flex-col gap-1.5">
           <button
-            onClick={onToggleExpanded}
-            className={`${getItemClass(false)} h-14 flex-col gap-0.5`}
-            aria-label={isExpanded ? "Close menu" : "Open menu"}
+            type="button"
+            onClick={toggleChat}
+            className={chatRailClass(chatActive)}
+            title="Chat"
+            aria-label="Chat"
+            aria-pressed={chatActive}
           >
-            {isExpanded ? (
-              <ChevronLeftIcon className="w-5 h-5" />
-            ) : (
-              <ChevronRightIcon className="w-5 h-5" />
-            )}
-            <span className="text-[10px] leading-none">Menu</span>
+            <ChatBubbleLeftRightIcon className="h-[1.15rem] w-[1.15rem]" />
           </button>
-
+          <div className="mx-auto my-1 h-px w-8 bg-line" aria-hidden="true" />
           {viewItems.map((item) => {
             const Icon = item.icon;
-            const isActive = isPathActive(location.pathname, item.path);
+            const isActive = viewIsActive(item);
 
             return (
               <button
                 key={item.key}
-                onClick={() => navigate(item.path)}
-                className={`${getItemClass(isActive)} h-14 flex-col gap-0.5`}
+                onClick={() => openView(item)}
+                className={railItemClass(isActive)}
+                title={item.label}
                 aria-label={item.label}
+                aria-current={isPathActive(location.pathname, item.path) ? 'page' : undefined}
               >
-                <Icon className="w-5 h-5" />
-                <span className="text-[10px] leading-none">{item.label}</span>
+                <Icon className="h-[1.15rem] w-[1.15rem]" />
               </button>
             );
           })}
+        </div>
+
+        <div className="mt-auto flex flex-col items-center gap-2">
+          <button
+            ref={avatarRef}
+            onClick={() => setProfileMenuOpen((prev) => !prev)}
+            aria-label="Profile menu"
+            aria-expanded={profileMenuOpen}
+            aria-haspopup="menu"
+            className="flex h-10 w-10 items-center justify-center rounded-full transition-opacity hover:opacity-90"
+          >
+            <Avatar src={avatarUrl} name={user.name || user.email} size="sm" />
+          </button>
+          <button
+            onClick={onToggleExpanded}
+            className="flex h-9 w-9 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface hover:text-ink"
+            aria-label="Expand sidebar"
+            title="Expand sidebar"
+          >
+            <ChevronRightIcon className="h-4 w-4" />
+          </button>
+        </div>
+
+        <ProfileContextMenu
+          isOpen={profileMenuOpen}
+          anchorRect={avatarRef.current?.getBoundingClientRect() ?? null}
+          onClose={() => setProfileMenuOpen(false)}
+          onSignOut={onRequestSignOut}
+          onSettings={onNavigateSettings}
+          position="right"
+        />
+      </aside>
+
+      <nav
+        ref={mobileNavRef}
+        className={`fixed bottom-0 left-0 right-0 z-[45] border-t border-line bg-canvas-deep px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 transition-opacity duration-200 md:hidden ${
+          isExpanded ? 'opacity-30' : 'opacity-100'
+        }`}
+        aria-label="Primary"
+      >
+        <div className="grid grid-cols-4 gap-1">
+          <button
+            onClick={onToggleExpanded}
+            className={`${itemClass(menuActive)} h-14`}
+            aria-label={isExpanded ? "Close menu" : "Open menu"}
+            aria-current={menuActive && !isExpanded ? 'page' : undefined}
+          >
+            {isExpanded ? <XMarkIcon className="h-5 w-5" /> : <Bars3Icon className="h-5 w-5" />}
+            <span className="leading-none">Menu</span>
+          </button>
+
+          {viewItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = viewIsActive(item);
+
+            return (
+              <button
+                key={item.key}
+                onClick={() => openView(item)}
+                className={`${itemClass(isActive)} h-14`}
+                aria-label={item.label}
+                aria-current={isPathActive(location.pathname, item.path) ? 'page' : undefined}
+              >
+                <Icon className={`h-5 w-5 ${isActive ? 'text-signal' : ''}`} />
+                <span className="leading-none">{item.label}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={toggleChat}
+            className={`${itemClass(chatActive)} h-14`}
+            aria-label="Chat"
+            aria-pressed={chatActive}
+          >
+            <ChatBubbleLeftRightIcon className={`h-5 w-5 ${chatActive ? 'text-signal' : ''}`} />
+            <span className="leading-none">Chat</span>
+          </button>
         </div>
       </nav>
     </>

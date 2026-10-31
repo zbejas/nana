@@ -2,7 +2,7 @@
 
 // Admin endpoint to update OAuth2 provider configuration for the users collection
 routerAdd("PATCH", "/api/admin/oauth/providers", (c) => {
-  const { requireAdmin, parseRequestBody } = require(`${__hooks}/utils.js`)
+  const { requireAdmin, parseRequestBody, sendError } = require(`${__hooks}/utils.js`)
 
   try {
     requireAdmin(c)
@@ -62,7 +62,6 @@ routerAdd("PATCH", "/api/admin/oauth/providers", (c) => {
       message: "OAuth2 settings updated successfully",
     })
   } catch (err) {
-    console.error("Failed to update OAuth2 settings:", err)
-    return c.json(500, { error: "Failed to save OAuth2 settings: " + String(err) })
+    return sendError(c, err, "Failed to save OAuth2 settings")
   }
 }, $apis.requireAuth())

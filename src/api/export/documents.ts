@@ -7,12 +7,14 @@ const POCKETBASE_URL = serverConfig.pocketbaseUrl;
  * Sanitize a filename by removing invalid characters.
  */
 export function sanitizeFilename(name: string): string {
-    const normalizedName = (name || "").trim() || "Untitled";
-    return normalizedName
+    const normalizedName = (name || "").trim();
+    const cleaned = normalizedName
         .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
         .replace(/\s+/g, "_")
         .replace(/\.+$/, "")
         .trim();
+
+    return cleaned || "Untitled";
 }
 
 /**
@@ -26,7 +28,6 @@ export function documentToMarkdown(doc: PBDocument): string {
         `created: ${new Date(doc.created).toISOString()}`,
         `updated: ${new Date(doc.updated).toISOString()}`,
         doc.tags && doc.tags.length > 0 ? `tags: [${doc.tags.join(", ")}]` : "",
-        `published: ${doc.published}`,
         "---",
     ]
         .filter(Boolean)
@@ -40,9 +41,9 @@ export function documentToMarkdown(doc: PBDocument): string {
  * e.g. "photo_a8f3kd2.png" → "photo.png"
  */
 export function getOriginalFilename(filename: string): string {
-    const match = filename.match(/^(.+?)_[a-zA-Z0-9]+(\.[^.]+)$/);
-    if (match && match[1] && match[2]) {
-        return match[1] + match[2];
+    const match = filename.match(/^(.+?)_([a-zA-Z0-9]+)((?:\.[^.]+)+)$/);
+    if (match && match[1] && match[3]) {
+        return match[1] + match[3];
     }
     return filename;
 }

@@ -5,6 +5,7 @@ export type {
     DropPosition,
     OnDragStartDocument,
     OnDragStartFolder,
+    OnDragStartBoard,
     OnDragEnd,
     OnDragOver,
     OnDragLeave,

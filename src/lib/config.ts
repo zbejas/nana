@@ -23,6 +23,11 @@ export const serverConfig = {
     /** PocketBase superuser password (optional — auto-generated if not set) */
     pbSuperuserPassword: isServer ? (process.env.PB_SUPERUSER_PASSWORD || '') : '',
 
+    /** Bare git repositories for note version history (server-side only) */
+    versioningDir: isServer
+        ? (process.env.NANA_VERSIONING_DIR || `${process.cwd()}/pocketbase/pb_data/versioning`)
+        : '',
+
     /** Enable verbose debug logging in production (DEBUG=true) */
     debug: isServer && process.env.DEBUG === 'true',
 
@@ -39,13 +44,13 @@ export const serverConfig = {
 
 // Client-side configuration (browser)
 export const clientConfig = {
-    /** PocketBase URL for client-side requests (always proxied through /pb) */
-    get pocketbaseUrl() {
+    /** Elysia browser API base. PocketBase is never called by the browser. */
+    get apiUrl() {
         if (typeof window !== 'undefined') {
-            return `${window.location.origin}/pb`;
+            return `${window.location.origin}/api/v1`;
         }
         // Fallback for SSR/build time
-        return 'http://127.0.0.1:3000/pb';
+        return 'http://127.0.0.1:3000/api/v1';
     },
 };
 

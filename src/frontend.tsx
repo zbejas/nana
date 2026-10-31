@@ -10,8 +10,11 @@ import { Provider } from "jotai";
 import { App } from "./App";
 import { AuthProvider } from "./lib/auth";
 import { createLogger } from "./lib/logger";
+import { initTheme } from "./lib/theme";
 
 const log = createLogger('SW');
+
+initTheme();
 
 function start() {
   const root = createRoot(document.getElementById("root")!);

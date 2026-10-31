@@ -1,566 +1,742 @@
-import { describe, test, expect, beforeAll } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import {
-    PB_API,
-    BASE_URL,
-    authenticateSuperuser,
-    authenticateUser,
-    createTestUser,
-    signupUser,
-} from "../../helpers/setup";
+    expectJsonError,
+    expectStatus,
+    pbRequest,
+    readJson,
+} from "../../helpers/client";
+import {
+    createBoard,
+    createFolder,
+    createNote,
+    createNoteWithAttachment,
+    createTask,
+    createUser,
+    getSuperuserToken,
+    superuserUpdate,
+    type TestUser,
+} from "../../helpers/factories";
+import { uniqueSuffix } from "../../helpers/setup";
 
-const PUBLIC_API = `${BASE_URL}/pb/api/public`;
+const PUBLIC_API = "/public";
 
-describe("Public Share Routes", () => {
+describe("Public share routes", () => {
+    let user: TestUser;
     let superuserToken: string;
-    let userToken: string;
-    let userId: string;
-
-    let docCounter = 0;
-    let folderCounter = 0;
 
     beforeAll(async () => {
-        superuserToken = await authenticateSuperuser();
-
-        // Ensure at least one user exists (for signup guard)
-        const checkRes = await fetch(`${PB_API}/collections/users/records?perPage=1`, {
-            headers: { Authorization: superuserToken },
-        });
-        const checkData = await checkRes.json();
-        if (checkData.items.length === 0) {
-            await signupUser({ email: "first@test.local", password: "testPassword123!" });
-        }
-
-        // Create test user if not exists
-        const email = "public-share-test@test.local";
-        const listRes = await fetch(
-            `${PB_API}/collections/users/records?filter=(email='${email}')`,
-            { headers: { Authorization: superuserToken } },
-        );
-        const listData = await listRes.json();
-        if (listData.items.length === 0) {
-            await createTestUser(superuserToken, {
-                email,
-                password: "testPassword123!",
-                name: "Public Share Test User",
-            });
-        }
-
-        const auth = await authenticateUser(email, "testPassword123!");
-        userToken = auth.token;
-        userId = auth.record.id;
+        user = await createUser("public-share");
+        superuserToken = await getSuperuserToken();
     });
 
-    // --- Helpers ---
-
     function uniqueToken(): string {
-        return `share-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        return `share-${uniqueSuffix()}`;
     }
 
-    async function createDocument(title: string, content: string, folder?: string): Promise<any> {
-        docCounter++;
-        const slug = `pub-share-doc-${Date.now()}-${docCounter}`;
-        const body: any = { title, slug, content, author: userId };
-        if (folder) body.folder = folder;
-
-        const res = await fetch(`${PB_API}/collections/documents/records`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: userToken,
-            },
-            body: JSON.stringify(body),
+    async function shareDocument(
+        noteId: string,
+        token: string,
+        flags: Record<string, unknown> = {},
+    ) {
+        return superuserUpdate("documents", noteId, {
+            is_public: true,
+            public_share_token: token,
+            ...flags,
         });
-        expect(res.ok).toBe(true);
-        return res.json();
     }
 
-    async function patchRecord(
-        collection: string,
-        id: string,
-        data: Record<string, any>,
-    ): Promise<any> {
-        const res = await fetch(`${PB_API}/collections/${collection}/records/${id}`, {
-            method: "PATCH",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: superuserToken,
-            },
-            body: JSON.stringify(data),
+    async function shareFolder(
+        folderId: string,
+        token: string,
+        flags: Record<string, unknown> = {},
+    ) {
+        return superuserUpdate("folders", folderId, {
+            is_public: true,
+            public_share_token: token,
+            ...flags,
         });
-        expect(res.ok).toBe(true);
-        return res.json();
     }
 
-    async function createFolder(name: string, parentId?: string): Promise<any> {
-        folderCounter++;
-        const body: any = { name, author: userId };
-        if (parentId) body.parent = parentId;
-
-        const res = await fetch(`${PB_API}/collections/folders/records`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: userToken,
-            },
-            body: JSON.stringify(body),
+    async function shareBoard(
+        boardId: string,
+        token: string,
+        flags: Record<string, unknown> = {},
+    ) {
+        return superuserUpdate("boards", boardId, {
+            is_public: true,
+            public_share_token: token,
+            ...flags,
         });
-        expect(res.ok).toBe(true);
-        return res.json();
     }
 
-    // ──────────────────────────────────────────
-    // Document Shares
-    // ──────────────────────────────────────────
-
-    describe("GET /api/public/documents/{shareToken}", () => {
-        test("returns 404 for non-existent share token", async () => {
-            const res = await fetch(`${PUBLIC_API}/documents/does-not-exist-token`);
-            expect(res.status).toBe(404);
-            const data = await res.json();
-            expect(data.error).toBeDefined();
+    describe("documents", () => {
+        test("returns 404 for an unknown token", async () => {
+            await expectJsonError(
+                await pbRequest(`${PUBLIC_API}/documents/does-not-exist-token`),
+                404,
+            );
         });
 
-        test("returns 404 for document with is_public=false", async () => {
+        test("returns 404 when is_public is false", async () => {
             const token = uniqueToken();
-            const doc = await createDocument("Not Public", "hidden content");
-            await patchRecord("documents", doc.id, {
+            const note = await createNote(user);
+            await superuserUpdate("documents", note.id, {
                 is_public: false,
                 public_share_token: token,
             });
 
-            const res = await fetch(`${PUBLIC_API}/documents/${token}`);
-            expect(res.status).toBe(404);
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 404);
         });
 
-        test("returns 404 for document with is_private=true even if is_public=true", async () => {
+        test("returns 404 when is_private overrides a public flag", async () => {
             const token = uniqueToken();
-            const doc = await createDocument("Private Override", "private content");
-            await patchRecord("documents", doc.id, {
+            const note = await createNote(user);
+            await superuserUpdate("documents", note.id, {
                 is_public: true,
                 is_private: true,
                 public_share_token: token,
             });
 
-            const res = await fetch(`${PUBLIC_API}/documents/${token}`);
-            expect(res.status).toBe(404);
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 404);
         });
 
-        test("returns 404 for expired share token", async () => {
+        test("returns 404 for an expired share and disables it", async () => {
             const token = uniqueToken();
-            const doc = await createDocument("Expired Doc", "expired content");
-            await patchRecord("documents", doc.id, {
-                is_public: true,
-                public_share_token: token,
+            const note = await createNote(user);
+            await shareDocument(note.id, token, {
                 public_expires_at: "2020-01-01 00:00:00.000Z",
             });
 
-            const res = await fetch(`${PUBLIC_API}/documents/${token}`);
-            expect(res.status).toBe(404);
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 404);
 
-            // Verify the share was auto-disabled
-            const recordRes = await fetch(
-                `${PB_API}/collections/documents/records/${doc.id}`,
-                { headers: { Authorization: superuserToken } },
-            );
-            const record = await recordRes.json();
+            const stored = await pbRequest(`/collections/documents/records/${note.id}`, {
+                headers: { Authorization: user.token },
+            });
+            const record = await readJson<{ is_public: boolean; public_share_token: string }>(stored);
             expect(record.is_public).toBe(false);
             expect(record.public_share_token).toBe("");
         });
 
-        test("returns document data for valid public share", async () => {
+        test("trashing a shared document disables the link", async () => {
             const token = uniqueToken();
-            const doc = await createDocument("Public Doc", "public content here");
-            await patchRecord("documents", doc.id, {
-                is_public: true,
-                public_share_token: token,
-                share_attachments: false,
+            const note = await createNote(user);
+            await shareDocument(note.id, token);
+
+            const moved = await pbRequest("/trash/move-document", {
+                method: "POST",
+                headers: { Authorization: user.token, "Content-Type": "application/json" },
+                body: JSON.stringify({ documentId: note.id }),
             });
+            await expectStatus(moved, 200, "move shared document to trash");
 
-            const res = await fetch(`${PUBLIC_API}/documents/${token}`);
-            expect(res.status).toBe(200);
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 404);
 
-            const data = await res.json();
+            const stored = await readJson<{
+                is_public: boolean;
+                public_share_token: string;
+                deleted_at: string;
+            }>(
+                await pbRequest(`/collections/documents/records/${note.id}`, {
+                    headers: { Authorization: superuserToken },
+                }),
+            );
+            expect(stored.is_public).toBe(false);
+            expect(stored.public_share_token).toBe("");
+            expect(stored.deleted_at.length).toBeGreaterThan(0);
+        });
+
+        test("returns the document and author for a valid share", async () => {
+            const token = uniqueToken();
+            const note = await createNote(user, {
+                title: "Public Doc",
+                content: "public content here",
+            });
+            await shareDocument(note.id, token, { share_attachments: false });
+
+            const res = await pbRequest(`${PUBLIC_API}/documents/${token}`);
+            await expectStatus(res, 200);
+            const data = await readJson<{
+                type: string;
+                shareToken: string;
+                shareAttachments: boolean;
+                author: { id: string; name: string };
+                document: Record<string, unknown>;
+                expiresAt: string | null;
+            }>(res);
+
             expect(data.type).toBe("document");
             expect(data.shareToken).toBe(token);
             expect(data.shareAttachments).toBe(false);
-            expect(data.author).toBeDefined();
-            expect(data.author.id).toBe(userId);
+            expect(data.author.id).toBe(user.id);
             expect(data.author.name).toBeTruthy();
-            expect(data.document).toBeDefined();
-            expect(data.document.id).toBe(doc.id);
+            expect(data.document.id).toBe(note.id);
             expect(data.document.title).toBe("Public Doc");
             expect(data.document.content).toBe("public content here");
-        });
-
-        test("response includes correct document fields", async () => {
-            const token = uniqueToken();
-            const doc = await createDocument("Field Check", "checking all fields");
-            await patchRecord("documents", doc.id, {
-                is_public: true,
-                public_share_token: token,
-            });
-
-            const res = await fetch(`${PUBLIC_API}/documents/${token}`);
-            expect(res.status).toBe(200);
-
-            const data = await res.json();
-            const d = data.document;
-            expect(d).toHaveProperty("id");
-            expect(d).toHaveProperty("title");
-            expect(d).toHaveProperty("slug");
-            expect(d).toHaveProperty("content");
-            expect(d).toHaveProperty("attachments");
-            expect(d).toHaveProperty("tags");
-            expect(d).toHaveProperty("author");
-            expect(d).toHaveProperty("folder");
-            expect(d).toHaveProperty("word_count");
-            expect(d).toHaveProperty("reading_time");
-            expect(d).toHaveProperty("created");
-            expect(d).toHaveProperty("updated");
-        });
-
-        test("expiresAt is null when no expiry set", async () => {
-            const token = uniqueToken();
-            const doc = await createDocument("No Expiry", "no expiry content");
-            await patchRecord("documents", doc.id, {
-                is_public: true,
-                public_share_token: token,
-            });
-
-            const res = await fetch(`${PUBLIC_API}/documents/${token}`);
-            expect(res.status).toBe(200);
-
-            const data = await res.json();
             expect(data.expiresAt).toBeNull();
         });
 
-        test("expiresAt is returned when future expiry set", async () => {
+        test("exposes the documented document fields", async () => {
             const token = uniqueToken();
-            const doc = await createDocument("Future Expiry", "future expiry content");
-            const futureDate = "2099-12-31 23:59:59.000Z";
-            await patchRecord("documents", doc.id, {
-                is_public: true,
-                public_share_token: token,
-                public_expires_at: futureDate,
+            const note = await createNote(user);
+            await shareDocument(note.id, token);
+
+            const data = await readJson<{ document: Record<string, unknown> }>(
+                await pbRequest(`${PUBLIC_API}/documents/${token}`),
+            );
+
+            expect(Object.keys(data.document).sort()).toEqual(
+                [
+                    "id",
+                    "title",
+                    "slug",
+                    "content",
+                    "attachments",
+                    "tags",
+                    "author",
+                    "folder",
+                    "word_count",
+                    "reading_time",
+                    "created",
+                    "updated",
+                ].sort(),
+            );
+        });
+
+        test("returns a future expiry", async () => {
+            const token = uniqueToken();
+            const note = await createNote(user);
+            await shareDocument(note.id, token, {
+                public_expires_at: "2099-12-31 23:59:59.000Z",
             });
 
-            const res = await fetch(`${PUBLIC_API}/documents/${token}`);
-            expect(res.status).toBe(200);
-
-            const data = await res.json();
+            const data = await readJson<{ expiresAt: string | null }>(
+                await pbRequest(`${PUBLIC_API}/documents/${token}`),
+            );
             expect(data.expiresAt).toBeTruthy();
         });
     });
 
-    // ──────────────────────────────────────────
-    // Document Attachment Access
-    // ──────────────────────────────────────────
-
-    describe("GET /api/public/documents/{shareToken}/files/{filename}", () => {
-        test("returns 404 when share_attachments is false", async () => {
+    describe("document attachments", () => {
+        test("serves an attachment when sharing is enabled", async () => {
             const token = uniqueToken();
-            const doc = await createDocument("No Attachments", "no attachments");
-            await patchRecord("documents", doc.id, {
-                is_public: true,
-                public_share_token: token,
-                share_attachments: false,
-            });
+            const body = new TextEncoder().encode("public attachment");
+            const note = await createNoteWithAttachment(user, "public.txt", body);
+            const storedName = (note.attachments as string[])[0]!;
+            await shareDocument(note.id, token, { share_attachments: true });
 
-            const res = await fetch(`${PUBLIC_API}/documents/${token}/files/test.png`);
-            expect(res.status).toBe(404);
-            const data = await res.json();
-            expect(data.error).toBeDefined();
+            const res = await pbRequest(
+                `${PUBLIC_API}/documents/${token}/files/${encodeURIComponent(storedName)}`,
+            );
+            await expectStatus(res, 200, "public attachment");
+            expect(await res.text()).toBe("public attachment");
         });
 
-        test("returns 404 for non-existent filename", async () => {
+        test("returns 404 when attachment sharing is disabled", async () => {
             const token = uniqueToken();
-            const doc = await createDocument("With Attachments", "has attachments");
-            await patchRecord("documents", doc.id, {
-                is_public: true,
-                public_share_token: token,
-                share_attachments: true,
-            });
+            const note = await createNoteWithAttachment(user, "private.txt", new Uint8Array([1]));
+            const storedName = (note.attachments as string[])[0]!;
+            await shareDocument(note.id, token, { share_attachments: false });
 
-            const res = await fetch(`${PUBLIC_API}/documents/${token}/files/nonexistent.png`);
-            expect(res.status).toBe(404);
+            await expectJsonError(
+                await pbRequest(
+                    `${PUBLIC_API}/documents/${token}/files/${encodeURIComponent(storedName)}`,
+                ),
+                404,
+            );
         });
 
-        test("returns 404 for non-existent share token", async () => {
-            const res = await fetch(`${PUBLIC_API}/documents/fake-token/files/test.png`);
-            expect(res.status).toBe(404);
+        test("returns 404 for an unknown filename or token", async () => {
+            const token = uniqueToken();
+            const note = await createNote(user);
+            await shareDocument(note.id, token, { share_attachments: true });
+
+            await expectStatus(
+                await pbRequest(`${PUBLIC_API}/documents/${token}/files/nonexistent.png`),
+                404,
+            );
+            await expectStatus(
+                await pbRequest(`${PUBLIC_API}/documents/fake-token/files/test.png`),
+                404,
+            );
         });
     });
 
-    // ──────────────────────────────────────────
-    // Folder Shares
-    // ──────────────────────────────────────────
+    describe("folders", () => {
+        test("returns 404 for unknown, private, or expired folders", async () => {
+            await expectJsonError(await pbRequest(`${PUBLIC_API}/folders/does-not-exist-token`), 404);
 
-    describe("GET /api/public/folders/{shareToken}", () => {
-        test("returns 404 for non-existent folder share token", async () => {
-            const res = await fetch(`${PUBLIC_API}/folders/does-not-exist-token`);
-            expect(res.status).toBe(404);
-            const data = await res.json();
-            expect(data.error).toBeDefined();
-        });
-
-        test("returns 404 for folder with is_public=false", async () => {
-            const token = uniqueToken();
-            const folder = await createFolder("Not Public Folder");
-            await patchRecord("folders", folder.id, {
-                is_public: false,
-                public_share_token: token,
-            });
-
-            const res = await fetch(`${PUBLIC_API}/folders/${token}`);
-            expect(res.status).toBe(404);
-        });
-
-        test("returns 404 for folder with is_private=true", async () => {
-            const token = uniqueToken();
-            const folder = await createFolder("Private Folder");
-            await patchRecord("folders", folder.id, {
+            const privateToken = uniqueToken();
+            const privateFolder = await createFolder(user);
+            await superuserUpdate("folders", privateFolder.id, {
                 is_public: true,
                 is_private: true,
-                public_share_token: token,
+                public_share_token: privateToken,
             });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/folders/${privateToken}`), 404);
 
-            const res = await fetch(`${PUBLIC_API}/folders/${token}`);
-            expect(res.status).toBe(404);
-        });
-
-        test("returns 404 for expired folder share", async () => {
-            const token = uniqueToken();
-            const folder = await createFolder("Expired Folder");
-            await patchRecord("folders", folder.id, {
-                is_public: true,
-                public_share_token: token,
+            const expiredToken = uniqueToken();
+            const expiredFolder = await createFolder(user);
+            await shareFolder(expiredFolder.id, expiredToken, {
                 public_expires_at: "2020-01-01 00:00:00.000Z",
             });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/folders/${expiredToken}`), 404);
 
-            const res = await fetch(`${PUBLIC_API}/folders/${token}`);
-            expect(res.status).toBe(404);
-
-            // Verify auto-disable
-            const recordRes = await fetch(
-                `${PB_API}/collections/folders/records/${folder.id}`,
-                { headers: { Authorization: superuserToken } },
+            const stored = await readJson<{ is_public: boolean; public_share_token: string }>(
+                await pbRequest(`/collections/folders/records/${expiredFolder.id}`, {
+                    headers: { Authorization: user.token },
+                }),
             );
-            const record = await recordRes.json();
-            expect(record.is_public).toBe(false);
-            expect(record.public_share_token).toBe("");
+            expect(stored.is_public).toBe(false);
+            expect(stored.public_share_token).toBe("");
         });
 
-        test("returns folder data with documents for valid public share", async () => {
+        test("returns the folder tree and its documents", async () => {
             const token = uniqueToken();
-            const folder = await createFolder("Public Folder");
-            const doc1 = await createDocument("Folder Doc 1", "content 1", folder.id);
-            const doc2 = await createDocument("Folder Doc 2", "content 2", folder.id);
-            await patchRecord("folders", folder.id, {
-                is_public: true,
-                public_share_token: token,
-                share_attachments: false,
-            });
+            const folder = await createFolder(user, { name: "Public Folder" });
+            const child = await createFolder(user, { name: "Public Child", parent: folder.id });
+            const rootDoc = await createNote(user, { title: "Root doc", folder: folder.id });
+            const childDoc = await createNote(user, { title: "Child doc", folder: child.id });
+            await shareFolder(folder.id, token, { share_attachments: false });
 
-            const res = await fetch(`${PUBLIC_API}/folders/${token}`);
-            expect(res.status).toBe(200);
+            const res = await pbRequest(`${PUBLIC_API}/folders/${token}`);
+            await expectStatus(res, 200);
+            const data = await readJson<{
+                type: string;
+                shareToken: string;
+                shareAttachments: boolean;
+                author: { id: string };
+                rootFolder: { id: string; name: string };
+                folders: Array<{ id: string }>;
+                documents: Array<{ id: string }>;
+                entryDocumentId: string | null;
+                expiresAt: string | null;
+            }>(res);
 
-            const data = await res.json();
             expect(data.type).toBe("folder");
             expect(data.shareToken).toBe(token);
             expect(data.shareAttachments).toBe(false);
-            expect(data.author).toBeDefined();
-            expect(data.author.id).toBe(userId);
-            expect(data.rootFolder).toBeDefined();
+            expect(data.author.id).toBe(user.id);
             expect(data.rootFolder.id).toBe(folder.id);
             expect(data.rootFolder.name).toBe("Public Folder");
-            expect(data.documents).toBeArray();
-            expect(data.documents.length).toBeGreaterThanOrEqual(2);
-
-            const docIds = data.documents.map((d: any) => d.id);
-            expect(docIds).toContain(doc1.id);
-            expect(docIds).toContain(doc2.id);
+            expect(data.folders.map((item) => item.id)).toEqual(
+                expect.arrayContaining([folder.id, child.id]),
+            );
+            expect(data.documents.map((item) => item.id)).toEqual(
+                expect.arrayContaining([rootDoc.id, childDoc.id]),
+            );
+            expect(data.entryDocumentId).toBeTruthy();
+            expect(data.expiresAt).toBeNull();
         });
 
-        test("response includes correct folder fields", async () => {
+        test("returns boards in the shared folder tree with their tasks", async () => {
             const token = uniqueToken();
-            const folder = await createFolder("Field Check Folder");
-            await patchRecord("folders", folder.id, {
-                is_public: true,
-                public_share_token: token,
+            const folder = await createFolder(user, { name: "Board folder" });
+            const child = await createFolder(user, { name: "Board child", parent: folder.id });
+            const rootBoard = await createBoard(user, {
+                name: "Root board",
+                description: "The shared plan",
+                folder: folder.id,
             });
+            const childBoard = await createBoard(user, {
+                name: "Child board",
+                folder: child.id,
+            });
+            const linkedNote = await createNote(user, { title: "Linked note" });
+            const firstTask = await createTask(user, rootBoard.id, {
+                title: "First task",
+                status: "done",
+                board_order: 1,
+                labels: ["release"],
+            });
+            const secondTask = await createTask(user, rootBoard.id, {
+                title: "Second task",
+                status: "next",
+                priority: "high",
+                board_order: 2,
+                document: linkedNote.id,
+            });
+            await createTask(user, childBoard.id, { title: "Child task" });
+            await shareFolder(folder.id, token);
 
-            const res = await fetch(`${PUBLIC_API}/folders/${token}`);
-            expect(res.status).toBe(200);
+            const data = await readJson<{
+                boards: Array<{
+                    id: string;
+                    name: string;
+                    description: string;
+                    folder: string;
+                    tasks: Array<Record<string, unknown>>;
+                }>;
+                documents: unknown[];
+                entryDocumentId: string | null;
+            }>(await pbRequest(`${PUBLIC_API}/folders/${token}`));
 
-            const data = await res.json();
-            const f = data.rootFolder;
-            expect(f).toHaveProperty("id");
-            expect(f).toHaveProperty("name");
-            expect(f).toHaveProperty("parent");
-            expect(f).toHaveProperty("author");
-            expect(f).toHaveProperty("color");
-            expect(f).toHaveProperty("created");
-            expect(f).toHaveProperty("updated");
+            expect(data.documents).toEqual([]);
+            expect(data.entryDocumentId).toBeNull();
+            expect(data.boards.map((board) => board.id)).toEqual(
+                expect.arrayContaining([rootBoard.id, childBoard.id]),
+            );
 
-            expect(data).toHaveProperty("folders");
-            expect(data).toHaveProperty("documents");
+            const serializedRoot = data.boards.find((board) => board.id === rootBoard.id)!;
+            expect(serializedRoot.name).toBe("Root board");
+            expect(serializedRoot.description).toBe("The shared plan");
+            expect(serializedRoot.folder).toBe(folder.id);
+            expect(serializedRoot.tasks.map((task) => task.id)).toEqual([
+                firstTask.id,
+                secondTask.id,
+            ]);
+            expect(serializedRoot.tasks.map((task) => task.title)).toEqual([
+                "First task",
+                "Second task",
+            ]);
+            expect(serializedRoot.tasks[0]?.status).toBe("done");
+            expect(serializedRoot.tasks[0]?.labels).toEqual(["release"]);
+            expect(Object.keys(serializedRoot.tasks[0]!).sort()).toEqual(
+                [
+                    "id",
+                    "title",
+                    "description",
+                    "status",
+                    "priority",
+                    "due_date",
+                    "start_date",
+                    "completed_at",
+                    "task_number",
+                    "board_order",
+                    "labels",
+                    "assignee",
+                    "created",
+                    "updated",
+                ].sort(),
+            );
+            expect(serializedRoot.tasks[0]).not.toHaveProperty("document");
+            expect(serializedRoot.tasks[0]).not.toHaveProperty("author");
+            expect(serializedRoot.tasks[0]).not.toHaveProperty("board");
+            expect(serializedRoot.tasks[1]).not.toHaveProperty("document");
+        });
+
+        test("excludes private, archived, and outside boards from a folder share", async () => {
+            const token = uniqueToken();
+            const folder = await createFolder(user, { name: "Visible folder" });
+            const privateChild = await createFolder(user, { name: "Private child", parent: folder.id });
+            const outside = await createFolder(user, { name: "Outside folder" });
+            const visible = await createBoard(user, { folder: folder.id });
+            const privateBoard = await createBoard(user, { folder: folder.id });
+            const archivedBoard = await createBoard(user, { folder: folder.id, archived: true });
+            const privateSubtreeBoard = await createBoard(user, { folder: privateChild.id });
+            const outsideBoard = await createBoard(user, { folder: outside.id });
+
+            await superuserUpdate("boards", privateBoard.id, { is_private: true });
+            await superuserUpdate("folders", privateChild.id, { is_private: true });
+            await shareFolder(folder.id, token);
+
+            const data = await readJson<{ boards: Array<{ id: string }> }>(
+                await pbRequest(`${PUBLIC_API}/folders/${token}`),
+            );
+            const boardIds = data.boards.map((board) => board.id);
+
+            expect(boardIds).toContain(visible.id);
+            expect(boardIds).not.toContain(privateBoard.id);
+            expect(boardIds).not.toContain(archivedBoard.id);
+            expect(boardIds).not.toContain(privateSubtreeBoard.id);
+            expect(boardIds).not.toContain(outsideBoard.id);
+        });
+
+        test("exposes the documented folder fields", async () => {
+            const token = uniqueToken();
+            const folder = await createFolder(user);
+            await shareFolder(folder.id, token);
+
+            const data = await readJson<{ rootFolder: Record<string, unknown>; folders: unknown[]; documents: unknown[]; boards: unknown[]; entryDocumentId: unknown }>(
+                await pbRequest(`${PUBLIC_API}/folders/${token}`),
+            );
+
+            expect(Object.keys(data.rootFolder).sort()).toEqual(
+                ["id", "name", "parent", "author", "color", "created", "updated"].sort(),
+            );
+            expect(Array.isArray(data.folders)).toBe(true);
+            expect(Array.isArray(data.documents)).toBe(true);
+            expect(Array.isArray(data.boards)).toBe(true);
             expect(data).toHaveProperty("entryDocumentId");
         });
 
-        test("excludes private documents from folder share", async () => {
+        test("excludes private documents and private subfolders", async () => {
             const token = uniqueToken();
-            const folder = await createFolder("Folder With Private Doc");
-            const publicDoc = await createDocument("Visible Doc", "visible", folder.id);
-            const privateDoc = await createDocument("Hidden Doc", "hidden", folder.id);
+            const root = await createFolder(user, { name: "Root" });
+            const publicChild = await createFolder(user, { name: "Public child", parent: root.id });
+            const privateChild = await createFolder(user, { name: "Private child", parent: root.id });
+            const publicDoc = await createNote(user, { folder: root.id });
+            const privateDoc = await createNote(user, { folder: publicChild.id });
 
-            // Mark one document as private
-            await patchRecord("documents", privateDoc.id, { is_private: true });
-            await patchRecord("folders", folder.id, {
-                is_public: true,
-                public_share_token: token,
-            });
+            await superuserUpdate("folders", privateChild.id, { is_private: true });
+            await superuserUpdate("documents", privateDoc.id, { is_private: true });
+            await shareFolder(root.id, token);
 
-            const res = await fetch(`${PUBLIC_API}/folders/${token}`);
-            expect(res.status).toBe(200);
+            const data = await readJson<{
+                folders: Array<{ id: string }>;
+                documents: Array<{ id: string }>;
+            }>(await pbRequest(`${PUBLIC_API}/folders/${token}`));
 
-            const data = await res.json();
-            const docIds = data.documents.map((d: any) => d.id);
-            expect(docIds).toContain(publicDoc.id);
-            expect(docIds).not.toContain(privateDoc.id);
+            expect(data.folders.map((item) => item.id)).toContain(publicChild.id);
+            expect(data.folders.map((item) => item.id)).not.toContain(privateChild.id);
+            expect(data.documents.map((item) => item.id)).toContain(publicDoc.id);
+            expect(data.documents.map((item) => item.id)).not.toContain(privateDoc.id);
         });
 
-        test("excludes private subfolders from folder share", async () => {
+        test("excludes documents outside the shared subtree", async () => {
             const token = uniqueToken();
-            const rootFolder = await createFolder("Root With Subfolder");
-            const publicChild = await createFolder("Public Child", rootFolder.id);
-            const privateChild = await createFolder("Private Child", rootFolder.id);
+            const shared = await createFolder(user, { name: "Shared" });
+            const outside = await createFolder(user, { name: "Outside" });
+            const outsideDoc = await createNote(user, { folder: outside.id });
+            await shareFolder(shared.id, token);
 
-            await patchRecord("folders", privateChild.id, { is_private: true });
-            await patchRecord("folders", rootFolder.id, {
-                is_public: true,
-                public_share_token: token,
-            });
-
-            const res = await fetch(`${PUBLIC_API}/folders/${token}`);
-            expect(res.status).toBe(200);
-
-            const data = await res.json();
-            const folderIds = data.folders.map((f: any) => f.id);
-            expect(folderIds).toContain(rootFolder.id);
-            expect(folderIds).toContain(publicChild.id);
-            expect(folderIds).not.toContain(privateChild.id);
+            const data = await readJson<{ documents: Array<{ id: string }> }>(
+                await pbRequest(`${PUBLIC_API}/folders/${token}`),
+            );
+            expect(data.documents.map((item) => item.id)).not.toContain(outsideDoc.id);
         });
 
-        test("includes nested subfolders and their documents", async () => {
+        test("entryDocumentId is null for an empty folder", async () => {
             const token = uniqueToken();
-            const root = await createFolder("Nested Root");
-            const child = await createFolder("Nested Child", root.id);
-            const childDoc = await createDocument("Nested Doc", "nested content", child.id);
+            const folder = await createFolder(user);
+            await shareFolder(folder.id, token);
 
-            await patchRecord("folders", root.id, {
-                is_public: true,
-                public_share_token: token,
-            });
-
-            const res = await fetch(`${PUBLIC_API}/folders/${token}`);
-            expect(res.status).toBe(200);
-
-            const data = await res.json();
-            const folderIds = data.folders.map((f: any) => f.id);
-            expect(folderIds).toContain(root.id);
-            expect(folderIds).toContain(child.id);
-
-            const docIds = data.documents.map((d: any) => d.id);
-            expect(docIds).toContain(childDoc.id);
-        });
-
-        test("entryDocumentId is null when folder has no documents", async () => {
-            const token = uniqueToken();
-            const folder = await createFolder("Empty Folder");
-            await patchRecord("folders", folder.id, {
-                is_public: true,
-                public_share_token: token,
-            });
-
-            const res = await fetch(`${PUBLIC_API}/folders/${token}`);
-            expect(res.status).toBe(200);
-
-            const data = await res.json();
+            const data = await readJson<{ entryDocumentId: string | null }>(
+                await pbRequest(`${PUBLIC_API}/folders/${token}`),
+            );
             expect(data.entryDocumentId).toBeNull();
         });
     });
 
-    // ──────────────────────────────────────────
-    // Folder Attachment Access
-    // ──────────────────────────────────────────
+    describe("boards", () => {
+        test("returns 404 for unknown, private, archived, or expired boards", async () => {
+            await expectJsonError(await pbRequest(`${PUBLIC_API}/boards/does-not-exist-token`), 404);
 
-    describe("GET /api/public/folders/{shareToken}/files/{documentId}/{filename}", () => {
-        test("returns 404 when share_attachments is false", async () => {
-            const token = uniqueToken();
-            const folder = await createFolder("Folder No Attach");
-            const doc = await createDocument("Doc In Folder", "content", folder.id);
-            await patchRecord("folders", folder.id, {
-                is_public: true,
-                public_share_token: token,
-                share_attachments: false,
+            const privateToken = uniqueToken();
+            const privateBoard = await createBoard(user);
+            await shareBoard(privateBoard.id, privateToken, { is_private: true });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/boards/${privateToken}`), 404);
+
+            const archivedToken = uniqueToken();
+            const archivedBoard = await createBoard(user, { archived: true });
+            await shareBoard(archivedBoard.id, archivedToken);
+            await expectStatus(await pbRequest(`${PUBLIC_API}/boards/${archivedToken}`), 404);
+
+            const expiredToken = uniqueToken();
+            const expiredBoard = await createBoard(user);
+            await shareBoard(expiredBoard.id, expiredToken, {
+                public_expires_at: "2020-01-01 00:00:00.000Z",
             });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/boards/${expiredToken}`), 404);
 
-            const res = await fetch(`${PUBLIC_API}/folders/${token}/files/${doc.id}/test.png`);
-            expect(res.status).toBe(404);
-            const data = await res.json();
-            expect(data.error).toBeDefined();
-        });
-
-        test("returns 404 for non-existent filename", async () => {
-            const token = uniqueToken();
-            const folder = await createFolder("Folder Attach Check");
-            const doc = await createDocument("Doc For Attach", "content", folder.id);
-            await patchRecord("folders", folder.id, {
-                is_public: true,
-                public_share_token: token,
-                share_attachments: true,
-            });
-
-            const res = await fetch(
-                `${PUBLIC_API}/folders/${token}/files/${doc.id}/nonexistent.png`,
+            const stored = await readJson<{ is_public: boolean; public_share_token: string }>(
+                await pbRequest(`/collections/boards/records/${expiredBoard.id}`, {
+                    headers: { Authorization: user.token },
+                }),
             );
-            expect(res.status).toBe(404);
+            expect(stored.is_public).toBe(false);
+            expect(stored.public_share_token).toBe("");
         });
 
-        test("returns 404 for non-existent share token", async () => {
-            const res = await fetch(`${PUBLIC_API}/folders/fake-token/files/fakeid/test.png`);
-            expect(res.status).toBe(404);
-        });
-
-        test("returns 404 for private document within shared folder", async () => {
+        test("returns the board and its tasks in board order", async () => {
             const token = uniqueToken();
-            const folder = await createFolder("Folder Private Doc Attach");
-            const doc = await createDocument("Private Doc Attach", "content", folder.id);
-            await patchRecord("documents", doc.id, { is_private: true });
-            await patchRecord("folders", folder.id, {
-                is_public: true,
-                public_share_token: token,
-                share_attachments: true,
+            const board = await createBoard(user, {
+                name: "Public Board",
+                description: "The shared plan",
             });
-
-            const res = await fetch(`${PUBLIC_API}/folders/${token}/files/${doc.id}/test.png`);
-            expect(res.status).toBe(404);
-        });
-
-        test("returns 404 for document not in folder's descendant tree", async () => {
-            const token = uniqueToken();
-            const folder = await createFolder("Scoped Folder");
-            const outsideDoc = await createDocument("Outside Doc", "not in folder");
-            await patchRecord("folders", folder.id, {
-                is_public: true,
-                public_share_token: token,
-                share_attachments: true,
+            const otherBoard = await createBoard(user, { name: "Other Board" });
+            const linkedNote = await createNote(user, { title: "Private linked note" });
+            const second = await createTask(user, board.id, {
+                title: "Second task",
+                status: "next",
+                priority: "high",
+                board_order: 2,
+                labels: ["release"],
             });
+            const first = await createTask(user, board.id, {
+                title: "First task",
+                status: "done",
+                board_order: 1,
+                document: linkedNote.id,
+            });
+            await createTask(user, otherBoard.id, { title: "Other board task" });
+            await shareBoard(board.id, token);
 
-            const res = await fetch(
-                `${PUBLIC_API}/folders/${token}/files/${outsideDoc.id}/test.png`,
+            const res = await pbRequest(`${PUBLIC_API}/boards/${token}`);
+            await expectStatus(res, 200);
+            const data = await readJson<{
+                type: string;
+                shareToken: string;
+                author: { id: string; name: string };
+                board: Record<string, unknown>;
+                tasks: Array<Record<string, unknown>>;
+                expiresAt: string | null;
+            }>(res);
+
+            expect(data.type).toBe("board");
+            expect(data.shareToken).toBe(token);
+            expect(data.author.id).toBe(user.id);
+            expect(data.expiresAt).toBeNull();
+            expect(data.board.id).toBe(board.id);
+            expect(data.board.name).toBe("Public Board");
+            expect(data.board.description).toBe("The shared plan");
+            expect(Object.keys(data.board).sort()).toEqual(
+                ["id", "name", "description", "icon", "author", "folder", "columns", "created", "updated"].sort(),
             );
-            expect(res.status).toBe(404);
+            expect(data.board.columns).toBeInstanceOf(Array);
+            expect((data.board.columns as Array<{ slug: string; is_final: boolean }>).map((column) => column.slug))
+                .toEqual(["backlog", "next", "progress", "done"]);
+            expect((data.board.columns as Array<{ slug: string; is_final: boolean }>)
+                .find((column) => column.slug === "done")?.is_final).toBe(true);
+            expect(data.tasks.map((task) => task.id)).toEqual([first.id, second.id]);
+            expect(data.tasks.map((task) => task.title)).toEqual(["First task", "Second task"]);
+            expect(data.tasks[0]?.status).toBe("done");
+            expect(data.tasks[1]?.labels).toEqual(["release"]);
+
+            // Linked notes and ownership fields stay out of the public payload.
+            expect(Object.keys(data.tasks[0]!).sort()).toEqual(
+                [
+                    "id",
+                    "title",
+                    "description",
+                    "status",
+                    "priority",
+                    "due_date",
+                    "start_date",
+                    "completed_at",
+                    "task_number",
+                    "board_order",
+                    "labels",
+                    "assignee",
+                    "created",
+                    "updated",
+                ].sort(),
+            );
+            expect(data.tasks[0]).not.toHaveProperty("document");
+            expect(data.tasks[0]).not.toHaveProperty("author");
+            expect(data.tasks[0]).not.toHaveProperty("board");
+        });
+
+        test("returns an empty task list for a board with no tasks", async () => {
+            const token = uniqueToken();
+            const board = await createBoard(user);
+            await shareBoard(board.id, token);
+
+            const data = await readJson<{ tasks: unknown[] }>(
+                await pbRequest(`${PUBLIC_API}/boards/${token}`),
+            );
+            expect(data.tasks).toEqual([]);
+        });
+    });
+
+    describe("private and trashed ancestor folders", () => {
+        test("a public note inside a private folder subtree returns 404", async () => {
+            const token = uniqueToken();
+            const outer = await createFolder(user, { name: "Outer public" });
+            const inner = await createFolder(user, { name: "Inner public", parent: outer.id });
+            const note = await createNote(user, { folder: inner.id });
+            await shareDocument(note.id, token);
+
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 200);
+            await superuserUpdate("folders", outer.id, { is_private: true });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 404);
+        });
+
+        test("a public board inside a private folder returns 404", async () => {
+            const token = uniqueToken();
+            const folder = await createFolder(user, { name: "Board ancestor" });
+            const board = await createBoard(user, { folder: folder.id });
+            await shareBoard(board.id, token);
+
+            await expectStatus(await pbRequest(`${PUBLIC_API}/boards/${token}`), 200);
+            await superuserUpdate("folders", folder.id, { is_private: true });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/boards/${token}`), 404);
+        });
+
+        test("a public note under a trashed ancestor folder returns 404", async () => {
+            const token = uniqueToken();
+            const folder = await createFolder(user, { name: "Trashed ancestor" });
+            const note = await createNote(user, { folder: folder.id });
+            await shareDocument(note.id, token);
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 200);
+
+            // Set the trash state directly so the note's token is not cleared
+            // by the folder trash route; the ancestor walk alone must hide it.
+            await superuserUpdate("folders", folder.id, {
+                deleted_at: "2024-01-01 00:00:00.000Z",
+            });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/documents/${token}`), 404);
+        });
+
+        test("a public folder under a private parent returns 404", async () => {
+            const token = uniqueToken();
+            const parent = await createFolder(user, { name: "Private parent" });
+            const child = await createFolder(user, { name: "Public child", parent: parent.id });
+            await shareFolder(child.id, token);
+
+            await expectStatus(await pbRequest(`${PUBLIC_API}/folders/${token}`), 200);
+            await superuserUpdate("folders", parent.id, { is_private: true });
+            await expectStatus(await pbRequest(`${PUBLIC_API}/folders/${token}`), 404);
+        });
+    });
+
+    describe("folder attachments", () => {
+        test("serves a document attachment inside the shared tree", async () => {
+            const token = uniqueToken();
+            const folder = await createFolder(user, { name: "Attachment folder" });
+            const body = new TextEncoder().encode("folder attachment");
+            const note = await createNoteWithAttachment(user, "inside.txt", body, "text/plain", {
+                folder: folder.id,
+            });
+            const storedName = (note.attachments as string[])[0]!;
+            await shareFolder(folder.id, token, { share_attachments: true });
+
+            const res = await pbRequest(
+                `${PUBLIC_API}/folders/${token}/files/${note.id}/${encodeURIComponent(storedName)}`,
+            );
+            await expectStatus(res, 200, "folder attachment");
+            expect(await res.text()).toBe("folder attachment");
+        });
+
+        test("rejects disabled sharing, unknown files, private docs, and outside docs", async () => {
+            const token = uniqueToken();
+            const folder = await createFolder(user);
+            const outside = await createFolder(user);
+            const doc = await createNoteWithAttachment(user, "hidden.txt", new Uint8Array([1]), "text/plain", {
+                folder: folder.id,
+            });
+            const outsideDoc = await createNote(user, { folder: outside.id });
+            const storedName = (doc.attachments as string[])[0]!;
+
+            await shareFolder(folder.id, token, { share_attachments: false });
+            await expectStatus(
+                await pbRequest(
+                    `${PUBLIC_API}/folders/${token}/files/${doc.id}/${encodeURIComponent(storedName)}`,
+                ),
+                404,
+            );
+
+            await shareFolder(folder.id, token, { share_attachments: true });
+            await expectStatus(
+                await pbRequest(`${PUBLIC_API}/folders/${token}/files/${doc.id}/nonexistent.png`),
+                404,
+            );
+            await expectStatus(
+                await pbRequest(`${PUBLIC_API}/folders/fake-token/files/${doc.id}/test.png`),
+                404,
+            );
+
+            await superuserUpdate("documents", doc.id, { is_private: true });
+            await expectStatus(
+                await pbRequest(
+                    `${PUBLIC_API}/folders/${token}/files/${doc.id}/${encodeURIComponent(storedName)}`,
+                ),
+                404,
+            );
+
+            await expectStatus(
+                await pbRequest(`${PUBLIC_API}/folders/${token}/files/${outsideDoc.id}/test.png`),
+                404,
+            );
         });
     });
 });

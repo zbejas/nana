@@ -1,5 +1,7 @@
 import MDEditor from '@uiw/react-markdown-preview';
-import { rehypeSanitizePlugin } from '../lib/sanitize';
+import { rehypeNormalizeAlertClasses, rehypeSanitizePlugin } from '../lib/sanitize';
+import { rewriteLegacyFileUrl } from '../lib/legacy-urls';
+import { useTheme } from '../lib/theme';
 
 interface MarkdownPreviewProps {
   content: string;
@@ -7,9 +9,11 @@ interface MarkdownPreviewProps {
 }
 
 export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProps) {
+  const { resolved } = useTheme();
+
   if (!content.trim()) {
     return (
-      <div className={`text-gray-500 text-sm italic ${className}`}>
+      <div className={`text-sm italic text-ink-muted ${className}`}>
         No content to preview
       </div>
     );
@@ -18,21 +22,23 @@ export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProp
   const previewTagFallbacks = {
     iso: ({ children }: any) => <span>{children}</span>,
     docname: ({ children }: any) => <span>{children}</span>,
+    img: ({ src, alt, ...props }: any) => <img src={rewriteLegacyFileUrl(src)} alt={alt} {...props} />,
+    a: ({ href, children, ...props }: any) => <a href={rewriteLegacyFileUrl(href)} {...props}>{children}</a>,
   } as any;
 
   return (
     <MDEditor
       source={content}
       skipHtml={true}
-      rehypePlugins={[rehypeSanitizePlugin]}
+      rehypePlugins={[rehypeNormalizeAlertClasses, rehypeSanitizePlugin]}
       components={previewTagFallbacks}
       className={className}
       style={{
         backgroundColor: 'transparent',
-        color: '#d1d5db',
+        color: 'var(--ink-secondary)',
       }}
       wrapperElement={{
-        'data-color-mode': 'dark'
+        'data-color-mode': resolved,
       }}
     />
   );

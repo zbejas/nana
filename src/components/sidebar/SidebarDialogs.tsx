@@ -1,13 +1,11 @@
-import { ConfirmDialog } from "../modals/ConfirmDialog";
+import { ConfirmDialog } from "../ui";
 
 interface SidebarDialogsProps {
-  // Unsaved changes dialog
   showUnsavedDialog: boolean;
   onUnsavedSave: () => Promise<void>;
   onUnsavedDiscard: () => void;
   onUnsavedCancel: () => void;
 
-  // Delete confirmation dialog
   showDeleteDialog: boolean;
   deleteDialogConfig: {
     title: string;
@@ -16,7 +14,6 @@ interface SidebarDialogsProps {
   } | null;
   onDeleteCancel: () => void;
 
-  // Logout dialog
   showLogoutDialog: boolean;
   onLogoutConfirm: () => void;
   onLogoutCancel: () => void;
@@ -36,48 +33,37 @@ export function SidebarDialogs({
 }: SidebarDialogsProps) {
   return (
     <>
-      {/* Unsaved Changes Dialog */}
       <ConfirmDialog
-        isOpen={showUnsavedDialog}
-        title="Unsaved Changes"
-        message="You have unsaved changes in the current document."
-        onSave={onUnsavedSave}
-        onDiscard={onUnsavedDiscard}
+        open={showUnsavedDialog}
+        title="Unsaved changes"
+        description="Save the current note before leaving?"
+        confirmLabel="Save note"
+        extraAction={{ label: "Discard", onClick: onUnsavedDiscard, variant: "danger" }}
+        onConfirm={() => void onUnsavedSave()}
         onCancel={onUnsavedCancel}
-        saveLabel="Save"
-        discardLabel="Discard"
-        cancelLabel="Cancel"
       />
 
-      {/* Delete Confirmation Dialog */}
       {deleteDialogConfig && (
         <ConfirmDialog
-          isOpen={showDeleteDialog}
+          open={showDeleteDialog}
           title={deleteDialogConfig.title}
-          message={deleteDialogConfig.message}
-          onSave={onDeleteCancel}
-          onDiscard={async () => {
-            await deleteDialogConfig.onConfirm();
-            onDeleteCancel();
+          description={deleteDialogConfig.message}
+          confirmLabel="Move to trash"
+          tone="danger"
+          onConfirm={() => {
+            void deleteDialogConfig.onConfirm().finally(onDeleteCancel);
           }}
           onCancel={onDeleteCancel}
-          saveLabel="Keep"
-          discardLabel="Delete"
-          cancelLabel=""
         />
       )}
 
-      {/* Logout Confirmation Dialog */}
       <ConfirmDialog
-        isOpen={showLogoutDialog}
-        title="Sign Out"
-        message="Are you sure you want to sign out?"
-        onSave={onLogoutConfirm}
-        onDiscard={() => {}}
+        open={showLogoutDialog}
+        title="Sign out"
+        description="Your local work is synced. You can sign back in at any time."
+        confirmLabel="Sign out"
+        onConfirm={onLogoutConfirm}
         onCancel={onLogoutCancel}
-        saveLabel="Sign Out"
-        discardLabel=""
-        cancelLabel="Cancel"
       />
     </>
   );

@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  CheckCircleIcon,
+  ExclamationCircleIcon,
+  InformationCircleIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
 
 interface ToastProps {
   message: string;
@@ -7,27 +13,55 @@ interface ToastProps {
   durationMs?: number;
 }
 
+const tones = {
+  error: {
+    icon: ExclamationCircleIcon,
+    iconClass: 'text-danger',
+    label: 'Error',
+  },
+  success: {
+    icon: CheckCircleIcon,
+    iconClass: 'text-success',
+    label: 'Success',
+  },
+  info: {
+    icon: InformationCircleIcon,
+    iconClass: 'text-signal',
+    label: 'Notice',
+  },
+};
+
 export function Toast({ message, type = 'error', onClose, durationMs = 3000 }: ToastProps) {
   const [isExiting, setIsExiting] = useState(false);
   const closingRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  const exitTimerRef = useRef<number | null>(null);
 
-  const closeToast = useCallback(() => {
-    if (closingRef.current) {
-      return;
-    }
-
-    closingRef.current = true;
-    setIsExiting(true);
-
-    window.setTimeout(() => {
-      onClose();
-    }, 180);
+  useEffect(() => {
+    onCloseRef.current = onClose;
   }, [onClose]);
 
   useEffect(() => {
-    if (durationMs <= 0) {
-      return;
-    }
+    return () => {
+      if (exitTimerRef.current !== null) window.clearTimeout(exitTimerRef.current);
+    };
+  }, []);
+
+  // Keep the timer independent of the callback identity. ToastHost passes a
+  // fresh onClose closure on every render; depending on it would restart the
+  // countdown each time the editor re-rendered and the toast would never leave.
+  const closeToast = useCallback(() => {
+    if (closingRef.current) return;
+
+    closingRef.current = true;
+    setIsExiting(true);
+    exitTimerRef.current = window.setTimeout(() => {
+      onCloseRef.current();
+    }, 180);
+  }, []);
+
+  useEffect(() => {
+    if (durationMs <= 0) return;
 
     const timer = window.setTimeout(() => {
       closeToast();
@@ -36,59 +70,31 @@ export function Toast({ message, type = 'error', onClose, durationMs = 3000 }: T
     return () => window.clearTimeout(timer);
   }, [durationMs, closeToast]);
 
-  const iconColor = {
-    error: 'text-red-400 light:text-red-600',
-    success: 'text-emerald-400 light:text-emerald-600',
-    info: 'text-sky-400 light:text-sky-600',
-  }[type];
-
-  const accentColor = {
-    error: 'bg-red-400/80 light:bg-red-500/85',
-    success: 'bg-emerald-400/80 light:bg-emerald-500/85',
-    info: 'bg-sky-400/80 light:bg-sky-500/85',
-  }[type];
-
-  const icon = {
-    error: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-    success: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-    info: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  }[type];
+  const tone = tones[type];
+  const Icon = tone.icon;
 
   return (
     <div
       role={type === 'error' ? 'alert' : 'status'}
       aria-live={type === 'error' ? 'assertive' : 'polite'}
       className={`w-full max-w-sm transform transition-all duration-200 ease-out ${
-        isExiting
-          ? 'translate-x-3 opacity-0 scale-[0.98]'
-          : 'translate-x-0 opacity-100 scale-100'
+        isExiting ? 'translate-x-3 scale-[0.98] opacity-0' : 'translate-x-0 scale-100 opacity-100'
       }`}
     >
-      <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black/75 backdrop-blur-md shadow-lg light:border-gray-200/80 light:bg-white/95">
-        <span className={`absolute left-0 top-0 h-full w-1 ${accentColor}`} aria-hidden="true" />
-        <div className="flex items-start gap-3 px-4 py-3">
-          <span className={`shrink-0 ${iconColor}`}>{icon}</span>
-          <span className="flex-1 text-sm font-medium text-gray-100 light:text-gray-800">{message}</span>
+      <div className="relative overflow-hidden rounded-panel border border-line bg-surface-raised shadow-float">
+        <div className="flex items-start gap-3 px-4 py-3.5">
+          <span className={`mt-0.5 shrink-0 ${tone.iconClass}`}>
+            <Icon className="h-[1.15rem] w-[1.15rem]" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13.5px] leading-snug text-ink">{message}</p>
+          </div>
           <button
             onClick={closeToast}
-            className="rounded-md p-1 text-gray-300 transition-colors hover:bg-white/10 hover:text-white light:text-gray-500 light:hover:bg-gray-100 light:hover:text-gray-700"
+            className="rounded-[5px] p-1 text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink"
             aria-label="Dismiss notification"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <XMarkIcon className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>

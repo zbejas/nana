@@ -1,9 +1,11 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSetAtom } from 'jotai';
 import { createLogger } from '../../../lib/logger';
 
 const logger = createLogger('ContextMenu');
 import { useToasts } from '../../../state/hooks';
+import { addToBoardRequestAtom } from '../../../state/atoms';
 import type { ContextMenuState } from './useContextMenuState';
 
 interface DeleteDialogConfig {
@@ -52,6 +54,7 @@ export function useContextMenuHandlers({
 }: UseContextMenuHandlersProps) {
     const navigate = useNavigate();
     const { showToast } = useToasts();
+    const setAddToBoardRequest = useSetAtom(addToBoardRequestAtom);
 
     const handleAddFolder = useCallback(async () => {
         const result = await handlers.handleAddFolder(contextMenu?.folderId);
@@ -160,6 +163,13 @@ export function useContextMenuHandlers({
         closeContextMenu();
     }, [contextMenu?.documentId, handlers, closeContextMenu]);
 
+    const handleAddToBoard = useCallback(() => {
+        if (!contextMenu?.documentId) return;
+        const documentId = contextMenu.documentId;
+        setAddToBoardRequest({ documentId });
+        closeContextMenu();
+    }, [contextMenu?.documentId, closeContextMenu, setAddToBoardRequest]);
+
     const handleExportFolder = useCallback(async () => {
         if (!contextMenu?.folderId || !contextMenu?.folderName) return;
         await handlers.handleExportFolder(contextMenu.folderId, contextMenu.folderName);
@@ -179,5 +189,6 @@ export function useContextMenuHandlers({
         handlePermanentlyDeleteFolder,
         handleExportDocument,
         handleExportFolder,
+        handleAddToBoard,
     };
 }

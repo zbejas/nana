@@ -2,6 +2,7 @@
 export type {
     Document,
     DocumentVersion,
+    CreateDocumentVersionResult,
     CreateDocumentData,
     UpdateDocumentData,
 } from './types';
@@ -40,6 +41,7 @@ export {
 export {
     getDocumentVersions,
     getDocumentVersion,
+    createDocumentVersion,
     restoreDocumentVersion,
 } from './versions';
 

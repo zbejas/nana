@@ -1,54 +1,38 @@
 import type { ReactNode } from 'react';
 
 interface PublicTopBarProps {
-    /** Left section: folder name or other heading */
     subtitle?: string;
-    /** Left section: "Shared by ..." */
     author?: string;
-    /** Center: active document title */
     title: string;
-    /** Right slot: badges, metadata */
     rightContent?: ReactNode;
-    /** Optional logo image src */
     logo?: string;
 }
 
 export function PublicTopBar({ subtitle, author, title, rightContent, logo }: PublicTopBarProps) {
     return (
-        <header className="sticky top-0 z-20 border-b border-amber-500/10 bg-stone-900/90 backdrop-blur-xl px-4 py-3 sm:px-6 shadow-[0_1px_12px_0_rgba(217,119,6,0.06)]">
-            {/* Mobile: stacked rows */}
-            <div className="flex flex-col items-center gap-1 sm:hidden">
-                <div className="flex items-center gap-2 text-xs text-stone-400">
-                    {logo && <img src={logo} alt="Nana" className="h-5 w-5" />}
-                    {subtitle && <span className="font-semibold text-stone-300">{subtitle}</span>}
-                    {subtitle && author && <span className="text-stone-500">&middot;</span>}
-                    {author && <span>Shared by {author}</span>}
-                </div>
-                <h1 className="truncate text-base font-semibold text-white max-w-full">{title || 'Untitled'}</h1>
-                {rightContent && (
-                    <div className="flex items-center gap-3">
-                        {rightContent}
+        <header className="sticky top-0 z-20 border-b border-line bg-canvas-deep">
+            <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:px-6">
+                <div className="flex items-center gap-4">
+                    <div className="flex min-w-0 items-center gap-2.5 sm:flex-1">
+                        {logo && <img src={logo} alt="Nana" className="h-7 w-7 shrink-0" />}
+                        <div className="min-w-0">
+                            <p className="truncate text-[12px] font-medium leading-tight text-ink">
+                                {subtitle || 'Nana'}
+                            </p>
+                            <p className="truncate text-[11.5px] leading-tight text-ink-muted">
+                                {author ? `Shared by ${author}` : 'Shared note'}
+                            </p>
+                        </div>
                     </div>
-                )}
-            </div>
 
-            {/* Desktop: absolute-centered title with left/right flanks */}
-            <div className="hidden sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-4">
-                {/* Left: logo + folder name + author */}
-                <div className="flex items-center gap-2 text-xs text-stone-400">
-                    {logo && <img src={logo} alt="Nana" className="h-5 w-5" />}
-                    {subtitle && <span className="font-semibold text-stone-300">{subtitle}</span>}
-                    {subtitle && author && <span className="text-stone-500">&middot;</span>}
-                    {author && <span>Shared by {author}</span>}
+                    <h1 className="hidden min-w-0 shrink truncate text-center text-base text-ink sm:block">
+                        {title || 'Untitled'}
+                    </h1>
+
+                    <div className="ml-auto flex min-w-0 items-center gap-3 sm:ml-0 sm:flex-1 sm:justify-end">{rightContent}</div>
                 </div>
 
-                {/* Center: document title — always centered */}
-                <h1 className="truncate text-lg font-semibold text-white text-center max-w-md">{title || 'Untitled'}</h1>
-
-                {/* Right: metadata */}
-                <div className="flex items-center justify-end gap-3">
-                    {rightContent}
-                </div>
+                <h1 className="truncate text-lg text-ink sm:hidden">{title || 'Untitled'}</h1>
             </div>
         </header>
     );

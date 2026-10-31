@@ -5,17 +5,18 @@ const logger = createLogger('DocTrash');
 import type { Document } from './types';
 
 async function postTrashAction(path: string, payload: Record<string, unknown>) {
-    const response = await fetch(`/pb${path}`, {
+    const token = pb.authStore.token;
+    const response = await fetch(`/api/v1${path.replace(/^\/api/, '')}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': pb.authStore.token,
+            'Authorization': token,
         },
         body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
-        invalidateAuthOnUnauthorized(response.status);
+        invalidateAuthOnUnauthorized(response.status, token);
         let message = 'Trash request failed';
         try {
             const body = await response.json();
@@ -29,7 +30,7 @@ async function postTrashAction(path: string, payload: Record<string, unknown>) {
     return response.json().catch(() => ({}));
 }
 
-// Delete a document (move to trash collection)
+// Soft-delete a document (keep its id, attachments, and versions)
 export async function deleteDocument(id: string): Promise<boolean> {
     await postTrashAction('/api/trash/move-document', { documentId: id });
     return true;
@@ -75,13 +76,13 @@ export async function listTrashDocuments(options?: {
     }
 }
 
-// Permanently delete a document from trash
+// Permanently delete a trashed document
 export async function permanentlyDeleteDocument(id: string): Promise<boolean> {
     await postTrashAction('/api/trash/permanent-delete-document', { trashDocumentId: id });
     return true;
 }
 
-// Restore a document from trash
+// Restore a trashed document
 export async function restoreDocument(id: string): Promise<Document> {
     try {
         const restoreResult = await postTrashAction('/api/trash/restore-document', {

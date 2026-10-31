@@ -1,123 +1,116 @@
-import { useEffect, useRef } from 'react';
-import MDEditor from '@uiw/react-md-editor';
-import { rehypeSanitizePlugin } from '../../lib/sanitize';
+import { useMemo, type DragEvent } from 'react';
+import { NanaMarkdownEditor } from './milkdown/NanaMarkdownEditor';
+import { NanaSourceEditor } from './milkdown/NanaSourceEditor';
+import { NanaSplitMarkdownEditor } from './milkdown/NanaSplitMarkdownEditor';
+import { diffText } from './milkdown/aiDiff';
+import type { AiChangedSection } from './milkdown/aiEdits';
+import { normalizeMarkdown } from './milkdown/helpers';
 import type { ViewMode } from './EditorHeader';
+
+export interface EditorAiEdit {
+  id: string;
+  previousMarkdown: string;
+  markdown: string;
+  sections: AiChangedSection[];
+}
 
 interface EditorContentProps {
   content: string;
   onContentChange: (content: string) => void;
   readOnly?: boolean;
   viewMode: ViewMode;
-  editablePreview?: boolean;
+  onDropFiles?: (event: DragEvent<HTMLDivElement>) => void;
+  aiEdit?: EditorAiEdit | null;
+  fullscreen?: boolean;
 }
 
-export function EditorContent({ content, onContentChange, readOnly = false, viewMode, editablePreview = false }: EditorContentProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const isPreviewMode = viewMode === 'preview';
+/**
+ * The document editor surface. `wysiwyg` is the rendered Milkdown editor,
+ * `text` is the CodeMirror source, and `split` shows both. All three keep
+ * Markdown as the storage format and emit through `onContentChange`.
+ */
+export function EditorContent({
+  content,
+  onContentChange,
+  readOnly = false,
+  viewMode,
+  onDropFiles,
+  aiEdit = null,
+  fullscreen = false,
+}: EditorContentProps) {
   const isSplitMode = viewMode === 'split';
-  const isCenteredMode = viewMode === 'preview';
-  // Map our ViewMode to MDEditor's preview prop
-  const previewMode = readOnly ? 'preview' : viewMode === 'text' ? 'edit' : viewMode === 'preview' ? 'preview' : 'live';
-  // Only show dragbar in split (live) mode
-  const showDragbar = viewMode === 'split';
-  const previewTagFallbacks = {
-    iso: ({ children }: any) => <span>{children}</span>,
-    docname: ({ children }: any) => <span>{children}</span>,
-  } as any;
-
-  useEffect(() => {
-    if (viewMode === 'preview') {
-      return;
-    }
-
-    const handleDocumentKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'a') {
-        return;
-      }
-
-      const activeElement = document.activeElement as HTMLElement | null;
-      const isEditingOtherField =
-        activeElement?.tagName === 'INPUT' ||
-        activeElement?.tagName === 'TEXTAREA' ||
-        activeElement?.isContentEditable;
-
-      if (isEditingOtherField) {
-        return;
-      }
-
-      const container = containerRef.current;
-      const editorTextarea = container?.querySelector('textarea') as HTMLTextAreaElement | null;
-      if (!editorTextarea) {
-        return;
-      }
-
-      event.preventDefault();
-      editorTextarea.focus();
-      editorTextarea.setSelectionRange(0, editorTextarea.value.length);
-    };
-
-    window.document.addEventListener('keydown', handleDocumentKeyDown);
-    return () => {
-      window.document.removeEventListener('keydown', handleDocumentKeyDown);
-    };
-  }, [viewMode]);
-
-  const handleKeyDownCapture = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'a') {
-      return;
-    }
-
-    if (viewMode === 'preview') {
-      return;
-    }
-
-    const target = event.target as HTMLElement;
-    if (target.tagName === 'TEXTAREA') {
-      return;
-    }
-
-    const container = event.currentTarget;
-    const editorTextarea = container.querySelector('textarea') as HTMLTextAreaElement | null;
-    if (!editorTextarea) {
-      return;
-    }
-
-    event.preventDefault();
-    editorTextarea.focus();
-    editorTextarea.setSelectionRange(0, editorTextarea.value.length);
-  };
+  const editorPlaceholder = readOnly ? '' : 'Start writing…';
+  const sourceAiDiff = useMemo(() => {
+    if (!aiEdit) return null;
+    const changes = diffText(
+      normalizeMarkdown(aiEdit.previousMarkdown),
+      normalizeMarkdown(aiEdit.markdown),
+    );
+    return changes.length > 0 ? { id: aiEdit.id, changes } : null;
+  }, [aiEdit]);
 
   return (
     <div
-      ref={containerRef}
-      className={`flex-1 min-h-0 flex overflow-hidden relative h-full scrollbar-autohide ${isCenteredMode ? 'md:px-6 lg:px-8 md:justify-center' : ''}`}
-      onKeyDownCapture={handleKeyDownCapture}
+      className={`flex h-full min-h-0 flex-1 overflow-hidden bg-canvas ${
+        fullscreen ? 'p-0' : 'px-2.5 py-2.5 md:px-5 md:py-4'
+      }`}
+      onDropCapture={(event) => {
+        // CodeMirror and ProseMirror try to read dropped files as text.
+        // Attachment drops belong to the document editor's upload handler.
+        if (!onDropFiles || event.dataTransfer.files.length === 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onDropFiles(event);
+      }}
     >
-      <MDEditor
-        value={content}
-        onChange={(val) => onContentChange(val || '')}
-        preview={previewMode}
-        previewOptions={{
-          skipHtml: true,
-          rehypePlugins: [rehypeSanitizePlugin],
-          components: previewTagFallbacks,
-        }}
-        height="100%"
-        visibleDragbar={showDragbar}
-        hideToolbar={true}
-        enableScroll={true}
-        readOnly={readOnly}
-        textareaProps={{
-          placeholder: readOnly ? 'Read-only trash document' : 'Start writing...',
-        }}
-        style={{
-          width: '100%',
-          backgroundColor: 'transparent',
-          minHeight: '100%',
-          ...(!isSplitMode ? { border: 'none', boxShadow: 'none' } : {}),
-        }}
-        className={`!bg-transparent ${isCenteredMode ? 'md:!max-w-4xl md:!w-full md:!mx-auto' : ''} ${!isSplitMode ? '!border-none !shadow-none [&_.w-md-editor]:!border-none [&_.w-md-editor]:!shadow-none [&_.w-md-editor-text]:!border-none [&_.w-md-editor-preview]:!border-none [&_.w-md-editor-preview]:!shadow-none [&_.wmde-markdown]:!border-none [&_.wmde-markdown]:!shadow-none' : ''} [&_.wmde-markdown]:!bg-transparent [&_.w-md-editor-preview]:!bg-transparent [&_.w-md-editor]:!h-full [&_.w-md-editor]:!min-h-0 [&_.wmde-markdown-var]:!bg-blue-500/30 [&_.wmde-markdown-var]:!w-2 [&_.wmde-markdown-var]:!cursor-col-resize [&_.wmde-markdown-var]:hover:!bg-blue-500 [&_.w-md-editor-text]:scrollbar-autohide [&_.w-md-editor-preview]:scrollbar-autohide [&_.wmde-markdown]:scrollbar-autohide [&_textarea]:!outline-none [&_textarea]:!ring-0 [&_textarea::placeholder]:!opacity-30`}
-      />
+      <div
+        className={`relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface ${
+          fullscreen
+            ? 'max-w-none rounded-none border-0'
+            : `mx-auto rounded-panel border border-line ${isSplitMode ? 'max-w-[1240px]' : 'max-w-[920px]'}`
+        }`}
+      >
+        {viewMode === 'text' && (
+          <div className="scrollbar-autohide relative h-full min-h-0 flex-1 overflow-hidden">
+            <NanaSourceEditor
+              value={content}
+              onChange={onContentChange}
+              readOnly={readOnly}
+              placeholder={editorPlaceholder}
+              ariaLabel="Document Markdown source"
+              className="h-full"
+              aiDiff={sourceAiDiff}
+            />
+          </div>
+        )}
+
+        {viewMode === 'split' && (
+          <NanaSplitMarkdownEditor
+            value={content}
+            onChange={onContentChange}
+            readOnly={readOnly}
+            placeholder={editorPlaceholder}
+            ariaLabel="Document content"
+            className="min-h-0 flex-1"
+            aiEdit={aiEdit}
+            aiDiff={sourceAiDiff}
+          />
+        )}
+
+        {viewMode === 'wysiwyg' && (
+          <NanaMarkdownEditor
+            value={content}
+            onChange={onContentChange}
+            readOnly={readOnly}
+            placeholder={editorPlaceholder}
+            ariaLabel="Document content"
+            className="scrollbar-autohide h-full min-h-0 flex-1"
+            showToolbar
+            enableSlash
+            aiEdit={aiEdit}
+          />
+        )}
+      </div>
     </div>
   );
 }

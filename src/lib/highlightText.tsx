@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export function highlightText(text: string | null | undefined, query: string, highlightClassName = 'bg-blue-500/30 text-blue-200'): ReactNode {
+export function highlightText(text: string | null | undefined, query: string, highlightClassName = 'bg-signal-soft text-signal'): ReactNode {
     const sourceText = text || 'Untitled';
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {

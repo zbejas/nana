@@ -1,0 +1,56 @@
+name: Tests
+
+# Unit + build on every change; the Docker suite is the behavior gate and uses
+# the same compose file developers run locally.
+on:
+    push:
+        branches: [master]
+    pull_request:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: tests-${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    unit:
+        name: Unit tests and production build
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.4
+
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+
+            - name: Run unit tests
+              run: bun run test:unit
+
+            - name: Build production bundle
+              run: bun run build
+
+    integration:
+        name: Docker integration suite
+        runs-on: ubuntu-latest
+        timeout-minutes: 25
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Run the isolated test stack
+              run: docker compose -f docker/compose.test.yml up --build --abort-on-container-exit --exit-code-from nana-test
+
+            - name: Show test container logs on failure
+              if: failure()
+              run: docker compose -f docker/compose.test.yml logs --no-color nana-test

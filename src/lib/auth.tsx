@@ -6,7 +6,7 @@ import { createLogger } from './logger';
 import { showToastAtom } from '../state/atoms';
 
 const logger = createLogger('Auth');
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from './record-model';
 import { ensureAttachmentFileToken } from './documents/attachments';
 
 const SESSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
@@ -49,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkHasUsers = useCallback(async (): Promise<boolean> => {
     try {
       // Use PocketBase hook endpoint that runs with admin privileges
-      const response = await fetch('/pb/api/check-users');
+      const response = await fetch('/api/v1/check-users');
       
       if (!response.ok) {
         logger.warn('Failed to check users endpoint, assuming users exist');

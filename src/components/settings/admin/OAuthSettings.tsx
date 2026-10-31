@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
 import { pb } from '../../../lib/pocketbase';
 import { PlusIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
+import {
+  Badge,
+  Button,
+  Card,
+  Field,
+  Input,
+  SectionHeading,
+  Spinner,
+  Switch,
+} from '../../ui';
 
 type OAuthProvider = {
   name: string;
@@ -52,7 +62,7 @@ export function OAuthSettings() {
 
   const isAuthenticated = pb.authStore.isValid;
   const redirectUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/pb/api/oauth2-redirect`
+    ? `${window.location.origin}/api/v1/auth/oauth2/callback`
     : '';
 
   const buildHeaders = (): HeadersInit => {
@@ -71,7 +81,7 @@ export function OAuthSettings() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch('/pb/api/admin/oauth/providers', {
+        const res = await fetch('/api/v1/admin/oauth/providers', {
           headers: buildHeaders(),
         });
         if (!res.ok) throw new Error(`Failed to load settings (${res.status})`);
@@ -112,7 +122,7 @@ export function OAuthSettings() {
         })),
       };
 
-      const res = await fetch('/pb/api/admin/oauth/providers', {
+      const res = await fetch('/api/v1/admin/oauth/providers', {
         method: 'PATCH',
         headers: buildHeaders(),
         body: JSON.stringify(payload),
@@ -168,231 +178,221 @@ export function OAuthSettings() {
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="bg-white/5 rounded-lg p-6 border border-white/10">
-          <p className="text-gray-400 text-sm">Loading OAuth2 settings...</p>
+      <Card className="p-5 sm:p-6">
+        <div className="flex items-center gap-3 text-sm text-ink-secondary">
+          <Spinner />
+          Loading OAuth2 settings...
         </div>
-      </div>
+      </Card>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <form onSubmit={handleSave}>
-        <div className="bg-white/5 rounded-lg p-6 border border-white/10 space-y-4">
-          {/* Header + Toggle */}
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h3 className="text-lg font-semibold text-white">OAuth2 / OpenID Connect</h3>
-              <p className="text-xs text-gray-400 mt-1">
-                Allow users to sign in with external identity providers
-              </p>
-            </div>
-            <label className="inline-flex items-center gap-2.5 text-sm text-gray-300 cursor-pointer hover:text-white transition-colors">
-              <div className="relative inline-flex items-center justify-center flex-shrink-0">
-                <input
-                  type="checkbox"
-                  checked={form.enabled}
-                  onChange={e => setForm(prev => ({ ...prev, enabled: e.target.checked }))}
-                  className="appearance-none w-5 h-5 rounded border-2 border-white/30 bg-black/40 cursor-pointer transition-all
-                             hover:border-white/50 hover:bg-black/60
-                             focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2 focus:ring-offset-black
-                             checked:bg-blue-500 checked:border-blue-500 checked:hover:bg-blue-600 checked:hover:border-blue-600
-                             disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={toggleDisabled}
-                />
-                {form.enabled && (
-                  <svg className="absolute inset-0 w-5 h-5 text-white pointer-events-none" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                )}
-              </div>
-              <span className="select-none leading-5">Enable OAuth2</span>
-            </label>
+    <form onSubmit={handleSave}>
+      <Card className="p-5 sm:p-6">
+        <SectionHeading
+          title="OAuth2 / OpenID Connect"
+          description="Allow users to sign in with external identity providers."
+        />
+
+        <Switch
+          id="oauth-enabled"
+          className="mt-5"
+          label="Enable OAuth2"
+          checked={form.enabled}
+          onChange={enabled => setForm(prev => ({ ...prev, enabled }))}
+          disabled={toggleDisabled}
+        />
+
+        {error && (
+          <p className="mt-4 text-sm text-danger" role="alert">
+            {error}
+          </p>
+        )}
+        {message && (
+          <p className="mt-4 text-sm text-success" role="status">
+            {message}
+          </p>
+        )}
+
+        {form.enabled && redirectUrl && (
+          <div className="mt-5 rounded-control border border-line bg-surface-sunken/50 px-3.5 py-3">
+            <p className="text-sm text-ink-secondary">
+              <span className="font-medium text-ink">Redirect URL</span> — register this in your OAuth2 provider:
+            </p>
+            <code className="mt-2 block select-all break-all rounded bg-surface-raised px-2.5 py-1.5 font-mono text-xs text-warning">
+              {redirectUrl}
+            </code>
           </div>
+        )}
 
-          {error && <div className="rounded bg-red-900/30 border border-red-700 text-red-200 px-3 py-2 text-sm">{error}</div>}
-          {message && <div className="rounded bg-green-900/30 border border-green-700 text-green-200 px-3 py-2 text-sm">{message}</div>}
+        {form.providers.length > 0 && (
+          <div className="mt-5 space-y-3">
+            {form.providers.map(provider => {
+              const isOIDC = OIDC_NAMES.has(provider.name);
+              const isOpen = expanded === provider.name;
+              const meta = KNOWN_PROVIDERS.find(p => p.name === provider.name);
 
-          {/* Redirect URL info */}
-          {form.enabled && redirectUrl && (
-            <div className="rounded bg-blue-900/20 border border-blue-800/40 px-3 py-2 text-sm text-blue-200">
-              <span className="font-medium">Redirect URL</span> — register this in your OAuth2 provider:
-              <code className="block mt-1 bg-black/30 rounded px-2 py-1 text-xs text-blue-100 break-all select-all">
-                {redirectUrl}
-              </code>
-            </div>
-          )}
-
-          {/* Providers */}
-          {form.providers.map(provider => {
-            const isOIDC = OIDC_NAMES.has(provider.name);
-            const isOpen = expanded === provider.name;
-            const meta = KNOWN_PROVIDERS.find(p => p.name === provider.name);
-
-            return (
-              <div
-                key={provider.name}
-                className="border border-white/10 rounded-lg overflow-hidden"
-              >
-                <button
-                  type="button"
-                  onClick={() => setExpanded(isOpen ? null : provider.name)}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-white/5 hover:bg-white/10 transition-colors text-left"
+              return (
+                <div
+                  key={provider.name}
+                  className="overflow-hidden rounded-control border border-line bg-surface-sunken/30"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-white font-medium">
-                      {provider.displayName || meta?.label || provider.name}
-                    </span>
-                    {provider.clientId && (
-                      <span className="text-xs bg-green-500/20 text-green-300 px-1.5 py-0.5 rounded">
-                        configured
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(isOpen ? null : provider.name)}
+                    aria-expanded={isOpen}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-raised"
+                  >
+                    <span className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-ink">
+                        {provider.displayName || meta?.label || provider.name}
                       </span>
+                      {provider.clientId && <Badge tone="success">Configured</Badge>}
+                    </span>
+                    {isOpen ? (
+                      <ChevronUpIcon className="h-4 w-4 shrink-0 text-ink-muted" />
+                    ) : (
+                      <ChevronDownIcon className="h-4 w-4 shrink-0 text-ink-muted" />
                     )}
-                  </div>
-                  {isOpen ? (
-                    <ChevronUpIcon className="h-4 w-4 text-gray-400" />
-                  ) : (
-                    <ChevronDownIcon className="h-4 w-4 text-gray-400" />
-                  )}
-                </button>
+                  </button>
 
-                {isOpen && (
-                  <div className="p-4 space-y-3 border-t border-white/10">
-                    <div>
-                      <label className="block text-sm text-gray-300 mb-1">Display Name</label>
-                      <input
-                        type="text"
-                        value={provider.displayName}
-                        onChange={e => updateProvider(provider.name, 'displayName', e.target.value)}
-                        className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:bg-black/20"
-                        placeholder={meta?.label || provider.name}
-                        disabled={formDisabled}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm text-gray-300 mb-1">Client ID</label>
-                        <input
-                          type="text"
-                          value={provider.clientId}
-                          onChange={e => updateProvider(provider.name, 'clientId', e.target.value)}
-                          className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:bg-black/20"
-                          placeholder="Client ID"
-                          disabled={formDisabled}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-300 mb-1">
-                          Client Secret
-                          <span className="text-gray-500 ml-2 text-xs">Leave blank to keep current</span>
-                        </label>
-                        <input
-                          type="password"
-                          value={provider.clientSecret}
-                          onChange={e => updateProvider(provider.name, 'clientSecret', e.target.value)}
-                          className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:bg-black/20"
-                          placeholder="••••••••"
-                          disabled={formDisabled}
-                        />
-                      </div>
-                    </div>
-
-                    {/* OIDC-specific endpoint fields */}
-                    {isOIDC && (
-                      <div className="space-y-3 border-t border-white/5 pt-3">
-                        <p className="text-xs text-gray-400">
-                          {meta?.hint && <span>{meta.hint} — </span>}
-                          Enter your provider's OIDC endpoint URLs
-                        </p>
-                        <div>
-                          <label className="block text-sm text-gray-300 mb-1">Authorization URL</label>
-                          <input
-                            type="url"
-                            value={provider.authURL}
-                            onChange={e => updateProvider(provider.name, 'authURL', e.target.value)}
-                            className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:bg-black/20"
-                            placeholder="https://auth.example.com/api/oidc/authorization"
-                            disabled={formDisabled}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm text-gray-300 mb-1">Token URL</label>
-                          <input
-                            type="url"
-                            value={provider.tokenURL}
-                            onChange={e => updateProvider(provider.name, 'tokenURL', e.target.value)}
-                            className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:bg-black/20"
-                            placeholder="https://auth.example.com/api/oidc/token"
-                            disabled={formDisabled}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm text-gray-300 mb-1">
-                            User Info URL
-                            <span className="text-gray-500 ml-2 text-xs">Optional if discovery is supported</span>
-                          </label>
-                          <input
-                            type="url"
-                            value={provider.userInfoURL}
-                            onChange={e => updateProvider(provider.name, 'userInfoURL', e.target.value)}
-                            className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder:text-gray-500 disabled:text-gray-400 disabled:bg-black/20"
-                            placeholder="https://auth.example.com/api/oidc/userinfo"
-                            disabled={formDisabled}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex justify-end pt-1">
-                      <button
-                        type="button"
-                        onClick={() => removeProvider(provider.name)}
-                        className="inline-flex items-center gap-1.5 text-sm text-red-400 hover:text-red-300 transition-colors"
-                        disabled={formDisabled}
+                  {isOpen && (
+                    <div className="space-y-4 border-t border-line p-4">
+                      <Field
+                        label="Display name"
+                        htmlFor={`oauth-${provider.name}-display-name`}
                       >
-                        <TrashIcon className="h-4 w-4" />
-                        Remove
-                      </button>
+                        <Input
+                          id={`oauth-${provider.name}-display-name`}
+                          type="text"
+                          value={provider.displayName}
+                          onChange={e => updateProvider(provider.name, 'displayName', e.target.value)}
+                          placeholder={meta?.label || provider.name}
+                          disabled={formDisabled}
+                        />
+                      </Field>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <Field label="Client ID" htmlFor={`oauth-${provider.name}-client-id`}>
+                          <Input
+                            id={`oauth-${provider.name}-client-id`}
+                            type="text"
+                            value={provider.clientId}
+                            onChange={e => updateProvider(provider.name, 'clientId', e.target.value)}
+                            placeholder="Client ID"
+                            disabled={formDisabled}
+                          />
+                        </Field>
+                        <Field
+                          label="Client secret"
+                          hint="Leave blank to keep current"
+                          htmlFor={`oauth-${provider.name}-client-secret`}
+                        >
+                          <Input
+                            id={`oauth-${provider.name}-client-secret`}
+                            type="password"
+                            value={provider.clientSecret}
+                            onChange={e => updateProvider(provider.name, 'clientSecret', e.target.value)}
+                            placeholder="••••••••"
+                            disabled={formDisabled}
+                          />
+                        </Field>
+                      </div>
+
+                      {isOIDC && (
+                        <div className="space-y-4 border-t border-line pt-4">
+                          <p className="text-xs leading-relaxed text-ink-muted">
+                            {meta?.hint ? `${meta.hint} — ` : ''}Enter your provider's OIDC endpoint URLs
+                          </p>
+                          <Field
+                            label="Authorization URL"
+                            htmlFor={`oauth-${provider.name}-auth-url`}
+                          >
+                            <Input
+                              id={`oauth-${provider.name}-auth-url`}
+                              type="url"
+                              value={provider.authURL}
+                              onChange={e => updateProvider(provider.name, 'authURL', e.target.value)}
+                              placeholder="https://auth.example.com/api/oidc/authorization"
+                              disabled={formDisabled}
+                            />
+                          </Field>
+                          <Field
+                            label="Token URL"
+                            htmlFor={`oauth-${provider.name}-token-url`}
+                          >
+                            <Input
+                              id={`oauth-${provider.name}-token-url`}
+                              type="url"
+                              value={provider.tokenURL}
+                              onChange={e => updateProvider(provider.name, 'tokenURL', e.target.value)}
+                              placeholder="https://auth.example.com/api/oidc/token"
+                              disabled={formDisabled}
+                            />
+                          </Field>
+                          <Field
+                            label="User info URL"
+                            hint="Optional if discovery is supported"
+                            htmlFor={`oauth-${provider.name}-userinfo-url`}
+                          >
+                            <Input
+                              id={`oauth-${provider.name}-userinfo-url`}
+                              type="url"
+                              value={provider.userInfoURL}
+                              onChange={e => updateProvider(provider.name, 'userInfoURL', e.target.value)}
+                              placeholder="https://auth.example.com/api/oidc/userinfo"
+                              disabled={formDisabled}
+                            />
+                          </Field>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end border-t border-line pt-3">
+                        <Button
+                          type="button"
+                          variant="danger"
+                          size="sm"
+                          icon={<TrashIcon className="h-4 w-4" />}
+                          onClick={() => removeProvider(provider.name)}
+                          disabled={formDisabled}
+                        >
+                          Remove
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Add provider dropdown */}
-          {form.enabled && availableProviders.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-gray-400">Add provider:</span>
-              {availableProviders.map(p => (
-                <button
-                  key={p.name}
-                  type="button"
-                  onClick={() => addProvider(p.name)}
-                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50"
-                  disabled={formDisabled}
-                >
-                  <PlusIcon className="h-3.5 w-3.5" />
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Save */}
-          <div className="flex justify-end pt-2">
-            <button
-              type="submit"
-              className="px-4 py-2 rounded bg-white/10 text-white hover:bg-white/20 disabled:opacity-50 transition-colors"
-              disabled={toggleDisabled}
-            >
-              {saving ? 'Saving...' : 'Save OAuth2'}
-            </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
+        )}
+
+        {form.enabled && availableProviders.length > 0 && (
+          <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-5">
+            <span className="text-sm text-ink-muted">Add provider</span>
+            {availableProviders.map(p => (
+              <Button
+                key={p.name}
+                type="button"
+                variant="secondary"
+                size="sm"
+                icon={<PlusIcon className="h-3.5 w-3.5" />}
+                onClick={() => addProvider(p.name)}
+                disabled={formDisabled}
+              >
+                {p.label}
+              </Button>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-5 flex justify-end border-t border-line pt-5">
+          <Button type="submit" variant="primary" loading={saving} disabled={toggleDisabled}>
+            Save OAuth2
+          </Button>
         </div>
-      </form>
-    </div>
+      </Card>
+    </form>
   );
 }

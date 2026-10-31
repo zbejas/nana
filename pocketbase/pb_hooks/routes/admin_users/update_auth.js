@@ -5,7 +5,7 @@ routerAdd(
   "PATCH",
   "/api/admin/users/{id}",
   (c) => {
-    const { requireAdmin, parseRequestBody, isVerifiedUser } = require(`${__hooks}/utils.js`)
+    const { requireAdmin, parseRequestBody, isVerifiedUser, sendError } = require(`${__hooks}/utils.js`)
 
     try {
     // Check admin access
@@ -30,8 +30,10 @@ routerAdd(
     }
 
     // Find the user record
-    const record = $app.findRecordById("users", userId)
-    if (!record) {
+    let record
+    try {
+      record = $app.findRecordById("users", userId)
+    } catch (_) {
       return c.json(404, { error: "User not found" })
     }
 
@@ -58,8 +60,7 @@ routerAdd(
     return c.json(200, record.publicExport())
 
   } catch (err) {
-    console.error("Failed to update user:", err)
-    return c.json(500, { error: "Failed to update user: " + String(err) })
+    return sendError(c, err, "Failed to update user")
   }
 },
 $apis.requireAuth()

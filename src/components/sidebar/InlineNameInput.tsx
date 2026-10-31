@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { FolderIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 
-const INDENT_PX = 20;
+const INDENT_PX = 16;
 
 interface InlineNameInputProps {
   onSubmit: (name: string) => void;
@@ -11,12 +11,12 @@ interface InlineNameInputProps {
   depth?: number;
 }
 
-export function InlineNameInput({ 
-  onSubmit, 
-  onCancel, 
-  placeholder = 'Enter name...', 
+export function InlineNameInput({
+  onSubmit,
+  onCancel,
+  placeholder = 'Name',
   icon = 'document',
-  depth = 0 
+  depth = 0,
 }: InlineNameInputProps) {
   const [name, setName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -25,12 +25,12 @@ export function InlineNameInput({
     inputRef.current?.focus();
   }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && name.trim()) {
-      e.preventDefault();
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter' && name.trim()) {
+      event.preventDefault();
       onSubmit(name.trim());
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
       onCancel();
     }
   };
@@ -43,28 +43,28 @@ export function InlineNameInput({
     }
   };
 
-  const indent = depth * INDENT_PX;
+  const indent = depth * INDENT_PX + INDENT_PX;
 
   return (
-    <div 
-      className="flex items-center gap-1.5 py-[5px] bg-white/8 rounded-md"
-      style={{ paddingLeft: `${indent + 4}px`, paddingRight: '0.5rem' }}
+    <div
+      className="my-0.5 flex items-center gap-1.5 rounded-[6px] border border-signal/40 bg-surface-raised py-0.5 pr-2"
+      style={{ paddingLeft: `${indent + 20}px` }}
     >
-      <div className="w-4 flex-shrink-0" /> {/* chevron placeholder */}
       {icon === 'folder' ? (
-        <FolderIcon className="w-4 h-4 text-yellow-500/80 flex-shrink-0" />
+        <FolderIcon className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
       ) : (
-        <DocumentTextIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
+        <DocumentTextIcon className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
       )}
       <input
         ref={inputRef}
         type="text"
         value={name}
-        onChange={(e) => setName(e.target.value)}
+        onChange={(event) => setName(event.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}
         placeholder={placeholder}
-        className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13px] text-gray-200 placeholder-gray-500"
+        aria-label={placeholder}
+        className="h-6 min-w-0 flex-1 border-none bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-muted"
       />
     </div>
   );

@@ -7,7 +7,7 @@ routerAdd(
   (e) => {
     // Load email template helper and utils
     const { generateEmailChangeContent } = require(`${__hooks}/templates/email_change_template.js`)
-    const { requireAdmin, parseRequestBody, getSiteUrl, getSenderInfo } = require(`${__hooks}/utils.js`)
+    const { requireAdmin, parseRequestBody, getSiteUrl, getSenderInfo, sendError } = require(`${__hooks}/utils.js`)
     
     try {
       // Check admin access
@@ -36,18 +36,21 @@ routerAdd(
       // Find the user record
       const record = $app.findRecordById("users", userId)
       
-      // Check if email is already in use using safe filter placeholders
+      // Check if email is already in use using safe filter placeholders.
+      // findFirstRecordByFilter throws when there is no match, so keep that
+      // lookup separate from the duplicate check.
+      let existingUser = null
       try {
-        const existingUser = $app.findFirstRecordByFilter(
+        existingUser = $app.findFirstRecordByFilter(
           "users",
           "email = {:email}",
           { email: newEmail }
         )
-        if (existingUser && existingUser.id !== userId) {
-          throw new BadRequestError("Email is already in use")
-        }
-      } catch (err) {
-        // findFirstRecordByFilter throws when not found; that's fine
+      } catch (_) {
+        existingUser = null
+      }
+      if (existingUser && existingUser.id !== userId) {
+        throw new BadRequestError("Email is already in use")
       }
       
       // Generate email-change token (documented JS API)
@@ -96,12 +99,7 @@ routerAdd(
       })
       
     } catch (err) {
-      console.error("Failed to request email change:", err)
-      // Handle known error types
-      if (err instanceof BadRequestError || err instanceof ForbiddenError) {
-        return e.json(err.status, { error: err.message })
-      }
-      return e.json(500, { error: "Failed to request email change: " + String(err) })
+      return sendError(e, err, "Failed to request email change")
     }
   },
   $apis.requireAuth()

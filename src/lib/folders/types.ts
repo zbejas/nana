@@ -1,16 +1,17 @@
-import type { RecordModel } from 'pocketbase';
+import type { RecordModel } from '../record-model';
 
 export interface Folder extends RecordModel {
     name: string;
     parent?: string; // Parent folder ID (null for root folders)
     author: string; // User ID
     color?: string;
-    published: boolean;
     is_public: boolean;
     is_private: boolean;
     share_attachments: boolean;
     public_share_token?: string;
     public_expires_at?: string;
+    deleted_at?: string;
+    deleted_by?: string;
     created: string;
     updated: string;
 }
