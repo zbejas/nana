@@ -36,6 +36,26 @@ export type {
   ChatUsage,
 };
 
+/** The dock either shows the caller's personal chat or a note's shared chat. */
+export type ChatScope = 'personal' | 'note';
+
+/** Why a note cannot host a shared chat right now. */
+export type NoteChatReason = 'not_shared' | 'private' | 'trashed' | 'unavailable';
+
+/** GET/POST /api/chat/notes/:id/chat. `conversation` is the one shared chat. */
+export interface NoteChatStatus {
+  noteId: string;
+  noteTitle: string;
+  enabled: boolean;
+  reason: NoteChatReason | null;
+  shared: boolean;
+  accessRole: 'owner' | 'view' | 'comment' | 'edit';
+  accessLevel: number;
+  canEdit: boolean;
+  canManage: boolean;
+  conversation: ChatConversation | null;
+}
+
 /** UI-only statuses are layered on top of the persisted edit statuses. */
 export type ChatEditUiStatus = ChatEditStatus | 'applying' | 'conflict';
 
@@ -53,7 +73,19 @@ export interface ChatUiTool extends ChatToolActivity {
   title?: string;
   targetType?: ChatContextType;
   targetId?: string;
+  /** Bounded server-supplied failure detail, shown only for failed calls. */
+  error?: string;
 }
+
+/** A UI tool part carries the optional bounded failure detail. */
+export type ChatUiToolPart = ChatUiTool & { type: 'tool' };
+
+/** UI mirror of ChatPart so tool failure text survives the stream. */
+export type ChatUiPart =
+  | { type: 'text'; text: string }
+  | { type: 'reasoning'; text: string }
+  | ChatUiToolPart
+  | { type: 'edit'; editId: string };
 
 export interface ChatUiMessage {
   id?: string;
@@ -61,11 +93,14 @@ export interface ChatUiMessage {
   content: string;
   reasoning?: string;
   tools?: ChatUiTool[];
-  parts?: ChatPart[];
+  parts?: ChatUiPart[];
   sources?: ChatSource[];
   edits?: ChatUiEdit[];
   context?: ChatContext | null;
   attachments?: ChatAttachmentRef[];
+  /** Author of a user message in a shared note chat. */
+  authorId?: string;
+  authorLabel?: string;
   /** Token usage from the final model step that produced this answer. */
   usage?: ChatUsage;
   model?: string;
@@ -93,6 +128,12 @@ export interface ChatConversation {
   updated: string;
   /** Server-side hint for the pending-edit dot in history. */
   pending_edits?: number;
+  /** Personal chats are author-owned; note chats are shared per note. */
+  scope?: ChatScope;
+  /** The note that owns a shared conversation. */
+  documentId?: string;
+  /** False when a shared-chat grantee cannot rename, delete, or undo. */
+  canManage?: boolean;
 }
 
 export interface ChatError {
@@ -133,4 +174,12 @@ export interface ChatUiState {
   } | null;
   /** Conversations with a live edit, for the history dot. */
   pendingEditConversationIds: string[];
+  /** Personal chat or the active note's shared chat. */
+  scope: ChatScope;
+  /** Shared-chat availability for the note currently open. */
+  noteChatStatus: NoteChatStatus | null;
+  noteChatLoading: boolean;
+  noteChatError: string | null;
+  /** Note whose status the dock last requested. */
+  noteChatDocumentId: string | null;
 }

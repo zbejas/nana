@@ -396,6 +396,89 @@ export class CollabRoom {
     }
 
     /**
+     * Adopt a content write made outside the room (chat, MCP, typed REST).
+     *
+     * The AI body is merged against the room's last durable base so concurrent
+     * local text survives, then applied as one server-origin Yjs diff. When no
+     * local text remains the room ends on the external revision and needs no
+     * second write; otherwise the merged body is persisted against that
+     * revision before this returns.
+     */
+    async applyExternalEdit(content: string, revision: number): Promise<number> {
+        if (this.disposed) {
+            return Number.isFinite(revision) ? revision : this.revision;
+        }
+
+        const external = persistedContent(content);
+        const nextRevision = Number.isFinite(revision) ? revision : this.revision;
+        const base = this.lastPersistedContent;
+        const local = persistedContent(this.text.toString());
+
+        let merged = external;
+        if (local !== base) {
+            try {
+                merged = persistedContent(mergeConcurrentMarkdown(base, local, external));
+            } catch (error) {
+                log.warn("Live note external edit could not be merged", {
+                    documentId: this.documentId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+                this.revision = nextRevision;
+                this.lastPersistedContent = external;
+                this.reportConflict(
+                    "merge",
+                    "The note changed while Nana's edit was applied. Reload the note to reconcile.",
+                    external,
+                );
+                return this.revision;
+            }
+        }
+
+        if (merged !== local) {
+            this.applyServerContent(merged);
+        }
+
+        this.revision = nextRevision;
+        this.lastPersistedContent = external;
+
+        if (persistedContent(this.text.toString()) === external) {
+            // No local text survived the merge: the durable body is already the
+            // room body, so adopt it cleanly and tell clients the revision.
+            this.clearFlushTimers();
+            this.durableSeq = this.seq;
+            this.setPersistence("clean");
+            this.broadcastAck();
+            return this.revision;
+        }
+
+        // Concurrent local text remains. Persist it now against the external
+        // revision so the next tool call sees one coherent revision.
+        this.markDirty();
+        await this.flush();
+        return this.revision;
+    }
+
+    /**
+     * Adopt a metadata-only write's revision. The body did not change, but the
+     * next room flush must patch against the new revision or it self-conflicts.
+     */
+    applyExternalRevision(revision: number): number {
+        if (Number.isFinite(revision)) {
+            this.revision = revision;
+        }
+        if (
+            !this.needsPersist
+            && this.persistence !== "conflict"
+            && this.persistence !== "error"
+        ) {
+            this.clearFlushTimers();
+            this.setPersistence("clean");
+            this.broadcastAck();
+        }
+        return this.revision;
+    }
+
+    /**
      * Drain pending content. Used for the last disconnect and shutdown; timers
      * use the single in-flight write path instead of starting a second one.
      */
@@ -408,6 +491,7 @@ export class CollabRoom {
             !this.disposed
             && this.needsPersist
             && this.persistence !== "conflict"
+            && this.persistence !== "error"
             && attempts < MAX_RECONCILE_ATTEMPTS
         ) {
             if (this.flushing) {
@@ -449,7 +533,14 @@ export class CollabRoom {
     }
 
     private scheduleFlush(): void {
-        if (this.disposed || this.persistence === "conflict" || !this.needsPersist) return;
+        if (
+            this.disposed
+            || this.persistence === "conflict"
+            || this.persistence === "error"
+            || !this.needsPersist
+        ) {
+            return;
+        }
 
         if (this.flushDebounceTimer) clearTimeout(this.flushDebounceTimer);
         this.flushDebounceTimer = setTimeout(() => {
@@ -483,7 +574,14 @@ export class CollabRoom {
             await this.flushing;
             return;
         }
-        if (this.disposed || !this.needsPersist || this.persistence === "conflict") return;
+        if (
+            this.disposed
+            || !this.needsPersist
+            || this.persistence === "conflict"
+            || this.persistence === "error"
+        ) {
+            return;
+        }
 
         const task = this.persistOnce();
         this.flushing = task;

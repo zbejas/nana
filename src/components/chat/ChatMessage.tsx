@@ -12,23 +12,43 @@ import { ChatSources } from './ChatSources';
 import { ChatToolStrip } from './ChatToolStrip';
 import { ChatEditCard } from './ChatEditCard';
 import { formatChatFileSize } from '../../lib/chat/attachments';
-import type { ChatPart, ChatUiMessage, ChatUiTool } from '../../lib/chat/types';
+import type { ChatUiMessage, ChatUiPart, ChatUiTool } from '../../lib/chat/types';
 
 interface ChatMessageProps {
   message: ChatUiMessage;
+  /** Shared note chats label each user message by author. */
+  groupChat?: boolean;
+  currentUserId?: string | null;
+  /** False when a shared-chat grantee cannot undo or confirm edits. */
+  canManage?: boolean;
   onUndoEdit: (id: string) => void;
   onConfirmDelete: (id: string) => void;
   onCancelDelete: (id: string) => void;
 }
 
-function legacyParts(message: ChatUiMessage): ChatPart[] {
-  const parts: ChatPart[] = [];
+function legacyParts(message: ChatUiMessage): ChatUiPart[] {
+  const parts: ChatUiPart[] = [];
   if (message.reasoning) parts.push({ type: 'reasoning', text: message.reasoning });
   if (message.content) parts.push({ type: 'text', text: message.content });
   for (const tool of message.tools ?? []) {
     parts.push({ type: 'tool', ...tool });
   }
   return parts;
+}
+
+function senderLabel(
+  message: ChatUiMessage,
+  groupChat: boolean,
+  currentUserId: string | null,
+): string {
+  if (!groupChat) return 'You';
+  if (!message.authorId) {
+    // Optimistic local messages have no author id yet; older rows may only
+    // carry a label.
+    return message.authorLabel?.trim() || 'You';
+  }
+  if (currentUserId && message.authorId === currentUserId) return 'You';
+  return message.authorLabel?.trim() || 'Someone';
 }
 
 function reasoningBlock(text: string, open: boolean, key: string): ReactNode {
@@ -54,6 +74,9 @@ function reasoningBlock(text: string, open: boolean, key: string): ReactNode {
 /** One turn. User copy is plain text; answers render sanitized Markdown. */
 export function ChatMessage({
   message,
+  groupChat = false,
+  currentUserId = null,
+  canManage = true,
   onUndoEdit,
   onConfirmDelete,
   onCancelDelete,
@@ -63,7 +86,9 @@ export function ChatMessage({
   if (message.role === 'user') {
     return (
       <div className="mb-7 flex flex-col items-end">
-        <p className="mb-1.5 text-[11.5px] font-medium text-ink-muted">You</p>
+        <p className="mb-1.5 text-[11.5px] font-medium text-ink-muted">
+          {senderLabel(message, groupChat, currentUserId)}
+        </p>
         {message.attachments && message.attachments.length > 0 && (
           <div className="mb-1.5 flex max-w-[85%] flex-wrap justify-end gap-1.5 sm:max-w-[78%]">
             {message.attachments.map((attachment) => (
@@ -108,12 +133,21 @@ export function ChatMessage({
   const editCount = message.edits?.length ?? 0;
   const hasContent = textCount > 0;
   const hasReasoning = parts.some((part) => part.type === 'reasoning');
+  const hasRunningTool = parts.some(
+    (part) => part.type === 'tool' && part.status === 'running',
+  );
+  const hasCompletedTools = parts.some(
+    (part) => part.type === 'tool' && part.status !== 'running',
+  );
   const editing = message.edits?.some((edit) => edit.status === 'applying') ?? false;
+  // A finished tool call with no text yet means the model is composing the
+  // next step. Never show "Thinking…" alongside the running tool timer.
   const showThinking = message.streaming
     && !hasContent
     && !hasReasoning
-    && toolCount === 0
+    && !hasRunningTool
     && editCount === 0;
+  const thinkingLabel = hasCompletedTools ? 'Waiting for model…' : 'Thinking…';
 
   const copy = () => {
     void navigator.clipboard.writeText(message.content).then(() => {
@@ -129,7 +163,11 @@ export function ChatMessage({
     if (!part) continue;
 
     if (part.type === 'reasoning') {
-      blocks.push(reasoningBlock(part.text, message.streaming && !hasContent, `reasoning:${index}`));
+      blocks.push(reasoningBlock(
+        part.text,
+        Boolean(message.streaming) && !hasContent && !hasRunningTool,
+        `reasoning:${index}`,
+      ));
       continue;
     }
 
@@ -164,6 +202,7 @@ export function ChatMessage({
           ...(toolPart.title ? { title: toolPart.title } : {}),
           ...(toolPart.targetType ? { targetType: toolPart.targetType } : {}),
           ...(toolPart.targetId ? { targetId: toolPart.targetId } : {}),
+          ...(toolPart.error ? { error: toolPart.error } : {}),
         });
         index += 1;
       }
@@ -173,6 +212,7 @@ export function ChatMessage({
           key={`tools:${index}`}
           tools={tools}
           streaming={message.streaming}
+          canManage={canManage}
         />,
       );
       continue;
@@ -185,6 +225,7 @@ export function ChatMessage({
       <div key={`edit:${part.editId}`} className="mb-1.5">
         <ChatEditCard
           edit={edit}
+          canManage={canManage}
           onUndo={onUndoEdit}
           onConfirm={onConfirmDelete}
           onCancel={onCancelDelete}
@@ -199,6 +240,7 @@ export function ChatMessage({
       <div key={`edit:${edit.id}`} className="mb-1.5">
         <ChatEditCard
           edit={edit}
+          canManage={canManage}
           onUndo={onUndoEdit}
           onConfirm={onConfirmDelete}
           onCancel={onCancelDelete}
@@ -223,9 +265,9 @@ export function ChatMessage({
       {blocks}
 
       {showThinking ? (
-        <p className="inline-flex items-center gap-2 text-[11.5px] font-medium text-ink-muted">
+        <p className="inline-flex items-center gap-2 text-[11.5px] font-medium text-ink-muted" role="status">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal" aria-hidden="true" />
-          Thinking…
+          {thinkingLabel}
         </p>
       ) : message.stopped ? (
         <p className="text-[12px] font-medium text-ink-muted">Stopped.</p>

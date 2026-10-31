@@ -1,5 +1,6 @@
 import { pbGet, type ToolContext, type ToolFailure } from "../pocketbase/client";
 import { folderIsLocked, loadAiVisibility, noteIsLocked, boardIsLocked } from "../workspace/privacy";
+import { resolveSharingAccess } from "../workspace/sharing";
 import { isValidRecordId, truncate } from "./tools/text";
 import type { ChatContext, ChatContextInput } from "./types";
 
@@ -10,7 +11,16 @@ export interface ContextResolutionError {
     message: string;
 }
 
-export type ContextResolution = { ok: true; context: ChatContext } | ContextResolutionError;
+export type ContextResolution =
+    | {
+        ok: true;
+        context: ChatContext;
+        /** Effective document access, present for document contexts. */
+        accessLevel?: number;
+        /** Document owner; differs from the caller for a shared note. */
+        authorId?: string;
+    }
+    | ContextResolutionError;
 
 interface PBContextDocument {
     id?: string;
@@ -79,9 +89,6 @@ export async function resolveChatContext(
         return badRequest("That context id is not valid.");
     }
 
-    const visibility = await loadAiVisibility(context, abortSignal);
-    if (!visibility.ok) return unavailable();
-
     if (input.type === "document") {
         const result = await pbGet<PBContextDocument>(
             `/api/collections/documents/records/${encodeURIComponent(input.id)}?fields=id,title,author,is_private,folder,deleted_at`,
@@ -90,8 +97,35 @@ export async function resolveChatContext(
         );
         if (!result.ok) return notFound();
         const record = result;
-        if (record.author !== context.userId || record.deleted_at) return notFound();
-        if (noteIsLocked(visibility, record)) return notFound();
+        if (typeof record.id !== "string" || record.deleted_at) return notFound();
+
+        if (record.author === context.userId) {
+            const visibility = await loadAiVisibility(context, abortSignal);
+            if (!visibility.ok) return unavailable();
+            if (noteIsLocked(visibility, record)) return notFound();
+            return {
+                ok: true,
+                context: {
+                    type: "document",
+                    id: input.id,
+                    title: safeTitle(record.title, "Untitled note"),
+                },
+                accessLevel: 3,
+                authorId: record.author,
+            };
+        }
+
+        // A shared note is a normal personal-chat context for the grantee. The
+        // sharing route enforces privacy, trash, and folder inheritance; the
+        // caller token already made PocketBase prove the record is readable.
+        if (record.is_private === true) return notFound();
+        let access;
+        try {
+            access = await resolveSharingAccess(context, "document", input.id, abortSignal);
+        } catch {
+            return unavailable();
+        }
+        if (!access || access.level < 1) return notFound();
         return {
             ok: true,
             context: {
@@ -99,8 +133,13 @@ export async function resolveChatContext(
                 id: input.id,
                 title: safeTitle(record.title, "Untitled note"),
             },
+            accessLevel: access.level,
+            authorId: record.author,
         };
     }
+
+    const visibility = await loadAiVisibility(context, abortSignal);
+    if (!visibility.ok) return unavailable();
 
     if (input.type === "board") {
         const result = await pbGet<PBContextBoard>(

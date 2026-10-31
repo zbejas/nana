@@ -84,6 +84,20 @@ function writeContext(options: WriteOptions = {}) {
     };
 }
 
+async function shareNoteWithOther(noteId: string, permission: "view" | "edit"): Promise<void> {
+    const response = await bunRequest("/api/v1/sharing/links", {
+        method: "POST",
+        headers: { Authorization: owner.token, "Content-Type": "application/json" },
+        body: JSON.stringify({
+            targetType: "document",
+            targetId: noteId,
+            userId: other.id,
+            permission,
+        }),
+    });
+    await expectStatus(response, 200, `share note ${permission}`);
+}
+
 async function readEditorNote(noteId: string) {
     const result = await readNote(ownerContext, { noteId, limit: 600 });
     if (!result.ok) throw new Error(`read_note failed: ${result.code} ${result.message}`);
@@ -181,6 +195,51 @@ describe("tool registry", () => {
         expect((result as { ok: boolean }).ok).toBe(true);
         expect(recorder.listSources()).toEqual([]);
     });
+
+    test("strict view note scope registers only read_note", () => {
+        const tools = createChatTools(otherContext, {
+            mode: "edit",
+            noteScope: { documentId: notes.second.id, accessLevel: 1, strict: true },
+        });
+        expect(Object.keys(tools)).toEqual(["read_note"]);
+    });
+
+    test("strict edit note scope registers only the bound note tools", () => {
+        const tools = createChatTools(otherContext, {
+            mode: "edit",
+            noteScope: { documentId: notes.second.id, accessLevel: 3, strict: true },
+        });
+        expect(Object.keys(tools).sort()).toEqual([
+            "append_note",
+            "edit_note",
+            "read_note",
+            "update_note",
+        ]);
+        for (const name of [
+            "list_notes",
+            "list_folders",
+            "list_boards",
+            "list_tasks",
+            "read_task",
+            "create_folder",
+            "rename_folder",
+            "move_folder",
+            "create_note",
+            "move_note",
+            "create_board",
+            "update_board",
+            "move_board",
+            "create_task",
+            "update_task",
+            "move_task",
+            "delete_note",
+            "delete_task",
+            "delete_folder",
+            "delete_board",
+        ]) {
+            expect(Object.keys(tools)).not.toContain(name);
+        }
+    });
 });
 
 describe("context resolution", () => {
@@ -228,6 +287,113 @@ describe("context resolution", () => {
         expect(badType.ok).toBe(false);
         if (badType.ok) return;
         expect(badType.status).toBe(400);
+    });
+});
+
+describe("shared note scope", () => {
+    test("reads the bound note for a grantee and rejects other notes", async () => {
+        const note = await createNote(owner, {
+            title: "Grantee readable note",
+            content: "# Shared\n\nGrantee read body.",
+        });
+        const unrelated = await createNote(other, { title: "Unrelated grantee note" });
+        await shareNoteWithOther(note.id, "edit");
+
+        const scope = { documentId: note.id, accessLevel: 3, strict: true };
+        const read = await readNote(otherContext, { noteId: note.id }, undefined, scope);
+        expect(read.ok).toBe(true);
+        if (!read.ok) return;
+        expect(read.content).toContain("Grantee read body.");
+
+        const wrong = await readNote(
+            otherContext,
+            { noteId: unrelated.id },
+            undefined,
+            scope,
+        );
+        expect(wrong.ok).toBe(false);
+        if (wrong.ok) return;
+        expect(wrong.code).toBe("not_found");
+
+        const ownerRead = await readNote(ownerContext, { noteId: note.id });
+        expect(ownerRead.ok).toBe(true);
+    });
+
+    test("edits the bound note at edit access and rejects view or unrelated scopes", async () => {
+        const note = await createNote(owner, {
+            title: "Grantee editable note",
+            content: "# Shared\n\nOriginal grantee body.",
+        });
+        const unrelated = await createNote(owner, {
+            title: "Outside the shared scope",
+            content: "# Outside\n\nDo not touch.",
+        });
+        await shareNoteWithOther(note.id, "edit");
+
+        const scope = { documentId: note.id, accessLevel: 3, strict: true };
+        const read = await readNote(otherContext, { noteId: note.id }, undefined, scope);
+        expect(read.ok).toBe(true);
+        if (!read.ok) return;
+
+        const granteeConversation = await createConversation(other, {
+            title: "Grantee scope writes",
+            messages: [],
+        });
+        const granteeWrite = {
+            context: otherContext,
+            recorder: new ChatRunRecorder(),
+            conversationId: granteeConversation.id,
+            noteScope: scope,
+        };
+
+        const edited = await editNoteTool(granteeWrite, {
+            noteId: note.id,
+            expectedRevision: read.versionToken,
+            operations: [
+                {
+                    op: "replace_section",
+                    heading: "Shared",
+                    markdown: "Edited by the grantee.",
+                },
+            ],
+            summary: "Grantee edit",
+        });
+        expect(edited.ok).toBe(true);
+        if (!edited.ok) return;
+
+        const stored = await pbGetRecord<TestRecord>(other.token, "documents", note.id);
+        expect(String(stored.content)).toContain("Edited by the grantee.");
+        expect(String(stored.content)).not.toContain("Original grantee body.");
+
+        const viewWrite = {
+            ...granteeWrite,
+            noteScope: { documentId: note.id, accessLevel: 1, strict: true },
+        };
+        const viewEdit = await editNoteTool(viewWrite, {
+            noteId: note.id,
+            expectedRevision: Number(stored.revision),
+            operations: [{ op: "append", markdown: "View cannot write." }],
+            summary: "View edit",
+        });
+        expect(viewEdit.ok).toBe(false);
+        if (viewEdit.ok) return;
+        expect(viewEdit.code).toBe("not_found");
+
+        const unrelatedRead = await readNote(ownerContext, { noteId: unrelated.id });
+        expect(unrelatedRead.ok).toBe(true);
+        if (!unrelatedRead.ok) return;
+        const wrongNote = await editNoteTool(granteeWrite, {
+            noteId: unrelated.id,
+            expectedRevision: unrelatedRead.revision,
+            operations: [{ op: "append", markdown: "Wrong note." }],
+            summary: "Wrong note edit",
+        });
+        expect(wrongNote.ok).toBe(false);
+        if (wrongNote.ok) return;
+        expect(wrongNote.code).toBe("not_found");
+
+        const unchanged = await pbGetRecord<TestRecord>(owner.token, "documents", unrelated.id);
+        expect(String(unchanged.content)).not.toContain("Wrong note.");
     });
 });
 

@@ -319,6 +319,11 @@ const server = serve({
       if (blocked) return withSecurityHeaders(blocked);
       return withSecurityHeaders(await handleChat(req));
     },
+    "/api/chat/notes/*": async (req): Promise<Response> => {
+      const blocked = await checkRateLimit(req, server);
+      if (blocked) return withSecurityHeaders(blocked);
+      return withSecurityHeaders(await handleChat(req));
+    },
     "/api/chat/status": async (req): Promise<Response> => {
       const blocked = await checkRateLimit(req, server);
       if (blocked) return withSecurityHeaders(blocked);

@@ -179,6 +179,8 @@ Back up `pb_data` before the first boot on this migration. The `down()` moves so
 
 Migration `0000032_remove_document_versions.js` drops the legacy `document_versions` collection and `documents.published` and does not convert old rows. Version history starts empty and begins with the first **Save version** after the upgrade. A `down()` restores the schema, not the discarded data.
 
+Migration `0000035_group_chat.js` adds shared-note chat metadata and rules. Existing conversations are backfilled to `scope = "personal"` with their user-message authors/labels; note conversations are created on first open. There is no operator action beyond the normal migration run, and the `down()` restores the previous rules and drops the added fields.
+
 Migrations are append-only. Do not rename or remove historical migration files; `bootstrap.js` has a temporary compatibility rewrite for old filenames.
 
 #### Manual Zvec cleanup (optional)
