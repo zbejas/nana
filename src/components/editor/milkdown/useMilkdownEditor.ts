@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Editor } from '@milkdown/kit/core';
 import { editorStateCtx, editorViewCtx } from '@milkdown/kit/core';
 import { TextSelection } from '@milkdown/kit/prose/state';
@@ -40,7 +40,7 @@ export interface UseMilkdownEditorOptions {
     sections: AiChangedSection[];
   } | null;
   collaborators?: Collaborator[];
-  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean }) => void;
+  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean; pane?: "source" | "wysiwyg" }) => void;
   onFocusChange?: (focused: boolean) => void;
   onSlash?: (position: SlashTriggerPosition) => void;
   onReady?: (editor: Editor) => void;
@@ -87,8 +87,9 @@ function sameToolbarState(left: EditorToolbarState, right: EditorToolbarState): 
  * StrictMode runs the create/destroy effect twice, so the effect cancels a
  * create that finishes after unmount. `value` is never part of the factory
  * dependencies; incoming values are compared against the last emitted markdown
- * and applied only when the pane is not focused, which keeps both split panes
- * from stealing each other's caret.
+ * and applied in a layout effect so a remote update reaches the editor before
+ * the next keystroke. ProseMirror maps the local selection through the
+ * incremental change.
  */
 export function useMilkdownEditor({
   value,
@@ -189,6 +190,7 @@ export function useMilkdownEditor({
               anchor: selection.anchor,
               head: selection.head,
               focused: focusedNow,
+              pane: 'wysiwyg',
             });
           },
         },
@@ -229,7 +231,9 @@ export function useMilkdownEditor({
   }, []);
 
   // Incoming values from the other pane, realtime, or a document switch.
-  useEffect(() => {
+  // Layout timing is deliberate: a remote Yjs update must reach this editor
+  // before the next local keystroke can diff against a newer Y.Doc.
+  useLayoutEffect(() => {
     if (!ready) return;
     const incoming = normalizeMarkdown(value);
     if (incoming === lastAppliedRef.current) return;
@@ -250,9 +254,8 @@ export function useMilkdownEditor({
     const hasCollaborators = collaborators.length > 0;
     if (!hasCollaborators && !hadCollaboratorsRef.current) return;
     hadCollaboratorsRef.current = hasCollaborators;
-    const view = editor.action((ctx) => ctx.get(editorViewCtx));
-    setCollaboratorHighlights(view, collaborators, normalizeMarkdown(value));
-  }, [collaborators, value, ready]);
+    editor.action((ctx) => setCollaboratorHighlights(ctx, collaborators));
+  }, [collaborators, ready]);
 
   // AI edits get their own path so the diff still applies when a realtime
   // update already pushed the new Markdown into the editor. The previous

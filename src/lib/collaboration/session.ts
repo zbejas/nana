@@ -40,6 +40,8 @@ export interface CollabSelection {
     anchor: number;
     head: number;
     focused: boolean;
+    /** Split mode has two editors; only the active one owns presence. */
+    pane?: "source" | "wysiwyg";
 }
 
 export interface CollabSessionOptions {
@@ -91,6 +93,12 @@ export class CollabSession {
     private queuedUpdates: Uint8Array[] = [];
     private presence: CollabPresenceWire[] = [];
     private lastSelection: CollabSelection | null = null;
+    private lastFocusedPane: "source" | "wysiwyg" | undefined;
+    private lastRelativeSelection: {
+        anchor: unknown;
+        head: unknown;
+        focused: boolean;
+    } | null = null;
     private lastText = "";
     private synced = false;
     private applyingSync = false;
@@ -169,23 +177,48 @@ export class CollabSession {
 
     sendSelection(selection: CollabSelection): void {
         if (this.destroyed) return;
-        // Split mode has two editors. The unfocused pane also reports its
-        // selection when the shared value changes; it must not overwrite the
-        // caret of the pane the user is actually typing in.
-        if (
-            !selection.focused
-            && this.lastSelection?.focused
-            && globalThis.document?.hasFocus?.()
-        ) {
-            return;
+        // Split mode has two editors. The inactive pane also reports a
+        // selection whenever the shared value changes; only the pane the user
+        // actually focused may own presence. Without this, a remote apply in
+        // the other pane can move the peer's caret to the wrong place.
+        if (!selection.focused) {
+            if (selection.pane && this.lastFocusedPane && selection.pane !== this.lastFocusedPane) {
+                return;
+            }
+            if (!selection.pane && this.lastSelection?.focused && globalThis.document?.hasFocus?.()) {
+                return;
+            }
+        } else if (selection.pane) {
+            this.lastFocusedPane = selection.pane;
         }
+
         this.lastSelection = selection;
+        this.lastRelativeSelection = this.relativeSelectionFor(selection);
         if (!this.clientId) return;
         if (this.presenceTimer) return;
         this.presenceTimer = setTimeout(() => {
             this.presenceTimer = null;
             this.flushPresence();
         }, PRESENCE_FLUSH_MS);
+    }
+
+    private relativeSelectionFor(selection: CollabSelection): {
+        anchor: unknown;
+        head: unknown;
+        focused: boolean;
+    } | null {
+        const max = Math.max(0, this.text.length);
+        const anchor = Math.max(0, Math.min(selection.anchor, max));
+        const head = Math.max(0, Math.min(selection.head, max));
+        try {
+            return {
+                anchor: Y.createRelativePositionFromTypeIndex(this.text, anchor),
+                head: Y.createRelativePositionFromTypeIndex(this.text, head),
+                focused: selection.focused,
+            };
+        } catch {
+            return null;
+        }
     }
 
     destroy(): void {
@@ -210,6 +243,9 @@ export class CollabSession {
     private handleWindowBlur = (): void => {
         if (!this.lastSelection) return;
         this.lastSelection = { ...this.lastSelection, focused: false };
+        if (this.lastRelativeSelection) {
+            this.lastRelativeSelection = { ...this.lastRelativeSelection, focused: false };
+        }
         void this.flushPresence();
     };
 
@@ -275,20 +311,16 @@ export class CollabSession {
 
     private async flushPresence(): Promise<void> {
         const selection = this.lastSelection;
+        const relative = this.lastRelativeSelection ?? (selection ? this.relativeSelectionFor(selection) : null);
         if (
             this.destroyed
             || !selection
+            || !relative
             || !this.clientId
             || this.status !== "connected"
         ) {
             return;
         }
-
-        const max = Math.max(0, this.text.length);
-        const anchor = Math.max(0, Math.min(selection.anchor, max));
-        const head = Math.max(0, Math.min(selection.head, max));
-        const anchorPosition = Y.createRelativePositionFromTypeIndex(this.text, anchor);
-        const headPosition = Y.createRelativePositionFromTypeIndex(this.text, head);
 
         try {
             await fetch(
@@ -303,9 +335,9 @@ export class CollabSession {
                     body: JSON.stringify({
                         clientId: this.clientId,
                         presence: {
-                            anchor: anchorPosition,
-                            head: headPosition,
-                            focused: selection.focused,
+                            anchor: relative.anchor,
+                            head: relative.head,
+                            focused: relative.focused,
                         },
                     }),
                 },
@@ -460,8 +492,10 @@ export class CollabSession {
         if (roomChanged) {
             // The server dropped the old room and seeded a new Y.Doc from the
             // saved note. Clear the stale replica so the two seeds cannot both
-            // survive as independent insertions.
+            // survive as independent insertions. Relative presence positions
+            // from the old replica no longer point into this text.
             this.queuedUpdates = [];
+            this.lastRelativeSelection = null;
             this.doc.transact(() => {
                 if (this.text.length > 0) this.text.delete(0, this.text.length);
             }, RESET_ORIGIN);

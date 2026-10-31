@@ -202,6 +202,16 @@ function textFromUpdate(content: string, updateBase64: string): string {
     return doc.getText("content").toString();
 }
 
+function docFromSync(updateBase64: string): Y.Doc {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, Buffer.from(updateBase64, "base64"));
+    return doc;
+}
+
+function deltaUpdate(doc: Y.Doc, baseVector: Uint8Array): string {
+    return Buffer.from(Y.encodeStateAsUpdate(doc, baseVector)).toString("base64");
+}
+
 function presence(offset: number): unknown {
     const doc = new Y.Doc();
     const text = doc.getText("content");
@@ -314,6 +324,117 @@ describe("/api/v1/collab live editing", () => {
             body: JSON.stringify({ clientId: "missing-client", update: "AAA=" }),
         });
         await expectStatus(response, 409, "stale live client");
+    }, 20_000);
+
+    test("converges concurrent edits at different offsets without losing text", async () => {
+        const concurrentNote = await createNote(owner, {
+            title: `Concurrent offsets ${uniqueSuffix()}`,
+            content: "hello world",
+        });
+        await share(owner, concurrentNote.id, editor.id, "edit");
+
+        const ownerClient = await LiveClient.open(concurrentNote.id, owner.token);
+        const editorClient = await LiveClient.open(concurrentNote.id, editor.token);
+        clients.push(ownerClient, editorClient);
+
+        const baseVector = Y.encodeStateVector(docFromSync(ownerClient.sync.update));
+        const ownerDoc = docFromSync(ownerClient.sync.update);
+        const editorDoc = docFromSync(editorClient.sync.update);
+        ownerDoc.getText("content").insert(0, "A");
+        const editorText = editorDoc.getText("content");
+        editorText.insert(editorText.length, "B");
+
+        const [ownerSent, editorSent] = await Promise.all([
+            bunRequest(`/api/v1/collab/documents/${concurrentNote.id}/update`, {
+                method: "POST",
+                headers: jsonHeaders(owner.token),
+                body: JSON.stringify({
+                    clientId: ownerClient.clientId,
+                    update: deltaUpdate(ownerDoc, baseVector),
+                }),
+            }),
+            bunRequest(`/api/v1/collab/documents/${concurrentNote.id}/update`, {
+                method: "POST",
+                headers: jsonHeaders(editor.token),
+                body: JSON.stringify({
+                    clientId: editorClient.clientId,
+                    update: deltaUpdate(editorDoc, baseVector),
+                }),
+            }),
+        ]);
+        await expectStatus(ownerSent, 200, "owner concurrent update");
+        await expectStatus(editorSent, 200, "editor concurrent update");
+
+        const ownerRelay = await ownerClient.waitForEvent(
+            (event) => event.type === "update" && event.clientId === editorClient.clientId,
+        );
+        const editorRelay = await editorClient.waitForEvent(
+            (event) => event.type === "update" && event.clientId === ownerClient.clientId,
+        );
+        Y.applyUpdate(ownerDoc, Buffer.from(String(ownerRelay.update), "base64"));
+        Y.applyUpdate(editorDoc, Buffer.from(String(editorRelay.update), "base64"));
+
+        const observer = await LiveClient.open(concurrentNote.id, owner.token);
+        clients.push(observer);
+        const finalText = textFromUpdate("", observer.sync.update);
+        expect(finalText).toBe("Ahello worldB");
+        expect(ownerDoc.getText("content").toString()).toBe(finalText);
+        expect(editorDoc.getText("content").toString()).toBe(finalText);
+    }, 20_000);
+
+    test("converges concurrent edits at the same offset", async () => {
+        const concurrentNote = await createNote(owner, {
+            title: `Concurrent same offset ${uniqueSuffix()}`,
+            content: "hello world",
+        });
+        await share(owner, concurrentNote.id, editor.id, "edit");
+
+        const ownerClient = await LiveClient.open(concurrentNote.id, owner.token);
+        const editorClient = await LiveClient.open(concurrentNote.id, editor.token);
+        clients.push(ownerClient, editorClient);
+
+        const baseVector = Y.encodeStateVector(docFromSync(ownerClient.sync.update));
+        const ownerDoc = docFromSync(ownerClient.sync.update);
+        const editorDoc = docFromSync(editorClient.sync.update);
+        ownerDoc.getText("content").insert(5, "A");
+        editorDoc.getText("content").insert(5, "B");
+
+        const [ownerSent, editorSent] = await Promise.all([
+            bunRequest(`/api/v1/collab/documents/${concurrentNote.id}/update`, {
+                method: "POST",
+                headers: jsonHeaders(owner.token),
+                body: JSON.stringify({
+                    clientId: ownerClient.clientId,
+                    update: deltaUpdate(ownerDoc, baseVector),
+                }),
+            }),
+            bunRequest(`/api/v1/collab/documents/${concurrentNote.id}/update`, {
+                method: "POST",
+                headers: jsonHeaders(editor.token),
+                body: JSON.stringify({
+                    clientId: editorClient.clientId,
+                    update: deltaUpdate(editorDoc, baseVector),
+                }),
+            }),
+        ]);
+        await expectStatus(ownerSent, 200, "owner same-offset update");
+        await expectStatus(editorSent, 200, "editor same-offset update");
+
+        const ownerRelay = await ownerClient.waitForEvent(
+            (event) => event.type === "update" && event.clientId === editorClient.clientId,
+        );
+        const editorRelay = await editorClient.waitForEvent(
+            (event) => event.type === "update" && event.clientId === ownerClient.clientId,
+        );
+        Y.applyUpdate(ownerDoc, Buffer.from(String(ownerRelay.update), "base64"));
+        Y.applyUpdate(editorDoc, Buffer.from(String(editorRelay.update), "base64"));
+
+        const observer = await LiveClient.open(concurrentNote.id, owner.token);
+        clients.push(observer);
+        const finalText = textFromUpdate("", observer.sync.update);
+        expect(finalText).toMatch(/^hello(AB|BA) world$/);
+        expect(ownerDoc.getText("content").toString()).toBe(finalText);
+        expect(editorDoc.getText("content").toString()).toBe(finalText);
     }, 20_000);
 
     test("forwards the revision token through the browser facade", async () => {

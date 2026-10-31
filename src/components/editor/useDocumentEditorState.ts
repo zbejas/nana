@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useSetAtom } from 'jotai';
 import { getDocument, type Document } from '../../lib/documents';
@@ -83,7 +84,10 @@ export function useDocumentEditorState() {
         // against what was actually on screen.
         remoteContentChangeRef.current = { from: contentRef.current, to: normalized };
         contentRef.current = normalized;
-        setContent(normalized);
+        // Apply the merged Yjs value before returning from the SSE handler.
+        // Otherwise the next keystroke can diff against a newer Y.Doc and
+        // delete the update that has not reached the editor yet.
+        flushSync(() => setContent(normalized));
     }, [setContent]);
 
     const {
@@ -91,6 +95,7 @@ export function useDocumentEditorState() {
         status: collaborationStatus,
         canEdit: collaborationCanEdit,
         updateSelection: handleEditorSelection,
+        applyLocalContent,
     } = useDocumentCollaboration({
         documentId: document?.id,
         initialContent: document?.content ?? initialContent ?? '',
@@ -99,6 +104,18 @@ export function useDocumentEditorState() {
         onRemoteContent: handleRemoteContent,
     });
     const isReadOnly = isTrashDocument || !collaborationCanEdit;
+
+    // Editor input must reach Yjs in the same event as the ProseMirror change,
+    // not one React commit later. External writes (AI, restore, a merged save)
+    // use the same path explicitly, but never through a passive content effect.
+    const handleContentChange = useCallback((next: string) => {
+        const normalized = normalizeMarkdown(next);
+        applyLocalContent(normalized);
+        contentRef.current = normalized;
+        setContent(normalized);
+    }, [applyLocalContent]);
+
+    const applyExternalContent = handleContentChange;
 
     const { isSavingRef } = useDocumentLoader({
         urlDocumentId,
@@ -150,7 +167,7 @@ export function useDocumentEditorState() {
         creationSessionId,
         isSavingRef,
         onSave: save,
-        onApplyMergedContent: setContent,
+        onApplyMergedContent: applyExternalContent,
         onSetIsAutoSaving: setIsAutoSaving,
         onShowToast: showToast,
     });
@@ -174,7 +191,7 @@ export function useDocumentEditorState() {
         isReadOnly,
         isSavingRef,
         onSave: save,
-        onApplyMergedContent: setContent,
+        onApplyMergedContent: applyExternalContent,
         onReset: reset,
         onSetSaving: setSaving,
         onSetPublishing: setPublishing,
@@ -322,9 +339,9 @@ export function useDocumentEditorState() {
             remoteContentChangeRef.current = { from: contentRef.current, to: nextContent };
         }
         setTitle(document.title || '');
-        setContent(nextContent);
+        applyExternalContent(nextContent);
         setTags(document.tags || []);
-    }, [document, urlDocumentId, hasUnsavedChanges, collaborationStatus]);
+    }, [document, urlDocumentId, hasUnsavedChanges, collaborationStatus, applyExternalContent]);
 
     useEffect(() => {
         // The atom can change one render before the realtime effect adopts it.
@@ -382,13 +399,14 @@ export function useDocumentEditorState() {
         try {
             const updatedDocument = await getDocument(document.id);
             save(updatedDocument);
+            applyExternalContent(normalizeMarkdown(updatedDocument.content));
             setGlobalUnsavedChanges(false);
             setRefreshTrigger((previous) => previous + 1);
         } catch (err: any) {
             logger.error('Failed to reload document after restore', { error: err.message });
             setError('Failed to reload document. Please refresh the page.');
         }
-    }, [document?.id, save, setGlobalUnsavedChanges, setRefreshTrigger]);
+    }, [document?.id, save, applyExternalContent, setGlobalUnsavedChanges, setRefreshTrigger]);
 
     const handleCreateNewFromVersion = useCallback((versionContent: string) => {
         const docName = document?.title || 'Untitled';
@@ -476,5 +494,7 @@ export function useDocumentEditorState() {
         collaborators,
         collaborationStatus,
         handleEditorSelection,
+        handleContentChange,
+        applyExternalContent,
     };
 }

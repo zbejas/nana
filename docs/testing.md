@@ -270,8 +270,8 @@ Rules:
 | Export format, filename, folder path, attachment | `tests/api/export.test.ts` + `tests/unit/export-documents.test.ts` |
 | Manifest, service worker, icons, SPA fallback | `tests/api/static.test.ts` |
 | Save/list/read/restore version history, dedupe, stale revisions, owner scoping | `tests/api/versions.test.ts` |
-| Live Yjs sync, presence, viewer/editor permissions, revision forwarding | `tests/api/collaboration.test.ts` |
-| Markdown/text offset alignment and three-way merge | `tests/unit/collaboration-text.test.ts` + `tests/unit/collaboration-merge.test.ts` |
+| Live Yjs sync, concurrent edits at different/same offsets, presence, viewer/editor permissions, revision forwarding | `tests/api/collaboration.test.ts` |
+| Markdown/text offset alignment, collapsed-caret mapping, and three-way merge | `tests/unit/collaboration-text.test.ts` + `tests/unit/collaboration-merge.test.ts` |
 | Git store commit/tree/list/read and note locking | `tests/unit/versioning-store.test.ts` |
 | Version repository cleanup after permanent note/folder delete | `tests/api/versions.test.ts` |
 | New PocketBase hook | `tests/pocketbase/hooks/` |

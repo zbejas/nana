@@ -23,7 +23,7 @@ import { prism } from '@milkdown/plugin-prism';
 import { rewriteLegacyFileUrl } from '../../../lib/legacy-urls';
 import type { AiTextChange } from './aiDiff';
 import { normalizeMarkdown } from './helpers';
-import { alignMarkdownToText, mapOffsetThroughChange, markdownOffsetToTextOffset, minimalTextChange, textOffsetToMarkdownOffset } from '../../../lib/collaboration/text';
+import { alignMarkdownToText, mapSelectionThroughChange, markdownOffsetToTextOffset, minimalTextChange, textOffsetToMarkdownOffset } from '../../../lib/collaboration/text';
 import type { Collaborator } from '../../../lib/collaboration/types';
 
 export interface SlashTriggerPosition {
@@ -327,16 +327,16 @@ function collaboratorDecorations(
 
 /** Update the remote-caret layer without touching the document or history. */
 export function setCollaboratorHighlights(
-  view: EditorView,
+  ctx: Ctx,
   collaborators: readonly Collaborator[],
-  markdown: string,
 ): void {
+  const view = ctx.get(editorViewCtx);
   if (view.isDestroyed) return;
   view.dispatch(
     view.state.tr.setMeta(COLLAB_PRESENCE_KEY, collaboratorDecorations(
       view.state.doc,
       collaborators,
-      markdown,
+      getEditorMarkdown(ctx),
     )),
   );
 }
@@ -813,12 +813,16 @@ export async function createMilkdownEditor(options: CreateMilkdownEditorOptions)
   editor.action((ctx) => {
     const listenerManager = ctx.get(listenerCtx);
     listenerManager.selectionUpdated(() => {
-      options.onSelectionRef.current?.();
-      options.onSelectionChangeRef?.current?.();
+      // Milkdown calls this from the plugin's state.apply, before the view has
+      // adopted the new state. Defer one microtask so getMarkdownSelection()
+      // reads the selection the user just made, not the previous one.
+      queueMicrotask(() => {
+        options.onSelectionRef.current?.();
+        options.onSelectionChangeRef?.current?.();
+      });
     });
     listenerManager.updated(() => {
       options.onSelectionRef.current?.();
-      options.onSelectionChangeRef?.current?.();
     });
     listenerManager.focus(() => {
       options.onFocusRef.current?.();
@@ -860,15 +864,8 @@ export function getMarkdownSelection(ctx: Ctx): { anchor: number; head: number }
   const headText = textOffsetForProsePosition(map, view.state.selection.head);
   const anchor = textOffsetToMarkdownOffset(segments, anchorText);
   const head = textOffsetToMarkdownOffset(segments, headText);
-  const max = markdown.length;
-  const ratio = (position: number) => {
-    const size = Math.max(1, view.state.doc.content.size);
-    return Math.max(0, Math.min(max, Math.round((position / size) * max)));
-  };
-  return {
-    anchor: anchor ?? ratio(view.state.selection.anchor),
-    head: head ?? ratio(view.state.selection.head),
-  };
+  if (anchor === null || head === null) return null;
+  return { anchor, head };
 }
 
 /** Resolve a Markdown offset to a ProseMirror position, when alignable. */
@@ -888,35 +885,76 @@ function prosePositionForMarkdownOffset(doc: ProseNode, markdown: string, offset
 export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: string): void {
   const view = ctx.get(editorViewCtx);
   const parser = ctx.get(parserCtx);
+  const serializer = ctx.get(serializerCtx);
   const current = getEditorMarkdown(ctx);
   const next = normalizeMarkdown(markdown);
   if (current === next) return;
 
-  const selection = getMarkdownSelection(ctx);
   const change = minimalTextChange(current, next);
-  const nextDoc = parser(next);
-  if (!change || !nextDoc) return;
+  if (!change) return;
 
-  const anchor = selection
-    ? mapOffsetThroughChange(selection.anchor, change, -1)
+  // Fast path: a plain text insertion/deletion can be applied as a normal
+  // ProseMirror transaction. ProseMirror then maps the live selection through
+  // the change and leaves composition/local typing intact. The serializer
+  // check below is the safety net: if the Markdown meaning changed (a marker,
+  // block boundary, or formatting edit), fall back to a parsed document.
+  const textMap = proseTextMap(view.state.doc);
+  const segments = alignMarkdownToText(current, textMap.text);
+  const fromText = markdownOffsetToTextOffset(segments, change.from);
+  const toText = change.to === change.from
+    ? fromText
+    : markdownOffsetToTextOffset(segments, change.to);
+
+  if (fromText !== null && toText !== null) {
+    const from = positionAt(textMap, fromText);
+    const to = positionAt(textMap, toText);
+    const $from = view.state.doc.resolve(from);
+    const $to = view.state.doc.resolve(to);
+    const sameTextblock = $from.parent.inlineContent
+      && $to.parent.inlineContent
+      && $from.parent === $to.parent;
+
+    if (sameTextblock) {
+      const transaction = view.state.tr.setMeta('addToHistory', false);
+      if (change.to > change.from) transaction.delete(from, to);
+      if (change.insert) transaction.insertText(change.insert, from);
+      if (normalizeMarkdown(serializer(transaction.doc)) === next) {
+        view.dispatch(transaction);
+        return;
+      }
+    }
+  }
+
+  // Structural or formatting change: replace the document, but map the
+  // selection against the transaction's own document. Creating a selection
+  // against the separately parsed document throws in ProseMirror, which used
+  // to leave every remote update with the caret at the end of the note.
+  const selection = getMarkdownSelection(ctx);
+  const mapped = selection
+    ? mapSelectionThroughChange(selection.anchor, selection.head, change)
     : null;
-  const head = selection
-    ? mapOffsetThroughChange(selection.head, change, 1)
-    : null;
+  const anchor = mapped?.anchor ?? null;
+  const head = mapped?.head ?? null;
+  const nextDoc = parser(next);
+  if (!nextDoc) return;
 
   const transaction = view.state.tr
     .replace(0, view.state.doc.content.size, new Slice(nextDoc.content, 0, 0))
     .setMeta('addToHistory', false);
 
   if (anchor !== null && head !== null) {
-    const anchorPosition = prosePositionForMarkdownOffset(nextDoc, next, anchor);
-    const headPosition = prosePositionForMarkdownOffset(nextDoc, next, head);
+    const anchorPosition = prosePositionForMarkdownOffset(transaction.doc, next, anchor);
+    const headPosition = prosePositionForMarkdownOffset(transaction.doc, next, head);
     if (anchorPosition !== null && headPosition !== null) {
-      const max = Math.max(1, nextDoc.content.size);
+      const max = Math.max(1, transaction.doc.content.size);
       const from = Math.max(0, Math.min(anchorPosition, max));
       const to = Math.max(0, Math.min(headPosition, max));
       try {
-        transaction.setSelection(TextSelection.create(nextDoc, Math.min(from, to), Math.max(from, to)));
+        transaction.setSelection(TextSelection.create(
+          transaction.doc,
+          Math.min(from, to),
+          Math.max(from, to),
+        ));
       } catch {
         // The mapped point landed on a node boundary; leave the selection to
         // ProseMirror's default mapping rather than failing the update.

@@ -31,7 +31,7 @@ export interface NanaMarkdownEditorProps {
     sections: AiChangedSection[];
   } | null;
   collaborators?: Collaborator[];
-  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean }) => void;
+  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean; pane?: "source" | "wysiwyg" }) => void;
   onFocusChange?: (focused: boolean) => void;
   onViewReady?: (view: EditorView) => void;
   onEditorReady?: (editor: Editor) => void;

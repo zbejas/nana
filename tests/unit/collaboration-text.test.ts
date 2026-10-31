@@ -3,6 +3,7 @@ import {
     alignMarkdownToText,
     applyTextChange,
     mapOffsetThroughChange,
+    mapSelectionThroughChange,
     markdownOffsetToTextOffset,
     minimalTextChange,
     textOffsetToMarkdownOffset,
@@ -122,6 +123,27 @@ describe("mapOffsetThroughChange", () => {
         expect(mapOffsetThroughChange(-4, replacement, 1)).toBe(0);
         expect(mapOffsetThroughChange(Number.NaN, replacement, 1)).toBe(0);
         expect(mapOffsetThroughChange(4, null as unknown as TextChange, 1)).toBe(4);
+    });
+});
+
+describe("mapSelectionThroughChange", () => {
+    test("keeps a collapsed caret collapsed at an insertion boundary", () => {
+        const insertion: TextChange = { from: 3, to: 3, insert: "XY" };
+
+        expect(mapSelectionThroughChange(3, 3, insertion)).toEqual({ anchor: 3, head: 3 });
+        expect(mapSelectionThroughChange(6, 6, insertion)).toEqual({ anchor: 8, head: 8 });
+    });
+
+    test("shifts both endpoints of a range without collapsing it", () => {
+        const insertion: TextChange = { from: 3, to: 3, insert: "XY" };
+
+        expect(mapSelectionThroughChange(5, 8, insertion)).toEqual({ anchor: 7, head: 10 });
+    });
+
+    test("collapses a range when the remote edit removes it", () => {
+        const deletion: TextChange = { from: 3, to: 8, insert: "" };
+
+        expect(mapSelectionThroughChange(4, 6, deletion)).toEqual({ anchor: 3, head: 3 });
     });
 });
 
