@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createDocument, createDocumentVersion, updateDocument } from '../../lib/documents';
+import { saveDocumentWithMerge } from '../../lib/documents/save';
 import { createLogger } from '../../lib/logger';
 
 const logger = createLogger('DocActions');
@@ -20,6 +21,7 @@ interface UseDocumentActionsOptions {
     isReadOnly: boolean;
     isSavingRef: React.MutableRefObject<boolean>;
     onSave: (document: Document, options?: { creationSessionId?: number }) => void;
+    onApplyMergedContent?: (content: string) => void;
     onReset: () => void;
     onSetSaving: (saving: boolean) => void;
     onSetPublishing: (publishing: boolean) => void;
@@ -40,6 +42,7 @@ export function useDocumentActions({
     isReadOnly,
     isSavingRef,
     onSave,
+    onApplyMergedContent,
     onReset,
     onSetSaving,
     onSetPublishing,
@@ -87,14 +90,16 @@ export function useDocumentActions({
 
             // Check if we're creating a new document or updating existing
             if (urlDocumentId !== 'new' && document?.id) {
-                savedDocument = await updateDocument(document.id, {
+                const result = await saveDocumentWithMerge({
+                    base: document,
                     title: saveTitle,
-                    content: content.trim(),
+                    content,
                     tags,
-                    revision: document.revision,
-                    attachments: newAttachments.length > 0 ? newAttachments : undefined,
-                    removeAttachments: removedAttachments.length > 0 ? removedAttachments : undefined,
+                    attachments: newAttachments,
+                    removeAttachments: removedAttachments,
+                    onMergedContent: onApplyMergedContent,
                 });
+                savedDocument = result.document;
                 logger.info('Document saved successfully', { id: document.id });
             } else {
                 savedDocument = await createDocument({
@@ -153,6 +158,7 @@ export function useDocumentActions({
         navigate,
         isSavingRef,
         onSave,
+        onApplyMergedContent,
         onSetSaving,
         onSetError,
         onShowToast,
@@ -175,14 +181,16 @@ export function useDocumentActions({
 
         try {
             // Persist the editor state first, then commit that exact revision.
-            const savedDocument = await updateDocument(document.id, {
+            const saved = await saveDocumentWithMerge({
+                base: document,
                 title: title.trim() || 'Untitled',
-                content: content.trim(),
+                content,
                 tags,
-                revision: document.revision,
-                attachments: newAttachments.length > 0 ? newAttachments : undefined,
-                removeAttachments: removedAttachments.length > 0 ? removedAttachments : undefined,
+                attachments: newAttachments,
+                removeAttachments: removedAttachments,
+                onMergedContent: onApplyMergedContent,
             });
+            const savedDocument = saved.document;
 
             // Update global state with the save even if the version commit fails.
             onSave(savedDocument, { creationSessionId: creationSessionIdRef.current });
@@ -215,6 +223,7 @@ export function useDocumentActions({
         removedAttachments,
         isSavingRef,
         onSave,
+        onApplyMergedContent,
         onSetPublishing,
         onShowToast,
         isReadOnly,

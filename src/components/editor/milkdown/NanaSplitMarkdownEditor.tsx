@@ -6,6 +6,7 @@ import { NanaMarkdownEditor } from './NanaMarkdownEditor';
 import { NanaSourceEditor, type SourceAiDiff } from './NanaSourceEditor';
 import { computeScrollRatio, scrollTopForRatio } from './helpers';
 import type { AiChangedSection } from './aiEdits';
+import type { Collaborator } from '../../../lib/collaboration/types';
 
 export interface NanaSplitMarkdownEditorProps {
   value: string;
@@ -21,6 +22,8 @@ export interface NanaSplitMarkdownEditorProps {
     sections: AiChangedSection[];
   } | null;
   aiDiff?: SourceAiDiff | null;
+  collaborators?: Collaborator[];
+  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean }) => void;
   onEditorReady?: (editor: Editor) => void;
 }
 
@@ -39,6 +42,8 @@ export function NanaSplitMarkdownEditor({
   className,
   aiEdit = null,
   aiDiff = null,
+  collaborators = [],
+  onSelectionChange,
   onEditorReady,
 }: NanaSplitMarkdownEditorProps) {
   const [sourceView, setSourceView] = useState<CodeMirrorView | null>(null);
@@ -96,6 +101,8 @@ export function NanaSplitMarkdownEditor({
               placeholder={readOnly ? '' : placeholder}
               ariaLabel={`${ariaLabel} Markdown source`}
               aiDiff={aiDiff}
+              collaborators={collaborators}
+              onSelectionChange={onSelectionChange}
               onReady={setSourceView}
             />
           </div>
@@ -110,6 +117,8 @@ export function NanaSplitMarkdownEditor({
             ariaLabel={ariaLabel}
             enableSlash
             aiEdit={aiEdit}
+            collaborators={collaborators}
+            onSelectionChange={onSelectionChange}
             onViewReady={setWysiwygView}
             onEditorReady={onEditorReady}
             className="h-full min-h-0"

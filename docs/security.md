@@ -87,6 +87,7 @@ Production compose exposes only `:3000`. PocketBase binds to `127.0.0.1:8090`, a
 | Bun application API | `verifyAuth(req)` calls PB `auth-refresh` and returns the user ID. |
 | Elysia typed workspace API | `authenticateApiRequest()` accepts a raw token or `Bearer`, refreshes a session token or exchanges an API key, and returns the user ID plus an optional key scope. |
 | Elysia browser facade | Decodes the JWT for caller id/expiry, then PocketBase verifies the unchanged token on every upstream call. API keys are not JWTs and are rejected. |
+| Live note editing | Session JWT only. The event stream resolves the note and effective edit level through PocketBase with the caller's token; update POSTs are bound to that connection's user id and edit permission. API keys, public links, and anonymous callers are rejected. |
 | MCP `/mcp` | The same `authenticateApiRequest()`, before any MCP work; the key's access and scope travel in `ToolContext`. |
 | PocketBase collections | Per-collection API rules (`author = @request.auth.id`, etc.). |
 | PocketBase admin routes | `$apis.requireAuth()` plus `requireAdmin(c)`. |
@@ -217,6 +218,8 @@ These intentionally do not require a user token:
 - `GET /api/v1/realtime` handshake (the subscription POST requires auth)
 - Static SPA assets
 
+`GET /api/v1/collab/documents/:id/events` is authenticated even though it is an SSE stream: the browser sends the session token as an `Authorization` header, not a query parameter. `POST .../update` and `POST .../presence` repeat the JWT check and verify the `clientId` belongs to the authenticated user. There is no anonymous handshake for live editing.
+
 All other Bun application routes call `verifyAuth()` for Bun-level auth. Typed `/api/v1` workspace routes authenticate through `authenticateApiRequest()`, browser facade routes validate the token envelope and let PocketBase verify every upstream call, and `POST /mcp` authenticates before handling. PocketBase collection rules stay in force; do not assume a route is private just because it is under `/api/v1`.
 
 The OpenAPI document is public by design. It describes routes and schemas, not user data. Do not add secrets, internal URLs, or examples containing live tokens to it.
@@ -250,6 +253,7 @@ The first user is auto-assigned `admin = true` and `verified = true`. After that
 - Admin routes require `admin = true`; settings routes are admin-only.
 - File routes allowlist `documents`, `users`, `trash_documents`, and `chat_attachments`.
 - Realtime relays PocketBase SSE; the subscription POST requires the user token.
+- Live editing is session-only: the event stream and presence/update POSTs require a valid JWT, the room only accepts updates from a connected `clientId` owned by the caller, and `view`/`comment` grantees cannot publish text. Rooms are ephemeral and never expose another document's state.
 - No superuser token is ever injected into browser traffic.
 
 Do not turn this into a generic proxy. Do not add client-controlled upstream URLs, and do not bypass PocketBase rules by injecting a superuser token.
@@ -401,6 +405,7 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 - **Soft-deleted records still exist.** `$app` code bypasses rules, so internal/public queries must check `deleted_at`; the browser never sees trashed records through the live collections.
 - **Direct note/folder deletes are disabled.** `deleteRule` is `null`; only the trash routes can move or permanently delete. Do not loosen this to let a client skip trash.
 - **The browser facade is an allowlist.** No system collections, no client-controlled upstream URLs, no superuser token injection, and no generic PocketBase pass-through.
+- **Live rooms are an authorization boundary too.** A room is created only after PocketBase grants at least `view`; only the owner/`edit` level may publish Yjs updates. Never infer edit access from the presence of a client or from a `canEdit` value supplied by the browser.
 - **Rate-limit admin routes are role-checked.** `GET`/`PATCH /api/v1/admin/rate-limits` and the legacy `POST /api/admin/rate-limits/reload` require the PocketBase admin flag, not just a valid token.
 - **The rate limiter is per process.** It does not coordinate across replicas and resets on restart.
 - **Legacy runtime data is not application state.** Anything left from removed features is inert; handle cleanup as a deployment operation, not through application code.

@@ -442,7 +442,7 @@ Rules are `@request.auth.id != '' && author = @request.auth.id` for list, view, 
 
 ### Chat edits and revisions
 
-`documents.revision` is the optimistic-concurrency token. `revision_guard.js` accepts an omitted revision from older clients but rejects a supplied stale one; AI note edits must supply it. Content/title/tags changes bump the revision and stamp `last_edited_by`/`last_edit_source` (`user`, `ai`, or `system`).
+`documents.revision` is the optimistic-concurrency token. `revision_guard.js` accepts an omitted revision from older clients but rejects a supplied stale one; AI note edits must supply it. Content/title/tags changes bump the revision and stamp `last_edited_by`/`last_edit_source` (`user`, `ai`, or `system`). The browser facade forwards the editor's `revision` on document updates; live collaboration does not add a second writer to PocketBase, so the normal autosave still takes this guard and retries with a merged body when another writer moved first.
 
 AI note writes do not create version history. Chat undo uses the pre-edit snapshot in `chat_edits.operations.before`; `chat_edits` also records the tool, target, operations, summary, and status for the edit cards. `messages.context` stores the open-page metadata attached at send time; `messages.sources` stores server-derived note/board links; `messages.usage` stores the latest assistant turn's final-step token accounting.
 

@@ -6,6 +6,7 @@ import { diffText } from './milkdown/aiDiff';
 import type { AiChangedSection } from './milkdown/aiEdits';
 import { normalizeMarkdown } from './milkdown/helpers';
 import type { ViewMode } from './EditorHeader';
+import type { Collaborator } from '../../lib/collaboration/types';
 
 export interface EditorAiEdit {
   id: string;
@@ -21,6 +22,8 @@ interface EditorContentProps {
   viewMode: ViewMode;
   onDropFiles?: (event: DragEvent<HTMLDivElement>) => void;
   aiEdit?: EditorAiEdit | null;
+  collaborators?: Collaborator[];
+  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean }) => void;
   fullscreen?: boolean;
 }
 
@@ -36,6 +39,8 @@ export function EditorContent({
   viewMode,
   onDropFiles,
   aiEdit = null,
+  collaborators = [],
+  onSelectionChange,
   fullscreen = false,
 }: EditorContentProps) {
   const isSplitMode = viewMode === 'split';
@@ -80,6 +85,8 @@ export function EditorContent({
               ariaLabel="Document Markdown source"
               className="h-full"
               aiDiff={sourceAiDiff}
+              collaborators={collaborators}
+              onSelectionChange={onSelectionChange}
             />
           </div>
         )}
@@ -94,6 +101,8 @@ export function EditorContent({
             className="min-h-0 flex-1"
             aiEdit={aiEdit}
             aiDiff={sourceAiDiff}
+            collaborators={collaborators}
+            onSelectionChange={onSelectionChange}
           />
         )}
 
@@ -108,6 +117,8 @@ export function EditorContent({
             showToolbar
             enableSlash
             aiEdit={aiEdit}
+            collaborators={collaborators}
+            onSelectionChange={onSelectionChange}
           />
         )}
       </div>

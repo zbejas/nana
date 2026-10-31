@@ -46,6 +46,8 @@ tests/
     chat-stream.test.ts
     chat-tools-text.test.ts
     chat-version-token.test.ts
+    collaboration-merge.test.ts
+    collaboration-text.test.ts
     document-utils.test.ts
     export-documents.test.ts
     folder-tree.test.ts
@@ -75,6 +77,7 @@ tests/
     chat-tools.test.ts
     chat-write-tools.test.ts
     chat.test.ts
+    collaboration.test.ts
     export.test.ts
     mcp.test.ts
     rest-api.test.ts
@@ -109,7 +112,7 @@ Unit tests must not import a module that performs network I/O at import time. In
 | `bun run test` | Full local gate: unit tests, then the Docker suite. |
 | `bun run build` | Production bundle; required before shipping. |
 
-`bun run test:docker` is the same command developers use directly:
+- `bun run test:docker` is the same command developers use directly:
 
 ```bash
 docker compose -f docker/compose.test.yml up --build --abort-on-container-exit --exit-code-from nana-test
@@ -135,7 +138,7 @@ Do not point the test stack at real data. The entrypoint deletes and recreates i
 | 3/4 Hooks + routes | `hooks/` + `routes/` | Hooks and custom routes after bootstrap; admin tests restore global settings when done. |
 | 4/4 Bun API | `api/` | Routes, export, chat, tools, typed REST, browser facade, and MCP after PocketBase is seeded. |
 
-The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000030_chat_attachments.js` applied. There is no separate "apply migration" step in a test file.
+The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000034_disable_auth_alerts.js` applied. There is no separate "apply migration" step in a test file.
 
 On failure the entrypoint prints the tail of both server logs. On success it reports per-phase and total duration.
 
@@ -267,6 +270,8 @@ Rules:
 | Export format, filename, folder path, attachment | `tests/api/export.test.ts` + `tests/unit/export-documents.test.ts` |
 | Manifest, service worker, icons, SPA fallback | `tests/api/static.test.ts` |
 | Save/list/read/restore version history, dedupe, stale revisions, owner scoping | `tests/api/versions.test.ts` |
+| Live Yjs sync, presence, viewer/editor permissions, revision forwarding | `tests/api/collaboration.test.ts` |
+| Markdown/text offset alignment and three-way merge | `tests/unit/collaboration-text.test.ts` + `tests/unit/collaboration-merge.test.ts` |
 | Git store commit/tree/list/read and note locking | `tests/unit/versioning-store.test.ts` |
 | Version repository cleanup after permanent note/folder delete | `tests/api/versions.test.ts` |
 | New PocketBase hook | `tests/pocketbase/hooks/` |

@@ -1,6 +1,8 @@
 import { ArrowsPointingInIcon, ArrowsPointingOutIcon, CodeBracketIcon, PencilSquareIcon, SparklesIcon, XMarkIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
 import { EditorContextMenu } from './EditorContextMenu';
 import { IconButton, SegmentedControl } from '../ui';
+import { EditorPresence } from './EditorPresence';
+import type { Collaborator } from '../../lib/collaboration/types';
 
 type ViewMode = 'wysiwyg' | 'text' | 'split';
 
@@ -18,6 +20,7 @@ interface EditorHeaderProps {
   hasUnsavedChanges: boolean;
   isNewDocument?: boolean;
   autoSaving?: boolean;
+  collaborators?: Collaborator[];
   onToggleHeader?: () => void;
   titleInputRef?: React.RefObject<HTMLInputElement | null>;
   onShare?: () => void;
@@ -42,6 +45,7 @@ export function EditorHeader({
   hasUnsavedChanges,
   isNewDocument = false,
   autoSaving = false,
+  collaborators = [],
   onToggleHeader,
   titleInputRef,
   onShare,
@@ -100,6 +104,8 @@ export function EditorHeader({
             </span>
           ) : null}
         </div>
+
+        <EditorPresence collaborators={collaborators} className="mr-1 hidden sm:flex" />
 
         <div className="editor-header-actions flex shrink-0 items-center gap-1">
           <span className="md:hidden">

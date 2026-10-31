@@ -19,6 +19,7 @@ import { useAutoSave } from './useAutoSave';
 import { isSameMarkdown, normalizeMarkdown } from './milkdown/helpers';
 import { useAttachmentHandlers } from './useAttachmentHandlers';
 import { useDocumentActions } from './useDocumentActions';
+import { useDocumentCollaboration } from '../../lib/collaboration/useDocumentCollaboration';
 
 export function useDocumentEditorState() {
     const navigate = useNavigate();
@@ -75,6 +76,30 @@ export function useDocumentEditorState() {
 
     const isTrashDocument = searchParams.get('trash') === 'true';
 
+    const handleRemoteContent = useCallback((next: string) => {
+        const normalized = normalizeMarkdown(next);
+        if (normalized === normalizeMarkdown(contentRef.current)) return;
+        // Keep the pre-live draft so a later AI edit event can still diff
+        // against what was actually on screen.
+        remoteContentChangeRef.current = { from: contentRef.current, to: normalized };
+        contentRef.current = normalized;
+        setContent(normalized);
+    }, [setContent]);
+
+    const {
+        collaborators,
+        status: collaborationStatus,
+        canEdit: collaborationCanEdit,
+        updateSelection: handleEditorSelection,
+    } = useDocumentCollaboration({
+        documentId: document?.id,
+        initialContent: document?.content ?? initialContent ?? '',
+        content,
+        enabled: Boolean(document?.id) && !isTrashDocument,
+        onRemoteContent: handleRemoteContent,
+    });
+    const isReadOnly = isTrashDocument || !collaborationCanEdit;
+
     const { isSavingRef } = useDocumentLoader({
         urlDocumentId,
         document,
@@ -120,11 +145,12 @@ export function useDocumentEditorState() {
         removedAttachments,
         autoSaveDelayMs: autoSaveDelay,
         hasUnsavedChanges,
-        isReadOnly: isTrashDocument,
+        isReadOnly,
         folderId,
         creationSessionId,
         isSavingRef,
         onSave: save,
+        onApplyMergedContent: setContent,
         onSetIsAutoSaving: setIsAutoSaving,
         onShowToast: showToast,
     });
@@ -145,9 +171,10 @@ export function useDocumentEditorState() {
         removedAttachments,
         folderId,
         creationSessionId,
-        isReadOnly: isTrashDocument,
+        isReadOnly,
         isSavingRef,
         onSave: save,
+        onApplyMergedContent: setContent,
         onReset: reset,
         onSetSaving: setSaving,
         onSetPublishing: setPublishing,
@@ -272,21 +299,32 @@ export function useDocumentEditorState() {
         // user has local edits, only the baseline moves; their draft is kept.
         setSyncedDocument(document);
 
+        if (collaborationStatus === 'connected') {
+            // The live room owns content while it is connected. A PocketBase
+            // broadcast can arrive out of order relative to the Yjs stream and
+            // applying it would briefly rewind another user's keystrokes.
+            if (!hasUnsavedChanges) {
+                setTitle(document.title || '');
+                setTags(document.tags || []);
+            }
+            return;
+        }
+
         if (hasUnsavedChanges) {
             logger.debug('Skipping realtime state sync - user has unsaved changes');
             return;
         }
 
         const nextContent = normalizeMarkdown(document.content);
-        if (nextContent !== normalizeMarkdown(content)) {
+        if (nextContent !== normalizeMarkdown(contentRef.current)) {
             // Keep the pre-realtime draft so an AI-edit event that arrives after
             // the PocketBase broadcast can still diff against what was on screen.
-            remoteContentChangeRef.current = { from: content, to: nextContent };
+            remoteContentChangeRef.current = { from: contentRef.current, to: nextContent };
         }
         setTitle(document.title || '');
         setContent(nextContent);
         setTags(document.tags || []);
-    }, [document, urlDocumentId, hasUnsavedChanges]);
+    }, [document, urlDocumentId, hasUnsavedChanges, collaborationStatus]);
 
     useEffect(() => {
         // The atom can change one render before the realtime effect adopts it.
@@ -433,6 +471,10 @@ export function useDocumentEditorState() {
         handleDocumentRestored,
         handleCreateNewFromVersion,
         isTrashDocument,
+        isReadOnly,
         isLoadingDocument,
+        collaborators,
+        collaborationStatus,
+        handleEditorSelection,
     };
 }

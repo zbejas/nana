@@ -152,9 +152,9 @@ function withSecurityHeaders(response: Response): Response {
  */
 async function handleRest(req: Request): Promise<Response> {
   const path = new URL(req.url).pathname;
-  if (path === "/api/v1/realtime") {
-    // EventSource stays open for the lifetime of the tab. Never apply the
-    // normal JSON request timeout to the SSE relay.
+  if (path === "/api/v1/realtime" || (path.startsWith("/api/v1/collab/") && req.method === "GET")) {
+    // EventSource and the live-editing stream stay open for the lifetime of
+    // the tab. Never apply the normal JSON request timeout to them.
     server.timeout(req, 0);
   } else {
     // Workspace writes can fan out into PocketBase calls; give the JSON

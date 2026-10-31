@@ -6,7 +6,9 @@ import type { EditorView } from '@milkdown/kit/prose/view';
 import {
   createMilkdownEditor,
   getEditorMarkdown,
-  replaceEditorMarkdown,
+  getMarkdownSelection,
+  replaceEditorMarkdownPreservingSelection,
+  setCollaboratorHighlights,
   setEditorEditable,
   type SlashTriggerPosition,
 } from './createEditor';
@@ -20,6 +22,7 @@ import {
 import { applyAiMarkdown, type AiChangedSection } from './aiEdits';
 import type { EditorActionId } from './helpers';
 import { normalizeMarkdown } from './helpers';
+import type { Collaborator } from '../../../lib/collaboration/types';
 
 export interface UseMilkdownEditorOptions {
   value: string;
@@ -36,6 +39,8 @@ export interface UseMilkdownEditorOptions {
     markdown: string;
     sections: AiChangedSection[];
   } | null;
+  collaborators?: Collaborator[];
+  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean }) => void;
   onFocusChange?: (focused: boolean) => void;
   onSlash?: (position: SlashTriggerPosition) => void;
   onReady?: (editor: Editor) => void;
@@ -95,6 +100,8 @@ export function useMilkdownEditor({
   enableSlash = true,
   uploadImage,
   aiEdit = null,
+  collaborators = [],
+  onSelectionChange,
   onFocusChange,
   onSlash,
   onReady,
@@ -110,9 +117,12 @@ export function useMilkdownEditor({
   const placeholderRef = useRef(placeholder);
   const onChangeRef = useRef(onChange);
   const onFocusChangeRef = useRef(onFocusChange);
+  const onSelectionChangeRef = useRef(onSelectionChange);
   const onSlashRef = useRef(onSlash);
   const onReadyRef = useRef(onReady);
   const uploadImageRef = useRef(uploadImage);
+  const collaboratorsRef = useRef(collaborators);
+  const hadCollaboratorsRef = useRef(false);
   const lastAiEditRef = useRef<string | null>(null);
   const lastEmittedRef = useRef(normalizeMarkdown(value));
   const lastAppliedRef = useRef(normalizeMarkdown(value));
@@ -123,9 +133,11 @@ export function useMilkdownEditor({
   placeholderRef.current = placeholder;
   onChangeRef.current = onChange;
   onFocusChangeRef.current = onFocusChange;
+  onSelectionChangeRef.current = onSelectionChange;
   onSlashRef.current = onSlash;
   onReadyRef.current = onReady;
   uploadImageRef.current = uploadImage;
+  collaboratorsRef.current = collaborators;
   toolbarRef.current = toolbar;
 
   const refreshToolbar = useCallback(() => {
@@ -140,6 +152,9 @@ export function useMilkdownEditor({
 
   const emitChange = useCallback((markdown: string) => {
     const normalized = normalizeMarkdown(markdown);
+    // The editor already shows this value; remembering it here keeps the
+    // incoming-value effect from replaying our own keystrokes.
+    lastAppliedRef.current = normalized;
     if (normalized === lastEmittedRef.current) return;
     lastEmittedRef.current = normalized;
     onChangeRef.current?.(normalized);
@@ -163,6 +178,20 @@ export function useMilkdownEditor({
         enableSlash,
         onDocChangeRef: { current: emitChange },
         onSelectionRef: { current: refreshToolbar },
+        onSelectionChangeRef: {
+          current: () => {
+            const editor = editorRef.current;
+            if (!editor) return;
+            const selection = editor.action((ctx) => getMarkdownSelection(ctx));
+            if (!selection) return;
+            const focusedNow = editor.action((ctx) => ctx.get(editorViewCtx).hasFocus());
+            onSelectionChangeRef.current?.({
+              anchor: selection.anchor,
+              head: selection.head,
+              focused: focusedNow,
+            });
+          },
+        },
         onFocusRef: { current: () => setFocused(true) },
         onBlurRef: { current: () => setFocused(false) },
         onSlashRef,
@@ -208,14 +237,22 @@ export function useMilkdownEditor({
     const editor = editorRef.current;
     if (!editor) return;
 
-    const root = containerRef.current;
-    if (root && root.contains(document.activeElement)) return;
-
     lastAppliedRef.current = incoming;
     lastEmittedRef.current = incoming;
-    editor.action((ctx) => replaceEditorMarkdown(ctx, incoming));
+    editor.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, incoming));
     refreshToolbar();
   }, [value, ready, refreshToolbar]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+    const hasCollaborators = collaborators.length > 0;
+    if (!hasCollaborators && !hadCollaboratorsRef.current) return;
+    hadCollaboratorsRef.current = hasCollaborators;
+    const view = editor.action((ctx) => ctx.get(editorViewCtx));
+    setCollaboratorHighlights(view, collaborators, normalizeMarkdown(value));
+  }, [collaborators, value, ready]);
 
   // AI edits get their own path so the diff still applies when a realtime
   // update already pushed the new Markdown into the editor. The previous
@@ -249,7 +286,7 @@ export function useMilkdownEditor({
         if (incoming === lastAppliedRef.current) return;
         lastAppliedRef.current = incoming;
         lastEmittedRef.current = incoming;
-        editor.action((ctx) => replaceEditorMarkdown(ctx, incoming));
+        editor.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, incoming));
         refreshToolbar();
       }, 0);
     };
@@ -305,7 +342,7 @@ export function useMilkdownEditor({
       if (!editor) return;
       lastAppliedRef.current = normalized;
       lastEmittedRef.current = normalized;
-      editor.action((ctx) => replaceEditorMarkdown(ctx, normalized));
+      editor.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, normalized));
       refreshToolbar();
     },
     [refreshToolbar],

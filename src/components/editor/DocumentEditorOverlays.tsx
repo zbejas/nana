@@ -17,13 +17,23 @@ export function EditorDragOverlay({ visible }: { visible: boolean }) {
   );
 }
 
-export function EditorReadOnlyOverlay({ visible }: { visible: boolean }) {
+export function EditorReadOnlyOverlay({
+  visible,
+  reason = 'trash',
+}: {
+  visible: boolean;
+  reason?: 'trash' | 'view';
+}) {
   if (!visible) return null;
 
   return (
     <div className="mx-3 mb-2 mt-2 flex items-center gap-2 rounded-control border border-warning/30 bg-warning-soft px-3 py-2 sm:mx-4">
       <LockClosedIcon className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
-      <p className="text-xs font-medium text-warning">Read-only trash note. Restore it to edit.</p>
+      <p className="text-xs font-medium text-warning">
+        {reason === 'trash'
+          ? 'Read-only trash note. Restore it to edit.'
+          : 'Read-only. You can view this note but not edit it.'}
+      </p>
     </div>
   );
 }
