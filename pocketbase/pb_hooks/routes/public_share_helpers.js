@@ -321,7 +321,7 @@ function collectFolderDocuments(folderIds) {
 
 /**
  * Collects active boards in the given folder IDs. A folder share never exposes
- * private boards, archived boards, or boards owned by someone else even if the
+ * private boards, trashed boards, or boards owned by someone else even if the
  * stored folder relation is inconsistent.
  */
 function collectFolderBoards(folderIds, authorId) {

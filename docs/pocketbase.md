@@ -4,7 +4,7 @@
 
 PocketBase is the source of truth for data, auth, schema, and server-side behavior. It listens on `127.0.0.1:8090` inside the container and is never a public browser surface; the browser reaches it through the Elysia `/api/v1` facade. Nana customizes PocketBase through JavaScript hooks and append-only migrations in `pocketbase/`.
 
-Notes and folders use **soft delete**: `deleted_at` marks a record as trashed, while the record keeps its id, attachments, version repository, and relations. `trash_documents` and `trash_folders` are read-only view collections over that state. Boards archive instead of trashing. Chat messages are records in their own collection, not a JSON blob on the conversation.
+Notes and folders use **soft delete**: `deleted_at` marks a record as trashed, while the record keeps its id, attachments, version repository, and relations. `trash_documents` and `trash_folders` are read-only view collections over that state. Boards use the existing `archived` flag as their trash state: a trashed board keeps its id, columns, tasks, and folder relation. Chat messages are records in their own collection, not a JSON blob on the conversation.
 
 Version history is not a PocketBase collection. Migration `0000032` drops the legacy `document_versions` store and `documents.published`; versions are now bare git repositories under `pb_data/versioning/`, managed by Bun.
 
@@ -93,7 +93,7 @@ Files are sequential and zero-padded. **The next migration is `0000034_<descript
 | `0000015_raise_content_size_limit.js` | Raise editor fields to 100 MB. |
 | `0000016_created_tasks.js` | Tasks collection and status/order index. |
 | `0000017_tighten_task_rules.js` | Author-scoped task creation. |
-| `0000018_created_boards.js` | Boards collection, required task board relation, backfill, archive rules. |
+| `0000018_created_boards.js` | Boards collection, required task board relation, backfill, board trash rules. |
 | `0000019_remove_embedding_settings.js` | Delete the obsolete `embedding_config` record. |
 | `0000020_boards_in_folders.js` | Add optional `boards.folder`, `boards.is_private`, and `idx_boards_author_folder`. |
 | `0000021_add_board_public_sharing.js` | Add `boards.is_public`, `boards.public_share_token`, and `boards.public_expires_at`. |
@@ -146,7 +146,7 @@ Rules:
 | `users` | Auth collection | `admin` boolean; first user is auto-verified and admin. |
 | `folders` | Nested folder tree | Self-referencing `parent`; soft-delete fields; sharing fields. |
 | `documents` | Markdown documents | Content, attachments, tags, stats, folder relation, soft-delete and sharing fields, `revision`, `last_edited_by`, `last_edit_source`. Version history lives in git, not here. |
-| `boards` | Task boards | Author-scoped; name, description, icon, task counter, archived flag, optional folder, private and public-share fields. |
+| `boards` | Task boards | Author-scoped; name, description, icon, task counter, `archived` trash flag, optional folder, private and public-share fields. |
 | `board_columns` | Ordered board workflow | `board`, `name`, stable `slug`, `position`, `icon`, `color`, `is_final`. |
 | `tasks` | Board work items | Board-scoped; ownership derives from `board.author`; text `status`, priority, assignee, dates, labels, recurrence, task number, optional source document. |
 | `labels` | Owner label definitions | Name + Graphite colour; tasks keep a JSON string array of label names. |
@@ -248,7 +248,7 @@ Normal API deletes are disabled on documents and folders. `POST /api/trash/move-
 | `description` | Text | Optional, max 500. |
 | `icon` | Text | Optional board glyph key, max 40. |
 | `task_counter` | Number | Allocates board-scoped task numbers; written server-side. |
-| `archived` | Bool | Defaults false. |
+| `archived` | Bool | Board trash flag. Defaults false; trashed boards keep their tasks and are restorable. |
 | `folder` | Relation → `folders` | Optional, `cascadeDelete: false`, max 1. Empty means the workspace root. |
 | `is_private` | Bool | Optional. Hides the board from chat and MCP; the owner still sees it. A private board cannot be public. |
 | `is_public` | Bool | Optional. Enables the public board route when `is_private` is false. |
@@ -270,10 +270,10 @@ Rules:
 | List / view | Owner, or a non-private board with an `access_grants` row for the caller. Direct shares are materialized into grants by `0000026`. |
 | Create | `author = @request.auth.id`. |
 | Update | Owner or an `edit` grant; owner-only fields are enforced by `sharing/permission_guards.js`. |
-| Delete | Owner and `archived = true`. |
+| Delete | Owner and `archived = true` (permanent delete of a trashed board). |
 | `board_columns` write | Owner only. |
 
-A board is archived with a normal `PATCH { "archived": true }`. Restore is `PATCH { "archived": false }`. Permanent delete is only possible after archiving and cascades the board's tasks and columns. Tasks deleted this way are not moved to trash.
+A board moves to trash through `POST /api/trash/move-board` (or `PATCH { "archived": true }`); restore clears the flag through `POST /api/trash/restore-board` (or `PATCH { "archived": false }`). Permanent delete is only possible for a trashed board and cascades its tasks and columns. Tasks deleted this way are not moved to trash.
 
 New boards are seeded with four default columns (`backlog`, `next`, `progress`, `done`) by `pb_hooks/boards/seed_columns.js`. A column slug is immutable while tasks reference it; a column cannot be deleted while tasks use it. `tasks.status` stores the column slug, or the virtual `planned`/`archived` statuses used by the backlog.
 
@@ -319,24 +319,24 @@ Rules:
 | Operation | Rule |
 | --- | --- |
 | List / view | Owner, or a non-private board with an `access_grants` row for the caller. |
-| Create / update | Owner or `edit` grant, and `board.archived = false`. |
+| Create / update | Owner or `edit` grant, and `board.archived = false` (not in trash). |
 | Delete | Owner, or an `edit` grant on an active board. |
 
-The split is deliberate: an archived board freezes task creation and updates, but the owner can still delete tasks from it. Deleting an active board is rejected before the cascade can run. Deleting an archived board cascades its tasks; deleting a note clears the `document` link when the note is permanently deleted. Task numbering, completion, and activity are maintained by `pb_hooks/tasks/lifecycle.js` and `record_activity.js`; the unique index `(board, task_number)` prevents duplicate numbers.
+The split is deliberate: a trashed board freezes task creation and updates, but the owner can still delete tasks from it. Deleting an active board only moves it to trash; permanent delete is rejected until the board is trashed. Deleting a trashed board forever cascades its tasks; deleting a note clears the `document` link when the note is permanently deleted. Task numbering, completion, and activity are maintained by `pb_hooks/tasks/lifecycle.js` and `record_activity.js`; the unique index `(board, task_number)` prevents duplicate numbers.
 
-PocketBase evaluates relation rules against the **stored** record, not the incoming relation value. Moving a task to another board therefore also passes through `guards/relation_guards.js`, which loads the new `board`, rejects archived boards, and validates a newly set or changed `document` (foreign and trashed notes are rejected). An existing link to a note that was trashed later does not block unrelated task edits. Keep that guard when changing task rules.
+PocketBase evaluates relation rules against the **stored** record, not the incoming relation value. Moving a task to another board therefore also passes through `guards/relation_guards.js`, which loads the new `board`, rejects trashed boards, and validates a newly set or changed `document` (foreign and trashed notes are rejected). An existing link to a note that was trashed later does not block unrelated task edits. Keep that guard when changing task rules.
 
 `status` and `priority` are single selects. The UI sends `""` for an unset priority. `board_order` is scoped to a column by the client; `persistTaskPositions()` writes only rows whose status or order changed and never sends `board`.
 
-### Archive and permanent-delete lifecycle
+### Board trash lifecycle
 
-1. The board detail settings panel calls `archiveBoard()` (`PATCH archived: true`).
-2. The active index filters `archived = false`; the archive route filters `archived = true`.
-3. An archived board detail renders a restore state only; task writes are blocked by rule and the client does not load tasks for it.
-4. Restore clears `archived` and leaves every task intact.
-5. Permanent delete is exposed only on `/board/archive`, after a `ConfirmDialog`. PocketBase enforces `archived = true` and cascades `tasks.board`.
+1. The board menu, settings panel, typed `DELETE /api/v1/boards/:id`, and chat confirmation call `POST /api/trash/move-board`, which sets `archived = true`, clears the public share, and revokes grants.
+2. The active index filters `archived = false`; `/board/trash` and the folder view trash section filter `archived = true`.
+3. A trashed board detail renders a restore state only; task writes are blocked by rule and the client does not load tasks for it.
+4. Restore clears `archived` through `/api/trash/restore-board` and leaves every task intact.
+5. Permanent delete is exposed only for a trashed board, after a `ConfirmDialog`, and calls `/api/trash/permanent-delete-board`. PocketBase cascades `tasks.board` and `board_columns.board`.
 6. Notes linked through `tasks.document` remain in the library; only the tasks are removed.
-7. Archiving does not change `folder`. Archived boards keep their folder relation but are excluded from the timeline, sidebar, and folder view until restored.
+7. Trashing does not change `folder`. Trashed boards keep their folder relation but are excluded from the timeline, sidebar, and normal folder view until restored.
 
 ### Trash pattern
 
@@ -354,7 +354,7 @@ Folder soft delete:
 - `restore-folder` clears the subtree and every document trashed with it. A subtree whose parent is still trashed is re-rooted.
 - `permanent-delete-folder` rehomes boards, clears task note links for the subtree, then hard-deletes the root folder. `folders.parent` and `documents.folder` cascade, so the subtree, notes, git repositories, and attachments go with it.
 
-Tasks and boards do not use trash. Boards archive; deleting an archived board cascades tasks.
+Tasks have no trash and are permanently deleted. Boards use `archived` as their trash flag; move-board, restore-board, and permanent-delete-board live under `/api/trash/*`.
 
 ### Guards and invariants
 
@@ -434,7 +434,7 @@ Rules are `@request.auth.id != '' && author = @request.auth.id` for list, view, 
 - A record is readable by its author or a non-private record with a matching `access_grants` row.
 - Direct shares are copied into grants; a private record, a private folder, and every descendant are not shareable with people.
 - Update rules require an `edit` grant; task create/update require edit and an active board; task delete allows the owner or an active-board editor.
-- `sharing/permission_guards.js` enforces owner-only fields: `author`, `folder`/`parent`, privacy/public-share fields, archive state, and board columns/labels.
+- `sharing/permission_guards.js` enforces owner-only fields: `author`, `folder`/`parent`, privacy/public-share fields, board trash state, and board columns/labels.
 - `access_hooks.js` rebuilds grants on create/move/privacy/trash changes. A failed rebuild rolls the record write back; `sharing_repairs` and a cron retry queued repairs.
 - `/api/v1/sharing/*` is a session-only proxy. API keys and MCP remain author-scoped and do not see shared records.
 - Comments are stored in `comments` and served by custom routes; the collection has no public rules.
@@ -456,14 +456,14 @@ Fields on `documents`, `folders`, and `boards`:
 | `public_expires_at` | Optional expiry. |
 | `is_private` | Hide this record from AI surfaces; for documents, folders, and boards, also reject public sharing. For folders, private subtrees are excluded from public folder shares. |
 | `share_attachments` | Allow public attachment downloads. Documents and folders only; boards have no files. |
-| `deleted_at` | Documents and folders only. Trashed records never resolve a public share. |
+| `deleted_at` | Documents and folders only. Boards use `archived`; trashed records never resolve a public share. |
 
 Behavior:
 
 - Tokens are generated client-side with `crypto.getRandomValues` (20 bytes → 40 hex chars).
 - `ensureActivePublicShare()` rejects missing, private, deleted, and expired shares; expired shares are disabled on read.
-- Folder shares collect descendant folders, documents, and active boards with their tasks, skipping private subtrees/documents/boards, archived boards, and trashed records.
-- Board shares return the board plus its tasks; archived boards, private boards, and boards without `is_public` return `404`.
+- Folder shares collect descendant folders, documents, and active boards with their tasks, skipping private subtrees/documents/boards, trashed boards, and trashed records.
+- Board shares return the board plus its tasks; trashed boards, private boards, and boards without `is_public` return `404`.
 - Public board tasks omit `author`, `board`, and the linked `document`; a task’s note keeps its own privacy and share state.
 - Trashing a document or folder clears its share fields, so the link stops immediately.
 - A cron runs every 15 minutes to clear expired shares.

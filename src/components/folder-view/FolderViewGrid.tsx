@@ -48,7 +48,7 @@ type FolderViewGridProps = {
   onDocumentDoubleClick: (document: Document) => void;
   onItemContextMenu: (
     event: React.MouseEvent,
-    type: 'folder' | 'board' | 'document' | 'trash-folder' | 'trash-document' | 'empty',
+    type: 'folder' | 'board' | 'document' | 'trash-folder' | 'trash-document' | 'trash-board' | 'empty',
     options?: {
       folderId?: string;
       folderName?: string;
@@ -59,7 +59,7 @@ type FolderViewGridProps = {
   ) => void;
   onOpenItemMenu: (
     event: React.MouseEvent<HTMLButtonElement>,
-    type: 'folder' | 'board' | 'document' | 'trash-folder' | 'trash-document',
+    type: 'folder' | 'board' | 'document' | 'trash-folder' | 'trash-document' | 'trash-board',
     options?: {
       folderId?: string;
       folderName?: string;

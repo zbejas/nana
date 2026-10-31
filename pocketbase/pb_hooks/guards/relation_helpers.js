@@ -114,7 +114,7 @@ function assertTaskRelations(record, authId) {
     throw new ForbiddenError("You can only change tasks on boards you can edit.")
   }
   if (board.getBool("archived")) {
-    throw new BadRequestError("Archived boards cannot be changed.")
+    throw new BadRequestError("Boards in trash cannot be changed.")
   }
 
   const documentId = String(record.getString("document") || "")
@@ -181,7 +181,7 @@ function assertRelationEdge(record, authId) {
     throw new ForbiddenError("You cannot relate a task you cannot read.")
   }
   if (source.board.getBool("archived")) {
-    throw new BadRequestError("Archived boards cannot be changed.")
+    throw new BadRequestError("Boards in trash cannot be changed.")
   }
 }
 

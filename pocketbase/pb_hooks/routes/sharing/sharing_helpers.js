@@ -206,7 +206,7 @@ function assertTargetShareable(type, target, app) {
     throw new BadRequestError("Records inside a private folder cannot be shared with people")
   }
   if (type === "board" && target.getBool("archived")) {
-    throw new BadRequestError("Archived boards cannot be shared with people")
+    throw new BadRequestError("Boards in trash cannot be shared with people")
   }
   if (!access.targetIsShareable(type, target, app)) {
     throw new BadRequestError("This record cannot be shared with people")

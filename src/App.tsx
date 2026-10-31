@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate, useNavigate } from "react-router-dom";
 import { useEffect, useLayoutEffect, useState, useRef, lazy, Suspense } from "react";
 import { useAtomValue, useSetAtom } from 'jotai';
 import { SignInPage } from "./pages/SignInPage";
@@ -19,7 +19,7 @@ import { clearChatContextCaches } from "./lib/chat/context";
 
 // Lazy load heavy routes for code splitting
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
-const BoardArchivePage = lazy(() => import("./pages/BoardArchivePage"));
+const BoardTrashPage = lazy(() => import("./pages/BoardTrashPage"));
 const BoardPage = lazy(() => import("./pages/BoardPage"));
 const SharedPage = lazy(() => import("./pages/SharedPage"));
 const SharedFolderPage = lazy(() => import("./pages/SharedFolderPage"));
@@ -27,7 +27,8 @@ const DocumentEditor = lazy(() => import("./components/DocumentEditor"));
 const PublicDocumentPage = lazy(() => import("./pages/PublicDocumentPage"));
 const PublicFolderPage = lazy(() => import("./pages/PublicFolderPage"));
 const PublicBoardPage = lazy(() => import("./pages/PublicBoardPage"));
-import { useSidebar, useDocumentEditor, useDocumentData } from "./state/hooks";
+import { useSidebar, useDocumentEditor, useDocumentData, useToasts } from "./state/hooks";
+import { subscribeWorkspaceChanged, type WorkspaceChangeDetail } from "./lib/workspace-events";
 import {
   chatConversationIdAtom,
   chatDockHistoryOpenAtom,
@@ -110,6 +111,54 @@ function AppContent() {
   const chatDockResizing = useAtomValue(chatDockResizingAtom);
   const setChatDockOpen = useSetAtom(chatDockOpenAtom);
   const setChatConversationId = useSetAtom(chatConversationIdAtom);
+  const navigate = useNavigate();
+  const { showToast } = useToasts();
+  const locationRef = useRef(location);
+
+  useEffect(() => {
+    locationRef.current = location;
+  }, [location]);
+
+  // AI-confirmed deletes and trash transitions are server-side. Close an open
+  // record and say what happened; cached lists refresh through the same event.
+  useEffect(() => subscribeWorkspaceChanged((detail: WorkspaceChangeDetail) => {
+    if (!detail.removed || detail.targets.length === 0) return;
+
+    if (detail.message) showToast(detail.message, 'info');
+
+    const current = locationRef.current;
+    const params = new URLSearchParams(current.search);
+
+    for (const target of detail.targets) {
+      if (target.type === 'document' && current.pathname === `/document/${target.id}`) {
+        reset();
+        navigate('/folders');
+        return;
+      }
+      if (
+        target.type === 'folder'
+        && (current.pathname === `/folders/${target.id}`
+          || current.pathname === `/folders/trash/${target.id}`)
+      ) {
+        navigate('/folders');
+        return;
+      }
+      if (target.type === 'board' && current.pathname === `/board/${target.id}`) {
+        navigate('/board/trash');
+        return;
+      }
+      if (
+        target.type === 'task'
+        && current.pathname.startsWith('/board/')
+        && params.get('task') === target.id
+      ) {
+        params.delete('task');
+        const query = params.toString();
+        navigate(`${current.pathname}${query ? `?${query}` : ''}`, { replace: true });
+        return;
+      }
+    }
+  }), [navigate, reset, showToast]);
 
   // Detect public routes early — skip authenticated data loading on public pages
   const isPublicRoute = location.pathname.startsWith('/public/');
@@ -361,7 +410,8 @@ function AppContent() {
               <Route path="/shared/folders/:folderId" element={<ProtectedRoute><SharedFolderPage /></ProtectedRoute>} />
               <Route path="/timeline" element={<ProtectedRoute><TimelinePage /></ProtectedRoute>} />
               <Route path="/board" element={<Navigate to="/timeline" replace />} />
-              <Route path="/board/archive" element={<ProtectedRoute><BoardArchivePage /></ProtectedRoute>} />
+              <Route path="/board/trash" element={<ProtectedRoute><BoardTrashPage /></ProtectedRoute>} />
+              <Route path="/board/archive" element={<Navigate to="/board/trash" replace />} />
               <Route path="/board/:boardId" element={<ProtectedRoute><BoardPage /></ProtectedRoute>} />
               <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
               <Route path="/chat/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />

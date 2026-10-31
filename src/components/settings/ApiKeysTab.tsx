@@ -294,7 +294,7 @@ export function ApiKeysTab() {
               </Field>
             </div>
 
-            <Field label="Access" hint="Read-only keys cannot create, update, move, archive, or delete anything.">
+            <Field label="Access" hint="Read-only keys cannot create, update, move, trash, or delete anything.">
               <SegmentedControl
                 label="Key access"
                 value={access}

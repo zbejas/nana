@@ -99,6 +99,10 @@ export function FolderViewPage() {
     handlePermanentlyDeleteFolder,
     handleExportFolder,
     handleExportDocument,
+    handleTrashBoard,
+    handleExportBoard,
+    handleRestoreBoard,
+    handlePermanentlyDeleteBoard,
     openItemMenu,
   } = useFolderViewState();
 
@@ -114,7 +118,7 @@ export function FolderViewPage() {
   const canModify = !isTrashMode && !isSharedMode;
   const title = isTrashMode ? 'Trash' : isSharedMode ? 'Shared' : currentFolder?.name || 'Folders';
   const description = isTrashMode
-    ? 'Deleted notes and folders stay here until you restore or remove them.'
+    ? 'Deleted notes, boards, and folders stay here until you restore or remove them.'
     : isSharedMode
       ? 'Notes, boards, and folders with a public link.'
       : currentFolderId
@@ -129,7 +133,7 @@ export function FolderViewPage() {
         ? 'This folder is empty'
         : 'A fresh library';
   const emptyDescription = isTrashMode
-    ? 'Deleted items will appear here.'
+    ? 'Deleted notes, boards, and folders will appear here.'
     : isSharedMode
       ? 'Share a note, board, or folder from its menu to see it here.'
       : currentFolderId
@@ -164,12 +168,10 @@ export function FolderViewPage() {
                 <span className="text-[13px] font-medium tabular-nums text-ink">{displayedDocuments.length}</span>
                 {displayedDocuments.length === 1 ? 'note' : 'notes'}
               </span>
-              {!isTrashMode && (
-                <span className="inline-flex items-baseline gap-1.5">
-                  <span className="text-[13px] font-medium tabular-nums text-ink">{displayedBoards.length}</span>
-                  {displayedBoards.length === 1 ? 'board' : 'boards'}
-                </span>
-              )}
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-[13px] font-medium tabular-nums text-ink">{displayedBoards.length}</span>
+                {displayedBoards.length === 1 ? 'board' : 'boards'}
+              </span>
             </>
           }
           actions={
@@ -296,7 +298,9 @@ export function FolderViewPage() {
                       ? 'trash-folder'
                       : isTrashMode && type === 'document'
                         ? 'trash-document'
-                        : type,
+                        : isTrashMode && type === 'board'
+                          ? 'trash-board'
+                          : type,
                     options
                   )
                 }
@@ -307,7 +311,9 @@ export function FolderViewPage() {
                       ? 'trash-folder'
                       : isTrashMode && type === 'document'
                         ? 'trash-document'
-                        : type,
+                        : isTrashMode && type === 'board'
+                          ? 'trash-board'
+                          : type,
                     options
                   )
                 }
@@ -356,7 +362,9 @@ export function FolderViewPage() {
                       ? 'trash-folder'
                       : isTrashMode && type === 'document'
                         ? 'trash-document'
-                        : type,
+                        : isTrashMode && type === 'board'
+                          ? 'trash-board'
+                          : type,
                     options
                   )
                 }
@@ -367,7 +375,9 @@ export function FolderViewPage() {
                       ? 'trash-folder'
                       : isTrashMode && type === 'document'
                         ? 'trash-document'
-                        : type,
+                        : isTrashMode && type === 'board'
+                          ? 'trash-board'
+                          : type,
                     options
                   )
                 }
@@ -455,13 +465,13 @@ export function FolderViewPage() {
           document.body
         )}
 
-      {contextMenu?.type === 'board' &&
+      {contextMenu && (contextMenu.type === 'board' || contextMenu.type === 'trash-board') &&
         createPortal(
           <BoardContextMenu
             contextMenu={{
               x: contextMenu.x,
               y: contextMenu.y,
-              type: 'board',
+              type: contextMenu.type,
               boardId: contextMenu.boardId,
               boardName: contextMenu.boardName,
             }}
@@ -486,6 +496,16 @@ export function FolderViewPage() {
                 closeContextMenu();
               }
             }}
+            onExportBoard={() => {
+              if (contextMenu.boardId) {
+                void handleExportBoard();
+              } else {
+                closeContextMenu();
+              }
+            }}
+            onTrashBoard={() => void handleTrashBoard()}
+            onRestoreBoard={() => void handleRestoreBoard()}
+            onPermanentlyDeleteBoard={() => void handlePermanentlyDeleteBoard()}
             onClose={closeContextMenu}
             isClosing={isClosingContextMenu}
           />,

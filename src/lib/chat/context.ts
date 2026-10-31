@@ -46,7 +46,7 @@ interface LightFolder {
 
 /**
  * Derive the page context from a route. Only the three content surfaces carry
- * context; chat, settings, timeline, archives, trash, and shared folders do not.
+ * context; chat, settings, timeline, trash, board trash, and shared folders do not.
  */
 export function deriveChatContext(pathname: string): RouteChatContext | null {
   const parts = pathname.split('/').filter(Boolean);
@@ -65,7 +65,7 @@ export function deriveChatContext(pathname: string): RouteChatContext | null {
   if (surface === 'document' && id !== 'new') {
     return { type: 'document', id };
   }
-  if (surface === 'board' && id !== 'archive') {
+  if (surface === 'board' && id !== 'trash' && id !== 'archive') {
     return { type: 'board', id };
   }
   if (surface === 'folders' && id !== 'trash' && id !== 'shared') {

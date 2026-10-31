@@ -5,7 +5,7 @@ import {
     type PBListResponse,
     type ToolContext,
 } from "../pocketbase/client";
-import { ApiError, badRequest, conflict, notFound } from "./errors";
+import { badRequest, notFound } from "./errors";
 import { recordIsLocked, workspaceVisibilityConditions } from "./privacy";
 import {
     assertFolderVisible,
@@ -312,8 +312,8 @@ export async function moveBoard(
 }
 
 /**
- * Permanently delete an archived board. PocketBase cascades its tasks and its
- * delete rule rejects an active board; both outcomes stay safe here.
+ * Move a board to trash. The record keeps its id, columns, and tasks; the
+ * trash flag hides it from active lists and task writes.
  */
 export async function deleteBoard(
     context: ToolContext,
@@ -323,18 +323,31 @@ export async function deleteBoard(
     assertWritable(context);
 
     const current = await loadVisibleBoard(context, surface, id);
-    if (current.archived !== true) throw conflict("Archive the board before deleting it.");
+    unwrap(await pbRequest<{ boardId?: string }>(
+        "/api/trash/move-board",
+        context,
+        { method: "POST", body: { boardId: current.id } },
+    ));
+}
 
-    const path = `/api/collections/boards/records/${encodeURIComponent(current.id)}`;
-    try {
-        unwrap(await pbRequest<Record<string, never>>(path, context, { method: "DELETE" }));
-    } catch (error) {
-        if (error instanceof ApiError) {
-            if (error.status === 400) throw conflict("Archive the board before deleting it.");
-            if (error.status === 404 || error.status === 403) throw notFound();
-        }
-        throw error;
-    }
+/** Restore a trashed board and its tasks. */
+export async function restoreBoard(
+    context: ToolContext,
+    surface: Surface = "user",
+    id: string,
+): Promise<BoardDto> {
+    assertWritable(context);
+
+    const current = await loadBoardRecord(context, id);
+    const visibility = await visibilityFor(context, surface);
+    if (recordIsLocked(visibility, surface, current)) throw notFound();
+
+    unwrap(await pbRequest<{ boardId?: string }>(
+        "/api/trash/restore-board",
+        context,
+        { method: "POST", body: { trashBoardId: current.id } },
+    ));
+    return toBoardDto(await loadBoardRecord(context, id));
 }
 
 // ── Workflow columns ────────────────────────────────────────────────

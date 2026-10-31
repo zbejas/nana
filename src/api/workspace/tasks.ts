@@ -237,7 +237,7 @@ async function loadTaskRecord(context: ToolContext, id: string): Promise<PBTaskR
 
 async function activeBoard(context: ToolContext, surface: Surface, boardId: string) {
     const board = await getBoard(context, surface, boardId);
-    if (board.archived) throw conflict("That board is archived.");
+    if (board.archived) throw conflict("That board is in trash.");
     return board;
 }
 

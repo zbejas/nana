@@ -20,6 +20,7 @@ const logger = createLogger('DocData');
 import { useRealtimeSubscriptions } from './useRealtimeSubscriptions';
 import { useFolderLazyLoading } from './useFolderLazyLoading';
 import { buildFolderTree } from '../../lib/folders/utils';
+import { subscribeWorkspaceChanged } from '../../lib/workspace-events';
 
 /**
  * Main hook for folder and document data management.
@@ -39,6 +40,7 @@ export function useDocumentData({ enabled = true }: { enabled?: boolean } = {}) 
     const setRecentDocuments = useSetAtom(recentDocumentsAtom);
     const setTrashDocuments = useSetAtom(trashDocumentsAtom);
     const setLoadFolderDocuments = useSetAtom(loadFolderDocumentsAtom);
+    const setRefreshTrigger = useSetAtom(refreshTriggerAtom);
 
     // Handle folder updates from real-time subscriptions
     const handleFoldersUpdate = (activeFolders: ReturnType<typeof buildFolderTree>, trashFolderTree: ReturnType<typeof buildFolderTree>) => {
@@ -66,6 +68,15 @@ export function useDocumentData({ enabled = true }: { enabled?: boolean } = {}) 
     useEffect(() => {
         setLoadFolderDocuments(() => loadFolderDocuments);
     }, [loadFolderDocuments, setLoadFolderDocuments]);
+
+    // Soft-deleted notes and folders stop matching the PocketBase list rule,
+    // so PocketBase realtime cannot deliver their trash transition. AI delete
+    // confirmations happen server-side too; refresh from the mutation event.
+    useEffect(() => subscribeWorkspaceChanged((detail) => {
+        if (detail.targets.some((target) => target.type === 'document' || target.type === 'folder')) {
+            setRefreshTrigger((previous) => previous + 1);
+        }
+    }), [setRefreshTrigger]);
 
     // Manual refresh trigger
     const prevTrigger = useRef(0);

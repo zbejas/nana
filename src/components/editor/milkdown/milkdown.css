@@ -338,6 +338,17 @@
     height: auto;
     border: 1px solid var(--line);
     border-radius: 8px;
+    vertical-align: middle;
+  }
+
+  .nana-milkdown .ProseMirror img.nana-inline-badge {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .nana-milkdown .ProseMirror .nana-soft-break {
+    white-space: normal;
   }
 
   .nana-milkdown .ProseMirror img.ProseMirror-separator {

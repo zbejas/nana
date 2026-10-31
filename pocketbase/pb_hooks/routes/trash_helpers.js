@@ -81,9 +81,26 @@ function assertInTrash(record, label) {
   }
 }
 
+function markBoardTrashed(board) {
+  board.set("archived", true)
+  clearPublicShare(board)
+  $app.save(board)
+}
+
+function markBoardRestored(board) {
+  board.set("archived", false)
+  $app.save(board)
+}
+
+function assertBoardInTrash(board, label) {
+  if (!board.getBool("archived")) {
+    throw new BadRequestError(`${label} is not in trash`)
+  }
+}
+
 /**
- * Boards are archived, never trashed. When a folder leaves the live tree its
- * boards move to the root so the folder relation can never dangle.
+ * When a folder leaves the live tree its boards move to the root so the folder
+ * relation can never dangle. Board trash is separate from folder trash.
  */
 function rehomeBoardsFromFolderIds(folderIds) {
   const movedBoardIds = []
@@ -333,6 +350,43 @@ function restoreFolderTree(folderId, userId) {
   return { folderId: root.id, restoredDocumentIds }
 }
 
+/** Soft-delete a board and its public share. Boards use `archived` as trash. */
+function moveBoardToTrashById(boardId, userId) {
+  const board = $app.findRecordById("boards", boardId)
+  assertOwned(board, userId, "Board")
+  if (board.getBool("archived")) {
+    throw new BadRequestError("Board is already in trash")
+  }
+
+  const targets = [{ type: "board", id: board.id }]
+  clearSharing(targets)
+  markBoardTrashed(board)
+  syncSharing(targets)
+  return board
+}
+
+/** Restore a board and its tasks from trash. */
+function restoreBoardById(boardId, userId) {
+  const board = $app.findRecordById("boards", boardId)
+  assertOwned(board, userId, "Board")
+  assertBoardInTrash(board, "Board")
+
+  const targets = [{ type: "board", id: board.id }]
+  clearSharing(targets)
+  markBoardRestored(board)
+  syncSharing(targets)
+  return { boardId: board.id }
+}
+
+/** Permanently delete a trashed board; its tasks cascade. */
+function permanentlyDeleteBoardById(boardId, userId) {
+  const board = $app.findRecordById("boards", boardId)
+  assertOwned(board, userId, "Board")
+  assertBoardInTrash(board, "Board")
+  clearSharing([{ type: "board", id: board.id }])
+  $app.delete(board)
+}
+
 /** Permanently delete a trashed folder subtree through relation cascades. */
 function permanentlyDeleteFolderTree(folderId, userId) {
   const root = $app.findRecordById("folders", folderId)
@@ -381,4 +435,7 @@ module.exports = {
   moveFolderToTrash,
   restoreFolderTree,
   permanentlyDeleteFolderTree,
+  moveBoardToTrashById,
+  restoreBoardById,
+  permanentlyDeleteBoardById,
 }

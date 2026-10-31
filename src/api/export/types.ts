@@ -6,7 +6,42 @@
 export interface ExportRequest {
     documentIds?: string[];
     folderIds?: string[];
+    boardIds?: string[];
     zipName?: string;
+}
+
+/** Minimal board shape returned by PocketBase REST API */
+export interface PBBoard {
+    id: string;
+    name: string;
+    description?: string;
+    author: string;
+    created: string;
+    updated: string;
+}
+
+/** Minimal board column shape returned by PocketBase REST API */
+export interface PBBoardColumn {
+    id: string;
+    board: string;
+    name: string;
+    slug: string;
+    position: number;
+    is_final: boolean;
+}
+
+/** Minimal task shape returned by PocketBase REST API */
+export interface PBTask {
+    id: string;
+    title: string;
+    description?: string;
+    status: string;
+    priority?: string;
+    due_date?: string;
+    labels?: string[];
+    document?: string;
+    board: string;
+    board_order?: number;
 }
 
 /** Minimal document shape returned by PocketBase REST API */

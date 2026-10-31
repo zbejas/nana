@@ -10,6 +10,7 @@ interface SidebarDialogsProps {
   deleteDialogConfig: {
     title: string;
     message: string;
+    confirmLabel?: string;
     onConfirm: () => Promise<void>;
   } | null;
   onDeleteCancel: () => void;
@@ -48,7 +49,7 @@ export function SidebarDialogs({
           open={showDeleteDialog}
           title={deleteDialogConfig.title}
           description={deleteDialogConfig.message}
-          confirmLabel="Move to trash"
+          confirmLabel={deleteDialogConfig.confirmLabel ?? "Move to trash"}
           tone="danger"
           onConfirm={() => {
             void deleteDialogConfig.onConfirm().finally(onDeleteCancel);

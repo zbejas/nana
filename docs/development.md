@@ -176,9 +176,9 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 
 1. Read [`pocketbase.md`](pocketbase.md) for the board/task rules and [`frontend.md`](frontend.md) for the UI split.
 2. Keep the browser UI on the standard PocketBase collection endpoints. External automation uses the `/api/v1` facade, which calls the shared workspace services; do not add `/api/boards` or `/api/tasks` aliases.
-3. Preserve the required `tasks.board` relation, the archive-first delete rule, and the optional `boards.folder` relation.
+3. Preserve the required `tasks.board` relation, the board trash-first delete rule, and the optional `boards.folder` relation.
 4. If you change the backfill, keep `0000018`'s order: optional relation → backfill → required relation → rules.
-5. Remember that deleting an archived board cascades tasks but never notes.
+5. Remember that permanently deleting a trashed board cascades tasks but never notes.
 6. Incoming folder/parent/board/document writes need `guards/relation_guards.js`; folder trash must rehome boards, never delete them.
 7. Update `tests/pocketbase/guards/03-task-rules.test.ts`, `04-board-rules.test.ts`, `05-board-folders.test.ts`, and `06-relation-integrity.test.ts`; add folder-trash coverage in `routes/08-board-folder-trash.test.ts`, then run the Docker suite.
 
@@ -213,7 +213,7 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 - **`bun run dev` does not start PocketBase.** Use the dev compose stack unless PocketBase is already running.
 - **SSE needs `server.timeout(req, 0)`.** Chat and PocketBase realtime connections are cut off otherwise.
 - **Tool loops need an explicit stop condition.** `streamText` stops after one step without `stopWhen(stepCountIs(8))`, so list → read chains fail.
-- **Archived boards block task writes.** A task update returns an error while the board is archived; deletes still work. This is enforced by PocketBase rules plus `pb_hooks/guards/relation_guards.js`.
+- **Trashed boards block task writes.** A task update returns an error while the board is in trash; deletes still work. This is enforced by PocketBase rules plus `pb_hooks/guards/relation_guards.js`.
 - **Incoming relations need the request guard.** The update rule sees the stored record, not the incoming one. `relation_guards.js` validates `folder`, `parent`, `board`, and `document` for ownership and trashed state.
 - **Folder moves need their own guard.** PocketBase relation rules see the stored record, so `relation_guards.js` validates the incoming `parent` and rejects cycles. Folder trash must rehome boards to the root; `boards.folder` does not cascade.
 - **Private is an AI lock, not an owner lock.** `loadAiVisibility()` applies to chat and MCP. `/api/v1` and the browser client deliberately show private records to their owner.
@@ -222,7 +222,7 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 - **The browser uses `/api/v1`, not PocketBase.** `/api/v1` has a typed workspace API and a PocketBase-shaped browser facade; `/pb` returns `404`. Server code talks to loopback PocketBase directly through `serverConfig.pocketbaseUrl`.
 - **The integration suite shares one database.** Use `tests/helpers/factories.ts` for unique users and records. Only the onboarding test may rely on an empty database.
 - **Admin tests restore instance settings.** Snapshot with `snapshotAdminSettings()` and restore in `afterAll`; never leave SMTP, OAuth, attachment, or app-url changes behind for the next file.
-- **Board deletion is two-step.** Active board → archive → permanent delete. The delete cascades tasks; do not add a client-side task loop.
+- **Board deletion is two-step.** Active board → trash → permanent delete. The delete cascades tasks; do not add a client-side task loop.
 - **Migration `0000018` backfills only empty boards.** It creates `My board` for authors with unassigned tasks, then makes `tasks.board` required. Do not create a default board for every user in a later migration without a product decision.
 - **Superuser credentials are bootstrapped.** Tests read `pb_data/superuser_credentials.json`; changing env credentials changes the login.
 - **Migration compatibility hook:** old filenames are rewritten in `_migrations` on startup. Don't rename historical migrations.

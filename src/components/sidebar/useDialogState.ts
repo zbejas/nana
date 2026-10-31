@@ -4,6 +4,7 @@ import type { Document as AppDocument } from '../../lib/documents';
 export interface DeleteDialogConfig {
     title: string;
     message: string;
+    confirmLabel?: string;
     onConfirm: () => Promise<void>;
 }
 

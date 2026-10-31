@@ -1,5 +1,6 @@
 import { verifyAuth, AuthError } from "./auth";
 import { downloadDocumentAttachments, obtainFileToken } from "./attachments";
+import { resolveBoardExport } from "./boards";
 import { createExportCache } from "./cache";
 import { documentToMarkdown, resolveExportDocuments, sanitizeFilename } from "./documents";
 import { buildExportZip } from "./zip-builder";
@@ -12,11 +13,11 @@ const log = createLogger("Export");
  * Main handler for POST /api/export
  *
  * Request body (JSON):
- *   { documentIds?: string[], folderIds?: string[], zipName?: string }
+ *   { documentIds?: string[], folderIds?: string[], boardIds?: string[], zipName?: string }
  *
  * Requires a valid PocketBase Authorization header.
- * Returns an attachment download: plain markdown for a single document with no
- * attachments, otherwise a ZIP archive.
+ * Returns an attachment download: plain markdown for a single document or
+ * board, otherwise a ZIP archive.
  */
 export async function handleExport(req: Request): Promise<Response> {
     // ── Method check ─────────────────────────────────────────────────
@@ -53,12 +54,51 @@ export async function handleExport(req: Request): Promise<Response> {
 
     const documentIds = body.documentIds ?? [];
     const folderIds = body.folderIds ?? [];
+    const boardIds = body.boardIds ?? [];
 
-    if (documentIds.length === 0 && folderIds.length === 0) {
-        return new Response(JSON.stringify({ error: "No documents or folders specified" }), {
+    if (documentIds.length === 0 && folderIds.length === 0 && boardIds.length === 0) {
+        return new Response(JSON.stringify({ error: "No documents, folders, or boards specified" }), {
             status: 400,
             headers: { "Content-Type": "application/json" },
         });
+    }
+
+    // ── Board export ─────────────────────────────────────────────────
+    if (boardIds.length > 0) {
+        if (boardIds.length !== 1 || documentIds.length > 0 || folderIds.length > 0) {
+            return new Response(JSON.stringify({ error: "Export one board at a time" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+
+        try {
+            const authHeader = req.headers.get("Authorization")!;
+            const boardExport = await resolveBoardExport(userId, authHeader, boardIds[0]!);
+            if (!boardExport) {
+                return new Response(JSON.stringify({ error: "Board not found" }), {
+                    status: 404,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+
+            const markdownBytes = new TextEncoder().encode(boardExport.markdown);
+            return new Response(markdownBytes, {
+                status: 200,
+                headers: {
+                    "Content-Type": "text/markdown; charset=utf-8",
+                    "Content-Disposition": `attachment; filename="${boardExport.filename}"`,
+                    "Content-Length": String(markdownBytes.byteLength),
+                },
+            });
+        } catch (err) {
+            log.error("Board export failed", err);
+            const message = err instanceof Error ? err.message : "Export failed";
+            return new Response(JSON.stringify({ error: message }), {
+                status: 500,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
     }
 
     // ── Cache setup ──────────────────────────────────────────────────

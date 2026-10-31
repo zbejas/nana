@@ -21,7 +21,7 @@ import {
 import { formatRelativeDate } from '../components/board/dates';
 import { useBoardSummaries } from '../components/board/useBoardSummaries';
 
-export function BoardArchivePage() {
+export function BoardTrashPage() {
   const navigate = useNavigate();
   const { showToast } = useToasts();
   const { boards, isLoading, error, retry, removeBoardLocally } = useBoardSummaries(true);
@@ -29,8 +29,8 @@ export function BoardArchivePage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<BoardSummary | null>(null);
 
-  const archived = boards.filter((board) => board.archived);
-  const isEmpty = !isLoading && !error && archived.length === 0;
+  const trashed = boards.filter((board) => board.archived);
+  const isEmpty = !isLoading && !error && trashed.length === 0;
 
   const handleRestore = async (board: BoardSummary) => {
     setRestoringId(board.id);
@@ -74,19 +74,19 @@ export function BoardArchivePage() {
     <PageShell contentClassName="desktop-page-content-enter">
       <PageHeader
         back={{ label: 'Timeline', onClick: () => navigate('/timeline') }}
-        title="Archived boards"
-        description="Boards set aside with their tasks. Nothing here is deleted until you delete it for good."
+        title="Trash"
+        description="Boards and their tasks stay here until you restore them or delete them for good."
         meta={
           <span className="inline-flex items-baseline gap-1.5">
-            <span className="text-[13px] font-medium tabular-nums text-ink">{archived.length}</span>
-            archived
+            <span className="text-[13px] font-medium tabular-nums text-ink">{trashed.length}</span>
+            trashed
           </span>
         }
       />
 
       {error ? (
         <EmptyState
-          title="The archive could not load"
+          title="Trash could not load"
           description={error}
           action={
             <Button variant="secondary" icon={<ArrowPathIcon />} onClick={retry}>
@@ -95,7 +95,7 @@ export function BoardArchivePage() {
           }
         />
       ) : isLoading ? (
-        <div className="archive-board-grid gap-4" aria-label="Loading archived boards" aria-busy="true">
+        <div className="trash-board-grid gap-4" aria-label="Loading trashed boards" aria-busy="true">
           {[0, 1].map((index) => (
             <div key={index} className="rounded-panel border border-line bg-surface p-5">
               <div className="h-4 w-40 animate-pulse rounded bg-surface-raised" />
@@ -107,16 +107,16 @@ export function BoardArchivePage() {
       ) : isEmpty ? (
         <div className="flex min-h-[52vh] items-center justify-center pb-16">
           <EmptyState
-            title="No archived boards"
-            description="Archive a board from its edit dialog to set it aside without deleting its tasks."
+            title="No trashed boards"
+            description="Move a board to trash from its menu or settings. Its tasks go with it and come back on restore."
             className="max-w-lg"
           />
         </div>
       ) : (
-        <div className="archive-board-grid gap-4 pb-2">
-            {archived.map((board) => {
+        <div className="trash-board-grid gap-4 pb-2">
+            {trashed.map((board) => {
               const restoring = restoringId === board.id;
-              const archivedDate = formatRelativeDate(board.updated);
+              const trashedDate = formatRelativeDate(board.updated);
 
               return (
                 <div
@@ -138,7 +138,7 @@ export function BoardArchivePage() {
                         {board.total} {board.total === 1 ? 'task' : 'tasks'}
                       </span>
                       <span className="rounded-full bg-surface-sunken px-2 py-0.5">
-                        Archived {archivedDate || '—'}
+                        Trashed {trashedDate || '—'}
                       </span>
                     </div>
                   </div>
@@ -193,4 +193,4 @@ export function BoardArchivePage() {
   );
 }
 
-export default BoardArchivePage;
+export default BoardTrashPage;

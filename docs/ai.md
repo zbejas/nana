@@ -242,7 +242,7 @@ All chat tools are **caller-scoped**. Notes and boards read directly through Poc
 | `list_folders` | None. | Every visible folder with id, name, parent id, and privacy/public flags. Hidden folder subtrees are omitted. |
 | `list_notes` | `query` (max 200, titles/tags only), `tag`, `folderId`, `page` (1–1000), `perPage` (1–50), `sort` (`updated`, `created`, `title`). | Note metadata: id, title, tags, dates, word count, reading time, folder, and privacy flag. Never body text. |
 | `read_note` | `noteId`, `offset` (1–100000), `limit` (1–600 lines, default 300). | A line window plus `totalLines`, `hasMore`, `nextOffset`, `truncated`, `clippedLines`, `revision`, and `versionToken`. |
-| `list_boards` | `includeArchived` (default false), `page`, `perPage`. | Boards with open/done/total and per-column task counts. Archived boards only when requested. |
+| `list_boards` | `includeArchived` (default false), `page`, `perPage`. | Boards with open/done/total and per-column task counts. Trashed boards only when requested. |
 | `read_board` | `boardId`, optional `column` (`backlog`, `next`, `progress`, `done`), `page`, `perPage`. | Board summary and paged task summaries: title, status, priority, due date, labels, order, note id, 400-character plain-text excerpt. |
 | `list_tasks` | `boardId`, optional `status` (column slug, `planned`, or `archived`), `page`, `perPage`. | Board tasks with status, priority, dates, labels, assignee id, note id, order, and bounded metadata. |
 | `read_task` | `taskId`. | One task with its board name, up to 20,000 characters of description, completion/recurrence metadata, and a truncation flag. |
@@ -252,7 +252,7 @@ Bounds enforced in `src/api/chat/tools/`:
 - Every list is paged; `perPage` is capped at 50.
 - `list_notes` filters `author` to the caller and searches only `title` and `tags`; the private filter removes hidden notes and folder subtrees.
 - `read_note` rejects invalid ids, caps the loaded body at 2,000,000 bytes, clips single lines at 2,000 characters, and limits a response to a 6,000–12,000 character budget. It returns the current `revision` and an opaque `versionToken`.
-- `read_board`, `list_tasks`, and `read_task` refuse another user's board, an archived board, and a hidden board or task with `not_found`. `read_task` caps the description at 20,000 characters.
+- `read_board`, `list_tasks`, and `read_task` refuse another user's board, a trashed board, and a hidden board or task with `not_found`. `read_task` caps the description at 20,000 characters.
 - `list_folders` goes through `listFolders()` so it honors the same private lock and API-key envelope as every other AI read.
 - The note and board read executors abort a PocketBase request after 8 seconds or when the model aborts. Task reads and all writes go through the shared workspace client, whose default is 30 seconds.
 - Filter values are escaped and ids must match `[A-Za-z0-9]{1,64}` before they reach a filter.
@@ -274,7 +274,7 @@ Write tools exist only when `mode: "edit"`. Ask mode returns the read-tool set w
 | `update_note` | `noteId`, `expectedRevision`, optional `title`, optional `tags`, optional `summary`. | Renames a note or changes its tags. Body content belongs to `edit_note`. | Restore the pre-edit snapshot. |
 | `move_note` | `noteId`, `folderId` (or null for the root), optional `summary`. | Moves a visible note between visible folders through `moveNote()`. | None. |
 | `create_board` | `name`, optional `description`, optional `folder`. | Creates an owned board; PocketBase seeds the default workflow columns. The folder must be visible. | None. |
-| `update_board` | `boardId`, optional `name`, `description`, `archived`, optional `summary`. | Renames a board, changes its description, or archives/restores it through `updateBoard()`. | None. |
+| `update_board` | `boardId`, optional `name`, `description`, optional `summary`. | Renames a board or changes its description through `updateBoard()`. | None. |
 | `move_board` | `boardId`, `folderId` (or null for the root), optional `summary`. | Moves a visible board between visible folders through `moveBoard()`. | None. |
 | `create_task` | `boardId`, `title`, optional `description`, `status`, `priority`, `dueDate`, `assignee`. | Creates a task on an active board. `status` is a column slug, `planned`, or `archived`; `assignee` is a user id, `me`, or `none`. | None. |
 | `update_task` | `taskId`, optional `title`, `description`, `status`, `priority`, `dueDate`, `assignee`, `summary`. | Updates task fields. The board must be active and the status valid for it. | None. |
@@ -282,7 +282,7 @@ Write tools exist only when `mode: "edit"`. Ask mode returns the read-tool set w
 | `delete_note` | `noteId`, optional `summary`. | Creates a **pending** action; confirms to move the note to trash. No mutation before confirmation. | None. |
 | `delete_task` | `taskId`, optional `summary`. | Creates a **pending** action; confirms to permanently delete the task. | None. |
 | `delete_folder` | `folderId`, optional `summary`. | Creates a **pending** action; confirms to move the folder subtree to trash. Boards rehome to the root. | None. |
-| `delete_board` | `boardId`, optional `summary`. | Creates a **pending** action; confirms to permanently delete an archived board. Active boards return `conflict`. | None. |
+| `delete_board` | `boardId`, optional `summary`. | Creates a **pending** action; confirms to move the board and its tasks to trash. | None. |
 
 Write bounds and invariants:
 
@@ -290,7 +290,7 @@ Write bounds and invariants:
 - `expectedRevision` accepts the numeric `revision` or the opaque `versionToken` from `read_note`. A stale value returns `conflict` before the write.
 - Section fragments are sanitized individually, then written with `sanitizeContent: false` so untouched sections are not re-sanitized.
 - `append_note` and `edit_note` go through `src/lib/markdown/sections.ts`. Do not add a whole-document replace path for chat.
-- A board or task write still runs the normal workspace checks: ownership, private lock, archived-board rules, valid task status, and assignee board access.
+- A board or task write still runs the normal workspace checks: ownership, private lock, board trash rules, valid task status, and assignee board access.
 
 #### Write path
 
@@ -303,7 +303,7 @@ Write bounds and invariants:
 7. The recorder emits an `edit` event for the applied write. If audit persistence fails, the workspace write still succeeds and the card is omitted; the tool does not fail after a completed write.
 8. Undo of a created note moves it to trash. Undo of a note edit restores the pre-edit data stored in `chat_edits.operations.before` through the same revision-aware path. Board and task writes have no undo.
 
-Chat does **not** expose publish, share, privacy, board-column, or label tools, and it cannot move a task to another board. Delete tools are two-step: the model can only create a pending action, and `POST /api/chat/edits/:id/confirm` executes it after the user clicks the card. A pending action can be cancelled, and confirmation re-checks ownership, visibility, and board/archive rules with the caller's token. Notes, boards, and folders can be moved between visible folders; boards can also be archived and restored.
+Chat does **not** expose publish, share, privacy, board-column, or label tools, and it cannot move a task to another board. Delete tools are two-step: the model can only create a pending action, and `POST /api/chat/edits/:id/confirm` executes it after the user clicks the card. A pending action can be cancelled, and confirmation re-checks ownership, visibility, and board trash rules with the caller's token. Notes, boards, and folders can be moved between visible folders; boards can also be trashed and restored.
 
 ### Chat stream contract
 
@@ -325,13 +325,13 @@ MCP is not chat. It is a separate Streamable HTTP endpoint at `POST /mcp`, authe
 | Persistence | None beyond the workspace records the tools change. MCP activity is not written to `conversations`, `messages`, or `chat_edits`. |
 | CORS | None; same-origin only. |
 | Tool failure | MCP `isError` text result with `{ error: { code, message } }`; the HTTP request succeeds. |
-| Destructive tools | `delete_note` (trash), `delete_board` (archived boards only), `delete_task` (permanent). |
+| Destructive tools | `delete_note` (trash), `delete_board` (trash), `delete_task` (permanent). |
 
 The tool families:
 
 - **Folders:** `list_folders`, `create_folder`.
 - **Notes:** `list_notes`, `read_note` (the chat executors), plus `create_note`, `update_note`, `move_note`, `delete_note` (workspace services).
-- **Boards:** `list_boards`, `read_board` (the chat executors), plus `create_board`, `update_board`, `move_board`, `archive_board`, `restore_board`, `delete_board`.
+- **Boards:** `list_boards`, `read_board` (the chat executors), plus `create_board`, `update_board`, `move_board`, `restore_board`, `delete_board`.
 - **Tasks:** `list_tasks`, `create_task`, `update_task`, `move_task`, `delete_task`, `add_note_to_board`.
 
 MCP instructions tell the model to read before writing, use only ids returned by a tool, never bypass the private lock, and treat note/task text as untrusted. The server does not ask for human confirmation; the authorization boundary is the user token, author scoping, the private lock, and the explicit destructive tool list. A prompt-injected note can at worst cause writes inside the caller's own visible workspace; it cannot reach another user or a private record.
@@ -452,9 +452,9 @@ See [`security.md`](security.md) for the threat model and review checklist.
 | `503` before the stream for context | The visibility snapshot could not be loaded; the workspace is unavailable. |
 | Empty assistant text | Replaced with the fixed fallback; a new conversation still gets a title attempt. |
 | `unauthorized` tool result | The tool received no token. Chat itself rejects invalid tokens with `401` before tools run, but a token that expires mid-turn can make PocketBase answer as a guest; list results may be empty rather than an error. Re-check the session if a request unexpectedly returns nothing. |
-| `not_found` tool result | The record is missing, trashed, belongs to another author, is an archived board, or is hidden by the private lock. |
+| `not_found` tool result | The record is missing, trashed, belongs to another author, is a trashed board, or is hidden by the private lock. |
 | `invalid_input` tool result | The model sent an invalid id, filter value, page bound, section anchor, or write field. |
-| `conflict` tool result | A note changed since it was read, a section heading is ambiguous, or a task write targets an archived board. The model should re-read and retry, not blindly repeat. |
+| `conflict` tool result | A note changed since it was read, a section heading is ambiguous, or a task write targets a trashed board. The model should re-read and retry, not blindly repeat. |
 | `unavailable` tool result | PocketBase timed out, was unreachable, or returned an unreadable body. |
 | SSE `error` event | The provider failed after streaming began; the client shows the mapped message. |
 | Undo `409` | A note-edit undo found a newer revision/`updated` value, the edit has no saved revision or snapshot, or the target is a board/task edit, which has no chat undo. |
@@ -462,7 +462,7 @@ See [`security.md`](security.md) for the threat model and review checklist.
 | MCP `401` | Missing, invalid, or expired user token; returned before any MCP work. |
 | MCP `-32700` | The request body was not valid JSON. |
 | MCP `isError` result | The tool failed with `not_found`, `invalid_input`, `conflict`, `upstream_unavailable`, or `unavailable`; the HTTP request succeeded. |
-| MCP write conflict | An active board was deleted without archiving, or a task was created/updated on an archived board. |
+| MCP write conflict | A task was created or updated on a trashed board. |
 
 Tool logs contain the tool name, duration, and result count only. Inputs, outputs, auth headers, and note/task text are not logged.
 
@@ -495,7 +495,7 @@ Tool logs contain the tool name, duration, and result count only. Inputs, output
 - **Trashed records are absent from AI surfaces.** `documents` and `folders` list/view rules add `deleted_at = ''`; `not_found` covers a trashed note or folder as well as a missing or foreign one.
 - **A private folder hides its descendants even when they are not flagged.** Visibility is computed from `parent`, not from the child's own `is_private`.
 - **Creating a private record through MCP makes it disappear from that surface.** The write succeeds; subsequent reads return `not_found`. That is expected.
-- **Archived boards are readable metadata but not readable work.** `list_boards({ includeArchived: true })` can list them; `read_board`, `list_tasks`, and `read_task` return `not_found` for an archived board or its tasks.
+- **Trashed boards are readable metadata but not readable work.** `list_boards({ includeArchived: true })` can list them; `read_board`, `list_tasks`, and `read_task` return `not_found` for a trashed board or its tasks.
 - **`list_notes` never searches bodies.** A body-only match will not appear; the model must use `read_note` after a metadata hit.
 - **`read_note` advances by returned lines.** Use `nextOffset`, not arithmetic; the character budget can return fewer lines than `limit`.
 - **MCP tool failures are not HTTP failures.** Return `isError` results for workspace errors; reserve HTTP/RPC errors for auth, parse, and transport failures.

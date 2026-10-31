@@ -384,7 +384,7 @@ async function setActionStatus(editId: string, status: ChatEditStatus): Promise<
 /**
  * Execute one pending delete after the user explicitly confirmed it. The
  * pending row is created by a delete tool; the model never has a path that
- * performs the delete directly. Ownership, visibility, and board/archive
+ * performs the delete directly. Ownership, visibility, and board trash
  * rules are checked again by the workspace service at confirmation time.
  */
 export async function confirmChatEdit(
@@ -409,7 +409,7 @@ export async function confirmChatEdit(
         }
     } catch (error) {
         // Keep the row pending so a transient failure can be retried after the
-        // user fixes the cause (for example, archiving a board first).
+        // user fixes the cause (for example, restoring a trashed board first).
         throw error;
     }
 

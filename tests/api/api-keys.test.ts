@@ -624,7 +624,6 @@ describe("read-only keys", () => {
             "create_board",
             "update_board",
             "move_board",
-            "archive_board",
             "restore_board",
             "delete_board",
             "create_task",

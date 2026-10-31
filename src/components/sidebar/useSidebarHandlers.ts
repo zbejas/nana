@@ -14,6 +14,12 @@ import {
     restoreDocument,
     type Document
 } from "../../lib/documents";
+import {
+    deleteBoardPermanently,
+    exportBoard,
+    restoreBoard,
+    trashBoard,
+} from "../../lib/boards";
 import { exportFolder, exportDocument } from "../../lib/export";
 import { createLogger } from "../../lib/logger";
 
@@ -155,6 +161,33 @@ export function useSidebarHandlers({ editorActions, sidebarActions, dataHook }: 
         setRefreshTrigger((previous) => previous + 1);
     }, [setRefreshTrigger]);
 
+    const handleTrashBoard = useCallback(async (boardId: string, _boardName?: string) => {
+        try {
+            await trashBoard(boardId);
+        } catch (error) {
+            showToast(
+                error instanceof Error ? error.message : 'Failed to move board to trash',
+                'error',
+            );
+        }
+    }, [showToast]);
+
+    const handleRestoreBoard = useCallback(async (boardId: string) => {
+        await restoreBoard(boardId);
+    }, []);
+
+    const handlePermanentlyDeleteBoard = useCallback(async (boardId: string) => {
+        await deleteBoardPermanently(boardId);
+    }, []);
+
+    const handleExportBoard = useCallback(async (boardId: string, boardName: string) => {
+        try {
+            await exportBoard(boardId, boardName);
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : 'Failed to export board', 'error');
+        }
+    }, [showToast]);
+
     const handleExportDocument = useCallback(async (documentId: string) => {
         try {
             await exportDocument(documentId);
@@ -250,6 +283,10 @@ export function useSidebarHandlers({ editorActions, sidebarActions, dataHook }: 
         handlePermanentlyDeleteFolder,
         handleExportDocument,
         handleExportFolder,
+        handleTrashBoard,
+        handleRestoreBoard,
+        handlePermanentlyDeleteBoard,
+        handleExportBoard,
         draggedDocument,
         draggedFolder,
         dropZone,

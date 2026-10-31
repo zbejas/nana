@@ -34,6 +34,7 @@ function parseFilename(header: string | null, fallback: string): string {
 async function requestExport(body: {
     documentIds?: string[];
     folderIds?: string[];
+    boardIds?: string[];
     zipName?: string;
 }, fallbackFilename: string): Promise<void> {
     const token = pb.authStore.token;
@@ -93,6 +94,23 @@ export async function exportFolder(folderId: string, folderName: string): Promis
     } catch (error) {
         logger.error('Failed to export folder', { folderId, folderName, error });
         throw error instanceof Error ? error : new Error('Failed to export folder');
+    }
+}
+
+/**
+ * Export one board and its tasks as Markdown.
+ */
+export async function exportBoard(boardId: string, boardName: string): Promise<void> {
+    try {
+        logger.info('Exporting board', { boardId, boardName });
+        await requestExport(
+            { boardIds: [boardId] },
+            `${boardName || 'board'}.md`,
+        );
+        logger.info('Board exported successfully', { boardId });
+    } catch (error) {
+        logger.error('Failed to export board', { boardId, error });
+        throw error instanceof Error ? error : new Error('Failed to export board');
     }
 }
 
