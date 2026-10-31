@@ -393,7 +393,7 @@ export function SharePanel({
       open={open}
       onClose={onClose}
       title={`Share “${displayTitle}”`}
-      description="Changes apply immediately."
+      description="People and privacy changes apply immediately. Public-link settings save explicitly."
       width="lg"
       footer={
         <Button variant="primary" onClick={onClose}>

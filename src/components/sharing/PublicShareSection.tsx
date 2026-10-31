@@ -96,12 +96,15 @@ function privateDescription(type: PublicShareSectionTarget['type']): string {
 /**
  * The public-link half of the share panel. It renders as a section inside the
  * one SidePanel, so a record has one share surface rather than a second panel.
+ * Public-link fields keep their explicit save; the Private switch saves itself
+ * immediately so closing the panel cannot silently discard a privacy change.
  */
 export function PublicShareSection({ target, onSaved, onChanged }: PublicShareSectionProps) {
   const { showToast } = useToasts();
   const [draft, setDraft] = useState<PublicShareDraft>(() => draftFrom(target));
   const [baseline, setBaseline] = useState<PublicShareDraft>(() => draftFrom(target));
   const [saving, setSaving] = useState(false);
+  const [privacySaving, setPrivacySaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,6 +126,7 @@ export function PublicShareSection({ target, onSaved, onChanged }: PublicShareSe
 
   const shareUrl = useMemo(() => publicShareUrl(target), [target]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(baseline);
+  const controlsDisabled = saving || privacySaving;
 
   const handleCopyLink = async () => {
     if (!shareUrl) return;
@@ -136,8 +140,18 @@ export function PublicShareSection({ target, onSaved, onChanged }: PublicShareSe
     }
   };
 
+  const saveOptions = async (options: PublicShareUpdateOptions): Promise<PublicShareSectionTarget> => {
+    if (target.type === 'document') {
+      return { type: 'document', record: await updateDocumentPublicShare(target.record, options) };
+    }
+    if (target.type === 'folder') {
+      return { type: 'folder', record: await updateFolderPublicShare(target.record, options) };
+    }
+    return { type: 'board', record: await updateBoardPublicShare(target.record, options) };
+  };
+
   const handleSave = async () => {
-    if (!dirty) return;
+    if (!dirty || controlsDisabled) return;
 
     const parsedExpiration = draft.expirationEnabled
       ? fromDatetimeLocalValue(draft.expirationValue)
@@ -166,14 +180,7 @@ export function PublicShareSection({ target, onSaved, onChanged }: PublicShareSe
     setError(null);
 
     try {
-      let updated: PublicShareSectionTarget;
-      if (target.type === 'document') {
-        updated = { type: 'document', record: await updateDocumentPublicShare(target.record, options) };
-      } else if (target.type === 'folder') {
-        updated = { type: 'folder', record: await updateFolderPublicShare(target.record, options) };
-      } else {
-        updated = { type: 'board', record: await updateBoardPublicShare(target.record, options) };
-      }
+      const updated = await saveOptions(options);
 
       setBaseline(draft);
       onSaved?.(updated);
@@ -190,7 +197,48 @@ export function PublicShareSection({ target, onSaved, onChanged }: PublicShareSe
     }
   };
 
-  const controlsDisabled = saving;
+  const handlePrivateChange = async (next: boolean) => {
+    if (next === draft.isPrivate || controlsDisabled) return;
+
+    const nextDraft: PublicShareDraft = {
+      ...draft,
+      isPrivate: next,
+      publicEnabled: next ? false : draft.publicEnabled,
+      shareAttachments: next ? false : draft.shareAttachments,
+    };
+    const parsedExpiration = nextDraft.expirationEnabled
+      ? fromDatetimeLocalValue(nextDraft.expirationValue)
+      : null;
+    const options: PublicShareUpdateOptions = {
+      enabled: nextDraft.publicEnabled,
+      expiresAt:
+        nextDraft.publicEnabled && nextDraft.expirationEnabled && parsedExpiration
+          ? parsedExpiration.toISOString()
+          : null,
+      isPrivate: next,
+      shareAttachments: nextDraft.shareAttachments,
+    };
+
+    const previousDraft = draft;
+    setDraft(nextDraft);
+    setPrivacySaving(true);
+    setError(null);
+
+    try {
+      const updated = await saveOptions(options);
+      setBaseline(nextDraft);
+      onSaved?.(updated);
+      onChanged?.();
+      showToast(next ? 'Private turned on' : 'Private turned off', 'success');
+    } catch {
+      setDraft(previousDraft);
+      setError(next ? 'Could not turn on privacy. Try again.' : 'Could not turn off privacy. Try again.');
+      showToast('Could not update privacy', 'error');
+    } finally {
+      setPrivacySaving(false);
+    }
+  };
+
   const publicDisabled = controlsDisabled || draft.isPrivate;
 
   return (
@@ -282,14 +330,7 @@ export function PublicShareSection({ target, onSaved, onChanged }: PublicShareSe
         label="Private"
         description={privateDescription(target.type)}
         checked={draft.isPrivate}
-        onChange={(next) =>
-          setDraft((current) => ({
-            ...current,
-            isPrivate: next,
-            publicEnabled: next ? false : current.publicEnabled,
-            shareAttachments: next ? false : current.shareAttachments,
-          }))
-        }
+        onChange={(next) => void handlePrivateChange(next)}
         disabled={controlsDisabled}
       />
 
@@ -325,7 +366,7 @@ export function PublicShareSection({ target, onSaved, onChanged }: PublicShareSe
               setDraft(baseline);
               setError(null);
             }}
-            disabled={saving}
+            disabled={controlsDisabled}
           >
             Discard
           </Button>
@@ -336,7 +377,7 @@ export function PublicShareSection({ target, onSaved, onChanged }: PublicShareSe
           className="h-11 sm:h-8"
           onClick={() => void handleSave()}
           loading={saving}
-          disabled={!dirty}
+          disabled={!dirty || controlsDisabled}
         >
           Save link settings
         </Button>
