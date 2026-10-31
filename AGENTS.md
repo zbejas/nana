@@ -137,4 +137,5 @@ For larger tasks, delegate research or isolated implementation slices to subagen
 - Relevant docs in `docs/` (and `README.md` for user-facing changes) are updated.
 - Integration tests are added or updated for API, hook, guard, migration, trash, or share changes; pure logic gets a unit test in `tests/unit/`.
 - `bun run build` succeeds; `bun run test:docker` passes when behavior changed.
+- Behavioral or user-facing changes bump `package.json` in the same PR: patch by default, minor for a feature. Docs, tests, CI, and internal chore-only PRs do not bump. The release workflow runs when the version on `master` changes.
 - No generated files, runtime data, secrets, or unrelated changes are included.
