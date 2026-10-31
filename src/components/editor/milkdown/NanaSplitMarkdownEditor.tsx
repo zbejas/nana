@@ -23,7 +23,7 @@ export interface NanaSplitMarkdownEditorProps {
   } | null;
   aiDiff?: SourceAiDiff | null;
   collaborators?: Collaborator[];
-  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean }) => void;
+  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean; pane?: "source" | "wysiwyg" }) => void;
   onEditorReady?: (editor: Editor) => void;
 }
 

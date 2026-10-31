@@ -22,6 +22,8 @@ export interface DocumentCollaboration {
     status: CollabStatus;
     canEdit: boolean;
     updateSelection: (selection: CollabSelection) => void;
+    /** Fold an editor-originated Markdown value into Yjs synchronously. */
+    applyLocalContent: (content: string) => void;
 }
 
 const EMPTY_COLLABORATORS: Collaborator[] = [];
@@ -69,9 +71,10 @@ function resolvePresence(
  * Connects the open note to its live room.
  *
  * The hook is intentionally transport-only: it does not save, change privacy,
- * or bypass the editor's read-only states. The existing autosave still owns
- * persistence, and a conflict retry in the save path repairs any stale
- * revision that races a remote write.
+ * or bypass the editor's read-only states. Editor-originated values are folded
+ * into Yjs synchronously; remote values are applied by the editor without
+ * being replayed as local edits. The existing autosave still owns persistence,
+ * and a conflict retry in the save path repairs any stale revision.
  */
 export function useDocumentCollaboration({
     documentId,
@@ -152,16 +155,16 @@ export function useDocumentCollaboration({
         };
     }, [documentId, enabled, refreshCollaborators]);
 
-    // Any value that did not come from the live room is folded into Yjs. This
-    // is also how a local edit made while the socket was offline is retained.
-    useEffect(() => {
-        sessionRef.current?.applyLocalMarkdown(content);
-        refreshCollaborators();
-    }, [content, refreshCollaborators]);
+    // Editor-originated content is folded into Yjs at the call site, before
+    // React commits it. A passive content effect here used to replay stale
+    // remote snapshots as local edits and delete the other writer's text.
+    const applyLocalContent = useCallback((next: string) => {
+        sessionRef.current?.applyLocalMarkdown(next);
+    }, []);
 
     const updateSelection = useCallback((selection: CollabSelection) => {
         sessionRef.current?.sendSelection(selection);
     }, []);
 
-    return { collaborators, status, canEdit, updateSelection };
+    return { collaborators, status, canEdit, updateSelection, applyLocalContent };
 }

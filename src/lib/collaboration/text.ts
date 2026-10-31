@@ -136,6 +136,24 @@ export function mapOffsetThroughChange(
     return assoc < 0 ? from : from + insert.length;
 }
 
+/**
+ * Map a selection through a text change. A collapsed caret stays collapsed;
+ * using the range's start/end associations on it expands the caret over the
+ * remote insertion, which is how a peer's typing used to capture the local
+ * cursor.
+ */
+export function mapSelectionThroughChange(
+    anchor: number,
+    head: number,
+    change: TextChange,
+): { anchor: number; head: number } {
+    const collapsed = anchor === head;
+    return {
+        anchor: mapOffsetThroughChange(anchor, change, -1),
+        head: mapOffsetThroughChange(head, change, collapsed ? -1 : 1),
+    };
+}
+
 interface SourceLine {
     text: string;
     start: number;

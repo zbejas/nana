@@ -23,7 +23,7 @@ interface EditorContentProps {
   onDropFiles?: (event: DragEvent<HTMLDivElement>) => void;
   aiEdit?: EditorAiEdit | null;
   collaborators?: Collaborator[];
-  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean }) => void;
+  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean; pane?: "source" | "wysiwyg" }) => void;
   fullscreen?: boolean;
 }
 

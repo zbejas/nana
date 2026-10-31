@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import {
@@ -43,6 +43,18 @@ const sourceAiDiffField = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field),
 });
 const sourceAiTimers = new WeakMap<EditorView, number>();
+
+const setSourceCollaborators = StateEffect.define<DecorationSet>();
+const sourceCollaboratorsField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setSourceCollaborators)) return effect.value;
+    }
+    return value.map(transaction.changes);
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
 
 function collaboratorCaretElement(name: string, color: string): HTMLElement {
   const caret = document.createElement('span');
@@ -177,14 +189,15 @@ export interface NanaSourceEditorProps {
   className?: string;
   aiDiff?: SourceAiDiff | null;
   collaborators?: Collaborator[];
-  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean }) => void;
+  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean; pane?: "source" | "wysiwyg" }) => void;
   onReady?: (view: EditorView) => void;
 }
 
 /**
  * CodeMirror 6 source pane. The component owns its view; `value` sync follows
- * the same last-emitted/focus-lock rule as the Milkdown pane so one side never
- * overwrites the caret in the other.
+ * the same last-emitted rule as the Milkdown pane. Remote values apply as a
+ * minimal CodeMirror change in a layout effect, and CodeMirror maps the local
+ * selection through it.
  */
 export function NanaSourceEditor({
   value,
@@ -203,12 +216,10 @@ export function NanaSourceEditor({
   const viewRef = useRef<EditorView | null>(null);
   const lastAiDiffRef = useRef<string | null>(null);
   const readOnlyCompartment = useRef(new Compartment());
-  const collaboratorsCompartment = useRef(new Compartment());
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onReadyRef = useRef(onReady);
   const onSelectionChangeRef = useRef(onSelectionChange);
-  const collaboratorsRef = useRef(collaborators);
   const hadCollaboratorsRef = useRef(false);
   const lastEmittedRef = useRef(normalizeMarkdown(value));
   const lastAppliedRef = useRef(normalizeMarkdown(value));
@@ -218,12 +229,11 @@ export function NanaSourceEditor({
   onChangeRef.current = onChange;
   onReadyRef.current = onReady;
   onSelectionChangeRef.current = onSelectionChange;
-  collaboratorsRef.current = collaborators;
   readOnlyRef.current = readOnly;
 
   const notifySelection = (view: EditorView, focused = view.hasFocus) => {
     const { anchor, head } = view.state.selection.main;
-    onSelectionChangeRef.current?.({ anchor, head, focused });
+    onSelectionChangeRef.current?.({ anchor, head, focused, pane: 'source' });
   };
 
   useEffect(() => {
@@ -242,12 +252,7 @@ export function NanaSourceEditor({
         EditorState.tabSize.of(2),
         cmPlaceholder(placeholder),
         sourceAiDiffField,
-        collaboratorsCompartment.current.of(
-          EditorView.decorations.of(sourceCollaboratorDecorations(
-            normalizeMarkdown(valueRef.current).length,
-            collaboratorsRef.current,
-          )),
-        ),
+        sourceCollaboratorsField,
         EditorView.contentAttributes.of({
           'aria-label': ariaLabel,
           'aria-multiline': 'true',
@@ -266,7 +271,7 @@ export function NanaSourceEditor({
               onChangeRef.current?.(next);
             }
           }
-          if (update.selectionSet || update.docChanged || update.focusChanged) {
+          if (update.selectionSet || update.focusChanged) {
             notifySelection(update.view);
           }
         }),
@@ -317,7 +322,7 @@ export function NanaSourceEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     const incoming = normalizeMarkdown(value);
@@ -339,14 +344,12 @@ export function NanaSourceEditor({
     if (!hasCollaborators && !hadCollaboratorsRef.current) return;
     hadCollaboratorsRef.current = hasCollaborators;
     view.dispatch({
-      effects: collaboratorsCompartment.current.reconfigure(
-        EditorView.decorations.of(sourceCollaboratorDecorations(
-          view.state.doc.length,
-          collaborators,
-        )),
-      ),
+      effects: setSourceCollaborators.of(sourceCollaboratorDecorations(
+        view.state.doc.length,
+        collaborators,
+      )),
     });
-  }, [collaborators, value]);
+  }, [collaborators]);
 
   useEffect(() => {
     const view = viewRef.current;

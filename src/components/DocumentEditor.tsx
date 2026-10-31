@@ -31,7 +31,8 @@ export function DocumentEditor() {
     title,
     setTitle,
     content,
-    setContent,
+    handleContentChange,
+    applyExternalContent,
     setSelectedDocument,
     remoteContentChangeRef,
     tags,
@@ -128,7 +129,7 @@ export function DocumentEditor() {
           const nextContent = normalizeMarkdown(fresh.content);
           setSelectedDocument({ ...fresh, content: nextContent });
           setTitle(fresh.title);
-          setContent(nextContent);
+          applyExternalContent(nextContent);
           setTags(fresh.tags || []);
           setGlobalUnsavedChanges(false);
           setAiEdit({
@@ -157,7 +158,7 @@ export function DocumentEditor() {
     return () => window.removeEventListener('nana:ai-edit', handleAiEdit);
   }, [
     document?.id,
-    setContent,
+    applyExternalContent,
     setGlobalUnsavedChanges,
     setSelectedDocument,
     setTags,
@@ -375,7 +376,7 @@ export function DocumentEditor() {
           <EditorContent
             key={document?.id ?? urlDocumentId ?? 'new'}
             content={content}
-            onContentChange={setContent}
+            onContentChange={handleContentChange}
             readOnly={isReadOnly}
             viewMode={effectiveViewMode}
             onDropFiles={handleDrop}
