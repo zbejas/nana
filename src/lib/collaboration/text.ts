@@ -136,11 +136,22 @@ export function mapOffsetThroughChange(
     return assoc < 0 ? from : from + insert.length;
 }
 
+/** A pasted/typed block of new lines moves a collapsed caret to its far side. */
+function isNewlineInsertion(change: TextChange): boolean {
+    return change?.from === change?.to
+        && typeof change?.insert === "string"
+        && /[\r\n]/.test(change.insert);
+}
+
 /**
  * Map a selection through a text change. A collapsed caret stays collapsed;
  * using the range's start/end associations on it expands the caret over the
  * remote insertion, which is how a peer's typing used to capture the local
  * cursor.
+ *
+ * A collapsed caret that sits exactly at a pure newline insertion is anchored
+ * forward instead. Pressing Enter splits a block, and the caret belongs on the
+ * text after the break, not on the empty tail of the block before it.
  */
 export function mapSelectionThroughChange(
     anchor: number,
@@ -148,9 +159,10 @@ export function mapSelectionThroughChange(
     change: TextChange,
 ): { anchor: number; head: number } {
     const collapsed = anchor === head;
+    const collapsedAssoc: -1 | 1 = collapsed && isNewlineInsertion(change) ? 1 : -1;
     return {
-        anchor: mapOffsetThroughChange(anchor, change, -1),
-        head: mapOffsetThroughChange(head, change, collapsed ? -1 : 1),
+        anchor: mapOffsetThroughChange(anchor, change, collapsed ? collapsedAssoc : -1),
+        head: mapOffsetThroughChange(head, change, collapsed ? collapsedAssoc : 1),
     };
 }
 

@@ -41,6 +41,33 @@ describe("mergeConcurrentMarkdown", () => {
         );
     });
 
+    test("keeps one copy of identical insertions at the same point", () => {
+        const base = "one\ntwo\nthree\nfour";
+        const local = "one local\ntwo\ninserted\nthree\nfour";
+        const remote = "one\ntwo\ninserted\nthree\nfour remote";
+        expect(mergeConcurrentMarkdown(base, local, remote)).toBe(
+            "one local\ntwo\ninserted\nthree\nfour remote",
+        );
+    });
+
+    test("keeps the local insertion when both sides insert at the same point", () => {
+        const base = "one\ntwo";
+        const local = "one\nlocal insert\ntwo";
+        const remote = "one\nremote insert\ntwo";
+        expect(mergeConcurrentMarkdown(base, local, remote)).toBe(
+            "one\nlocal insert\ntwo",
+        );
+    });
+
+    test("keeps the local replacement when a remote insertion lands on a replaced-line boundary", () => {
+        const base = "one\ntwo\nthree\nfour";
+        const local = "one\nTWO\nTHREE\nfour";
+        const remote = "one\ntwo\ninserted\nthree\nfour";
+        expect(mergeConcurrentMarkdown(base, local, remote)).toBe(
+            "one\nTWO\nTHREE\nfour",
+        );
+    });
+
     test("handles empty and whitespace-only documents", () => {
         expect(mergeConcurrentMarkdown("", "", "remote")).toBe("remote");
         expect(mergeConcurrentMarkdown("", "local", "")).toBe("local");

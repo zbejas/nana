@@ -32,7 +32,7 @@ export function DocumentEditor() {
     setTitle,
     content,
     handleContentChange,
-    applyExternalContent,
+    applyPersistedContent,
     setSelectedDocument,
     remoteContentChangeRef,
     tags,
@@ -129,7 +129,7 @@ export function DocumentEditor() {
           const nextContent = normalizeMarkdown(fresh.content);
           setSelectedDocument({ ...fresh, content: nextContent });
           setTitle(fresh.title);
-          applyExternalContent(nextContent);
+          applyPersistedContent(nextContent);
           setTags(fresh.tags || []);
           setGlobalUnsavedChanges(false);
           setAiEdit({
@@ -158,7 +158,7 @@ export function DocumentEditor() {
     return () => window.removeEventListener('nana:ai-edit', handleAiEdit);
   }, [
     document?.id,
-    applyExternalContent,
+    applyPersistedContent,
     setGlobalUnsavedChanges,
     setSelectedDocument,
     setTags,

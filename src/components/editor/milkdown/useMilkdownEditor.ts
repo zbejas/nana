@@ -10,6 +10,7 @@ import {
   replaceEditorMarkdownPreservingSelection,
   setCollaboratorHighlights,
   setEditorEditable,
+  withSuppressedDocumentChange,
   type SlashTriggerPosition,
 } from './createEditor';
 import {
@@ -128,6 +129,7 @@ export function useMilkdownEditor({
   const lastEmittedRef = useRef(normalizeMarkdown(value));
   const lastAppliedRef = useRef(normalizeMarkdown(value));
   const toolbarRef = useRef(toolbar);
+  const suppressDocChangeRef = useRef(false);
 
   valueRef.current = value;
   readOnlyRef.current = readOnly;
@@ -161,6 +163,17 @@ export function useMilkdownEditor({
     onChangeRef.current?.(normalized);
   }, []);
 
+  /**
+   * Dispatch a value that came from Yjs, another pane, or an AI edit. The
+   * synchronous document-change plugin is muted for that dispatch, so a
+   * round-tripped or normalization-different snapshot cannot be written back
+   * into the shared text as a duplicate edit. Local keystrokes never pass
+   * through here.
+   */
+  const runExternalApply = useCallback((apply: () => void) => {
+    withSuppressedDocumentChange(suppressDocChangeRef, apply);
+  }, []);
+
   useEffect(() => {
     const root = containerRef.current;
     if (!root) return;
@@ -178,6 +191,7 @@ export function useMilkdownEditor({
         spellcheck,
         enableSlash,
         onDocChangeRef: { current: emitChange },
+        suppressDocChangeRef,
         onSelectionRef: { current: refreshToolbar },
         onSelectionChangeRef: {
           current: () => {
@@ -243,9 +257,11 @@ export function useMilkdownEditor({
 
     lastAppliedRef.current = incoming;
     lastEmittedRef.current = incoming;
-    editor.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, incoming));
+    runExternalApply(() => {
+      editor.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, incoming));
+    });
     refreshToolbar();
-  }, [value, ready, refreshToolbar]);
+  }, [value, ready, refreshToolbar, runExternalApply]);
 
   useEffect(() => {
     if (!ready) return;
@@ -272,9 +288,11 @@ export function useMilkdownEditor({
     lastAiEditRef.current = aiEdit.id;
     lastAppliedRef.current = incoming;
     lastEmittedRef.current = incoming;
-    applyAiMarkdown(editor, incoming, aiEdit.previousMarkdown, aiEdit.sections);
+    runExternalApply(() => {
+      applyAiMarkdown(editor, incoming, aiEdit.previousMarkdown, aiEdit.sections);
+    });
     refreshToolbar();
-  }, [aiEdit, ready, refreshToolbar]);
+  }, [aiEdit, ready, refreshToolbar, runExternalApply]);
 
   // A pane that was focused while an external value arrived catches up on blur.
   useEffect(() => {
@@ -289,14 +307,16 @@ export function useMilkdownEditor({
         if (incoming === lastAppliedRef.current) return;
         lastAppliedRef.current = incoming;
         lastEmittedRef.current = incoming;
-        editor.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, incoming));
+        runExternalApply(() => {
+          editor.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, incoming));
+        });
         refreshToolbar();
       }, 0);
     };
 
     root.addEventListener('focusout', handleFocusOut);
     return () => root.removeEventListener('focusout', handleFocusOut);
-  }, [refreshToolbar]);
+  }, [refreshToolbar, runExternalApply]);
 
   useEffect(() => {
     if (!ready) return;
@@ -345,10 +365,12 @@ export function useMilkdownEditor({
       if (!editor) return;
       lastAppliedRef.current = normalized;
       lastEmittedRef.current = normalized;
-      editor.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, normalized));
+      runExternalApply(() => {
+        editor.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, normalized));
+      });
       refreshToolbar();
     },
-    [refreshToolbar],
+    [refreshToolbar, runExternalApply],
   );
 
   const getView = useCallback(() => {

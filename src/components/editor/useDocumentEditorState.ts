@@ -54,6 +54,13 @@ export function useDocumentEditorState() {
     const [tagInput, setTagInput] = useState('');
     const [saving, setSaving] = useState(false);
     const [publishing, setPublishing] = useState(false);
+    // Content can change because this user typed or because a collaborator
+    // typed. Only the former belongs in this client's autosave/unsaved state;
+    // otherwise every live update makes idle viewers save and flicker.
+    const [localContentDirty, setLocalContentDirty] = useState(false);
+    // Drives the autosave debounce. Remote text leaves this untouched so a
+    // collaborator's keystrokes never reset or schedule this client's timer.
+    const [localEditVersion, setLocalEditVersion] = useState(0);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [documentNotFound, setDocumentNotFound] = useState(false);
@@ -112,10 +119,33 @@ export function useDocumentEditorState() {
         const normalized = normalizeMarkdown(next);
         applyLocalContent(normalized);
         contentRef.current = normalized;
+        setLocalContentDirty(true);
+        setLocalEditVersion((version) => version + 1);
         setContent(normalized);
     }, [applyLocalContent]);
 
-    const applyExternalContent = handleContentChange;
+    const applyExternalContent = useCallback((next: string) => {
+        const normalized = normalizeMarkdown(next);
+        applyLocalContent(normalized);
+        contentRef.current = normalized;
+        setContent(normalized);
+    }, [applyLocalContent]);
+
+    // AI edits and restores are explicit persisted writes, so they clear the
+    // local draft flag. A PocketBase broadcast uses applyExternalContent below:
+    // a stale broadcast must never clear dirty state or edit the autosave
+    // sequence.
+    const applyPersistedContent = useCallback((next: string) => {
+        applyExternalContent(next);
+        setLocalContentDirty(false);
+    }, [applyExternalContent]);
+
+    const handleSavedDocument = useCallback((saved: Document, options?: { creationSessionId?: number }) => {
+        save(saved, options);
+        if (isSameMarkdown(contentRef.current, saved.content)) {
+            setLocalContentDirty(false);
+        }
+    }, [save]);
 
     const { isSavingRef } = useDocumentLoader({
         urlDocumentId,
@@ -124,7 +154,7 @@ export function useDocumentEditorState() {
         isTrashDocument,
         initialTitle: initialTitle || '',
         initialContent: initialContent || '',
-        onSave: save,
+        onSave: handleSavedDocument,
         onReset: reset,
         onShowToast: showToast,
     });
@@ -148,7 +178,7 @@ export function useDocumentEditorState() {
         handleDrop,
     } = useAttachmentHandlers({
         document,
-        onSave: save,
+        onSave: handleSavedDocument,
         onShowToast: showToast,
     });
 
@@ -162,11 +192,12 @@ export function useDocumentEditorState() {
         removedAttachments,
         autoSaveDelayMs: autoSaveDelay,
         hasUnsavedChanges,
+        localEditVersion,
         isReadOnly,
         folderId,
         creationSessionId,
         isSavingRef,
-        onSave: save,
+        onSave: handleSavedDocument,
         onApplyMergedContent: applyExternalContent,
         onSetIsAutoSaving: setIsAutoSaving,
         onShowToast: showToast,
@@ -190,7 +221,7 @@ export function useDocumentEditorState() {
         creationSessionId,
         isReadOnly,
         isSavingRef,
-        onSave: save,
+        onSave: handleSavedDocument,
         onApplyMergedContent: applyExternalContent,
         onReset: reset,
         onSetSaving: setSaving,
@@ -284,6 +315,7 @@ export function useDocumentEditorState() {
         }
         setNewAttachments([]);
         setRemovedAttachments([]);
+        setLocalContentDirty(false);
     }
 
     useLayoutEffect(() => {
@@ -327,7 +359,7 @@ export function useDocumentEditorState() {
             return;
         }
 
-        if (hasUnsavedChanges) {
+        if (hasUnsavedChanges || localContentDirty) {
             logger.debug('Skipping realtime state sync - user has unsaved changes');
             return;
         }
@@ -339,9 +371,11 @@ export function useDocumentEditorState() {
             remoteContentChangeRef.current = { from: contentRef.current, to: nextContent };
         }
         setTitle(document.title || '');
+        // A broadcast is not this client's save. Apply its body without
+        // touching local dirty state, and never replay it as a local edit.
         applyExternalContent(nextContent);
         setTags(document.tags || []);
-    }, [document, urlDocumentId, hasUnsavedChanges, collaborationStatus, applyExternalContent]);
+    }, [document, urlDocumentId, hasUnsavedChanges, localContentDirty, collaborationStatus, applyExternalContent]);
 
     useEffect(() => {
         // The atom can change one render before the realtime effect adopts it.
@@ -360,7 +394,7 @@ export function useDocumentEditorState() {
             const normalizedTitle = title.trim() || 'Untitled';
             hasChanges =
                 normalizedTitle !== document.title ||
-                !isSameMarkdown(content.trim(), document.content.trim()) ||
+                localContentDirty ||
                 JSON.stringify(tags) !== JSON.stringify(document.tags || []) ||
                 newAttachments.length > 0 ||
                 removedAttachments.length > 0;
@@ -368,7 +402,7 @@ export function useDocumentEditorState() {
 
 
         setGlobalUnsavedChanges(hasChanges);
-    }, [title, content, tags, newAttachments, removedAttachments, document, syncedDocument, setGlobalUnsavedChanges]);
+    }, [title, localContentDirty, tags, newAttachments, removedAttachments, document, syncedDocument, setGlobalUnsavedChanges]);
 
     const contentStats = useMemo(() => {
         const words = content.trim().split(/\s+/).filter((w) => w.length > 0);
@@ -399,14 +433,14 @@ export function useDocumentEditorState() {
         try {
             const updatedDocument = await getDocument(document.id);
             save(updatedDocument);
-            applyExternalContent(normalizeMarkdown(updatedDocument.content));
+            applyPersistedContent(normalizeMarkdown(updatedDocument.content));
             setGlobalUnsavedChanges(false);
             setRefreshTrigger((previous) => previous + 1);
         } catch (err: any) {
             logger.error('Failed to reload document after restore', { error: err.message });
             setError('Failed to reload document. Please refresh the page.');
         }
-    }, [document?.id, save, applyExternalContent, setGlobalUnsavedChanges, setRefreshTrigger]);
+    }, [document?.id, save, applyPersistedContent, setGlobalUnsavedChanges, setRefreshTrigger]);
 
     const handleCreateNewFromVersion = useCallback((versionContent: string) => {
         const docName = document?.title || 'Untitled';
@@ -496,5 +530,6 @@ export function useDocumentEditorState() {
         handleEditorSelection,
         handleContentChange,
         applyExternalContent,
+        applyPersistedContent,
     };
 }

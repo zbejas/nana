@@ -2,6 +2,7 @@ import { ArrowsPointingInIcon, ArrowsPointingOutIcon, CodeBracketIcon, PencilSqu
 import { EditorContextMenu } from './EditorContextMenu';
 import { IconButton, SegmentedControl } from '../ui';
 import { EditorPresence } from './EditorPresence';
+import { resolveEditorSaveStatus } from './useAutoSave';
 import type { Collaborator } from '../../lib/collaboration/types';
 
 type ViewMode = 'wysiwyg' | 'text' | 'split';
@@ -67,6 +68,9 @@ export function EditorHeader({
   const mobileViewLabel = viewMode === 'text'
     ? 'Switch to editor view'
     : 'Switch to source view';
+  const saveStatus = resolveEditorSaveStatus({ autoSaving, hasUnsavedChanges });
+  const saveStatusLabel = saveStatus === 'saving' ? 'Saving' : 'Unsaved';
+  const saveStatusTitle = saveStatus === 'saving' ? 'Saving document' : 'Unsaved changes';
 
   return (
     <div className="editor-header border-b border-line bg-canvas">
@@ -84,25 +88,28 @@ export function EditorHeader({
             tabIndex={1}
             className="min-w-0 flex-1 rounded-[4px] border-none bg-transparent px-1 -mx-1 text-[17px] font-semibold leading-tight tracking-[-0.025em] text-ink placeholder:text-ink-muted focus-visible:bg-surface-raised sm:text-[22px]"
           />
-          {autoSaving ? (
-            <span
-              className="flex shrink-0 items-center gap-1.5 text-[11.5px] text-ink-muted"
-              aria-label="Saving document"
-              title="Saving document"
-            >
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal" />
-              <span className="hidden sm:inline">Saving</span>
-            </span>
-          ) : hasUnsavedChanges ? (
-            <span
-              className="flex shrink-0 items-center gap-1.5 text-[11.5px] font-medium text-warning"
-              aria-label="Unsaved changes"
-              title="Unsaved changes"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-              <span className="hidden sm:inline">Unsaved</span>
-            </span>
-          ) : null}
+          <span
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            title={saveStatus === 'idle' ? undefined : saveStatusTitle}
+            className={`flex shrink-0 items-center gap-1.5 text-[11.5px] ${
+              saveStatus === 'unsaved' ? 'font-medium text-warning' : 'text-ink-muted'
+            }`}
+          >
+            {saveStatus !== 'idle' && (
+              <>
+                <span
+                  aria-hidden="true"
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    saveStatus === 'saving' ? 'animate-pulse bg-signal' : 'bg-warning'
+                  }`}
+                />
+                <span className="hidden sm:inline">{saveStatusLabel}</span>
+                <span className="sr-only sm:hidden">{saveStatusTitle}</span>
+              </>
+            )}
+          </span>
         </div>
 
         <EditorPresence collaborators={collaborators} className="mr-1 hidden sm:flex" />

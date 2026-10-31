@@ -8,6 +8,47 @@ const logger = createLogger('AutoSave');
 import type { Document } from '../../lib/documents/types';
 import { MIN_AUTO_SAVE_DELAY } from '../../lib/settings';
 
+/**
+ * Upper bound for one unsaved burst. The trailing debounce still decides when
+ * an idle writer saves; this cap only keeps continuous typing from deferring
+ * persistence forever.
+ */
+export const MAX_AUTO_SAVE_WAIT_MS = 8000;
+
+export type EditorSaveStatus = 'idle' | 'unsaved' | 'saving';
+
+interface AutoSaveDelayOptions {
+    debounceMs: number;
+    maxWaitMs: number;
+    elapsedMs: number;
+}
+
+/**
+ * Delay before the next autosave. The trailing debounce wins until the max
+ * wait is nearly spent, then the remaining window shrinks the delay to zero.
+ */
+export function nextAutoSaveDelay({ debounceMs, maxWaitMs, elapsedMs }: AutoSaveDelayOptions): number {
+    const debounce = Number.isFinite(debounceMs) ? Math.max(0, debounceMs) : 0;
+    const maxWait = Number.isFinite(maxWaitMs) ? Math.max(0, maxWaitMs) : debounce;
+    const elapsed = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+    return Math.max(0, Math.min(debounce, maxWait - elapsed));
+}
+
+/**
+ * Header indicator state. A save in flight always outranks unsaved text so the
+ * label does not fall back to "Unsaved" between a write and its follow-up.
+ */
+export function resolveEditorSaveStatus({
+    autoSaving,
+    hasUnsavedChanges,
+}: {
+    autoSaving: boolean;
+    hasUnsavedChanges: boolean;
+}): EditorSaveStatus {
+    if (autoSaving) return 'saving';
+    return hasUnsavedChanges ? 'unsaved' : 'idle';
+}
+
 interface UseAutoSaveOptions {
     urlDocumentId: string | undefined;
     document: Document | null;
@@ -18,6 +59,8 @@ interface UseAutoSaveOptions {
     removedAttachments: string[];
     autoSaveDelayMs: number;
     hasUnsavedChanges: boolean;
+    /** Bumped only by local content edits, never by remote collaboration text. */
+    localEditVersion: number;
     isReadOnly?: boolean;
     folderId?: string | null;
     creationSessionId: number;
@@ -38,6 +81,7 @@ export function useAutoSave({
     removedAttachments,
     autoSaveDelayMs,
     hasUnsavedChanges,
+    localEditVersion,
     isReadOnly = false,
     folderId,
     creationSessionId,
@@ -62,6 +106,25 @@ export function useAutoSave({
     const onSetIsAutoSavingRef = useRef(onSetIsAutoSaving);
     const onShowToastRef = useRef(onShowToast);
     const navigateRef = useRef(navigate);
+    // The timer saves the content that exists when it fires, not the snapshot
+    // from the render that scheduled it. Remote text can arrive in between and
+    // must be part of the write.
+    const contentRef = useRef(content);
+    const titleRef = useRef(title);
+    const tagsRef = useRef(tags);
+    const newAttachmentsRef = useRef(newAttachments);
+    const removedAttachmentsRef = useRef(removedAttachments);
+    const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+    // Start of the current unsaved burst. Reset when a save starts, finishes,
+    // fails, or the editor becomes clean.
+    const firstUnsavedEditAtRef = useRef<number | null>(null);
+
+    contentRef.current = content;
+    titleRef.current = title;
+    tagsRef.current = tags;
+    newAttachmentsRef.current = newAttachments;
+    removedAttachmentsRef.current = removedAttachments;
+    hasUnsavedChangesRef.current = hasUnsavedChanges;
 
     useEffect(() => {
         creationSessionIdRef.current = creationSessionId;
@@ -92,15 +155,18 @@ export function useAutoSave({
         // Clear any existing timer
         if (autoSaveTimerRef.current) {
             clearTimeout(autoSaveTimerRef.current);
+            autoSaveTimerRef.current = null;
         }
 
         // Don't auto-save if there are no changes
         if (!hasUnsavedChanges) {
+            firstUnsavedEditAtRef.current = null;
             onSetIsAutoSavingRef.current(false);
             return;
         }
 
         if (isReadOnly) {
+            firstUnsavedEditAtRef.current = null;
             onSetIsAutoSavingRef.current(false);
             return;
         }
@@ -111,15 +177,31 @@ export function useAutoSave({
         }
 
         // For new documents, require at least a title or content before auto-saving
-        if (urlDocumentId === 'new' && !title.trim() && !content.trim()) {
+        if (urlDocumentId === 'new' && !titleRef.current.trim() && !contentRef.current.trim()) {
             return;
         }
 
         const sanitizedDelay = Math.max(MIN_AUTO_SAVE_DELAY, autoSaveDelayMs);
+        const now = Date.now();
+        if (firstUnsavedEditAtRef.current === null) {
+            firstUnsavedEditAtRef.current = now;
+        }
+        const delay = nextAutoSaveDelay({
+            debounceMs: sanitizedDelay,
+            maxWaitMs: MAX_AUTO_SAVE_WAIT_MS,
+            elapsedMs: now - firstUnsavedEditAtRef.current,
+        });
 
         // Set up auto-save timer
         const sessionAtStart = creationSessionIdRef.current;
         autoSaveTimerRef.current = setTimeout(async () => {
+            autoSaveTimerRef.current = null;
+            firstUnsavedEditAtRef.current = null;
+            const titleAtSave = titleRef.current;
+            const contentAtSave = contentRef.current;
+            const tagsAtSave = tagsRef.current;
+            const attachmentsAtSave = newAttachmentsRef.current;
+            const removedAttachmentsAtSave = removedAttachmentsRef.current;
             try {
                 onSetIsAutoSavingRef.current(true);
                 isSavingRef.current = true;
@@ -134,11 +216,11 @@ export function useAutoSave({
 
                     const result = await saveDocumentWithMerge({
                         base: document,
-                        title: title.trim() || 'Untitled',
-                        content,
-                        tags,
-                        attachments: newAttachments,
-                        removeAttachments: removedAttachments,
+                        title: titleAtSave.trim() || 'Untitled',
+                        content: contentAtSave,
+                        tags: tagsAtSave,
+                        attachments: attachmentsAtSave,
+                        removeAttachments: removedAttachmentsAtSave,
                         onMergedContent: (merged) => onApplyMergedContentRef.current?.(merged),
                     });
                     savedDocument = result.document;
@@ -148,16 +230,16 @@ export function useAutoSave({
                     logger.debug('Auto-saving new document');
 
                     savedDocument = await createDocument({
-                        title: title.trim() || 'Untitled',
-                        content: content.trim(),
-                        tags,
+                        title: titleAtSave.trim() || 'Untitled',
+                        content: contentAtSave.trim(),
+                        tags: tagsAtSave,
                         folder: folderId || undefined,
                     });
 
                     // Upload attachments separately if there are any
-                    if (newAttachments.length > 0) {
+                    if (attachmentsAtSave.length > 0) {
                         savedDocument = await updateDocument(savedDocument.id, {
-                            attachments: newAttachments,
+                            attachments: attachmentsAtSave,
                         });
                     }
 
@@ -191,14 +273,18 @@ export function useAutoSave({
                 }
 
                 autoSaveSpinnerTimerRef.current = setTimeout(() => {
-                    if (isMountedRef.current) {
-                        onSetIsAutoSavingRef.current(false);
-                    }
+                    if (!isMountedRef.current) return;
+                    // More edits arrived after this save finished. The follow-up
+                    // save is already queued, so keep the indicator on instead
+                    // of flickering Saving -> Unsaved -> Saving.
+                    if (hasUnsavedChangesRef.current) return;
+                    onSetIsAutoSavingRef.current(false);
                 }, remainingTime);
             } catch (err: any) {
                 if (isMountedRef.current) {
                     logger.error('Auto-save failed', { error: err.message });
                     onShowToastRef.current('Failed to auto-save', 'error');
+                    firstUnsavedEditAtRef.current = null;
                     onSetIsAutoSavingRef.current(false);
                 }
             } finally {
@@ -214,7 +300,7 @@ export function useAutoSave({
                     }
                 }, 200);
             }
-        }, sanitizedDelay);
+        }, delay);
 
         // Cleanup on unmount or when dependencies change
         return () => {
@@ -223,8 +309,8 @@ export function useAutoSave({
             }
         };
     }, [
+        localEditVersion,
         title,
-        content,
         tags,
         document?.id,
         urlDocumentId,

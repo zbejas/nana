@@ -134,6 +134,26 @@ describe("mapSelectionThroughChange", () => {
         expect(mapSelectionThroughChange(6, 6, insertion)).toEqual({ anchor: 8, head: 8 });
     });
 
+    test("anchors a collapsed caret forward through a newline insertion", () => {
+        const split: TextChange = { from: 5, to: 5, insert: "\n\n" };
+
+        expect(mapSelectionThroughChange(5, 5, split)).toEqual({ anchor: 7, head: 7 });
+        expect(mapSelectionThroughChange(2, 2, split)).toEqual({ anchor: 2, head: 2 });
+        expect(mapSelectionThroughChange(8, 8, split)).toEqual({ anchor: 10, head: 10 });
+    });
+
+    test("keeps a non-collapsed range from growing over a newline insertion", () => {
+        const split: TextChange = { from: 5, to: 5, insert: "\n\n" };
+
+        expect(mapSelectionThroughChange(2, 8, split)).toEqual({ anchor: 2, head: 10 });
+    });
+
+    test("keeps the backward bias for a newline replacement", () => {
+        const replaced: TextChange = { from: 5, to: 6, insert: "\n\n" };
+
+        expect(mapSelectionThroughChange(5, 5, replaced)).toEqual({ anchor: 5, head: 5 });
+    });
+
     test("shifts both endpoints of a range without collapsing it", () => {
         const insertion: TextChange = { from: 3, to: 3, insert: "XY" };
 

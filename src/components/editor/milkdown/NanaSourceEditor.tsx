@@ -23,6 +23,7 @@ import { cn } from '../../ui';
 import { useSpellcheck } from '../../../lib/settings';
 import type { AiTextChange } from './aiDiff';
 import { isSameMarkdown, normalizeMarkdown } from './helpers';
+import { withSuppressedDocumentChange } from './createEditor';
 import { minimalTextChange } from '../../../lib/collaboration/text';
 import type { Collaborator } from '../../../lib/collaboration/types';
 
@@ -224,6 +225,7 @@ export function NanaSourceEditor({
   const lastEmittedRef = useRef(normalizeMarkdown(value));
   const lastAppliedRef = useRef(normalizeMarkdown(value));
   const readOnlyRef = useRef(readOnly);
+  const applyingExternalRef = useRef(false);
 
   valueRef.current = value;
   onChangeRef.current = onChange;
@@ -263,7 +265,10 @@ export function NanaSourceEditor({
           EditorView.editable.of(!readOnlyRef.current),
         ]),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
+          // Remote/live snapshots and merged values are applied below. They
+          // must not be echoed back into Yjs as local edits, which would
+          // duplicate the other writer's text.
+          if (update.docChanged && !applyingExternalRef.current) {
             const next = normalizeMarkdown(update.state.doc.toString());
             if (next !== lastEmittedRef.current) {
               lastEmittedRef.current = next;
@@ -298,9 +303,11 @@ export function NanaSourceEditor({
         lastEmittedRef.current = incoming;
         const change = minimalTextChange(view.state.doc.toString(), incoming);
         if (!change) return;
-        view.dispatch({
-          changes: change,
-          annotations: Transaction.addToHistory.of(false),
+        withSuppressedDocumentChange(applyingExternalRef, () => {
+          view.dispatch({
+            changes: change,
+            annotations: Transaction.addToHistory.of(false),
+          });
         });
       }, 0);
     };
@@ -331,9 +338,11 @@ export function NanaSourceEditor({
     lastEmittedRef.current = incoming;
     const change = minimalTextChange(view.state.doc.toString(), incoming);
     if (!change) return;
-    view.dispatch({
-      changes: change,
-      annotations: Transaction.addToHistory.of(false),
+    withSuppressedDocumentChange(applyingExternalRef, () => {
+      view.dispatch({
+        changes: change,
+        annotations: Transaction.addToHistory.of(false),
+      });
     });
   }, [value]);
 
