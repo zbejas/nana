@@ -7,6 +7,9 @@ import {
   ViewColumnsIcon,
 } from '@heroicons/react/24/outline';
 import type React from 'react';
+import { useAtomValue } from 'jotai';
+import { ownedShareTargetsAtom } from '../../state/sharing';
+import { SharedWithUsersIcon } from '../sharing/SharedWithUsersIcon';
 import type { BoardSummary } from '../../lib/boards';
 import type { FolderTreeNode } from '../../lib/folders';
 import type { Document } from '../../lib/documents';
@@ -165,6 +168,8 @@ export function FolderViewGrid({
   onDragLeave,
   onDrop,
 }: FolderViewGridProps) {
+  const ownedShares = useAtomValue(ownedShareTargetsAtom);
+
   return (
     <div className="folder-view-grid gap-3 p-3 sm:p-4">
       {pendingCreate && (
@@ -224,6 +229,7 @@ export function FolderViewGrid({
                     <span className="truncate text-[13.5px] font-medium text-ink">{folder.name}</span>
                     {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
                     {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
+                    {ownedShares.folders.has(folder.id) && <SharedWithUsersIcon />}
                   </span>
                   <span className="mt-0.5 block text-[11.5px] text-ink-muted">
                     {folder.subfolders.length === 0 ? 'Folder' : `${folder.subfolders.length} subfolders`}
@@ -273,6 +279,7 @@ export function FolderViewGrid({
                   {board.is_public && (
                     <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />
                   )}
+                  {ownedShares.boards.has(board.id) && <SharedWithUsersIcon />}
                 </span>
                 <span className="mt-0.5 block truncate text-[11.5px] text-ink-muted">
                   {updated ? `Updated ${updated}` : 'Board'}
@@ -342,6 +349,7 @@ export function FolderViewGrid({
                     <span className="truncate text-[13.5px] font-medium text-ink">{document.title || 'Untitled'}</span>
                     {document.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
                     {document.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
+                    {ownedShares.documents.has(document.id) && <SharedWithUsersIcon />}
                   </span>
                   <span className="mt-0.5 block truncate text-[11.5px] text-ink-muted">
                     {document.word_count > 0 ? `${document.word_count} words` : 'Empty note'}

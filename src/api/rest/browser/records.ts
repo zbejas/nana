@@ -80,6 +80,8 @@ const ADMIN_USER_UPDATE_FIELDS = new Set([
 const ALLOWED_COLLECTIONS = new Set([
     "documents", "folders", "boards", "board_columns", "labels", "tasks",
     "task_relations", "task_activity",
+    // Read-only in PocketBase; the client uses it for owner-side share badges.
+    "shares",
     "trash_documents", "trash_folders", "users", "settings",
 ]);
 

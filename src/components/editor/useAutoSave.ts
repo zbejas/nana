@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createDocument, updateDocument } from '../../lib/documents';
 import { saveDocumentWithMerge } from '../../lib/documents/save';
@@ -52,6 +52,10 @@ export function useAutoSave({
     const autoSaveSpinnerTimerRef = useRef<NodeJS.Timeout | null>(null);
     const savingReleaseTimerRef = useRef<NodeJS.Timeout | null>(null);
     const isMountedRef = useRef(true);
+    // Re-run the debounce after a save settles. Edits made while a save is in
+    // flight used to be stranded because the effect bailed out on isSavingRef
+    // and a ref change cannot retrigger it.
+    const [saveCycle, setSaveCycle] = useState(0);
     const creationSessionIdRef = useRef(creationSessionId);
     const onSaveRef = useRef(onSave);
     const onApplyMergedContentRef = useRef(onApplyMergedContent);
@@ -206,6 +210,7 @@ export function useAutoSave({
                 savingReleaseTimerRef.current = setTimeout(() => {
                     if (isMountedRef.current) {
                         isSavingRef.current = false;
+                        setSaveCycle((value) => value + 1);
                     }
                 }, 200);
             }
@@ -230,5 +235,6 @@ export function useAutoSave({
         autoSaveDelayMs,
         isSavingRef,
         isReadOnly,
+        saveCycle,
     ]);
 }

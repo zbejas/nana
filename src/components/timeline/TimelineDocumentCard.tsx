@@ -1,6 +1,8 @@
 import { ClockIcon, EllipsisVerticalIcon, FolderIcon, LockClosedIcon, ShareIcon } from '@heroicons/react/24/outline';
 import { useRef, type KeyboardEvent, type MouseEvent, type TouchEvent } from 'react';
 import type { Document } from '../../lib/documents';
+import { useSharedWithPeople } from '../../state/hooks/useOwnedShares';
+import { SharedWithUsersIcon } from '../sharing/SharedWithUsersIcon';
 import { plainTextExcerpt, stripMarkdown } from '../../lib/tasks/text';
 import { highlightText } from '../../lib/highlightText';
 import { Badge, IconButton } from '../ui';
@@ -32,6 +34,7 @@ export function TimelineDocumentCard({
   highlightQuery = '',
 }: TimelineDocumentCardProps) {
   const attachmentCount = document.attachments?.length || 0;
+  const sharedWithPeople = useSharedWithPeople('document', document.id);
   const tags = document.tags ?? [];
   const visibleTagLimit = isMobile ? 2 : 3;
   const longPressTimerRef = useRef<number | null>(null);
@@ -120,6 +123,7 @@ export function TimelineDocumentCard({
               </h3>
               {document.is_private && <LockClosedIcon className="h-3.5 w-3.5 shrink-0 text-warning" aria-label="Private" />}
               {document.is_public && <ShareIcon className="h-3.5 w-3.5 shrink-0 text-success" aria-label="Shared publicly" />}
+              {sharedWithPeople && <SharedWithUsersIcon className="h-3.5 w-3.5" />}
             </div>
             <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] leading-4 text-ink-muted">
               <span className="inline-flex items-center gap-1 tabular-nums">
