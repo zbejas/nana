@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
+import { useCallback, useId, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
 import { PaperClipIcon, PaperAirplaneIcon, StopIcon } from '@heroicons/react/24/outline';
 import { ChatAttachmentTray } from './ChatAttachmentTray';
 import { ChatContextUsage } from './ChatContextUsage';
@@ -9,6 +9,10 @@ import type { ChatMode, PendingChatAttachment } from '../../lib/chat/types';
 
 export const CHAT_MESSAGE_LIMIT = 12_000;
 const WARN_AT = CHAT_MESSAGE_LIMIT - 1_500;
+/** Matches the composer textarea's `max-h-48`. */
+const MAX_COMPOSER_HEIGHT = 192;
+/** Let the dock's width animation finish before re-measuring the textarea. */
+const WIDTH_SETTLE_MS = 120;
 
 interface ChatComposerProps {
   value: string;
@@ -67,12 +71,50 @@ export function ChatComposer({
     && !uploadingAttachments
     && !attachmentWarning;
 
-  useEffect(() => {
+  const resize = useCallback(() => {
     const el = ref.current;
     if (!el) return;
+    // The dock stays mounted at width 0 while it is closed. Measuring there
+    // wraps the placeholder one character per line and pins the textarea to
+    // its maximum height, so the composer opened huge until the next
+    // keystroke. Only measure once the textarea has wrapping room.
+    const styles = window.getComputedStyle(el);
+    const contentWidth = el.clientWidth
+      - Number.parseFloat(styles.paddingLeft)
+      - Number.parseFloat(styles.paddingRight);
+    if (contentWidth <= 0) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
-  }, [value, ref]);
+    el.style.height = `${Math.min(el.scrollHeight, MAX_COMPOSER_HEIGHT)}px`;
+  }, [ref]);
+
+  useLayoutEffect(() => {
+    resize();
+  }, [resize, value]);
+
+  // Text wraps differently at a different width, so re-measure when the dock
+  // is resized or opened, the history panel toggles, or the window changes.
+  // The dock animates its width while opening, so measure once the width has
+  // settled rather than on every frame. Measuring from a timer also keeps the
+  // height change out of the observer callback, which would report a resize
+  // loop.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let lastWidth = -1;
+    let timer = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width ?? 0;
+      if (width === lastWidth) return;
+      lastWidth = width;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(resize, WIDTH_SETTLE_MS);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, [resize, ref]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey) return;
