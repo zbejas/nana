@@ -174,6 +174,54 @@ export function useAutoSaveDelay() {
 
 export { MIN_AUTO_SAVE_DELAY, DEFAULT_AUTO_SAVE_DELAY };
 
+// ===== SPELLCHECK =====
+
+const SPELLCHECK_STORAGE_KEY = 'nana-spellcheck';
+const DEFAULT_SPELLCHECK = false;
+
+export function getSpellcheck(): boolean {
+    try {
+        const stored = localStorage.getItem(SPELLCHECK_STORAGE_KEY);
+        if (stored === 'true') {
+            return true;
+        }
+        if (stored === 'false') {
+            return false;
+        }
+    } catch (error) {
+        log.error('Failed to read spellcheck preference from localStorage', error);
+    }
+
+    return DEFAULT_SPELLCHECK;
+}
+
+export function setSpellcheck(enabled: boolean): void {
+    try {
+        localStorage.setItem(SPELLCHECK_STORAGE_KEY, String(enabled));
+        window.dispatchEvent(new CustomEvent('spellcheck-change', { detail: enabled }));
+    } catch (error) {
+        log.error('Failed to save spellcheck preference to localStorage', error);
+    }
+}
+
+export function useSpellcheck() {
+    const [enabled, setEnabled] = React.useState(() => getSpellcheck());
+
+    React.useEffect(() => {
+        const handleChange = (event: Event) => {
+            const customEvent = event as CustomEvent<boolean>;
+            setEnabled(typeof customEvent.detail === 'boolean' ? customEvent.detail : getSpellcheck());
+        };
+
+        window.addEventListener('spellcheck-change', handleChange);
+        return () => window.removeEventListener('spellcheck-change', handleChange);
+    }, []);
+
+    return enabled;
+}
+
+export { DEFAULT_SPELLCHECK };
+
 // ===== DEFAULT HOMEPAGE =====
 
 export function getDefaultHomepage(): DefaultHomepage {

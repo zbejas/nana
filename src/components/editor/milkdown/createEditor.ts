@@ -36,6 +36,7 @@ export interface CreateMilkdownEditorOptions {
   readOnlyRef: { current: boolean };
   placeholderRef: { current: string };
   ariaLabel: string;
+  spellcheck: boolean;
   enableSlash?: boolean;
   onDocChangeRef: { current: ((markdown: string) => void) | undefined };
   onSelectionRef: { current: (() => void) | undefined };
@@ -625,7 +626,7 @@ export async function createMilkdownEditor(options: CreateMilkdownEditorOptions)
         class: 'nana-milkdown-prosemirror',
         'aria-label': options.ariaLabel,
         'aria-multiline': 'true',
-        spellcheck: 'true',
+        spellcheck: options.spellcheck ? 'true' : 'false',
       },
     });
 

@@ -13,6 +13,7 @@ import {
 } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { cn } from '../../ui';
+import { useSpellcheck } from '../../../lib/settings';
 import type { AiTextChange } from './aiDiff';
 import { isSameMarkdown, normalizeMarkdown } from './helpers';
 
@@ -123,6 +124,7 @@ export function NanaSourceEditor({
   aiDiff = null,
   onReady,
 }: NanaSourceEditorProps) {
+  const spellcheck = useSpellcheck();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lastAiDiffRef = useRef<string | null>(null);
@@ -158,7 +160,7 @@ export function NanaSourceEditor({
         EditorView.contentAttributes.of({
           'aria-label': ariaLabel,
           'aria-multiline': 'true',
-          spellcheck: 'true',
+          spellcheck: spellcheck ? 'true' : 'false',
         }),
         readOnlyCompartment.current.of([
           EditorState.readOnly.of(readOnlyRef.current),
@@ -245,7 +247,8 @@ export function NanaSourceEditor({
     const view = viewRef.current;
     if (!view) return;
     view.dom.setAttribute('aria-label', ariaLabel);
-  }, [ariaLabel]);
+    view.contentDOM.setAttribute('spellcheck', spellcheck ? 'true' : 'false');
+  }, [ariaLabel, spellcheck]);
 
   return (
     <div

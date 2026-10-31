@@ -9,7 +9,9 @@ import {
   getAutoSaveDelay,
   setAutoSaveDelay,
   setDefaultHomepage,
+  setSpellcheck,
   useDefaultHomepage,
+  useSpellcheck,
   type DefaultHomepage,
 } from '../../lib/settings';
 import { useToasts } from '../../state/hooks';
@@ -102,6 +104,7 @@ export function PreferencesTab() {
   const { showToast } = useToasts();
   const { preference, setTheme } = useTheme();
   const homepage = useDefaultHomepage();
+  const spellcheck = useSpellcheck();
   const [autosave, setAutosave] = useState(() => closestPreset(getAutoSaveDelay()));
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetIncludesSessions, setResetIncludesSessions] = useState(true);
@@ -220,6 +223,15 @@ export function PreferencesTab() {
             after the last keystroke.
           </p>
         </div>
+        <div className="mt-5 border-t border-line pt-5">
+          <Checkbox
+            id="settings-spellcheck"
+            checked={spellcheck}
+            onChange={setSpellcheck}
+            label="Check spelling"
+            description="Use the browser's native spellcheck in the editor. Off by default so names and invented words stay quiet."
+          />
+        </div>
       </Card>
 
       <Card className="p-5 sm:p-6">
@@ -245,7 +257,7 @@ export function PreferencesTab() {
       <ConfirmDialog
         open={confirmReset}
         title="Reset local data?"
-        description="Theme, start page, auto-save, sidebar width, and expanded folders return to their defaults. Your notes and account stay in PocketBase."
+        description="Theme, start page, auto-save, spellcheck, sidebar width, and expanded folders return to their defaults. Your notes and account stay in PocketBase."
         confirmLabel="Reset and reload"
         tone="danger"
         onConfirm={handleReset}

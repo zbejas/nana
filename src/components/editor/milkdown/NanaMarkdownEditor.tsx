@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { editorViewCtx, type Editor } from '@milkdown/kit/core';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { cn } from '../../ui';
+import { useSpellcheck } from '../../../lib/settings';
 import { NanaEditorToolbar } from './NanaEditorToolbar';
 import { NanaSlashMenu } from './NanaSlashMenu';
 import { useMilkdownEditor } from './useMilkdownEditor';
@@ -57,12 +58,14 @@ export function NanaMarkdownEditor({
 }: NanaMarkdownEditorProps) {
   const [slashPosition, setSlashPosition] = useState<SlashTriggerPosition | null>(null);
   const linkSelectionRef = useRef<{ from: number; to: number } | null>(null);
+  const spellcheck = useSpellcheck();
   const editor = useMilkdownEditor({
     value,
     onChange,
     readOnly,
     placeholder: readOnly ? '' : placeholder,
     ariaLabel,
+    spellcheck,
     enableSlash: enableSlash && !readOnly,
     uploadImage,
     aiEdit,

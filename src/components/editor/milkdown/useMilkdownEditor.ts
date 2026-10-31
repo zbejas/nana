@@ -27,6 +27,7 @@ export interface UseMilkdownEditorOptions {
   readOnly?: boolean;
   placeholder?: string;
   ariaLabel?: string;
+  spellcheck?: boolean;
   enableSlash?: boolean;
   uploadImage?: (file: File) => Promise<string>;
   aiEdit?: {
@@ -90,6 +91,7 @@ export function useMilkdownEditor({
   readOnly = false,
   placeholder = '',
   ariaLabel = 'Document content',
+  spellcheck = false,
   enableSlash = true,
   uploadImage,
   aiEdit = null,
@@ -157,6 +159,7 @@ export function useMilkdownEditor({
         readOnlyRef,
         placeholderRef,
         ariaLabel,
+        spellcheck,
         enableSlash,
         onDocChangeRef: { current: emitChange },
         onSelectionRef: { current: refreshToolbar },
@@ -271,7 +274,8 @@ export function useMilkdownEditor({
     if (!editor) return;
     const view = editor.action((ctx) => ctx.get(editorViewCtx));
     view.dom.setAttribute('aria-label', ariaLabel);
-  }, [ariaLabel, ready]);
+    view.dom.setAttribute('spellcheck', spellcheck ? 'true' : 'false');
+  }, [ariaLabel, spellcheck, ready]);
 
   const run = useCallback((action: EditorActionId) => {
     const editor = editorRef.current;
