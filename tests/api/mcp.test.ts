@@ -492,13 +492,9 @@ describe("board and task tools", () => {
             boardOrder: 4,
         });
 
-        const activeDeleteCall = await mcpCall(owner.token, "delete_board", { boardId: board.id });
-        expect(activeDeleteCall.isError).toBe(true);
-        expect(activeDeleteCall.payload.error).toMatchObject({ code: "conflict" });
-
-        const archiveCall = await mcpCall(owner.token, "archive_board", { boardId: board.id });
-        expect(archiveCall.isError).toBe(false);
-        expect(archiveCall.payload.archived).toBe(true);
+        const deleteBoardCall = await mcpCall(owner.token, "delete_board", { boardId: board.id });
+        expect(deleteBoardCall.isError).toBe(false);
+        expect(deleteBoardCall.payload).toEqual({ trashed: true, boardId: board.id });
 
         const activeBoardsCall = await mcpCall(owner.token, "list_boards");
         const activeBoards = activeBoardsCall.payload as unknown as {
@@ -510,9 +506,9 @@ describe("board and task tools", () => {
         const allBoards = allBoardsCall.payload as unknown as {
             boards: Array<{ id: string; archived: boolean }>;
         };
-        const archivedBoard = allBoards.boards.find((item) => item.id === board.id);
-        expect(archivedBoard).toBeDefined();
-        expect(archivedBoard?.archived).toBe(true);
+        const trashedBoard = allBoards.boards.find((item) => item.id === board.id);
+        expect(trashedBoard).toBeDefined();
+        expect(trashedBoard?.archived).toBe(true);
 
         const restoreCall = await mcpCall(owner.token, "restore_board", { boardId: board.id });
         expect(restoreCall.isError).toBe(false);
@@ -549,20 +545,16 @@ describe("board and task tools", () => {
         // Deleting a task never deletes its linked note.
         expect(await pbRecordExists(owner.token, "documents", linkedNote.id)).toBe(true);
 
-        const archiveAgainCall = await mcpCall(owner.token, "archive_board", { boardId: board.id });
-        expect(archiveAgainCall.isError).toBe(false);
+        const trashAgainCall = await mcpCall(owner.token, "delete_board", { boardId: board.id });
+        expect(trashAgainCall.isError).toBe(false);
+        expect(trashAgainCall.payload).toEqual({ trashed: true, boardId: board.id });
+        expect(await pbRecordExists(owner.token, "boards", board.id)).toBe(true);
+        // Trashing a board keeps its tasks; permanent delete is owner-only in the UI.
+        expect(await pbRecordExists(owner.token, "tasks", task.id)).toBe(true);
 
-        const deleteBoardCall = await mcpCall(owner.token, "delete_board", { boardId: board.id });
-        expect(deleteBoardCall.isError).toBe(false);
-        expect(deleteBoardCall.payload).toEqual({ deleted: true, boardId: board.id });
-        expect(await pbRecordExists(owner.token, "boards", board.id)).toBe(false);
-        // PocketBase cascades the board's tasks.
-        expect(await pbRecordExists(owner.token, "tasks", task.id)).toBe(false);
-
-        const restRes = await bunRequest(`/api/v1/boards/${board.id}`, {
-            headers: authHeaders(owner.token),
-        });
-        await expectJsonError(restRes, 404, "not found");
+        const restoreAgainCall = await mcpCall(owner.token, "restore_board", { boardId: board.id });
+        expect(restoreAgainCall.isError).toBe(false);
+        expect(restoreAgainCall.payload.archived).toBe(false);
     });
 });
 

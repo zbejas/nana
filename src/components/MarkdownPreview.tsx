@@ -8,6 +8,25 @@ interface MarkdownPreviewProps {
   className?: string;
 }
 
+/** Badges are small, wide images; keep them inline instead of card-sized. */
+function PreviewImage({ src, alt, onLoad, ...props }: any) {
+  return (
+    <img
+      src={rewriteLegacyFileUrl(src)}
+      alt={alt}
+      onLoad={(event: any) => {
+        const image = event.currentTarget as HTMLImageElement;
+        const badge = image.naturalWidth >= 48
+          && image.naturalHeight > 0
+          && image.naturalHeight <= 28;
+        image.classList.toggle('nana-inline-badge', badge);
+        onLoad?.(event);
+      }}
+      {...props}
+    />
+  );
+}
+
 export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProps) {
   const { resolved } = useTheme();
 
@@ -22,7 +41,7 @@ export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProp
   const previewTagFallbacks = {
     iso: ({ children }: any) => <span>{children}</span>,
     docname: ({ children }: any) => <span>{children}</span>,
-    img: ({ src, alt, ...props }: any) => <img src={rewriteLegacyFileUrl(src)} alt={alt} {...props} />,
+    img: PreviewImage,
     a: ({ href, children, ...props }: any) => <a href={rewriteLegacyFileUrl(href)} {...props}>{children}</a>,
   } as any;
 

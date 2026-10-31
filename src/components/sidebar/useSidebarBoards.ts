@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { listBoards, subscribeToBoards, type Board } from '../../lib/boards';
 import { useAuth } from '../../lib/auth';
 import { createLogger } from '../../lib/logger';
+import { subscribeWorkspaceChanged } from '../../lib/workspace-events';
 
 const logger = createLogger('SidebarBoards');
 
@@ -62,6 +63,15 @@ export function useSidebarBoards() {
       unsubscribe();
     };
   }, [user?.id, load]);
+
+  // A board moved to trash no longer matches the list rule, so realtime may
+  // not deliver its update. Local board actions and chat confirmations both
+  // announce the change here.
+  useEffect(() => subscribeWorkspaceChanged((detail) => {
+    if (detail.targets.some((target) => target.type === 'board')) {
+      void load();
+    }
+  }), [load]);
 
   return boards;
 }

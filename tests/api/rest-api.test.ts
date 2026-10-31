@@ -546,36 +546,30 @@ describe("boards and tasks", () => {
         await expectStatus(deleteTaskRes, 204, "delete task");
         expect(await pbRecordExists(owner.token, "tasks", linkedTask.id)).toBe(false);
 
-        const activeDeleteRes = await restDelete(`/boards/${board.id}`, owner.token);
-        await expectJsonError(activeDeleteRes, 409, "Archive the board");
-
-        const archiveRes = await restPatch(`/boards/${board.id}`, { archived: true }, owner.token);
-        await expectStatus(archiveRes, 200, "archive board");
-        expect((await readJson<BoardDto>(archiveRes, "archive board")).archived).toBe(true);
-
-        const archivedTaskRes = await restPost(`/boards/${board.id}/tasks`, {
-            title: `Archived Task ${suffix}`,
-        }, owner.token);
-        await expectJsonError(archivedTaskRes, 409, "archived");
-
-        const archivedDeleteRes = await restDelete(`/boards/${board.id}`, owner.token);
-        await expectStatus(archivedDeleteRes, 204, "delete archived board");
-        expect(await pbRecordExists(owner.token, "boards", board.id)).toBe(false);
-
-        const missingBoardRes = await restGet(`/boards/${board.id}`, owner.token);
-        await expectJsonError(missingBoardRes, 404, "not found");
-
-        // The task stayed on the first board, so the earlier board delete removed it.
-        const archiveSecondRes = await restPatch(
-            `/boards/${secondBoard.id}`,
-            { archived: true },
+        const trashBoardRes = await restDelete(`/boards/${board.id}`, owner.token);
+        await expectStatus(trashBoardRes, 204, "move board to trash");
+        const trashedBoard = await pbGetRecord<{ archived: boolean }>(
             owner.token,
+            "boards",
+            board.id,
         );
-        await expectStatus(archiveSecondRes, 200, "archive second board");
+        expect(trashedBoard.archived).toBe(true);
 
-        const deleteSecondRes = await restDelete(`/boards/${secondBoard.id}`, owner.token);
-        await expectStatus(deleteSecondRes, 204, "delete second board");
-        expect(await pbRecordExists(owner.token, "tasks", task.id)).toBe(false);
+        const trashedTaskRes = await restPost(`/boards/${board.id}/tasks`, {
+            title: `Trashed Task ${suffix}`,
+        }, owner.token);
+        await expectJsonError(trashedTaskRes, 409, "trash");
+
+        const restoreBoardRes = await restPatch(`/boards/${board.id}`, { archived: false }, owner.token);
+        await expectStatus(restoreBoardRes, 200, "restore board");
+        expect((await readJson<BoardDto>(restoreBoardRes, "restore board")).archived).toBe(false);
+
+        // The task stayed on the first board through the trash transition.
+        expect(await pbRecordExists(owner.token, "tasks", task.id)).toBe(true);
+
+        const trashSecondRes = await restDelete(`/boards/${secondBoard.id}`, owner.token);
+        await expectStatus(trashSecondRes, 204, "move second board to trash");
+        expect(await pbRecordExists(owner.token, "tasks", task.id)).toBe(true);
     });
 });
 

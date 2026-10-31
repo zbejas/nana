@@ -50,11 +50,25 @@ export interface CreateMilkdownEditorOptions {
 const legacyImageView = $view(imageSchema.node, () => (node) => {
   const image = document.createElement('img');
 
+  const markBadge = () => {
+    // Badges are small, wide images (usually inside a link). Card borders and
+    // an 8px radius turn them into pills and clip their own rounded corners.
+    const badge = image.naturalWidth >= 48
+      && image.naturalHeight > 0
+      && image.naturalHeight <= 28;
+    image.classList.toggle('nana-inline-badge', badge);
+  };
+
+  image.addEventListener('load', markBadge);
+  image.addEventListener('error', () => image.classList.remove('nana-inline-badge'));
+
   const apply = (value: typeof node) => {
     image.src = rewriteLegacyFileUrl(value.attrs.src as string) ?? '';
     image.alt = (value.attrs.alt as string) ?? '';
+    image.classList.remove('nana-inline-badge');
     if (value.attrs.title) image.title = value.attrs.title as string;
     else image.removeAttribute('title');
+    if (image.complete) markBadge();
   };
 
   apply(node);
@@ -117,6 +131,41 @@ function placeholderPlugin(placeholderRef: { current: string }) {
 
 const AI_HIGHLIGHT_KEY = new PluginKey<DecorationSet>('NANA_AI_HIGHLIGHT');
 const aiHighlightTimers = new WeakMap<EditorView, number>();
+
+/**
+ * CommonMark soft line breaks are text nodes containing `\n`. ProseMirror
+ * renders text under `white-space: pre-wrap`, so wrapped Markdown lines and
+ * badge rows would show as hard breaks in the editor even though the same
+ * Markdown renders inline everywhere else. Wrap only those text nodes and let
+ * the stylesheet collapse their newline without changing the stored source.
+ */
+const SOFT_BREAK_KEY = new PluginKey('NANA_SOFT_BREAK');
+
+function softBreakPlugin() {
+  return $prose(
+    () =>
+      new Plugin({
+        key: SOFT_BREAK_KEY,
+        props: {
+          decorations(state) {
+            const decorations: Decoration[] = [];
+            state.doc.descendants((node, pos) => {
+              if (!node.isText || !node.text?.includes('\n')) return;
+              if (node.marks.some((mark) => mark.type.spec.code === true)) return;
+
+              const $pos = state.doc.resolve(pos);
+              if ($pos.parent.type.spec.code) return;
+
+              decorations.push(
+                Decoration.inline(pos, pos + node.nodeSize, { class: 'nana-soft-break' }),
+              );
+            });
+            return DecorationSet.create(state.doc, decorations);
+          },
+        },
+      }),
+  );
+}
 
 function aiHighlightPlugin() {
   return $prose(
@@ -657,6 +706,7 @@ export async function createMilkdownEditor(options: CreateMilkdownEditorOptions)
   editor.use(legacyLinkPlugin());
   editor.use(placeholderPlugin(options.placeholderRef));
   editor.use(aiHighlightPlugin());
+  editor.use(softBreakPlugin());
   editor.use(taskListClickPlugin());
   editor.use(documentChangePlugin(options.onDocChangeRef));
   if (options.enableSlash !== false) editor.use(slashPlugin(options.onSlashRef));

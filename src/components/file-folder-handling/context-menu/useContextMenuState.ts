@@ -5,7 +5,7 @@ const CONTEXT_MENU_EXIT_DURATION_MS = 180;
 export interface ContextMenuState {
     x: number;
     y: number;
-    type: 'empty' | 'folder' | 'document' | 'trash-document' | 'trash-folder' | 'board';
+    type: 'empty' | 'folder' | 'document' | 'trash-document' | 'trash-folder' | 'board' | 'trash-board';
     folderId?: string;
     folderName?: string;
     documentId?: string;

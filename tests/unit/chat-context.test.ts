@@ -50,6 +50,7 @@ describe('deriveChatContext', () => {
     expect(deriveChatContext('/settings/account')).toBeNull();
     expect(deriveChatContext('/document/new')).toBeNull();
     expect(deriveChatContext('/board/archive')).toBeNull();
+    expect(deriveChatContext('/board/trash')).toBeNull();
     expect(deriveChatContext('/folders/trash/f1')).toBeNull();
     expect(deriveChatContext('/folders/shared')).toBeNull();
   });

@@ -216,7 +216,7 @@ export const BoardDtoSchema = t.Object({
         examples: ["Ship the next version"],
     }),
     archived: t.Boolean({
-        description: "Archived boards are read-only for tasks and must be archived before permanent delete.",
+        description: "Board trash flag. Trashed boards keep their tasks and are restored from Trash.",
         examples: [false],
     }),
     folderId: nullableString("Containing folder id, or null at the workspace root.", ["folder123"]),
@@ -452,7 +452,7 @@ export const ListNotesQuerySchema = t.Object({
 
 export const ListBoardsQuerySchema = t.Object({
     includeArchived: t.Optional(t.BooleanString({
-        description: "Include archived boards.",
+        description: "Include trashed boards.",
         examples: [false],
     })),
     folderId: t.Optional(t.String({
@@ -604,7 +604,7 @@ export const UpdateBoardBodySchema = t.Object({
         examples: ["Ship version 1.0"],
     })),
     archived: t.Optional(t.Boolean({
-        description: "Archive or restore the board. Only archived boards can be permanently deleted.",
+        description: "Move the board to trash, or restore it with false.",
         examples: [true],
     })),
     folderId: t.Optional(nullableClearableId("Move the board to this folder, or to the root with an empty value.")),

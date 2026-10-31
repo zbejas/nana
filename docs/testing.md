@@ -188,7 +188,7 @@ Integration files share one database but not fixture records.
 | `createNote(user, opts)` | Document record; supports tags, folder, privacy, and share flags. |
 | `createNoteWithAttachment(user, filename, bytes, contentType?)` | Document with a real `attachments` upload. |
 | `createFolder(user, opts)` | Folder record; supports `parent` and `is_private`. |
-| `createBoard(user, opts)` | Board record; supports `archived`, `folder`, and `is_private`. |
+| `createBoard(user, opts)` | Board record; supports the `archived` trash flag, `folder`, and `is_private`. |
 | `createTask(user, boardId, opts)` | Task with status, order, labels, due date, and optional note link; ownership comes from the board. |
 | `superuserUpdate(collection, id, body)` | Share flags and other privileged fixture setup. |
 | `createConversation(user, opts)` | Conversation plus its initial `messages` records. |
@@ -276,9 +276,9 @@ Rules:
 | Folder trash and board rehoming | `tests/pocketbase/routes/08-board-folder-trash.test.ts` |
 | Board folder ownership or `is_private` schema | `tests/pocketbase/guards/05-board-folders.test.ts` |
 | Public sharing, expiry, attachment exposure, trash disables links | `tests/pocketbase/routes/06-public-shares.test.ts` |
-| Public board payload, archive/privacy guards, task ordering | `tests/pocketbase/routes/06-public-shares.test.ts` + `tests/unit/public-board.test.ts` |
+| Public board payload, trash/privacy guards, task ordering | `tests/pocketbase/routes/06-public-shares.test.ts` + `tests/unit/public-board.test.ts` |
 | Task rules, board moves, ordering | `tests/pocketbase/guards/03-task-rules.test.ts` |
-| Board archive/delete/cascade | `tests/pocketbase/guards/04-board-rules.test.ts` |
+| Board trash flag/permanent delete/cascade | `tests/pocketbase/guards/04-board-rules.test.ts` |
 | Auth/bootstrap/signup lockdown | `tests/pocketbase/bootstrap.test.ts` + `guards/00-user-guards.test.ts` |
 | Migration or schema change | Assert the collection/field exists and behaves correctly in the owning integration file |
 
@@ -290,18 +290,18 @@ Rules:
 | --- | --- |
 | `list_notes` | Author scoping; metadata without `content`; paging and sorting; tag and title search; filter injection is inert; private notes and private-folder subtrees excluded from items and totals; missing token → `unauthorized`; invalid token returns an empty guest page without leaking; malformed folder id → `invalid_input`. |
 | `read_note` | Line paging and `nextOffset`; long-line clipping and `truncated`; tail read has `hasMore: false`; another user's note → generic `not_found`; private note and notes in a private subtree → `not_found`; malformed ids and out-of-range windows. |
-| `list_boards` | Active boards by default; exact open/done/total and per-column counts; archived opt-in; paging; another user's boards never appear; private boards and boards in private folders excluded from items and totals. |
-| `read_board` | Column paging; whole-board order; task summaries expose `dueDate`, `labels`, `noteId`, sanitized excerpt; another user's board and archived boards → `not_found`; private boards and boards in private folders → `not_found`; malformed ids and columns. |
+| `list_boards` | Active boards by default; exact open/done/total and per-column counts; trashed opt-in; paging; another user's boards never appear; private boards and boards in private folders excluded from items and totals. |
+| `read_board` | Column paging; whole-board order; task summaries expose `dueDate`, `labels`, `noteId`, sanitized excerpt; another user's board and trashed boards → `not_found`; private boards and boards in private folders → `not_found`; malformed ids and columns. |
 
 `tests/api/chat-write-tools.test.ts` covers edit mode:
 
 | Area | Assertions |
 | --- | --- |
-| Registry | Ask mode omits every write tool and keeps `list_tasks`; Work mode registers the full write allowlist, including folder/note/board move, rename, and archive tools. |
+| Registry | Ask mode omits every write tool and keeps `list_tasks`; Work mode registers the full write allowlist, including folder/note/board move, rename, and trash tools. |
 | Context | Server-resolved titles; foreign, private, and private-folder contexts return `404`; wrong type is `400`. |
 | Notes | `create_note` stamps `last_edit_source: "ai"`/`last_edited_by: "Nana"`; `append_note` and `edit_note` carry untouched content through and store the pre-edit snapshot in `chat_edits.operations.before`; stale revisions return `conflict`; missing/ambiguous anchors abort; private notes and private-folder notes return `not_found`; `move_note` changes the folder and refuses a private destination. |
 | Folders | Create, rename, and move a folder; the parent relation is persisted. |
-| Boards/tasks | Board creation, board rename/move/archive/restore, folder creation, task create/update/move, archived-board conflict, invalid status, foreign task `not_found`, and `actor_type: "ai"` task activity. |
+| Boards/tasks | Board creation, board rename/move, folder creation, task create/update/move, trashed-board conflict, invalid status, foreign task `not_found`, and `actor_type: "ai"` task activity. |
 | Delete approval | A delete tool creates `pending` and leaves the target untouched; confirm trashes the target; cancel leaves it untouched; another user cannot confirm. |
 | Cards/undo | Edit rows list oldest first; only the conversation owner can read or undo; created-note undo trashes and repeated undo is a no-op; note-edit undo restores the snapshot and repeated undo does not bump the revision again. |
 
@@ -317,8 +317,8 @@ The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.te
 | Docs | `/docs` serves the self-hosted Scalar reference, `/docs/json` publishes `/api/v1` paths and stable operation ids, and the Scalar bundle plus Geist fonts are self-hosted. |
 | Folders | List/create; the created folder appears in the caller's list. |
 | Notes | Metadata-only list filtered by folder and sorted by title; create/read/update/delete; sanitized content and generated slug; root move with `""`/`null`; private note remains visible to its owner; another user gets `404` and an empty list; trash result carries `trashDocumentId`. |
-| Boards | Create with folder and private flag; list with `includeArchived`/`folderId`; read/update; active delete conflict; archive; archived delete `204` and task cascade. |
-| Tasks | Create, list by status, partial update, column move, board move, `add note to board` copy semantics, permanent delete; archived-board create conflict. |
+| Boards | Create with folder and private flag; list with `includeArchived`/`folderId`; read/update; `DELETE` moves to trash; trash/restore routes; permanent delete `204` and task cascade. |
+| Tasks | Create, list by status, partial update, column move, board move, `add note to board` copy semantics, permanent delete; trashed-board create conflict. |
 | Errors | `422` validation, `400` parse/invalid input, `404` cross-author, `409` state conflict. |
 
 `tests/api/mcp.test.ts` exercises the MCP endpoint:
@@ -329,7 +329,7 @@ The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.te
 | Auth | Missing token returns `401` before MCP work. |
 | Discovery | The expected tool list is registered. |
 | Reads | `list_notes`, `read_note`, `list_boards`, `read_board`, `list_folders`, `list_tasks` return visible records; note lists omit content; board lists include task counts; task lists include the board's tasks. |
-| Writes | Note/board/task create, update, move, archive/restore; note delete returns `trashDocumentId`; task delete is permanent; active board delete returns a conflict. |
+| Writes | Note/board/task create, update, move; note/board delete moves to trash; task delete is permanent; trash/restore board; trash/restore document; export board Markdown. |
 | Private lock | Private notes, boards, folders, and private-folder subtrees are omitted from lists and return `not_found` for reads and writes. |
 | Failures | Tool failures are `isError` text results, not HTTP failures. |
 
@@ -386,7 +386,7 @@ The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.te
 - **Global settings are not per-test.** Admin route tests snapshot and restore SMTP, attachment, OAuth, and `meta` settings. A new admin test that mutates settings must use the same helper.
 - **Admin routes return real 403s.** `requireAdmin()` throws `ForbiddenError`, and the route handlers map known errors through `sendError()` in `pb_hooks/utils.js`. Assert `403`; a `500` means an error-mapping regression.
 - **Trash routes return `400` for every failure.** Missing IDs, unknown IDs, and records owned by someone else all come back as `400 { error }`. They do not use 403/404.
-- **Incoming relations need the request guard.** PocketBase applies relation rules to the stored record, so `guards/relation_guards.js` checks the new `folder`, `parent`, `board`, and `document` values on update. Test cross-author and archived-board moves, folder cycles, and trashed/foreign relation targets.
+- **Incoming relations need the request guard.** PocketBase applies relation rules to the stored record, so `guards/relation_guards.js` checks the new `folder`, `parent`, `board`, and `document` values on update. Test cross-author and trashed-board moves, folder cycles, and trashed/foreign relation targets.
 - **Protected file downloads need a file token.** `GET /api/v1/files/...` with only an `Authorization` header returns 404. Create one with `POST /api/v1/files/token`, then append `?token=...`.
 - **Expired public shares are disabled on read.** A 404 for an expired token also clears `is_public` and `public_share_token`; assert the stored record, not just the response.
 - **The suite is not mocked.** A unit test does not prove a guard, route, or tool is wired. Add the integration assertion.

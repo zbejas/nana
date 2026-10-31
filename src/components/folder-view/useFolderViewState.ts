@@ -18,7 +18,14 @@ import {
     startNewDocumentAtom,
 } from '../../state/atoms';
 import { createFolder, updateFolder, deleteFolder } from '../../lib/folders';
-import { createUntitledBoard, type BoardSummary } from '../../lib/boards';
+import {
+    createUntitledBoard,
+    deleteBoardPermanently,
+    exportBoard,
+    restoreBoard,
+    trashBoard,
+    type BoardSummary,
+} from '../../lib/boards';
 import {
     deleteDocument,
     permanentlyDeleteDocument,
@@ -41,6 +48,7 @@ const log = createLogger('FolderView');
 type DeleteConfirmState = {
     folderIds: string[];
     documentIds: string[];
+    boardIds?: string[];
     title: string;
     message: string;
     isPermanent?: boolean;
@@ -158,7 +166,7 @@ export function useFolderViewState() {
     const [deleteConfirmState, setDeleteConfirmState] = useState<DeleteConfirmState | null>(null);
     const [isCreatingBoard, setIsCreatingBoard] = useState(false);
 
-    const { boards } = useBoardSummaries(false);
+    const { boards } = useBoardSummaries(true);
 
     const { contextMenu, isClosingContextMenu, setContextMenu, contextMenuRef, handleContextMenu, closeContextMenu } = useContextMenuState();
     const {
@@ -270,15 +278,20 @@ export function useFolderViewState() {
     ]);
 
     const displayedBoards = useMemo<BoardSummary[]>(() => {
-        if (isRouteFolderPending || isTrashMode) {
+        if (isRouteFolderPending) {
             return [];
         }
 
-        if (isSharedMode) {
-            return boards.filter((board) => board.is_public);
+        if (isTrashMode) {
+            if (currentFolderId) return [];
+            return boards.filter((board) => board.archived);
         }
 
-        return boards.filter((board) => (board.folder || null) === currentFolderId);
+        if (isSharedMode) {
+            return boards.filter((board) => board.is_public && !board.archived);
+        }
+
+        return boards.filter((board) => !board.archived && (board.folder || null) === currentFolderId);
     }, [isRouteFolderPending, isTrashMode, isSharedMode, boards, currentFolderId]);
 
     const isLoadingCurrentFolder = isRouteFolderPending || (currentFolderId ? loadingSet.has(currentFolderId) : false);
@@ -877,7 +890,7 @@ export function useFolderViewState() {
         }
 
         try {
-            const { folderIds, documentIds, isPermanent } = deleteConfirmState;
+            const { folderIds, documentIds, boardIds = [], isPermanent } = deleteConfirmState;
 
             if (isPermanent) {
                 for (const documentId of documentIds) {
@@ -886,12 +899,18 @@ export function useFolderViewState() {
                 for (const folderId of folderIds) {
                     await permanentlyDeleteFolder(folderId);
                 }
+                for (const boardId of boardIds) {
+                    await deleteBoardPermanently(boardId);
+                }
             } else {
                 for (const documentId of documentIds) {
                     await deleteDocument(documentId);
                 }
                 for (const folderId of folderIds) {
                     await deleteFolder(folderId);
+                }
+                for (const boardId of boardIds) {
+                    await trashBoard(boardId);
                 }
             }
 
@@ -1015,9 +1034,61 @@ export function useFolderViewState() {
         closeContextMenu();
     };
 
+    const handleTrashBoard = () => {
+        if (!contextMenu?.boardId) return;
+        setDeleteConfirmState({
+            folderIds: [],
+            documentIds: [],
+            boardIds: [contextMenu.boardId],
+            title: 'Move board to Trash',
+            message: `Move board "${contextMenu.boardName || 'Untitled board'}" and its tasks to trash? You can restore it later.`,
+        });
+        closeContextMenu();
+    };
+
+    const handleExportBoard = async () => {
+        if (!contextMenu?.boardId) return;
+        try {
+            await exportBoard(contextMenu.boardId, contextMenu.boardName || 'Board');
+        } catch (error) {
+            showToast(
+                error instanceof Error ? error.message : 'Failed to export board',
+                'error',
+            );
+        }
+        closeContextMenu();
+    };
+
+    const handleRestoreBoard = async () => {
+        if (!contextMenu?.boardId) return;
+        try {
+            await restoreBoard(contextMenu.boardId);
+            showToast('Board restored', 'success');
+        } catch (error) {
+            showToast(
+                error instanceof Error ? error.message : 'Failed to restore board',
+                'error',
+            );
+        }
+        closeContextMenu();
+    };
+
+    const handlePermanentlyDeleteBoard = () => {
+        if (!contextMenu?.boardId) return;
+        setDeleteConfirmState({
+            folderIds: [],
+            documentIds: [],
+            boardIds: [contextMenu.boardId],
+            title: 'Permanently delete board',
+            message: `Permanently delete board "${contextMenu.boardName || 'Untitled board'}" and its tasks? This cannot be undone.`,
+            isPermanent: true,
+        });
+        closeContextMenu();
+    };
+
     const openItemMenu = (
         event: React.MouseEvent<HTMLButtonElement>,
-        type: 'folder' | 'board' | 'document' | 'trash-folder' | 'trash-document',
+        type: 'folder' | 'board' | 'document' | 'trash-folder' | 'trash-document' | 'trash-board',
         options?: {
             folderId?: string;
             folderName?: string;
@@ -1288,6 +1359,10 @@ export function useFolderViewState() {
         handleExportFolder,
         handleRestoreFolder,
         handlePermanentlyDeleteFolder,
+        handleTrashBoard,
+        handleExportBoard,
+        handleRestoreBoard,
+        handlePermanentlyDeleteBoard,
         openItemMenu,
     };
 }

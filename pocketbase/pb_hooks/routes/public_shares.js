@@ -70,7 +70,7 @@ routerAdd("GET", "/api/public/boards/{shareToken}", function(c) {
     var shareToken = c.request.pathValue("shareToken")
     var boardRecord = h.findPublicShareRecord("boards", shareToken)
 
-    // Archived boards keep their token so a restore decision is explicit, but
+    // Trashed boards keep their token so a restore decision is explicit, but
     // the public link stops serving immediately.
     if (boardRecord && boardRecord.getBool("archived")) {
       throw new NotFoundError("Public board not found")

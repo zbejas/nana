@@ -763,6 +763,14 @@ body.public-route-active {
   color: var(--signal) !important;
 }
 
+/* Shields-style badges stay inline; the default markdown image is a card. */
+.wmde-markdown img.nana-inline-badge {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  vertical-align: middle;
+}
+
 .wmde-markdown blockquote {
   border-left-color: var(--line-strong) !important;
   color: var(--ink-secondary) !important;
@@ -874,7 +882,7 @@ body.public-route-active {
   grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
 }
 
-.archive-board-grid {
+.trash-board-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
 }

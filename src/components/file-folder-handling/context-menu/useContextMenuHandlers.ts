@@ -11,6 +11,7 @@ import type { ContextMenuState } from './useContextMenuState';
 interface DeleteDialogConfig {
     title: string;
     message: string;
+    confirmLabel?: string;
     onConfirm: () => Promise<void>;
 }
 
@@ -35,6 +36,10 @@ interface UseContextMenuHandlersProps {
         handlePermanentlyDeleteFolder: (folderId: string) => Promise<void>;
         handleExportDocument: (documentId: string) => Promise<void>;
         handleExportFolder: (folderId: string, folderName: string) => Promise<void>;
+        handleTrashBoard: (boardId: string, boardName?: string) => Promise<void>;
+        handleExportBoard: (boardId: string, boardName: string) => Promise<void>;
+        handleRestoreBoard: (boardId: string) => Promise<void>;
+        handlePermanentlyDeleteBoard: (boardId: string) => Promise<void>;
     };
     setInlineInput: (input: InlineInputState | null) => void;
     setRenamingFolderId: (id: string | null) => void;
@@ -97,6 +102,7 @@ export function useContextMenuHandlers({
         openDeleteDialog({
             title: 'Permanently Delete',
             message: 'Permanently delete this document? This cannot be undone!',
+            confirmLabel: 'Delete forever',
             onConfirm: async () => {
                 await handlers.handlePermanentlyDeleteDocument(documentId);
             },
@@ -150,6 +156,7 @@ export function useContextMenuHandlers({
         openDeleteDialog({
             title: 'Permanently Delete Folder',
             message: `Permanently delete folder "${folderName}"? This cannot be undone!`,
+            confirmLabel: 'Delete forever',
             onConfirm: async () => {
                 await handlers.handlePermanentlyDeleteFolder(folderId);
             },
@@ -176,6 +183,52 @@ export function useContextMenuHandlers({
         closeContextMenu();
     }, [contextMenu?.folderId, contextMenu?.folderName, handlers, closeContextMenu]);
 
+    const handleTrashBoard = useCallback(async () => {
+        if (!contextMenu?.boardId) return;
+        const boardId = contextMenu.boardId;
+        const boardName = contextMenu.boardName;
+        openDeleteDialog({
+            title: 'Move to Trash',
+            message: `Move board "${boardName || 'Untitled'}" and its tasks to trash? You can restore it later.`,
+            onConfirm: async () => {
+                await handlers.handleTrashBoard(boardId, boardName);
+            },
+        });
+        closeContextMenu();
+    }, [contextMenu?.boardId, contextMenu?.boardName, handlers, openDeleteDialog, closeContextMenu]);
+
+    const handleExportBoard = useCallback(async () => {
+        if (!contextMenu?.boardId || !contextMenu?.boardName) return;
+        await handlers.handleExportBoard(contextMenu.boardId, contextMenu.boardName);
+        closeContextMenu();
+    }, [contextMenu?.boardId, contextMenu?.boardName, handlers, closeContextMenu]);
+
+    const handleRestoreBoard = useCallback(async () => {
+        if (!contextMenu?.boardId) return;
+        try {
+            await handlers.handleRestoreBoard(contextMenu.boardId);
+        } catch (error) {
+            logger.error('Failed to restore board', { error });
+            showToast('Failed to restore board', 'error');
+        }
+        closeContextMenu();
+    }, [contextMenu?.boardId, handlers, closeContextMenu, showToast]);
+
+    const handlePermanentlyDeleteBoard = useCallback(async () => {
+        if (!contextMenu?.boardId) return;
+        const boardId = contextMenu.boardId;
+        const boardName = contextMenu.boardName;
+        openDeleteDialog({
+            title: 'Permanently Delete Board',
+            message: `Permanently delete board "${boardName || 'Untitled'}" and its tasks? This cannot be undone!`,
+            confirmLabel: 'Delete forever',
+            onConfirm: async () => {
+                await handlers.handlePermanentlyDeleteBoard(boardId);
+            },
+        });
+        closeContextMenu();
+    }, [contextMenu?.boardId, contextMenu?.boardName, handlers, openDeleteDialog, closeContextMenu]);
+
     return {
         handleAddFolder,
         handleAddDocument,
@@ -189,6 +242,10 @@ export function useContextMenuHandlers({
         handlePermanentlyDeleteFolder,
         handleExportDocument,
         handleExportFolder,
+        handleTrashBoard,
+        handleExportBoard,
+        handleRestoreBoard,
+        handlePermanentlyDeleteBoard,
         handleAddToBoard,
     };
 }

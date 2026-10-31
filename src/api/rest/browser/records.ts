@@ -327,7 +327,7 @@ async function taskBoardWritable(auth: BrowserAuth, boardId: string): Promise<Re
     const board = await loadRecord(auth, "boards", boardId, "id,archived");
     if (!board) return jsonError(404, "Not found.");
     if (board.archived === true) {
-        return jsonError(400, "Archived boards cannot be changed.");
+        return jsonError(400, "Boards in trash cannot be changed.");
     }
     return null;
 }

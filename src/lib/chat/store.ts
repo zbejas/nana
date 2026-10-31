@@ -19,6 +19,7 @@ import {
   undoEdit as undoEditRequest,
 } from './client';
 import { getAiEditing, setAiEditing } from './presence';
+import { notifyWorkspaceChanged, removalMessage } from '../workspace-events';
 import type {
   ChatContextInput,
   ChatError,
@@ -614,14 +615,16 @@ export async function undoEdit(id: string): Promise<void> {
 
   try {
     const updated = await undoEditRequest(auth(), id);
-    mark(updated
+    const resolved: ChatUiEdit = updated
       ? { ...updated, undoing: false }
       : {
         ...previous,
         status: 'undone',
         undo: { ...previous.undo, available: false },
         undoing: false,
-      });
+      };
+    mark(resolved);
+    announceRemoval(resolved);
   } catch (error) {
     mark({
       ...previous,
@@ -629,6 +632,28 @@ export async function undoEdit(id: string): Promise<void> {
       undoError: error instanceof Error ? error.message : 'Undo failed.',
     });
   }
+}
+
+/** Tell cached workspace surfaces that a record left the active tree. */
+function announceRemoval(edit: ChatUiEdit): void {
+  const confirmedDelete = edit.status === 'applied'
+    && (edit.tool === 'delete_note'
+      || edit.tool === 'delete_folder'
+      || edit.tool === 'delete_task'
+      || edit.tool === 'delete_board');
+  const undoneCreate = edit.status === 'undone' && edit.undo.kind === 'trash';
+  if (!confirmedDelete && !undoneCreate) return;
+
+  const target = {
+    type: edit.target.type,
+    id: edit.target.id,
+    ...(edit.target.title ? { title: edit.target.title } : {}),
+  };
+  notifyWorkspaceChanged({
+    targets: [target],
+    removed: true,
+    message: removalMessage(target),
+  });
 }
 
 function markEditState(id: string, edit: ChatUiEdit): void {
@@ -656,14 +681,16 @@ async function resolvePendingDelete(
     const updated = action === 'confirm'
       ? await confirmEditRequest(auth(), id)
       : await cancelEditRequest(auth(), id);
-    markEditState(id, updated
+    const resolved: ChatUiEdit = updated
       ? { ...updated, undoing: false }
       : {
         ...previous,
         status: action === 'confirm' ? 'applied' : 'cancelled',
         undo: { ...previous.undo, available: false },
         undoing: false,
-      });
+      };
+    markEditState(id, resolved);
+    announceRemoval(resolved);
   } catch (error) {
     markEditState(id, {
       ...previous,

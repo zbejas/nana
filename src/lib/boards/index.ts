@@ -1,5 +1,7 @@
 import type { RecordModel } from '../record-model';
-import { pb } from '../pocketbase';
+import { invalidateAuthOnUnauthorized, pb } from '../pocketbase';
+import { exportBoard as requestBoardExport } from '../export';
+import { notifyWorkspaceChanged, removalMessage } from '../workspace-events';
 import type { Task } from '../tasks';
 
 export interface Board extends RecordModel {
@@ -40,7 +42,7 @@ export interface UpdateBoardData {
 }
 
 export interface ListBoardsOptions {
-  /** Include archived boards after the active ones. Defaults to false. */
+  /** Include trashed boards after the active ones. Defaults to false. */
   includeArchived?: boolean;
 }
 
@@ -168,7 +170,7 @@ async function uniqueColumnSlug(boardId: string, preferred: string): Promise<str
 
 /**
  * Lists the signed-in user's boards. Active boards come first (newest first),
- * archived boards after them (most recently updated first).
+ * trashed boards after them (most recently updated first).
  */
 export async function listBoards(options: ListBoardsOptions = {}): Promise<Board[]> {
   const author = pb.authStore.record?.id;
@@ -176,7 +178,7 @@ export async function listBoards(options: ListBoardsOptions = {}): Promise<Board
 
   const records = await pb.collection(COLLECTION).getFullList<Board>({
     // Board rules now include records shared with the caller. Personal
-    // surfaces (timeline, folders, sidebar, archive) must stay owner-only;
+    // surfaces (timeline, folders, sidebar, trash) must stay owner-only;
     // shared boards are reached through /shared and getBoard(id).
     filter: pb.filter(
       options.includeArchived
@@ -239,7 +241,7 @@ export async function createBoard(data: CreateBoardData): Promise<Board> {
 
 /**
  * Updates mutable board metadata. Ownership is set on create and cannot be
- * changed afterwards; archiving goes through `archived: true`. An empty
+ * changed afterwards; trashing goes through `archived: true`. An empty
  * `folder` clears the board's folder and returns it to the root.
  */
 export async function updateBoard(id: string, data: UpdateBoardData): Promise<Board> {
@@ -270,20 +272,71 @@ export async function updateBoard(id: string, data: UpdateBoardData): Promise<Bo
   return normalizeBoard(record);
 }
 
-export async function archiveBoard(id: string): Promise<Board> {
-  return updateBoard(id, { archived: true });
-}
+async function postTrashAction(path: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const token = pb.authStore.token;
+  const response = await fetch(`/api/v1${path.replace(/^\/api/, '')}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
 
-export async function restoreBoard(id: string): Promise<Board> {
-  return updateBoard(id, { archived: false });
+  if (!response.ok) {
+    invalidateAuthOnUnauthorized(response.status, token);
+    let message = 'Trash request failed';
+    try {
+      const body = await response.json() as { error?: string };
+      message = body?.error || message;
+    } catch {
+      // Keep the fallback message.
+    }
+    throw new Error(message);
+  }
+
+  return response.json().catch(() => ({})) as Promise<Record<string, unknown>>;
 }
 
 /**
- * Permanently deletes an archived board. PocketBase rejects this for active
- * boards, and its tasks are removed by the relation cascade.
+ * Move a board to trash. The `archived` flag is the board's trash state: the
+ * record keeps its id and tasks, leaves the active tree, and can be restored
+ * or deleted forever from Trash.
  */
+export async function trashBoard(id: string): Promise<Board> {
+  await postTrashAction('/api/trash/move-board', { boardId: id });
+  const board = await getBoard(id);
+  notifyWorkspaceChanged({
+    targets: [{ type: 'board', id: board.id, title: board.name }],
+    removed: true,
+    message: removalMessage({ type: 'board', id: board.id }),
+  });
+  return board;
+}
+
+/** Restore a board and its tasks from trash. */
+export async function restoreBoard(id: string): Promise<Board> {
+  await postTrashAction('/api/trash/restore-board', { trashBoardId: id });
+  const board = await getBoard(id);
+  notifyWorkspaceChanged({
+    targets: [{ type: 'board', id: board.id, title: board.name }],
+    removed: false,
+  });
+  return board;
+}
+
+/** Permanently delete a trashed board; its tasks cascade with it. */
 export async function deleteBoardPermanently(id: string): Promise<void> {
-  await pb.collection(COLLECTION).delete(id);
+  await postTrashAction('/api/trash/permanent-delete-board', { trashBoardId: id });
+  notifyWorkspaceChanged({
+    targets: [{ type: 'board', id }],
+    removed: true,
+  });
+}
+
+/** Export a board and its tasks as Markdown. */
+export async function exportBoard(id: string, name: string): Promise<void> {
+  await requestBoardExport(id, name);
 }
 
 // ── Workflow columns ────────────────────────────────────────────────

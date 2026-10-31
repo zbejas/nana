@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { listBoardSummaries, subscribeToBoards, type Board, type BoardSummary } from '../../lib/boards';
 import { subscribeToTasks } from '../../lib/tasks';
 import { useAuth } from '../../lib/auth';
+import { subscribeWorkspaceChanged } from '../../lib/workspace-events';
 
 /**
  * Timeline and folder board data. Boards and tasks both drive it: task changes
- * move the counts, board changes add, rename, archive, or remove a row.
+ * move the counts, board changes add, rename, trash, or remove a row.
  * Realtime events are debounced into one refresh.
  */
 export function useBoardSummaries(includeArchived = false) {
@@ -84,6 +85,12 @@ export function useBoardSummaries(includeArchived = false) {
       unsubscribeTasks();
     };
   }, [user?.id, load]);
+
+  useEffect(() => subscribeWorkspaceChanged((detail) => {
+    if (detail.targets.some((target) => target.type === 'board' || target.type === 'task')) {
+      void load();
+    }
+  }), [load]);
 
   return { boards, isLoading, error, retry, removeBoardLocally, replaceBoardLocally };
 }

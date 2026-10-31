@@ -16,6 +16,7 @@ import { ConfirmDialog } from './ui';
 import { deleteDocument } from '../lib/documents/trash';
 import { getDocument } from '../lib/documents';
 import type { ChatUiEdit } from '../lib/chat/types';
+import { subscribeWorkspaceChanged } from '../lib/workspace-events';
 import { exportDocument } from '../lib/export';
 import { useToasts } from '../state/hooks';
 import { chatDockOpenAtom, editorFullscreenAtom, refreshTriggerAtom } from '../state/atoms';
@@ -160,6 +161,30 @@ export function DocumentEditor() {
     setTitle,
     showToast,
   ]);
+
+  // Chat folder deletion can trash this note without naming it in the event.
+  // Re-read the open note so an editor inside the deleted subtree closes.
+  useEffect(() => {
+    const currentId = document?.id;
+    if (!currentId) return;
+
+    return subscribeWorkspaceChanged((detail) => {
+      if (!detail.removed) return;
+      const folderRemoved = detail.targets.some((target) => target.type === 'folder');
+      const documentRemoved = detail.targets.some(
+        (target) => target.type === 'document' && target.id === currentId,
+      );
+      if (!folderRemoved || documentRemoved) return;
+
+      void getDocument(currentId)
+        .then(() => undefined)
+        .catch((error: { status?: number }) => {
+          if (error?.status !== 404) return;
+          setGlobalUnsavedChanges(false);
+          navigate('/folders');
+        });
+    });
+  }, [document?.id, navigate, setGlobalUnsavedChanges]);
 
   // Chat edit cards link here with ?nanaSection=Heading (or Parent > Child).
   // Scroll to that heading once the editor surface exists; never touch the

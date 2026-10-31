@@ -14,6 +14,9 @@ const TRASH_ACTIONS = new Set([
     "move-folder",
     "restore-folder",
     "permanent-delete-folder",
+    "move-board",
+    "restore-board",
+    "permanent-delete-board",
 ]);
 
 const TRASH_PAGE_SIZE = 200;

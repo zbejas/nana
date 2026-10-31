@@ -6,7 +6,6 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import {
-  ArchiveBoxIcon,
   ArrowPathIcon,
   ArrowUturnLeftIcon,
   ChevronLeftIcon,
@@ -1074,7 +1073,7 @@ export function BoardPage() {
         description={board?.description || undefined}
         meta={
           board?.archived ? (
-            <span>Archived {formatRelativeDate(board.updated) || ''}</span>
+            <span>Trashed {formatRelativeDate(board.updated) || ''}</span>
           ) : board ? (
             <>
               <span className="inline-flex items-baseline gap-1.5">
@@ -1190,10 +1189,8 @@ export function BoardPage() {
             showToast(editNewBoard ? 'Board created' : 'Board saved', 'success');
           }}
           onColumnsChanged={reloadColumns}
-          onArchived={() => {
+          onTrashed={() => {
             setEditOpen(false);
-            showToast('Board archived', 'info');
-            navigate('/timeline');
           }}
         />
       )}
@@ -1225,8 +1222,8 @@ export function BoardPage() {
           />
         ) : board?.archived ? (
           <EmptyState
-            title="This board is archived"
-            description="Restore it to work with its tasks again, or return to the timeline to pick another board."
+            title="This board is in trash"
+            description="Restore it to work with its tasks again, or open Trash to restore or delete another board."
             action={
               <>
                 <Button
@@ -1237,8 +1234,8 @@ export function BoardPage() {
                 >
                   Restore
                 </Button>
-                <Button variant="ghost" onClick={() => navigate('/timeline')}>
-                  Back to timeline
+                <Button variant="ghost" onClick={() => navigate('/board/trash')}>
+                  Back to trash
                 </Button>
               </>
             }
@@ -1680,8 +1677,8 @@ export function BoardPage() {
           <>
             <MenuSeparator />
             <MenuItem
-              icon={<ArchiveBoxIcon />}
-              label="Archive board"
+              icon={<Cog6ToothIcon />}
+              label="Board settings"
               onClick={() => {
                 setMoreAnchor(null);
                 setEditNewBoard(false);

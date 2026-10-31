@@ -47,7 +47,7 @@ Authorization: Bearer <nana_api_key>
 | `src/api/chat/stream.ts` | Named SSE events, legacy AI-SDK chunks, final-step usage mapping, and stream accumulation. |
 | `src/api/chat/edits.ts` | `chat_edits` recording, edit-card listing, and undo. |
 | `src/api/chat/tool-names.ts` | Persisted read/write chat tool allowlists. |
-| `src/api/chat/tools/` | Read tools plus Work-mode create, rename, move, archive/restore, and confirm-first delete tools for folders, notes, boards, and tasks. |
+| `src/api/chat/tools/` | Read tools plus Work-mode create, rename, move, trash/restore, and confirm-first delete tools for folders, notes, boards, and tasks. |
 | `src/api/export/` | Markdown and ZIP export. |
 | `src/api/app-version.ts` | Cached GitHub Releases lookup. |
 | `src/lib/pocketbase.ts` | Browser client over `/api/v1`; preserves the small `pb.collection` / `pb.authStore` / `pb.files` surface the SPA uses. |
@@ -117,7 +117,7 @@ Path ids must match `[A-Za-z0-9]{1,64}`.
 | `POST` | `/api/v1/boards` | `{ name, description?, folderId?, icon?, isPrivate? }` | `201` board DTO. |
 | `GET` | `/api/v1/boards/:id` | — | `200` board DTO including ordered `columns`. |
 | `PATCH` | `/api/v1/boards/:id` | `{ name?, description?, icon?, archived?, folderId?, isPrivate? }` | `200` board DTO. |
-| `DELETE` | `/api/v1/boards/:id` | — | `204`; only when archived. |
+| `DELETE` | `/api/v1/boards/:id` | — | `204`; moves the board and its tasks to trash. |
 | `GET` | `/api/v1/boards/:id/columns` | — | `200` ordered workflow columns. |
 | `POST` | `/api/v1/boards/:id/columns` | `{ name, slug?, position?, icon?, color?, isFinal? }` | `201` column DTO. |
 | `POST` | `/api/v1/boards/:id/columns/reorder` | `{ orderedIds }` | `200` ordered columns. |
@@ -166,8 +166,8 @@ List endpoints return:
 
 - **Notes.** Titles default to `Untitled`; slugs are generated from the title. `content` is sanitized before storage. List results never include bodies, and `query` searches titles and tags only. Send `folderId: ""` or `null` to move a note to the root. Attachments are not managed by this API.
 - **Folders.** A parent must belong to the caller. There is no folder update or delete route on `/api/v1`; the UI still uses the PocketBase collection and trash routes.
-- **Boards.** Active boards are returned by default; `includeArchived=true` adds archived boards. `archived: true` archives; `archived: false` restores. A board may only be deleted while archived; deleting it cascades its tasks. `folderId: ""` or `null` moves it to the root. Private boards are visible here because this is the owner surface.
-- **Tasks.** A task is created on the active board in the path. The board must belong to the caller and must not be archived. `status` defaults to `backlog`; `priority` defaults to `""`. `noteId` links a note without modifying it; `""` clears the link. `boardId`, `status`, and `boardOrder` move a task. Task deletion is permanent.
+- **Boards.** Active boards are returned by default; `includeArchived=true` adds trashed boards. `archived: true` moves a board to trash; `archived: false` restores it. `DELETE` also moves a board to trash. Permanent delete uses `/api/v1/trash/permanent-delete-board` and cascades tasks and columns. `folderId: ""` or `null` moves it to the root. Private boards are visible here because this is the owner surface.
+- **Tasks.** A task is created on the active board in the path. The board must belong to the caller and must not be in trash. `status` defaults to `backlog`; `priority` defaults to `""`. `noteId` links a note without modifying it; `""` clears the link. `boardId`, `status`, and `boardOrder` move a task. Task deletion is permanent.
 - **Add note to board.** `POST /boards/:id/notes` copies the note title, a plain-text excerpt (up to 4,000 characters), up to six labels, and the `document` relation into a new task. The note is unchanged.
 
 #### API keys
@@ -203,7 +203,7 @@ The response includes the one-time secret and the metadata:
 
 | Field | Values |
 | --- | --- |
-| `access` | `read` allows workspace reads; `write` also allows create, update, move, archive, and delete. |
+| `access` | `read` allows workspace reads; `write` also allows create, update, move, trash/restore, and delete. |
 | `scope` | `workspace` covers the root and every folder; `root` covers only records with no folder; `folders` covers the selected folders and their descendants. |
 | `folderIds` | Required for `folders` (1–20 owned, non-trashed folders); ignored for other scopes. |
 
@@ -227,7 +227,7 @@ Revoking a key deletes its record and invalidates the next request immediately. 
 | `401` | Missing, invalid, expired, or revoked user token or API key. |
 | `403` | The credential is valid but cannot perform this action, such as a read-only key attempting a write. |
 | `404` | Unknown route, or a record the caller cannot see or is outside the key's scope. Another user's record and a missing record look identical. |
-| `409` | The action conflicts with state: deleting an active board, writing a task on an archived board, a stale note revision, or undoing a chat edit after newer work. |
+| `409` | The action conflicts with state: writing a task on a trashed board, a stale note revision, or undoing a chat edit after newer work. |
 | `422` | Elysia schema validation failed. |
 | `500` | Unexpected server failure; the body is generic. |
 | `502` | PocketBase was unreachable or returned an unreadable response. |
@@ -259,7 +259,7 @@ The browser facade is the replacement for `/pb`. It is public-facing Elysia code
 | `GET` | `/api/v1/files/:collection/:recordId/:filename` | token/query | Protected file or thumbnail; supports `?token=`, `?thumb=`, `?download=`. |
 | `GET` | `/api/v1/realtime` | public handshake | SSE stream; PocketBase sends `PB_CONNECT`. |
 | `POST` | `/api/v1/realtime` | user | `{ clientId, subscriptions }`; authenticated subscription POST. |
-| `POST` | `/api/v1/trash/:action` | user | `move-document`, `restore-document`, `permanent-delete-document`, `move-folder`, `restore-folder`, `permanent-delete-folder`. |
+| `POST` | `/api/v1/trash/:action` | user | `move-document`, `restore-document`, `permanent-delete-document`, `move-folder`, `restore-folder`, `permanent-delete-folder`, `move-board`, `restore-board`, `permanent-delete-board`. |
 | `GET/PATCH` | `/api/v1/admin/smtp` | admin | SMTP settings; password is never returned. |
 | `POST` | `/api/v1/admin/smtp/test`, `/api/v1/admin/smtp/send-password` | admin | Test mail / send a password email. |
 | `GET/PATCH` | `/api/v1/admin/attachments` | admin | Attachment limits. |
@@ -295,13 +295,13 @@ Allowed record collections:
 | --- | --- | --- | --- |
 | `documents` | yes | yes | `content` is sanitized by Elysia; `author` is injected; `folder` must be owned. |
 | `folders` | yes | yes | `parent` must be owned; cycles/self-parent are rejected. |
-| `boards` | yes | yes | `folder` must be owned; archive-before-delete stays in PocketBase. |
+| `boards` | yes | yes | `folder` must be owned; `DELETE` moves to trash; permanent delete uses `/trash/permanent-delete-board`. |
 | `board_columns` | yes | yes | Owner-only writes; slugs are unique/reserved-safe. |
 | `tasks` | yes | yes | `board` is create-only; status must match a board column or a virtual status; `document` must be owned. |
 | `labels` | yes | yes | Author-scoped label definitions. |
 | `task_relations` | yes | no | Writes go through typed REST; reads are symmetric. |
 | `task_activity` | yes | no | Server writes only. |
-| `trash_documents`, `trash_folders` | yes | no | Mutations only through `/trash/:action`. |
+| `trash_documents`, `trash_folders` | yes | no | Mutations only through `/trash/:action`. Trashed boards are read from `boards` with `archived=true`. |
 | `users` | yes | self/admin | Self updates exclude `admin`/`verified`; admin routes use the custom admin endpoints. |
 | `settings` | admin | admin | `site_url`, `ai_config`, and `rate_limits`. Use `/api/v1/admin/rate-limits` for rate-limit writes so the limiter reloads. |
 
@@ -347,7 +347,7 @@ The server registers tools for folders, notes, boards, and tasks; the table belo
 | --- | --- | --- |
 | Folders | `list_folders`, `create_folder` | List visible folders; create a folder under a visible parent. |
 | Notes | `list_notes`, `read_note`, `create_note`, `update_note`, `move_note`, `delete_note` | Metadata/list and bounded body reads; create, update, move, or trash a note. `delete_note` returns `{ deleted, trashDocumentId }`. |
-| Boards | `list_boards`, `read_board`, `create_board`, `update_board`, `move_board`, `archive_board`, `restore_board`, `delete_board` | List with task counts; read a non-archived board; create/update/move; archive/restore; permanently delete an archived board. |
+| Boards | `list_boards`, `read_board`, `create_board`, `update_board`, `move_board`, `restore_board`, `delete_board` | List with task counts; read a non-trashed board; create/update/move; restore from trash; move to trash. |
 | Tasks | `list_tasks`, `create_task`, `update_task`, `move_task`, `delete_task`, `add_note_to_board` | List, create, update, move, or permanently delete tasks; copy a note onto a board. |
 
 MCP is an AI surface, so private notes, boards, folders, and private-folder subtrees are omitted from lists and look missing by id. A tool that tries to write to a hidden record returns `not_found`. API-key scope is an additional envelope: a folder-scoped key sees only those subtrees and never the root; a root-only key sees no folders; a read-only key is not offered write tools at all. See [`ai.md`](ai.md) for the privacy rules and tool semantics.
@@ -377,11 +377,12 @@ Requires auth. Request:
 {
   "documentIds": ["id"],
   "folderIds": ["id"],
+  "boardIds": ["id"],
   "zipName": "optional-name"
 }
 ```
 
-At least one document or folder is required. A single document with no attachments returns `text/markdown`; everything else returns a ZIP containing Markdown and attachments. Folder exports include descendants. See `src/api/export/`.
+At least one document, folder, or board is required. A single document with no attachments returns `text/markdown`; a single board returns Markdown with its description and tasks grouped by column, including the backlog statuses. Everything else returns a ZIP containing Markdown and attachments. Folder exports include descendants. Board export is one board per request. See `src/api/export/`.
 
 #### `GET /api/chat/status`
 
@@ -455,14 +456,14 @@ Requires auth. Request:
 - `message` may be empty only when `attachmentIds` has at least one id. Ids must match `[A-Za-z0-9]{1,64}`, are deduplicated, and are capped at the configured `maxFiles` (hard ceiling 20).
 - `attachmentIds` reference owner-scoped draft rows from `POST /api/chat/attachments`. The server verifies ownership, unbound state, count, per-file size, total size, and the selected model's `vision`/`files` capabilities before creating a conversation or SSE stream. Invalid/bound/too many ids are `400`; disabled attachments are `403`; size overflow is `413`; unsupported types or model capability failures are `415`; missing or foreign ids are `404`.
 - `modelId` is optional and must be an enabled id from `GET /api/chat/status.models`. Omit it to use `defaultModelId`, then the first enabled model. An explicit unknown or disabled id returns `400` with code `model_not_found` before any conversation or stream work.
-- `mode` is `"ask"` or `"edit"`; omit it for the safe read-only default. The UI's Work mode sends `"edit"` and is the default there; Ask sends `"ask"`. Edit adds create, rename, move, and update tools for folders, notes, boards, and tasks; boards can be archived/restored, and deletes use a pending confirmation card.
+- `mode` is `"ask"` or `"edit"`; omit it for the safe read-only default. The UI's Work mode sends `"edit"` and is the default there; Ask sends `"ask"`. Edit adds create, rename, move, and update tools for folders, notes, boards, and tasks; boards and notes can be moved to trash or restored, and deletes use a pending confirmation card.
 - `context` is optional and accepts only `{ type: "document" | "board" | "folder", id }`. Bun resolves the title, ownership, trash state, and private lock with the caller's token, then persists `messages.context` with the resolved title on the user message. The system prompt receives only the type and id; titles and bodies stay out. A missing, foreign, trashed, private, or hidden record is `404`; a malformed type/id is `400`; an unreadable visibility snapshot is `503`. Client-supplied titles and bodies are ignored.
 - Omit `conversationId` to create a conversation. The first message seeds the title from the user text or the first attachment name; a background title call refines it after the first reply when the stream is not stopped and has no error. Title generation never receives attachment bytes or extracted text.
 - `regenerate: true` trims the previous user/assistant exchange before re-sending.
 - There is no `documentIds` field. `attachmentIds` is the only file payload; context is metadata only and tools read notes, boards, and tasks on demand.
 - The persisted user message carries sanitized attachment refs. Chat history sends role, content, and attachment content for user messages only. Stored reasoning, tool activity, the ordered `parts` timeline, sources, context metadata, and model metadata stay out of the prompt; the resolved context contributes a short system note.
 - Images become AI SDK image parts (vision required); PDFs become native file parts when the model has `files`, otherwise extracted text (and are rejected if no text); text files become named `<attachment>` text blocks. Older user-message attachments share the request's byte/text budget and degrade to text or an explicit omission marker; assistant attachments are never sent. Attachment contents are untrusted data and the system prompt says not to follow instructions inside them.
-- In edit mode, writes go through the workspace services with the caller's token and `X-Nana-Actor: ai`; note edits carry revision checks. Tools cover creating, renaming, moving, and updating folders, notes, boards, and tasks; boards can be archived and restored. Delete tools create a pending card; `POST /api/chat/edits/:id/confirm` executes it with the caller's token. Chat has no publish, share, privacy, board-column, or label tools, and it cannot move a task to another board. See [`ai.md`](ai.md) for the write contract.
+- In edit mode, writes go through the workspace services with the caller's token and `X-Nana-Actor: ai`; note edits carry revision checks. Tools cover creating, renaming, moving, and updating folders, notes, boards, and tasks; boards can be trashed and restored. Delete tools create a pending card; `POST /api/chat/edits/:id/confirm` executes it with the caller's token. Chat has no publish, share, privacy, board-column, or label tools, and it cannot move a task to another board. See [`ai.md`](ai.md) for the write contract.
 
 The response is an SSE stream with these headers:
 
@@ -569,9 +570,9 @@ PocketBase listens only on `127.0.0.1:8090`. The paths below are shown as Pocket
 | `/api/check-users` | GET | `{ hasUsers, totalUsers }`; drives onboarding vs sign-in. |
 | `/api/public/documents/:shareToken` | GET | Public document payload. Validates `is_public`, `is_private`, and expiry. |
 | `/api/public/documents/:shareToken/files/:filename` | GET | Document attachment when `share_attachments` is true. |
-| `/api/public/folders/:shareToken` | GET | Folder tree plus descendant folders, documents, and active boards with their tasks. Private subtrees, private documents, and private/archived boards are skipped. |
+| `/api/public/folders/:shareToken` | GET | Folder tree plus descendant folders, documents, and active boards with their tasks. Private subtrees, private documents, and private/trashed boards are skipped. |
 | `/api/public/folders/:shareToken/files/:documentId/:filename` | GET | Attachment for a document in a shared folder. |
-| `/api/public/boards/:shareToken` | GET | Board metadata plus tasks in board order. Archived, private, expired, and non-public boards return `404`. Linked task notes are omitted. |
+| `/api/public/boards/:shareToken` | GET | Board metadata plus tasks in board order. Trashed, private, expired, and non-public boards return `404`. Linked task notes are omitted. |
 
 #### Trash
 
@@ -585,6 +586,9 @@ All require a user token and ownership checks.
 | `POST /api/trash/move-folder` | `{ "folderId": "id" }` | Marks the subtree and its documents deleted, clears sharing, and rehomes boards to the root; returns `{ trashFolderId, movedDocumentIds, movedBoardIds }`. |
 | `POST /api/trash/restore-folder` | `{ "trashFolderId": "id" }` | Clears the subtree and its documents; returns `{ success, folderId, restoredDocumentIds }`. Boards rehomed to the root stay there. |
 | `POST /api/trash/permanent-delete-folder` | `{ "trashFolderId": "id" }` | Rehomes boards, clears task note links, then hard-deletes the subtree through `folders.parent` and `documents.folder` cascades. |
+| `POST /api/trash/move-board` | `{ "boardId": "id" }` | Sets `archived = true`, clears the public share and grants, and keeps tasks/columns; returns `{ boardId }`. |
+| `POST /api/trash/restore-board` | `{ "trashBoardId": "id" }` | Clears `archived`; returns `{ boardId }`. |
+| `POST /api/trash/permanent-delete-board` | `{ "trashBoardId": "id" }` | Hard-deletes a trashed board; cascades tasks and columns. Source notes stay. |
 
 #### Admin
 
@@ -631,13 +635,13 @@ PocketBase's standard collection endpoints under `/api/collections/...` are inte
 ```
 
 - `name` is required (max 120); `description` is optional (max 500).
-- `archived` defaults to false. Archiving is a normal `PATCH`; there is no separate archive route. An archived board’s public link stops serving.
+- `archived` is the board trash flag and defaults to false. `POST /api/trash/move-board` or `PATCH { archived: true }` moves it to trash; `POST /api/trash/restore-board` or `PATCH { archived: false }` restores it. A trashed board’s public link stops serving.
 - `folder` is optional. It must belong to the caller and not be trashed; `relation_guards.js` checks the incoming relation. An empty value means the workspace root.
 - `is_private` hides the board from chat and MCP, not from its owner. A private board cannot be served publicly.
 - `is_public`, `public_share_token`, and `public_expires_at` are the board public-share fields; the browser generates the token and the public route validates it.
 - `author` is required and set on create. Ownership cannot be changed later.
-- A board may only be deleted while `archived = true`; that delete cascades its tasks.
-- List and view are author-scoped. Use `filter=archived=false` for active boards and `filter=archived=true` for the archive.
+- A board may only be permanently deleted while `archived = true`; that delete cascades its tasks and columns. `DELETE /api/v1/boards/:id` soft-trashes instead.
+- List and view are author-scoped. Use `filter=archived=false` for active boards and `filter=archived=true` for trash.
 
 #### Task records
 
@@ -655,15 +659,15 @@ PocketBase's standard collection endpoints under `/api/collections/...` are inte
 }
 ```
 
-- `board` is required. A task cannot be created without a board, on another user's board, or on an archived board.
+- `board` is required. A task cannot be created without a board, on another user's board, or on a trashed board.
 - `status` is required and limited to the four column values. `priority` is optional; the UI sends `""` when unset.
 - `board_order` is a non-negative number scoped to a column. Dragging writes only changed rows.
 - `document` is optional and does not cascade. Trashing the note keeps the link so a restore restores it; unrelated task edits still work while the note is trashed. Permanently deleting the note clears the link. Deleting the task leaves the note.
 - Tasks have no `author` field. Ownership is `board.author`; the board relation is required and cascades.
-- List, view, and delete require `board.author = @request.auth.id`. Create and update additionally require `board.archived = false`.
+- List, view, and delete require `board.author = @request.auth.id`. Create and update additionally require `board.archived = false` (not in trash).
 - Tasks have no trash flow. Deleting a task is permanent.
 
-See [`pocketbase.md`](pocketbase.md) for the exact rules, indexes, and archive lifecycle.
+See [`pocketbase.md`](pocketbase.md) for the exact rules, indexes, and board trash lifecycle.
 
 ### Public share payloads
 
@@ -724,7 +728,7 @@ Folder response includes `rootFolder`, `folders`, `documents`, `boards`, and `en
 - **MCP is POST-only and stateless.** There is no session to continue. Every request authenticates, builds a server, handles one payload, and closes the transport.
 - **MCP tool failures are model-facing, not HTTP failures.** An `isError` text result still returns `200`; only auth, parse, and transport failures return HTTP errors.
 - **Chat context is metadata, not retrieval.** `POST /api/chat/send` accepts only `{ type, id }` and resolves the title server-side for history. The prompt note contains only the type and id; there are no `documentIds` or attachments; extra request fields are ignored.
-- **Chat mode gates writes.** Ask mode has only the read tools. Work (`edit`) adds create, rename, move, and update tools, board archive/restore, and confirm-first deletes. The mode lives in the request and the tool registry, not in the prompt.
+- **Chat mode gates writes.** Ask mode has only the read tools. Work (`edit`) adds create, rename, move, and update tools, board trash/restore, and confirm-first deletes. The mode lives in the request and the tool registry, not in the prompt.
 - **Chat note edits require a revision.** `read_note` returns `revision` and `versionToken`; the note update tools pass one back. A stale value is a `conflict` tool result, not a silent overwrite.
 - **Version history is manual-only.** Only `POST /api/v1/documents/:id/versions` commits a version. Autosave, chat writes, and MCP writes never create one. Version detail loads the body separately from the paginated list. `documents.published` and `document_versions` no longer exist; do not reintroduce either.
 - **`chat_edits` is server-owned.** It has no public create/update/delete rules. Bun writes it after checking conversation ownership; board/task cards are informational and cannot be undone.
@@ -732,11 +736,11 @@ Folder response includes `rootFolder`, `folders`, `documents`, `boards`, and `en
 - **Chat tool errors are model-facing, not HTTP errors.** `list_notes` etc. return `{ ok: false, code, message }` inside the stream; the chat `POST` still succeeds. Undo and other JSON routes do use HTTP statuses, including `409` for newer work.
 - **Persisted chat tool activity is allowlisted.** Only `CHAT_TOOL_NAMES` entries (read and write) and `success`/`error` statuses survive `sanitizeTools()`; args and outputs are never stored. MCP tool activity is not persisted in conversations.
 - **Messages are records.** `conversations.messages` no longer exists. Appending a message writes a `messages` row and touches the conversation's `updated` timestamp so the sidebar order stays current.
-- **Deleting an active board fails.** Archive it first, then delete from `/board/archive` or `DELETE /api/v1/boards/:id`.
-- **Task deletion still works on an archived board.** The archived-board rule blocks create/update, not delete; this is intentional so cleanup stays possible.
+- **Deleting a board moves it to trash.** `DELETE /api/v1/boards/:id` and chat confirmation soft-delete it; permanent delete is `/api/v1/trash/permanent-delete-board` from Trash.
+- **Task deletion still works on a trashed board.** The trash rule blocks create/update, not delete; this is intentional so cleanup stays possible.
 - **A `403` and a `404` can look identical through the services.** PocketBase hides unauthorized records; the shared client maps both to a generic `not_found`.
 - **Cross-author folders are rejected twice.** The workspace service checks folder ownership before the write; `relation_guards.js` checks the incoming relation again for direct API calls.
-- **A trashed folder does not trash its boards.** Boards are rehomed to the root and keep their tasks and archive state.
+- **A trashed folder does not trash its boards.** Boards are rehomed to the root and keep their tasks and trash state.
 - **Trash is soft delete.** `move-*` keeps the document/folder id and attachments; `trash_documents`/`trash_folders` are read-only views. Permanently deleting is a separate route.
 - **Direct deletes are disabled on notes and folders.** `documents.deleteRule` and `folders.deleteRule` are `null`; use `/api/v1/trash/move-*` and then restore or permanently delete.
 - **Rate limits apply before handlers.** `/api/*`, `/api/v1`, `/docs`, and `/mcp` all pass through `checkRateLimit()`; a `429` includes `Retry-After`. The `/api/v1` bucket is still stored under the legacy `pbMaxPerMinute` settings key; update it through `PATCH /api/v1/admin/rate-limits` so the limiter reloads with the write.

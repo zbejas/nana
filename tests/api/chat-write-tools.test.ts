@@ -679,7 +679,7 @@ describe("creation tools", () => {
 });
 
 describe("board management", () => {
-    test("moves, renames, archives, and restores a board", async () => {
+    test("moves and renames a board", async () => {
         const folder = await createFolder(owner, { name: "Board destination" });
         const board = await createBoard(owner, { name: "Board to organize" });
 
@@ -693,23 +693,13 @@ describe("board management", () => {
         const updated = await updateBoardTool(writeContext(), {
             boardId: board.id,
             name: "Board renamed",
-            archived: true,
         });
         expect(updated.ok).toBe(true);
         if (!updated.ok) return;
-        const archived = await pbGetRecord<TestRecord>(owner.token, "boards", board.id);
-        expect(archived.name).toBe("Board renamed");
-        expect(archived.archived).toBe(true);
-        expect(archived.folder).toBe(folder.id);
-
-        const restored = await updateBoardTool(writeContext(), {
-            boardId: board.id,
-            archived: false,
-        });
-        expect(restored.ok).toBe(true);
-        if (!restored.ok) return;
-        const live = await pbGetRecord<TestRecord>(owner.token, "boards", board.id);
-        expect(live.archived).toBe(false);
+        const stored = await pbGetRecord<TestRecord>(owner.token, "boards", board.id);
+        expect(stored.name).toBe("Board renamed");
+        expect(stored.folder).toBe(folder.id);
+        expect(stored.archived).toBe(false);
     });
 });
 

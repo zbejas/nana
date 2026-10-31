@@ -127,7 +127,7 @@ function assertBoardEditable(board, authId) {
     throw new ForbiddenError("You can view or comment on this board but not edit its tasks")
   }
   if (board.getBool("archived")) {
-    throw new BadRequestError("Archived boards cannot be changed")
+    throw new BadRequestError("Boards in trash cannot be changed")
   }
   return resolved
 }
@@ -204,7 +204,7 @@ function checkTaskDelete(record, authId) {
     throw new ForbiddenError("You can view or comment on this board but not delete tasks")
   }
   if (board.getBool("archived")) {
-    throw new BadRequestError("Archived boards cannot be changed")
+    throw new BadRequestError("Boards in trash cannot be changed")
   }
 }
 

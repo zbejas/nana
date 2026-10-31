@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
-  ArchiveBoxIcon,
+  TrashIcon,
   ChatBubbleLeftRightIcon,
   ClockIcon,
   FolderIcon,
@@ -457,12 +457,12 @@ export function Sidebar() {
                       <ViewColumnsIcon />
                     </IconButton>
                     <IconButton
-                      label="Archived boards"
+                      label="Trashed boards"
                       size="sm"
                       className="h-6 w-6 [&>svg]:h-3.5 [&>svg]:w-3.5"
-                      onClick={() => handleViewNavigation('/board/archive')}
+                      onClick={() => handleViewNavigation('/board/trash')}
                     >
-                      <ArchiveBoxIcon />
+                      <TrashIcon />
                     </IconButton>
                   </div>
 
@@ -663,6 +663,18 @@ export function Sidebar() {
                 targetId: contextMenu.boardId,
                 targetTitle: contextMenu.boardName || 'Board',
               });
+              closeContextMenu();
+            }
+          }}
+          onExportBoard={() => {
+            if (contextMenu.boardId) {
+              void handlers.handleExportBoard(contextMenu.boardId, contextMenu.boardName || 'Board');
+              closeContextMenu();
+            }
+          }}
+          onTrashBoard={() => {
+            if (contextMenu.boardId) {
+              void handlers.handleTrashBoard(contextMenu.boardId, contextMenu.boardName);
               closeContextMenu();
             }
           }}

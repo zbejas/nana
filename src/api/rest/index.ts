@@ -259,7 +259,7 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
             tags: ["Boards"],
             operationId: "listBoards",
             summary: "List boards",
-            description: "Returns the caller's boards, newest updated first. Active boards only by default; set `includeArchived=true` to include the archive. Use `folderId` to list one folder.",
+            description: "Returns the caller's boards, newest updated first. Active boards only by default; set `includeArchived=true` to include trashed boards. Use `folderId` to list one folder.",
         },
     })
     .post("/boards", ({ workspace, body, set }) => {
@@ -293,7 +293,7 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
             tags: ["Boards"],
             operationId: "updateBoard",
             summary: "Update a board",
-            description: "Partial update. Archive with `archived: true`; restore with `archived: false`. Send `folderId: \"\"` or `null` to move the board to the workspace root.",
+            description: "Partial update. Send `folderId: \"\"` or `null` to move the board to the workspace root.",
         },
     })
     .delete("/boards/:id", async ({ workspace, params }) => {
@@ -305,8 +305,8 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
         detail: {
             tags: ["Boards"],
             operationId: "deleteBoard",
-            summary: "Delete an archived board",
-            description: "Permanently deletes a board and every task on it. The board must be archived first; deleting an active board returns `409`.",
+            summary: "Move a board to trash",
+            description: "Moves a board and its tasks to trash. The record keeps its id; restore it with `PATCH { archived: false }` or delete it forever from Trash.",
         },
     })
     // ── Board columns ───────────────────────────────────────────────
@@ -396,7 +396,7 @@ const v1 = new Elysia({ prefix: "/api/v1", name: "api-v1" })
             tags: ["Tasks"],
             operationId: "createTask",
             summary: "Create a task",
-            description: "Creates a task on the board in the path. The board must belong to the caller and must not be archived.",
+            description: "Creates a task on the board in the path. The board must belong to the caller and must not be in trash.",
         },
     })
     .post("/boards/:id/notes", ({ workspace, params, body, set }) => {

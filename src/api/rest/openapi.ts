@@ -45,7 +45,7 @@ const API_DESCRIPTION = [
     "",
     "- Notes are Markdown. `content` is sanitized before it is stored.",
     "- List responses for notes contain metadata only; read a note by id to get its body.",
-    "- Boards are archived before they can be deleted. Deleting an archived board permanently deletes its tasks.",
+    "- Boards move to trash before they can be deleted forever. Permanent delete of a trashed board removes its tasks.",
     "- Tasks are separate from notes: a task may reference one note, and neither record cascades into the other.",
     "- Folder trash rehomes its boards to the workspace root; it does not delete or trash them.",
     "",
@@ -232,7 +232,7 @@ export const apiOpenApiConfig = {
             {
                 name: "Boards",
                 description:
-                    "Author-scoped task boards. Boards can be filed in folders, marked private, archived, and restored. Permanent delete is only available for archived boards.",
+                    "Author-scoped task boards. Boards can be filed in folders, marked private, moved to trash, and restored. Permanent delete is only available for trashed boards.",
             },
             {
                 name: "Tasks",

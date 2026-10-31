@@ -27,9 +27,9 @@ The system is one deployable with two processes: **Bun** serves the SPA, the app
 | `src/lib/chat/` | Chat store, route-context derivation, SSE client, history grouping, and presence. |
 | `src/lib/markdown/sections.ts` | Anchor-validated, section-scoped edits that leave untouched sections not re-sanitized. |
 | `src/lib/pocketbase.ts` | Browser client over `/api/v1`; PB-shaped `collection`, `authStore`, `files`, `filter`, and realtime helpers. |
-| `src/lib/boards/` | Board types, CRUD, archive/restore, permanent delete, folder/privacy/public-share fields, summaries, realtime subscription. |
+| `src/lib/boards/` | Board types, CRUD, trash/restore, permanent delete, folder/privacy/public-share fields, summaries, realtime subscription. |
 | `src/lib/tasks/` | Task types, CRUD, position persistence, note import, realtime subscription. |
-| `src/pages/` | Timeline, board detail/archive, chat, settings, auth, onboarding, public pages. |
+| `src/pages/` | Timeline, board detail/trash, chat, settings, auth, onboarding, public pages. |
 | `src/components/board/` | Board state, dynamic workflow columns, task cards, task detail panel, inline settings, add-to-board host/picker, note import. |
 | `src/components/folder-view/` | Folder contents grid/list, folder state, board rows beside notes, drag targets, board create/edit entry points. |
 | `src/components/file-folder-handling/` | Note, folder, and board drag-and-drop plus the folder/document/board context menus. |
@@ -130,7 +130,7 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 2. `verifyAuth()` validates the token. A context, if present, is resolved server-side from `{ type, id }` with ownership, trash, and private-lock checks; the title is loaded from PocketBase, not trusted from the client. `fetchAIConfig()` reads `settings.ai_config` with the server superuser token.
 3. Bun creates a `conversations` record when needed, then appends the user turn with its resolved `context` to `messages`. `regenerate: true` trims the prior exchange first.
 4. `createChatTools()` builds `list_notes`, `read_note`, `list_boards`, `read_board`, `list_tasks`, and `read_task` using the caller's `Authorization` header and the AI visibility lock. In `mode: "edit"` it also builds the create/update tools and confirm-first delete tools for folders, notes, boards, and tasks.
-5. `streamText()` runs with `stopWhen(stepCountIs(8))`; reads use PocketBase on demand, and writes go through `src/api/workspace/` with `actor: "ai"`. Note updates add revision checks; board and task writes use the normal ownership, archive, and status guards. AI edits never commit to version history.
+5. `streamText()` runs with `stopWhen(stepCountIs(8))`; reads use PocketBase on demand, and writes go through `src/api/workspace/` with `actor: "ai"`. Note updates add revision checks; board and task writes use the normal ownership, trash, and status guards. AI edits never commit to version history.
 6. The stream pump emits named SSE events (`text`, `reasoning`, `tool`, `sources`, `edit`, `done`, `error`) and, for mode-less requests, legacy AI-SDK chunks. After the model stream ends it persists the assistant text, reasoning, terminal tool names/statuses, the ordered text/tool/edit `parts` timeline, sources, stopped flag, and model name as a `messages` row; appending touches the conversation so it sorts to the top.
 7. Applied writes persist server-owned `chat_edits` rows and emit `edit` cards. Title generation runs in the background for a new, non-stopped conversation with no stream error.
 8. The response carries `X-Conversation-Id`, `X-Is-New-Conversation`, `X-Model-Name`, and `X-Chat-Mode`.
@@ -143,8 +143,8 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 4. Dragging a card writes only the changed rows through `persistTaskPositions()`: `status` and `board_order`, never `board`.
 5. Dragging a board between folders calls `updateBoard(id, { folder })`. PocketBase runs `guards/relation_guards.js`, which verifies the incoming folder belongs to the caller and is not trashed.
 6. Realtime task events refresh the open board; board and task events refresh timeline and folder summaries after a short debounce.
-7. Archiving is a board `PATCH { archived: true }`. Permanent delete is allowed only for archived boards and cascades their tasks.
-8. Public board links use `public_share_token`; `/api/public/boards/:token` validates `is_public`, privacy, expiry, and archive state before returning tasks.
+7. Trashing is a board `POST /api/trash/move-board` (or `PATCH { archived: true }`). Permanent delete is allowed only for trashed boards and cascades their tasks.
+8. Public board links use `public_share_token`; `/api/public/boards/:token` validates `is_public`, privacy, expiry, and trash state before returning tasks.
 
 ### Data flows
 
@@ -163,8 +163,8 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 | Task move | Browser → `PATCH /api/v1/records/tasks/:id` (`status`, `board_order`) → realtime refresh |
 | Timeline boards | Browser → `boards` + `tasks` (`fields=board,status`) → per-board open/done/total counts → merged with notes |
 | Folder view boards | Browser → `listBoardSummaries()` → filter active boards by `folder = currentFolderId`; shared view filters `is_public` |
-| Board archive | Browser → `PATCH /api/v1/records/boards/:id { archived: true }` → timeline, sidebar, and folder views exclude it; public link returns `404` |
-| Board delete | Browser → `DELETE /api/v1/records/boards/:id` only while archived → PB cascades the board's tasks |
+| Board trash | Browser → `POST /api/v1/trash/move-board` → timeline, sidebar, and normal folder views exclude it; Trash lists it; public link returns `404` |
+| Board delete | Browser → `POST /api/v1/trash/permanent-delete-board` only while trashed → PB cascades the board's tasks and columns |
 | Note to task | Browser → `createTaskFromDocument()` → task with `board`, optional `document`, title, excerpt, up to six tags |
 | Browser auth | Browser → `/api/v1/auth/*` → PB auth endpoints; token and record keep the PB shape |
 | Browser files | Browser → `/api/v1/files/token` + `/api/v1/files/:collection/:record/:file` → PB file token/bytes/thumbnails |
@@ -174,7 +174,7 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 | Chat read | Browser → `/api/chat/send` (`mode: "ask"`) → `streamText` + read tools → PB REST with user token → named SSE |
 | Chat edit | Browser → `/api/chat/send` (`mode: "edit"`, context) → workspace services with `actor: "ai"` + revision/private checks → PB revision hooks → `chat_edits` (including `operations.before`) → edit SSE card + undo route; deletes create pending rows confirmed via `/api/chat/edits/:id/confirm`. Chat never writes version history. |
 | Export | Browser → `/api/export` → resolve documents/folders → download attachments → Markdown or ZIP |
-| Public share | Public page → `/api/v1/public/*` → PB validates token, expiry, privacy, archive state, and attachment sharing |
+| Public share | Public page → `/api/v1/public/*` → PB validates token, expiry, privacy, trash state, and attachment sharing |
 | Version check | About tab → `/api/app/version` → cached GitHub Releases lookup |
 
 ### Runtime modes
@@ -198,7 +198,7 @@ Production detection is deliberate: Bun treats the app as production only when `
 - **One AI visibility rule.** `src/api/workspace/privacy.ts` defines hidden folders, list conditions, and record checks. Chat and MCP both consume it.
 - **No background indexing.** Document saves and trash moves have no fire-and-forget search side effects.
 - **SSE needs no timeout.** Chat and PocketBase realtime requests explicitly disable Bun's request timeout.
-- **Boards archive before deletion.** PocketBase rejects deleting an active board; task creation and updates are blocked on archived boards.
+- **Boards trash before permanent deletion.** PocketBase rejects deleting an active board; task creation and updates are blocked on trashed boards.
 - **Boards are not trashed with folders.** `boards.folder` does not cascade; folder trash rehomes affected boards to the root.
 
 ### Cross-cutting utilities
@@ -230,8 +230,8 @@ Production detection is deliberate: Bun treats the app as production only when `
 - **MCP tool failures are not HTTP failures.** `POST /mcp` returns `200` with an `isError` text result; only auth, transport, and JSON-RPC errors use HTTP statuses.
 - **`/docs` is public by design.** The API itself is authenticated. The Scalar bundle and Geist fonts are served under `/docs/` from `node_modules` and `src/assets/fonts`, not a CDN.
 - **A task requires a board.** The `board` relation is required after migration `0000018_created_boards.js`; UI code cannot create a task without one.
-- **Archived boards freeze task writes.** `createRule`/`updateRule` require `board.archived = false`. Deletion of a task on an archived board remains allowed.
-- **Deleting an archived board cascades its tasks.** The `tasks.board` relation has `cascadeDelete: true`; notes linked through `tasks.document` stay in the library.
+- **Trashed boards freeze task writes.** `createRule`/`updateRule` require `board.archived = false`. Deletion of a task on a trashed board remains allowed.
+- **Permanently deleting a trashed board cascades its tasks.** The `tasks.board` relation has `cascadeDelete: true`; notes linked through `tasks.document` stay in the library.
 - **Incoming relations need a request guard.** PocketBase relation rules see the stored record, so `guards/relation_guards.js` checks `folder`, `parent`, `board`, and `document` on create/update. Removing it allows filing a record into another user's folder or linking a foreign/trashed note.
 - **Folder trash rehomes boards.** `boards.folder` uses `cascadeDelete: false`; `move-folder` and permanent folder delete clear the folder pointer instead of deleting boards. `movedBoardIds` reports the rehomed rows from a trash move.
 - **Trash is a soft-delete state.** `documents` and `folders` keep their ids, attachments, and version repositories while `deleted_at` is set; version routes hide a trashed note. `trash_documents` and `trash_folders` are read-only views; direct deletes are superuser-only.
@@ -248,6 +248,6 @@ Production detection is deliberate: Bun treats the app as production only when `
 - [`api.md`](api.md) — route-level contracts for Bun application routes, Elysia `/api/v1`, MCP, and PocketBase.
 - [`frontend.md`](frontend.md) — routes, Jotai state, board/folder UI, chat UI.
 - [`ai.md`](ai.md) — chat ask/edit tools, write path, MCP boundary, privacy lock, and persistence.
-- [`pocketbase.md`](pocketbase.md) — schema, rules, migrations, archive lifecycle, board folders.
+- [`pocketbase.md`](pocketbase.md) — schema, rules, migrations, board trash lifecycle, board folders.
 - [`security.md`](security.md) — trust boundaries, MCP authorization, CSP, secrets.
 - [`deployment.md`](deployment.md) — build, Docker, upgrades, persistence.

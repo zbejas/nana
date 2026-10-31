@@ -105,7 +105,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 - A full-width inverted `ink` **New** button sits under the brand and opens a Note/Board menu. It is global chrome, not the contextual primary action; page-level primary actions take `signal-bright`.
 - Primary navigation rows are 32px with 6px radius. The active row is `surface` with a hairline and an ember icon; inactive rows are transparent with muted icons. There are no inverted navigation chips. Chat is not a page row: the full sidebar places a signal-tinted **Chat** action above **New**, the collapsed rail keeps a distinct signal-tinted chat icon above the page icons, and mobile keeps a bottom-bar item. All toggle the global dock. Cmd/Ctrl+J remains the keyboard shortcut, and the full `/chat` page stays deep-linkable.
 - Section labels are 11.5px medium muted: “Recent”, “Library”.
-- The Library tree lists root notes and root boards, then folders; an expanded folder lists its notes and boards with the same 20px row rhythm. Notes use the document glyph, boards the four-column glyph, private boards keep the warning lock, and public boards take the success share glyph. The Library header carries New folder, New note, New board, and Archived boards actions.
+- The Library tree lists root notes and root boards, then folders; an expanded folder lists its notes and boards with the same 20px row rhythm. Notes use the document glyph, boards the four-column glyph, private boards keep the warning lock, and public boards take the success share glyph. The Library header carries New folder, New note, New board, and Trashed boards actions.
 - The profile bar stays at the bottom with avatar, name, email, and settings.
 - The collapsed rail uses 40px targets. The active icon sits on a `surface` tile with a hairline and takes the ember colour.
 
@@ -121,9 +121,9 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 
 `/timeline` is a 2-column reading view when the route content has room: a notes-and-boards feed and a 20rem utility rail. The split is driven by a container query, not the viewport, so opening the chat dock collapses it to the feed with the calendar behind the **Dates** action.
 
-- Feed cards are 10px panels on `surface` with a hairline. Note cards carry a title, one-line metadata, a three-line plain-text preview, tags, and reading statistics. Board cards carry a board icon, title, updated/folder metadata, a description preview, and open/done counts. Both card types expose the same overflow button, right-click menu, and touch long-press menu; board menus include Share. There is no hover rail and no rendered Markdown inside a card; note previews are stripped to text so the title never repeats.
+- Feed cards are 10px panels on `surface` with a hairline. Note cards carry a title, one-line metadata, a three-line plain-text preview, tags, and reading statistics. Board cards carry a board icon, title, updated/folder metadata, a description preview, and open/done counts. Both card types expose the same overflow button, right-click menu, and touch long-press menu; board menus include Share, Export, and Move to trash. There is no hover rail and no rendered Markdown inside a card; note previews are stripped to text so the title never repeats.
 - Group labels use a 12.5px semibold label, a rule, and a plain numeric count.
-- The rail holds the search field, month calendar, and an “In this view” card with note, board, and folder counts. Its lower action opens Archived boards; there is no board index.
+- The rail holds the search field, month calendar, and an “In this view” card with note, board, and folder counts. Its lower action opens Trashed boards; there is no board index.
 - A compact segmented **All / Notes / Boards** filter sits above the feed and carries the current count in each label. **New** opens the Note/Board menu.
 - The calendar is a compact 7-column grid with 36px date cells and a `signal-bright` fill for the selected range.
 
@@ -144,9 +144,9 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 - Mobile is a horizontal snap row; the helper reads “Swipe between columns.” Desktop shows all four and reads “Drag between columns.”
 - The header is `PageHeader` with a back link to the timeline, open/done in the meta strip, a share icon, and Import note / New task / Edit actions. A public board also carries the success share glyph beside its title. Edit turns the page into the inline board settings form; New task opens the lane composer.
 
-### Archive
+### Trash
 
-`/board/archive` uses `PageHeader` with a back link and an archived-count meta strip, then reuses the board card language with a muted status dot, task count, archived date, Restore, and a danger-toned Delete forever action. The empty state is centred.
+`/board/trash` uses `PageHeader` with a back link and a trashed-count meta strip, then reuses the board card language with a muted status dot, task count, trashed date, Restore, and a danger-toned Delete forever action. The empty state is centred.
 
 ### Chat
 
@@ -242,10 +242,10 @@ Rules:
 
 ## Voice
 
-- Concrete, calm, second person. “Archive this board?” not “Are you sure you want to proceed?”.
+- Concrete, calm, second person. “Move this board to trash?” not “Are you sure you want to proceed?”.
 - Buttons are verbs: “Save sharing”, “Create task”, “Restore version”, “Delete forever”.
 - Labels are nouns: “Public access”, “Attachments”, “Start page”, “Progress”.
-- Board copy is plain about consequence: “Nothing is deleted — restore it any time from Archived boards.”
+- Board copy is plain about consequence: “You can restore it any time from Trash.”
 - No exclamation marks, no “simply”, no “Oops”.
 - Dates: relative for the last day (“2h ago”), short absolute after (“Oct 23”), with a year once outside the current year.
 - Never call the mascot a fox. It is a rabbit and its note: the app icon shows the rabbit peeking over a landscape note.

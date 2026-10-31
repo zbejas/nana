@@ -207,7 +207,7 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
         list_boards: tool({
             description:
                 "List the signed-in user's active boards with open/done/total task counts and " +
-                "per-column counts. Archived boards are excluded unless includeArchived is true. " +
+                "per-column counts. Trashed boards are excluded unless includeArchived is true. " +
                 "Call this before read_board.",
             inputSchema: listBoardsInputSchema,
             execute: instrument<ListBoardsInput, Awaited<ReturnType<typeof listBoards>>>(
@@ -359,7 +359,7 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
         }),
         update_board: tool({
             description:
-                "Rename a visible board, update its description, or archive/restore it with archived true/false. " +
+                "Rename a visible board or update its description. " +
                 "Use only when the user asked to change the board itself.",
             inputSchema: updateBoardInputSchema,
             execute: instrument<UpdateBoardInput, Awaited<ReturnType<typeof updateBoardTool>>>(
@@ -380,7 +380,7 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
         create_task: tool({
             description:
                 "Create a task on an existing board. Status must be a column slug on that board, `planned`, or `archived`. " +
-                "The board must not be archived.",
+                "The board must not be in trash.",
             inputSchema: createTaskInputSchema,
             execute: instrument<CreateTaskInput, Awaited<ReturnType<typeof createTaskTool>>>(
                 "create_task",
@@ -438,8 +438,8 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
         }),
         delete_board: tool({
             description:
-                "Request permanent deletion of an archived visible board. This only creates a confirmation card; " +
-                "the board is not deleted until the user confirms. An active board must be archived first.",
+                "Request moving a visible board to trash. This only creates a confirmation card; " +
+                "the board is not moved until the user confirms. You can restore it later from Trash.",
             inputSchema: deleteBoardInputSchema,
             execute: instrument<DeleteBoardInput, Awaited<ReturnType<typeof deleteBoardTool>>>(
                 "delete_board",

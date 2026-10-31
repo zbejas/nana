@@ -15,7 +15,7 @@ const pageSchema = z.number().int().min(1).max(1000).default(1);
 const perPageSchema = z.number().int().min(1).max(50).default(20);
 
 export const listBoardsInputSchema = z.object({
-    includeArchived: z.boolean().default(false).describe("Include archived boards. Default false (active boards only)."),
+    includeArchived: z.boolean().default(false).describe("Include trashed boards. Default false (active boards only)."),
     page: pageSchema.describe("1-based page, default 1."),
     perPage: perPageSchema.describe("Boards per page, default 20, maximum 50."),
 });
@@ -337,7 +337,7 @@ function buildColumnSummaries(
 
 /**
  * List the caller's boards with their workflow columns and per-column counts.
- * Archived boards are excluded unless explicitly requested.
+ * Trashed boards are excluded unless explicitly requested.
  */
 export async function listBoards(
     context: ToolContext,
@@ -405,7 +405,7 @@ export async function listBoards(
 // ── read_board ───────────────────────────────────────────────────────
 
 /**
- * Read one owned, non-archived board and a bounded page of its tasks. Tasks are
+ * Read one owned, non-trashed board and a bounded page of its tasks. Tasks are
  * ordered by column then board order when reading the whole board, or by board
  * order within a single column.
  */

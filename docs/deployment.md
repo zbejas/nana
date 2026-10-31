@@ -127,23 +127,23 @@ Do not publish `8090`. PocketBase listens on the container loopback only, so a p
 
 Back up the whole directory before upgrades; `versioning/` is part of the same persistent volume, and deleting it permanently discards note version history. Never mount it into the test container.
 
-### Boards migration and archive behavior
+### Boards migration and trash behavior
 
 Migration `0000018_created_boards.js` runs automatically on the first boot after upgrading:
 
-1. Creates `boards` and its author/archived index.
+1. Creates `boards` and its author/trash-flag index.
 2. Adds `tasks.board` as an optional relation.
 3. Creates one `My board` per author that has tasks with no board (or reuses that author's first existing board on a retry), then moves those tasks onto it.
-4. Makes `tasks.board` required and applies the archive-aware rules.
+4. Makes `tasks.board` required and applies the trash-aware rules.
 
 Existing tasks keep their `status` and `board_order`; only the relation is written. The migration does not create a default board for every user, and it does not touch tasks already assigned to a board.
 
 After the upgrade:
 
-- The timeline, sidebar, and folder views show active boards; the archive is at `/board/archive`.
+- The timeline, sidebar, and normal folder views show active boards; trashed boards are at `/board/trash` and in the folder view Trash section.
 - A private board is still visible to its owner but is hidden from AI chat and MCP.
-- Archive a board before deleting it. PocketBase rejects deleting an active board.
-- Permanent delete is available only from the archive and cascades that board's tasks.
+- Move a board to trash before deleting it forever. PocketBase rejects permanent delete of an active board.
+- Permanent delete is available only for trashed boards and cascades their tasks.
 - Notes linked through `tasks.document` remain in the library.
 - New users create their own boards; there is no automatic default board.
 
@@ -151,7 +151,7 @@ Migration `0000019_remove_embedding_settings.js` deletes the obsolete `embedding
 
 Migration `0000020_boards_in_folders.js` adds `boards.folder` as an optional relation (`cascadeDelete: false`), `boards.is_private`, and `idx_boards_author_folder`. It does not move or backfill existing boards: they stay at the workspace root until someone files them. Folder trash rehomes boards to the root instead of deleting them, so the upgrade cannot remove board data.
 
-Migration `0000021_add_board_public_sharing.js` adds the board public-share fields. Existing boards stay unshared. An archived board’s public link stops serving without deleting the token, so restoring the board restores its previous link.
+Migration `0000021_add_board_public_sharing.js` adds the board public-share fields. Existing boards stay unshared. A trashed board’s public link stops serving without deleting the token, so restoring the board restores its previous link.
 
 Migration `0000022_relational_remodel.js` upgrades existing data in place:
 
@@ -171,7 +171,7 @@ Back up `pb_data` before the first boot on this migration. The `down()` moves so
 3. Start the container; the entrypoint runs migrations before serving.
 4. Check logs for migration errors and superuser bootstrap.
 5. Verify the timeline and sidebar: existing tasks should appear under `My board` (or their existing board), with status and order preserved.
-6. Verify the archive flow: active boards cannot be deleted; archived boards can be restored or deleted forever.
+6. Verify the board trash flow: deleting an active board moves it to trash; trashed boards can be restored or deleted forever.
 7. Verify boards in folders: create a folder, drag a board into it, and confirm the board remains after trashing the folder (it returns to the root).
 8. Verify trash: move a note to trash, confirm it disappears from the library but keeps its id in Trash, restore it, then permanently delete it. Check that its version repository and attachments are gone after permanent delete.
 9. Verify version history: save a version, edit the note, save again, open **Version history**, and restore the first version. Confirm the body restores while the title/tags stay.
@@ -224,7 +224,7 @@ The workflow is idempotent: if the release already exists it is a no-op, so edit
 - Set `DEBUG=true` temporarily when diagnosing chat provider or tool failures. It enables server-side verbose logs only; the browser bundle is built with `DEBUG=false`.
 - Monitor disk for attachments and SQLite. A legacy `zvec/` directory is safe to remove after a backup.
 - Restart after changing PocketBase hooks/migrations or the Dockerfile.
-- After each upgrade, open `/timeline` and `/board/archive` once to confirm the board data and archive state.
+- After each upgrade, open `/timeline` and `/board/trash` once to confirm the board data and trash state.
 
 ### Troubleshooting
 
@@ -234,9 +234,9 @@ The workflow is idempotent: if the release already exists it is a no-op, so edit
 | `502` on `/api/v1/*` | PocketBase is running and `POCKETBASE_URL` is correct. |
 | AI calls fail at startup | `ai_config` exists and has an active provider/model. |
 | Chat tools return `unauthorized` | The user token expired; sign in again. |
-| Chat tools return `not_found` | The record belongs to another user, is missing, or the board is archived. |
-| Task edits fail after an upgrade | The task's board is archived; restore the board or delete the task. |
-| Board delete fails | The board is still active; archive it first. |
+| Chat tools return `not_found` | The record belongs to another user, is missing, or the board is trashed. |
+| Task edits fail after an upgrade | The task's board is trashed; restore the board or delete the task. |
+| Permanent board delete fails | The board is still active; move it to trash first. |
 | Boards missing after an upgrade | Check the `0000018` migration log and whether tasks had an empty `board`. |
 | Migrations fail | Check file numbering, syntax, and `_migrations` state; restore the backup before retrying. |
 | PDF previews unavailable | `node_modules/pdfjs-dist/build/pdf.worker.min.mjs` exists in the image. |
@@ -247,7 +247,7 @@ The workflow is idempotent: if the release already exists it is a no-op, so edit
 
 - **Migrations run on boot, not on `migrate up` only.** The entrypoint always runs `migrate up` before starting PocketBase; a failed migration prevents serving.
 - **`0000018` backfills only tasks with an empty board.** It creates `My board` per author with such tasks, then enforces the relation. Do not expect an empty board for every user.
-- **Archiving is not deleting.** Archive first; permanent delete is blocked for active boards and only cascades tasks once the board is archived. Notes are never cascaded.
+- **Trashing is not deleting forever.** Move a board to trash first; permanent delete is blocked for active boards and only cascades tasks once the board is trashed. Notes are never cascaded.
 - **`0000019` removes a setting, not files.** Legacy Zvec files remain until the manual cleanup above.
 - **`DEBUG` is server-side.** `build.ts` forces the browser define to `false`; setting `DEBUG=true` will not produce browser console debug logs.
 - **The test container must never see host `pb_data`.** It deletes and recreates its own database.

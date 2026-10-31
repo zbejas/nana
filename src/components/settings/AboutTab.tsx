@@ -20,7 +20,7 @@ interface AppVersionResponse {
 const FEATURES = [
   "Markdown writing with live preview",
   "Folders, tags, and a calm timeline",
-  "Multiple boards, with an archive for work you set aside",
+  "Multiple boards, with trash, restore, and permanent delete",
   "AI chat that reads your notes and boards on request",
   "Public sharing for notes and folders",
   "Version history and a real trash",

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArchiveBoxIcon } from '@heroicons/react/24/outline';
+import { TrashIcon } from '@heroicons/react/24/outline';
 import {
-  archiveBoard,
+  trashBoard,
   updateBoard,
   type Board,
   type BoardColumn,
@@ -31,7 +31,7 @@ interface BoardSettingsPanelProps {
   taskCounts?: Record<string, number>;
   onClose: () => void;
   onSaved: (board: Board) => void;
-  onArchived?: (board: Board) => void;
+  onTrashed?: (board: Board) => void;
   onColumnsChanged?: () => void | Promise<void>;
 }
 
@@ -63,7 +63,7 @@ export function BoardSettingsPanel({
   taskCounts = {},
   onClose,
   onSaved,
-  onArchived,
+  onTrashed,
   onColumnsChanged,
 }: BoardSettingsPanelProps) {
   const [name, setName] = useState(board.name);
@@ -74,9 +74,9 @@ export function BoardSettingsPanel({
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [showArchive, setShowArchive] = useState(false);
-  const [isArchiving, setIsArchiving] = useState(false);
-  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [showTrash, setShowTrash] = useState(false);
+  const [isTrashing, setIsTrashing] = useState(false);
+  const [trashError, setTrashError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -89,9 +89,9 @@ export function BoardSettingsPanel({
     setNameError(null);
     setFormError(null);
     setIsSaving(false);
-    setShowArchive(false);
-    setIsArchiving(false);
-    setArchiveError(null);
+    setShowTrash(false);
+    setIsTrashing(false);
+    setTrashError(null);
 
     let cancelled = false;
     void getAllFolders()
@@ -155,26 +155,26 @@ export function BoardSettingsPanel({
     }
   };
 
-  const handleArchive = async () => {
-    setArchiveError(null);
-    setIsArchiving(true);
+  const handleTrash = async () => {
+    setTrashError(null);
+    setIsTrashing(true);
 
     try {
-      const archived = await archiveBoard(board.id);
-      setShowArchive(false);
-      onArchived?.(archived);
+      const trashed = await trashBoard(board.id);
+      setShowTrash(false);
+      onTrashed?.(trashed);
     } catch (error) {
-      setShowArchive(false);
-      setArchiveError(error instanceof Error ? error.message : 'Could not archive the board.');
+      setShowTrash(false);
+      setTrashError(error instanceof Error ? error.message : 'Could not move the board to trash.');
     } finally {
-      setIsArchiving(false);
+      setIsTrashing(false);
     }
   };
 
-  const archiveDescription =
+  const trashDescription =
     taskCount === undefined
-      ? 'The board and its tasks leave your timeline and library, and its public link stops working. Nothing is deleted — restore it any time from Archived boards.'
-      : `The board and its ${taskCount} ${taskCount === 1 ? 'task' : 'tasks'} leave your timeline and library, and its public link stops working. Nothing is deleted — restore it any time from Archived boards.`;
+      ? 'The board and its tasks leave your timeline and library, and its public link stops working. You can restore it any time from Trash.'
+      : `The board and its ${taskCount} ${taskCount === 1 ? 'task' : 'tasks'} leave your timeline and library, and its public link stops working. You can restore it any time from Trash.`;
 
   if (!open) return null;
 
@@ -185,7 +185,7 @@ export function BoardSettingsPanel({
         description={
           newBoard
             ? 'The board is already saved. Name it, file it, or close this panel and keep working.'
-            : 'Rename, describe, file, or archive this board. Changes stay on this board.'
+            : 'Rename, describe, file, or move this board to trash. Changes stay on this board.'
         }
         onSubmit={(event) => void handleSubmit(event)}
         onClose={onClose}
@@ -195,19 +195,19 @@ export function BoardSettingsPanel({
             <Button
               variant="ghost"
               className="mr-auto text-ink-secondary hover:bg-danger-soft hover:text-danger"
-              icon={<ArchiveBoxIcon />}
+              icon={<TrashIcon />}
               onClick={() => {
-                setArchiveError(null);
-                setShowArchive(true);
+                setTrashError(null);
+                setShowTrash(true);
               }}
-              disabled={isSaving || isArchiving}
+              disabled={isSaving || isTrashing}
             >
-              Archive board
+              Move to trash
             </Button>
-            <Button variant="secondary" onClick={onClose} disabled={isSaving || isArchiving}>
+            <Button variant="secondary" onClick={onClose} disabled={isSaving || isTrashing}>
               {newBoard ? 'Close' : 'Cancel'}
             </Button>
-            <Button type="submit" variant="primary" loading={isSaving} disabled={isArchiving}>
+            <Button type="submit" variant="primary" loading={isSaving} disabled={isTrashing}>
               Save board
             </Button>
           </>
@@ -284,24 +284,24 @@ export function BoardSettingsPanel({
             onChanged={() => onColumnsChanged?.()}
           />
 
-          {(formError || archiveError) && (
+          {(formError || trashError) && (
             <p className="text-[12.5px] text-danger" role="alert">
-              {formError || archiveError}
+              {formError || trashError}
             </p>
           )}
         </div>
       </InlineForm>
 
       <ConfirmDialog
-        open={showArchive}
-        title={`Archive “${board.name}”?`}
-        description={archiveDescription}
-        confirmLabel="Archive board"
-        busy={isArchiving}
-        onConfirm={() => void handleArchive()}
+        open={showTrash}
+        title={`Move “${board.name}” to trash?`}
+        description={trashDescription}
+        confirmLabel="Move to trash"
+        busy={isTrashing}
+        onConfirm={() => void handleTrash()}
         onCancel={() => {
-          if (!isArchiving) {
-            setShowArchive(false);
+          if (!isTrashing) {
+            setShowTrash(false);
           }
         }}
       />

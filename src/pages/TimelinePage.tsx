@@ -4,13 +4,13 @@ import type { MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAtomValue, useSetAtom } from 'jotai';
 import {
-  ArchiveBoxIcon,
+  TrashIcon,
   CalendarDaysIcon,
   ChevronDownIcon,
   MagnifyingGlassIcon,
   PlusIcon,
 } from '@heroicons/react/24/outline';
-import { createUntitledBoard, type BoardSummary } from '../lib/boards';
+import { createUntitledBoard, exportBoard, trashBoard, type BoardSummary } from '../lib/boards';
 import type { Document } from '../lib/documents';
 import { deleteDocument } from '../lib/documents';
 import {
@@ -47,6 +47,7 @@ export function TimelinePage() {
   const { showToast } = useToasts();
   const sharePanel = useSharePanel();
   const [deleteConfirmState, setDeleteConfirmState] = useState<{ id: string; title: string } | null>(null);
+  const [boardDeleteState, setBoardDeleteState] = useState<BoardSummary | null>(null);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [isCreatingBoard, setIsCreatingBoard] = useState(false);
   const newButtonRef = useRef<HTMLButtonElement>(null);
@@ -127,6 +128,36 @@ export function TimelinePage() {
   const handleOpenEditBoard = (board: BoardSummary) => {
     closeContextMenu();
     navigate(`/board/${board.id}`, { state: { editBoard: true } });
+  };
+
+  const handleTrashBoard = () => {
+    const board = findBoardInTimeline(contextMenu?.boardId);
+    closeContextMenu();
+    if (board) setBoardDeleteState(board);
+  };
+
+  const handleExportBoard = async () => {
+    if (!contextMenu?.boardId) return;
+    const name = contextMenu.boardName || 'Board';
+    const boardId = contextMenu.boardId;
+    closeContextMenu();
+    try {
+      await exportBoard(boardId, name);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to export board', 'error');
+    }
+  };
+
+  const handleConfirmTrashBoard = async () => {
+    if (!boardDeleteState) return;
+    const board = boardDeleteState;
+    try {
+      await trashBoard(board.id);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to move board to trash', 'error');
+    } finally {
+      setBoardDeleteState(null);
+    }
   };
 
   const handleBoardContextMenu = (event: MouseEvent<HTMLDivElement>, board: BoardSummary) => {
@@ -392,10 +423,10 @@ export function TimelinePage() {
               </span>
               <button
                 type="button"
-                onClick={() => navigate('/board/archive')}
+                onClick={() => navigate('/board/trash')}
                 className="ml-auto font-medium text-signal transition-colors hover:text-signal-strong"
               >
-                Archived boards →
+                Trashed boards →
               </button>
             </div>
 
@@ -612,16 +643,16 @@ export function TimelinePage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => navigate('/board/archive')}
+                  onClick={() => navigate('/board/trash')}
                   className="group flex w-full items-center gap-3 border-t border-line px-4 py-3 text-left transition-colors hover:bg-surface-raised"
                 >
                   <span className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-surface-sunken text-ink-muted">
-                    <ArchiveBoxIcon className="h-4 w-4" aria-hidden="true" />
+                    <TrashIcon className="h-4 w-4" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[12.5px] font-medium text-ink">Archived boards</span>
+                    <span className="block text-[12.5px] font-medium text-ink">Trashed boards</span>
                     <span className="mt-0.5 block truncate text-[11.5px] text-ink-muted">
-                      Restore or delete boards you set aside
+                      Restore or permanently delete boards in trash
                     </span>
                   </span>
                   <span className="text-ink-muted transition-colors group-hover:text-ink" aria-hidden="true">
@@ -704,11 +735,27 @@ export function TimelinePage() {
                 closeContextMenu();
               }
             }}
+            onExportBoard={() => void handleExportBoard()}
+            onTrashBoard={handleTrashBoard}
             onClose={closeContextMenu}
             isClosing={isClosingContextMenu}
           />,
           document.body
         )}
+
+      <ConfirmDialog
+        open={boardDeleteState !== null}
+        title={boardDeleteState ? `Move “${boardDeleteState.name}” to trash?` : 'Move this board to trash?'}
+        description={
+          boardDeleteState
+            ? `Its ${boardDeleteState.total} ${boardDeleteState.total === 1 ? 'task stays' : 'tasks stay'} with it. You can restore it from Trash.`
+            : undefined
+        }
+        confirmLabel="Move to trash"
+        tone="danger"
+        onConfirm={() => void handleConfirmTrashBoard()}
+        onCancel={() => setBoardDeleteState(null)}
+      />
 
       <ConfirmDialog
         open={Boolean(deleteConfirmState)}

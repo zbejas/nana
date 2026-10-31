@@ -44,8 +44,8 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | | |
 |---|---|
 | **Markdown editor** | Rendered Editor, Source, and Split views, rich formatting, and attachment support. |
-| **Boards** | Multiple kanbans with custom columns, drag-and-drop, board/list/calendar views, labels, assignees, subtasks, relations, comments, note import, folders, private boards, public read-only links, an archive, and permanent delete for archived boards. |
-| **AI chat** | Work is the default: ask about your notes and boards, or ask Nana to create, rename, and move folders, notes, and boards, manage tasks, and archive/restore boards. Ask is the read-only lock. Deletes require an explicit confirmation card; sharing and privacy changes stay out of chat. The composer rings the selected model's context usage and opens a token breakdown on click. |
+| **Boards** | Multiple kanbans with custom columns, drag-and-drop, board/list/calendar views, labels, assignees, subtasks, relations, comments, note import, folders, private boards, public read-only links, trash with restore, and permanent delete for trashed boards. |
+| **AI chat** | Work is the default: ask about your notes and boards, or ask Nana to create, rename, and move folders, notes, and boards, manage tasks, and trash/restore boards. Ask is the read-only lock. Deletes require an explicit confirmation card; sharing and privacy changes stay out of chat. The composer rings the selected model's context usage and opens a token breakdown on click. |
 | **API and MCP** | Reach the same workspace from your own tools with a JSON API and a stateless MCP endpoint. Private records stay hidden from AI. |
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline of recent notes and boards. |
 | **Sharing** | Share notes, boards, and folders with other people at view, comment, or edit access, or publish a public read-only link with optional expiration. |
@@ -55,7 +55,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 
 ## Boards in folders
 
-Boards live in the same folder tree as notes. The timeline, sidebar library, and folder view show boards beside their notes; drag a board into another folder, choose **New board** in a folder to file it there, or move it from the board's settings. Right-click a board to open, edit, or share it. A public board link opens a read-only page with its tasks, while private boards stay out of every public and AI surface. Boards are archived before they can be deleted, and a folder never deletes the boards inside it: move a folder to trash and its boards return to the root with their tasks.
+Boards live in the same folder tree as notes. The timeline, sidebar library, and folder view show boards beside their notes; drag a board into another folder, choose **New board** in a folder to file it there, or move it from the board's settings. Right-click a board to open, edit, share, export, or move it to trash. A public board link opens a read-only page with its tasks, while private boards stay out of every public and AI surface. Boards move to Trash with their tasks and can be restored or deleted forever; a folder never deletes the boards inside it: move a folder to trash and its boards return to the root with their tasks.
 
 Open a note, board, or folder’s **Share** panel to invite another account at **Can view**, **Can comment**, or **Can edit**. Folder access flows down to its notes, boards, and subfolders; inherited access is shown in the panel. **Shared with me** collects everything another account has shared with you. Sharing is between accounts on the same Nana instance.
 
@@ -95,7 +95,7 @@ Open `http://localhost:3000`, create your first account, and start writing.
 
 ## Upgrading
 
-Existing tasks that predate multiple boards are moved onto a per-author “My board” the first time the current release starts. Existing boards start at the root; move them into folders from the folder view whenever you like. Boards are archived before they can be deleted permanently; deleting an archived board removes its tasks, but leaves the notes those tasks came from in your library.
+Existing tasks that predate multiple boards are moved onto a per-author “My board” the first time the current release starts. Existing boards start at the root; move them into folders from the folder view whenever you like. Boards move to Trash like notes and folders; deleting a trashed board forever removes its tasks, but leaves the notes those tasks came from in your library.
 
 If you are upgrading from a release with built-in semantic search, the old vector index is no longer used. Stop the stack, back up your data directory, and remove its `zvec` folder to reclaim disk. The [deployment guide](docs/deployment.md#manual-zvec-cleanup-optional) has the exact commands.
 

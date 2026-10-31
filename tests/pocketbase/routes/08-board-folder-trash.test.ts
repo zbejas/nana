@@ -202,4 +202,38 @@ describe("Board folder trash routes", () => {
         const untouchedRoot = await pbGetRecord<{ folder: string }>(user.token, "boards", rootBoardId);
         expect(untouchedRoot.folder).toBe("");
     });
+
+    test("trashes, restores, and permanently deletes a board with its tasks", async () => {
+        const board = await createBoard(user, { name: `Board trash ${uniqueSuffix()}` });
+        const task = await createTask(user, board.id, {
+            title: `Board trash task ${uniqueSuffix()}`,
+            status: "backlog",
+        });
+
+        const moveRes = await post("/move-board", { boardId: board.id });
+        await expectStatus(moveRes, 200, "move board to trash");
+        expect(await readJson<{ boardId: string }>(moveRes)).toEqual({ boardId: board.id });
+
+        const trashed = await pbGetRecord<{ archived: boolean }>(user.token, "boards", board.id);
+        expect(trashed.archived).toBe(true);
+        expect(await pbRecordExists(superuserToken, "tasks", task.id)).toBe(true);
+
+        const restoreRes = await post("/restore-board", { trashBoardId: board.id });
+        await expectStatus(restoreRes, 200, "restore board from trash");
+        expect(await readJson<{ boardId: string }>(restoreRes)).toEqual({ boardId: board.id });
+        const restored = await pbGetRecord<{ archived: boolean }>(user.token, "boards", board.id);
+        expect(restored.archived).toBe(false);
+
+        await expectStatus(
+            await post("/move-board", { boardId: board.id }),
+            200,
+            "trash board again before permanent delete",
+        );
+
+        const deleteRes = await post("/permanent-delete-board", { trashBoardId: board.id });
+        await expectStatus(deleteRes, 200, "permanently delete trashed board");
+        expect(await readJson<{ success: boolean }>(deleteRes)).toEqual({ success: true });
+        expect(await pbRecordExists(superuserToken, "boards", board.id)).toBe(false);
+        expect(await pbRecordExists(superuserToken, "tasks", task.id)).toBe(false);
+    });
 });

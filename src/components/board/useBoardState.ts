@@ -16,6 +16,7 @@ import {
 } from '../../lib/tasks';
 import { useAuth } from '../../lib/auth';
 import { useToasts } from '../../state/hooks';
+import { subscribeWorkspaceChanged } from '../../lib/workspace-events';
 
 export interface DropTarget {
   status: TaskStatus;
@@ -147,6 +148,19 @@ export function useBoardState(boardId?: string, providedColumns?: BoardColumn[])
       unsubscribe();
     };
   }, [user?.id, boardId, load]);
+
+  // A confirmed chat delete has no local task mutation. Reload once the
+  // workspace event arrives so the card disappears even if realtime is slow.
+  useEffect(() => {
+    if (!boardId) return;
+    return subscribeWorkspaceChanged((detail) => {
+      if (!detail.removed) return;
+      const touchesBoard = detail.targets.some((target) =>
+        target.type === 'task' || (target.type === 'board' && target.id === boardId)
+      );
+      if (touchesBoard) void load();
+    });
+  }, [boardId, load]);
 
   const defaultStatus = useMemo(() => {
     const openColumn = columns.find((column) => !column.is_final);

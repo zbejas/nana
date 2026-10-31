@@ -129,14 +129,12 @@ export const updateBoardInputSchema = z.object({
     boardId: recordId.describe("The visible board id to update."),
     name: z.string().min(1).max(120).optional(),
     description: z.string().max(10_000).optional(),
-    archived: z.boolean().optional().describe("Archive the board, or restore it with false."),
     summary: summarySchema.optional(),
 }).refine((value) => (
     value.name !== undefined
     || value.description !== undefined
-    || value.archived !== undefined
 ), {
-    message: "Provide a name, description, or archive state.",
+    message: "Provide a name or description.",
 });
 
 export const moveBoardInputSchema = z.object({
@@ -161,7 +159,7 @@ export const deleteFolderInputSchema = z.object({
 });
 
 export const deleteBoardInputSchema = z.object({
-    boardId: recordId.describe("The archived board id to delete permanently."),
+    boardId: recordId.describe("The visible board id to move to trash."),
     summary: summarySchema.optional(),
 });
 
@@ -938,21 +936,15 @@ export async function updateBoardTool(
         const fields: string[] = [];
         if (parsed.data.name !== undefined) fields.push("name");
         if (parsed.data.description !== undefined) fields.push("description");
-        if (parsed.data.archived !== undefined) fields.push("archived");
 
         const updated = await updateBoard(aiContext(write.context), "ai", board.id, {
             ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
             ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
-            ...(parsed.data.archived !== undefined ? { archived: parsed.data.archived } : {}),
         });
 
         let summary = parsed.data.summary?.trim();
         if (!summary) {
-            if (parsed.data.archived === true) {
-                summary = `Archived board “${truncate(updated.name, 100)}”.`;
-            } else if (parsed.data.archived === false) {
-                summary = `Restored board “${truncate(updated.name, 100)}”.`;
-            } else if (parsed.data.name !== undefined) {
+            if (parsed.data.name !== undefined) {
                 summary = `Renamed board “${truncate(board.name, 100)}” to “${truncate(updated.name, 100)}”.`;
             } else {
                 summary = `Updated board “${truncate(updated.name, 100)}”.`;
@@ -1059,7 +1051,7 @@ export async function createTaskTool(
     try {
         const board = await getBoard(write.context, "ai", parsed.data.boardId);
         if (board.archived) {
-            return { ok: false, code: "conflict", message: "That board is archived." };
+            return { ok: false, code: "conflict", message: "That board is in trash." };
         }
         const task = await createTask(aiContext(write.context), "ai", {
             boardId: board.id,
@@ -1336,20 +1328,13 @@ export async function deleteBoardTool(
 
     try {
         const board = await getBoard(write.context, "ai", parsed.data.boardId);
-        if (!board.archived) {
-            return {
-                ok: false,
-                code: "conflict",
-                message: "Archive the board before deleting it.",
-            };
-        }
         return requestDelete(write, {
             tool: "delete_board",
             targetType: "board",
             targetId: board.id,
             targetTitle: board.name,
             summary: parsed.data.summary?.trim()
-                || `Delete archived board “${truncate(board.name, 120)}” permanently.`,
+                || `Move board “${truncate(board.name, 120)}” to trash.`,
         });
     } catch (error) {
         return failureFromError(error);

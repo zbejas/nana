@@ -57,7 +57,7 @@ function confirmLabel(edit: ChatUiEdit): string {
   if (edit.tool === 'delete_note') return 'Move note to trash';
   if (edit.tool === 'delete_folder') return 'Move folder to trash';
   if (edit.tool === 'delete_task') return 'Delete task';
-  if (edit.tool === 'delete_board') return 'Delete board';
+  if (edit.tool === 'delete_board') return 'Move board to trash';
   return 'Confirm delete';
 }
 
