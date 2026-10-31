@@ -20,6 +20,11 @@ interface SyncEvent {
     stateVector: string;
     canEdit: boolean;
     presence: Array<Record<string, unknown>>;
+    protocol?: number;
+    documentId?: string;
+    durableSeq?: number;
+    revision?: number;
+    persistence?: string;
 }
 
 interface LiveEvent {
@@ -265,6 +270,11 @@ describe("/api/v1/collab live editing", () => {
 
         expect(ownerClient.sync.canEdit).toBe(true);
         expect(editorClient.sync.canEdit).toBe(true);
+        expect(ownerClient.sync.protocol).toBe(2);
+        expect(ownerClient.sync.documentId).toBe(note.id);
+        expect(ownerClient.sync.persistence).toBe("clean");
+        expect(Number.isInteger(ownerClient.sync.revision)).toBe(true);
+        expect(Number.isInteger(ownerClient.sync.durableSeq)).toBe(true);
 
         const update = updateFor(noteText, (text) => {
             text.insert(text.length, "\n\nLive typing from the owner.");
@@ -278,6 +288,7 @@ describe("/api/v1/collab live editing", () => {
 
         const relayed = await editorClient.waitForType("update");
         expect(relayed.update).toBe(update);
+        expect(relayed.source).toBe("user");
         expect(textFromUpdate(noteText, String(relayed.update))).toContain("Live typing from the owner.");
 
         const presenceResponse = await bunRequest(`/api/v1/collab/documents/${note.id}/presence`, {

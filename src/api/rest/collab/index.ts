@@ -68,8 +68,11 @@ export const collabApi = new Elysia({ name: "nana-collab" })
         }
         if (!access) return jsonError(404, "Not found.");
 
-        const room = getOrCreateRoom(params.id, access.content);
-        const client = room.addClient(access.identity);
+        const room = getOrCreateRoom(params.id, access.content, {
+            token: access.token,
+            revision: access.revision,
+        });
+        const client = room.addClient(access.identity, access.token);
         const encoder = new TextEncoder();
 
         let closed = false;
@@ -146,7 +149,7 @@ export const collabApi = new Elysia({ name: "nana-collab" })
         const room = getRoom(params.id);
         if (!room) return jsonError(409, "Reconnect to the live session.");
         try {
-            const seq = room.applyUpdate(body.clientId, auth.userId, update);
+            const seq = room.applyUpdate(body.clientId, auth.userId, update, auth.token);
             if (seq === null) return jsonError(409, "Reconnect to the live session.");
             return Response.json({ ok: true, seq });
         } catch (error) {

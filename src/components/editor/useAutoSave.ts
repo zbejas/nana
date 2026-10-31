@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createDocument, updateDocument } from '../../lib/documents';
-import { saveDocumentWithMerge } from '../../lib/documents/save';
+import {
+    saveDocumentMetadataWithRetry,
+    saveDocumentWithMerge,
+} from '../../lib/documents/save';
 import { createLogger } from '../../lib/logger';
 
 const logger = createLogger('AutoSave');
 import type { Document } from '../../lib/documents/types';
 import { MIN_AUTO_SAVE_DELAY } from '../../lib/settings';
+import type { CollabPersistencePhase } from '../../lib/collaboration/protocol';
 
 /**
  * Upper bound for one unsaved burst. The trailing debounce still decides when
@@ -15,7 +19,10 @@ import { MIN_AUTO_SAVE_DELAY } from '../../lib/settings';
  */
 export const MAX_AUTO_SAVE_WAIT_MS = 8000;
 
-export type EditorSaveStatus = 'idle' | 'unsaved' | 'saving';
+export type EditorSaveStatus = 'idle' | 'unsaved' | 'saving' | 'error' | 'conflict';
+
+/** Who is allowed to persist the note body. */
+export type ContentPersistenceMode = 'client' | 'room';
 
 interface AutoSaveDelayOptions {
     debounceMs: number;
@@ -37,16 +44,50 @@ export function nextAutoSaveDelay({ debounceMs, maxWaitMs, elapsedMs }: AutoSave
 /**
  * Header indicator state. A save in flight always outranks unsaved text so the
  * label does not fall back to "Unsaved" between a write and its follow-up.
+ * Server persistence only raises the indicator when this client has local
+ * content pending, so a collaborator's write never looks like our save.
  */
 export function resolveEditorSaveStatus({
     autoSaving,
     hasUnsavedChanges,
+    persistence,
 }: {
     autoSaving: boolean;
     hasUnsavedChanges: boolean;
+    persistence?: CollabPersistencePhase;
 }): EditorSaveStatus {
+    if (persistence === 'conflict') return 'conflict';
+    if (persistence === 'error') return 'error';
     if (autoSaving) return 'saving';
+    if (persistence === 'saving' && hasUnsavedChanges) return 'saving';
     return hasUnsavedChanges ? 'unsaved' : 'idle';
+}
+
+export interface MetadataChangeInput {
+    document: Document | null;
+    title: string;
+    tags: string[];
+    newAttachments: File[];
+    removedAttachments: string[];
+}
+
+/**
+ * Metadata is everything autosave still owns while the room persists content.
+ * Content-only edits must not schedule a PATCH that repeats the same fields.
+ */
+export function hasPendingMetadataChanges({
+    document,
+    title,
+    tags,
+    newAttachments,
+    removedAttachments,
+}: MetadataChangeInput): boolean {
+    if (!document) return false;
+    const normalizedTitle = title.trim() || 'Untitled';
+    return normalizedTitle !== document.title
+        || JSON.stringify(tags) !== JSON.stringify(document.tags || [])
+        || newAttachments.length > 0
+        || removedAttachments.length > 0;
 }
 
 interface UseAutoSaveOptions {
@@ -62,10 +103,15 @@ interface UseAutoSaveOptions {
     /** Bumped only by local content edits, never by remote collaboration text. */
     localEditVersion: number;
     isReadOnly?: boolean;
+    /** `room` means the live room persists content; this hook only writes metadata. */
+    contentPersistence?: ContentPersistenceMode;
     folderId?: string | null;
     creationSessionId: number;
     isSavingRef: React.MutableRefObject<boolean>;
-    onSave: (document: Document, options?: { creationSessionId?: number }) => void;
+    onSave: (document: Document, options?: {
+        creationSessionId?: number;
+        preserveContent?: boolean;
+    }) => void;
     onApplyMergedContent?: (content: string) => void;
     onSetIsAutoSaving: (saving: boolean) => void;
     onShowToast: (message: string, type: 'error' | 'success' | 'info') => void;
@@ -83,6 +129,7 @@ export function useAutoSave({
     hasUnsavedChanges,
     localEditVersion,
     isReadOnly = false,
+    contentPersistence = 'client',
     folderId,
     creationSessionId,
     isSavingRef,
@@ -115,6 +162,8 @@ export function useAutoSave({
     const newAttachmentsRef = useRef(newAttachments);
     const removedAttachmentsRef = useRef(removedAttachments);
     const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+    const documentRef = useRef(document);
+    const contentPersistenceRef = useRef(contentPersistence);
     // Start of the current unsaved burst. Reset when a save starts, finishes,
     // fails, or the editor becomes clean.
     const firstUnsavedEditAtRef = useRef<number | null>(null);
@@ -125,6 +174,8 @@ export function useAutoSave({
     newAttachmentsRef.current = newAttachments;
     removedAttachmentsRef.current = removedAttachments;
     hasUnsavedChangesRef.current = hasUnsavedChanges;
+    documentRef.current = document;
+    contentPersistenceRef.current = contentPersistence;
 
     useEffect(() => {
         creationSessionIdRef.current = creationSessionId;
@@ -138,6 +189,9 @@ export function useAutoSave({
     useEffect(() => {
         return () => {
             isMountedRef.current = false;
+            // Navigation clears timers but keeps the unsaved local draft. The
+            // live room has already received every Yjs update this client
+            // published; there is no client content-flush endpoint to call.
             if (autoSaveTimerRef.current) {
                 clearTimeout(autoSaveTimerRef.current);
             }
@@ -166,6 +220,27 @@ export function useAutoSave({
         }
 
         if (isReadOnly) {
+            firstUnsavedEditAtRef.current = null;
+            onSetIsAutoSavingRef.current(false);
+            return;
+        }
+
+        // With the room connected, autosave owns metadata only. Content-only
+        // edits are already queued in Yjs and must not trigger a PATCH.
+        const documentAtSchedule = documentRef.current;
+        const roomOwnsContent = contentPersistenceRef.current === 'room'
+            && urlDocumentId !== 'new'
+            && Boolean(documentAtSchedule?.id);
+        if (
+            roomOwnsContent
+            && !hasPendingMetadataChanges({
+                document: documentAtSchedule,
+                title: titleRef.current,
+                tags: tagsRef.current,
+                newAttachments: newAttachmentsRef.current,
+                removedAttachments: removedAttachmentsRef.current,
+            })
+        ) {
             firstUnsavedEditAtRef.current = null;
             onSetIsAutoSavingRef.current(false);
             return;
@@ -202,29 +277,64 @@ export function useAutoSave({
             const tagsAtSave = tagsRef.current;
             const attachmentsAtSave = newAttachmentsRef.current;
             const removedAttachmentsAtSave = removedAttachmentsRef.current;
+            const documentAtSave = documentRef.current;
+            // Re-read the mode when the timer fires. A room that reconnected
+            // after the timer was scheduled must keep content authority.
+            const metadataOnlyAtSave = contentPersistenceRef.current === 'room'
+                && urlDocumentId !== 'new'
+                && Boolean(documentAtSave?.id);
+            if (
+                metadataOnlyAtSave
+                && !hasPendingMetadataChanges({
+                    document: documentAtSave,
+                    title: titleAtSave,
+                    tags: tagsAtSave,
+                    newAttachments: attachmentsAtSave,
+                    removedAttachments: removedAttachmentsAtSave,
+                })
+            ) {
+                onSetIsAutoSavingRef.current(false);
+                return;
+            }
             try {
                 onSetIsAutoSavingRef.current(true);
                 isSavingRef.current = true;
                 const saveStartTime = Date.now();
 
                 let savedDocument: Document;
+                let metadataOnly = false;
 
                 // Check if we're creating a new document or updating existing
-                if (urlDocumentId !== 'new' && document?.id) {
-                    // Updating existing document
-                    logger.debug('Auto-saving existing document', { id: document.id });
+                if (urlDocumentId !== 'new' && documentAtSave?.id) {
+                    if (metadataOnlyAtSave) {
+                        // The room writes content. Sending the editor body here
+                        // would race the room and could overwrite newer text.
+                        logger.debug('Auto-saving document metadata only', { id: documentAtSave.id });
+                        savedDocument = await saveDocumentMetadataWithRetry({
+                            base: documentAtSave,
+                            title: titleAtSave.trim() || 'Untitled',
+                            tags: tagsAtSave,
+                            attachments: attachmentsAtSave,
+                            removeAttachments: removedAttachmentsAtSave,
+                        });
+                        metadataOnly = true;
+                        logger.info('Document metadata auto-saved successfully', { id: documentAtSave.id });
+                    } else {
+                        // Updating existing document
+                        logger.debug('Auto-saving existing document', { id: documentAtSave.id });
 
-                    const result = await saveDocumentWithMerge({
-                        base: document,
-                        title: titleAtSave.trim() || 'Untitled',
-                        content: contentAtSave,
-                        tags: tagsAtSave,
-                        attachments: attachmentsAtSave,
-                        removeAttachments: removedAttachmentsAtSave,
-                        onMergedContent: (merged) => onApplyMergedContentRef.current?.(merged),
-                    });
-                    savedDocument = result.document;
-                    logger.info('Document auto-saved successfully', { id: document.id });
+                        const result = await saveDocumentWithMerge({
+                            base: documentAtSave,
+                            title: titleAtSave.trim() || 'Untitled',
+                            content: contentAtSave,
+                            tags: tagsAtSave,
+                            attachments: attachmentsAtSave,
+                            removeAttachments: removedAttachmentsAtSave,
+                            onMergedContent: (merged) => onApplyMergedContentRef.current?.(merged),
+                        });
+                        savedDocument = result.document;
+                        logger.info('Document auto-saved successfully', { id: documentAtSave.id });
+                    }
                 } else {
                     // Creating new document
                     logger.debug('Auto-saving new document');
@@ -260,8 +370,11 @@ export function useAutoSave({
                     navigateRef.current(`/document/${savedDocument.id}`, { replace: true });
                 }
 
-                if (urlDocumentId !== 'new' || document?.id) {
-                    onSaveRef.current(savedDocument, { creationSessionId: sessionAtStart });
+                if (urlDocumentId !== 'new' || documentAtSave?.id) {
+                    onSaveRef.current(savedDocument, {
+                        creationSessionId: sessionAtStart,
+                        preserveContent: metadataOnly,
+                    });
                 }
 
                 // Ensure spinner shows for minimum 500ms for better UX
@@ -321,6 +434,7 @@ export function useAutoSave({
         autoSaveDelayMs,
         isSavingRef,
         isReadOnly,
+        contentPersistence,
         saveCycle,
     ]);
 }

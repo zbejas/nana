@@ -75,6 +75,7 @@ export function DocumentEditor() {
     isLoadingDocument,
     loading,
     collaborators,
+    collaborationPersistence,
     handleEditorSelection,
   } = useDocumentEditorState();
 
@@ -330,6 +331,7 @@ export function DocumentEditor() {
             hasUnsavedChanges={hasUnsavedChanges}
             isNewDocument={urlDocumentId === 'new'}
             autoSaving={isAutoSaving}
+            persistence={collaborationPersistence}
             collaborators={collaborators}
             onToggleHeader={!isDesktop ? () => setHeaderVisible(!headerVisible) : undefined}
             titleInputRef={titleInputRef}

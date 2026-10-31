@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  hasPendingMetadataChanges,
   MAX_AUTO_SAVE_WAIT_MS,
   nextAutoSaveDelay,
   resolveEditorSaveStatus,
 } from '../../src/components/editor/useAutoSave';
+import type { Document } from '../../src/lib/documents/types';
 
 describe('nextAutoSaveDelay', () => {
   test('waits for the trailing debounce at the start of an unsaved burst', () => {
@@ -53,5 +55,91 @@ describe('resolveEditorSaveStatus', () => {
 
   test('is idle when there is no save and no unsaved work', () => {
     expect(resolveEditorSaveStatus({ autoSaving: false, hasUnsavedChanges: false })).toBe('idle');
+  });
+
+  test('shows server saving only when this client has local content pending', () => {
+    expect(resolveEditorSaveStatus({
+      autoSaving: false,
+      hasUnsavedChanges: true,
+      persistence: 'saving',
+    })).toBe('saving');
+    expect(resolveEditorSaveStatus({
+      autoSaving: false,
+      hasUnsavedChanges: false,
+      persistence: 'saving',
+    })).toBe('idle');
+  });
+
+  test('does not show Unsaved for a remote-only dirty room', () => {
+    expect(resolveEditorSaveStatus({
+      autoSaving: false,
+      hasUnsavedChanges: false,
+      persistence: 'dirty',
+    })).toBe('idle');
+  });
+
+  test('surfaces server error and conflict even while a save is in flight', () => {
+    expect(resolveEditorSaveStatus({
+      autoSaving: true,
+      hasUnsavedChanges: true,
+      persistence: 'error',
+    })).toBe('error');
+    expect(resolveEditorSaveStatus({
+      autoSaving: true,
+      hasUnsavedChanges: true,
+      persistence: 'conflict',
+    })).toBe('conflict');
+  });
+});
+
+describe('hasPendingMetadataChanges', () => {
+  const document = {
+    id: 'doc-1',
+    title: 'Title',
+    tags: ['one'],
+  } as Document;
+
+  test('ignores content-only changes', () => {
+    expect(hasPendingMetadataChanges({
+      document,
+      title: 'Title',
+      tags: ['one'],
+      newAttachments: [],
+      removedAttachments: [],
+    })).toBe(false);
+  });
+
+  test('detects title, tag, and attachment changes', () => {
+    expect(hasPendingMetadataChanges({
+      document,
+      title: 'Retitled',
+      tags: ['one'],
+      newAttachments: [],
+      removedAttachments: [],
+    })).toBe(true);
+    expect(hasPendingMetadataChanges({
+      document,
+      title: 'Title',
+      tags: ['one', 'two'],
+      newAttachments: [],
+      removedAttachments: [],
+    })).toBe(true);
+    expect(hasPendingMetadataChanges({
+      document,
+      title: 'Title',
+      tags: ['one'],
+      newAttachments: [new File(['x'], 'x.txt')],
+      removedAttachments: [],
+    })).toBe(true);
+  });
+
+  test('treats an empty title as Untitled', () => {
+    expect(hasPendingMetadataChanges({
+      document: { ...document, title: 'Untitled' } as Document,
+      title: '   ',
+      tags: ['one'],
+      newAttachments: [],
+      removedAttachments: [],
+    })).toBe(false);
   });
 });

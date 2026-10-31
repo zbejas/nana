@@ -21,6 +21,7 @@ import { isSameMarkdown, normalizeMarkdown } from './milkdown/helpers';
 import { useAttachmentHandlers } from './useAttachmentHandlers';
 import { useDocumentActions } from './useDocumentActions';
 import { useDocumentCollaboration } from '../../lib/collaboration/useDocumentCollaboration';
+import { setRoomContentAuthority } from '../../lib/documents/save';
 
 export function useDocumentEditorState() {
     const navigate = useNavigate();
@@ -32,7 +33,7 @@ export function useDocumentEditorState() {
         createInFolder: folderId,
         initialTitle,
         initialContent,
-        hasUnsavedChanges,
+        hasUnsavedChanges: globalHasUnsavedChanges,
         creationSessionId,
         save,
         reset,
@@ -61,6 +62,10 @@ export function useDocumentEditorState() {
     // Drives the autosave debounce. Remote text leaves this untouched so a
     // collaborator's keystrokes never reset or schedule this client's timer.
     const [localEditVersion, setLocalEditVersion] = useState(0);
+    // The document record whose values are already reflected in local state.
+    // Same-ID realtime updates arrive through the atom before the local setters,
+    // so dirty comparison must ignore that one committed render.
+    const [syncedDocument, setSyncedDocument] = useState<Document | null>(document);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [documentNotFound, setDocumentNotFound] = useState(false);
@@ -101,16 +106,39 @@ export function useDocumentEditorState() {
         collaborators,
         status: collaborationStatus,
         canEdit: collaborationCanEdit,
+        persistence: collaborationPersistence,
+        revision: collaborationRevision,
         updateSelection: handleEditorSelection,
         applyLocalContent,
     } = useDocumentCollaboration({
         documentId: document?.id,
         initialContent: document?.content ?? initialContent ?? '',
+        initialRevision: document?.revision ?? 0,
         content,
         enabled: Boolean(document?.id) && !isTrashDocument,
         onRemoteContent: handleRemoteContent,
     });
     const isReadOnly = isTrashDocument || !collaborationCanEdit;
+    // The room is the content writer only once it has synced. While it is
+    // connecting, offline, or absent (new/trashed notes), autosave keeps the
+    // full content path.
+    const roomOwnsContent = Boolean(document?.id)
+        && !isTrashDocument
+        && collaborationStatus === 'connected';
+    // While connected, a clean room persistence phase means the body is
+    // durable even if the local dirty flag has not re-rendered yet.
+    const pendingContentChanges = roomOwnsContent
+        ? localContentDirty && collaborationPersistence !== 'clean'
+        : localContentDirty;
+
+    // Explicit Save and Save version still call saveDocumentWithMerge(); the
+    // registry keeps those paths from writing a body the room already owns.
+    useEffect(() => {
+        const documentId = document?.id;
+        if (!documentId) return;
+        setRoomContentAuthority(documentId, roomOwnsContent);
+        return () => setRoomContentAuthority(documentId, false);
+    }, [document?.id, roomOwnsContent]);
 
     // Editor input must reach Yjs in the same event as the ProseMirror change,
     // not one React commit later. External writes (AI, restore, a merged save)
@@ -140,17 +168,62 @@ export function useDocumentEditorState() {
         setLocalContentDirty(false);
     }, [applyExternalContent]);
 
-    const handleSavedDocument = useCallback((saved: Document, options?: { creationSessionId?: number }) => {
-        save(saved, options);
-        if (isSameMarkdown(contentRef.current, saved.content)) {
+    const handleSavedDocument = useCallback((
+        saved: Document,
+        options?: { creationSessionId?: number; preserveContent?: boolean },
+    ) => {
+        if (options?.preserveContent) {
+            // A metadata-only save must not rewind the editor to the room's
+            // last persisted body. Adopt the record fields it did write and
+            // leave the live content alone.
+            setSelectedDocument((previous) => {
+                if (!previous || previous.id !== saved.id) return previous ?? saved;
+                return {
+                    ...previous,
+                    title: saved.title,
+                    slug: saved.slug,
+                    tags: saved.tags,
+                    attachments: saved.attachments,
+                    revision: saved.revision,
+                    updated: saved.updated,
+                    word_count: saved.word_count,
+                    reading_time: saved.reading_time,
+                    last_edited_by: saved.last_edited_by,
+                    last_edit_source: saved.last_edit_source,
+                };
+            });
+        } else {
+            save(saved, options);
+        }
+        // A room-owned save writes metadata only; its clean ack owns the
+        // content dirty flag, so do not clear it from an explicit save.
+        if (!roomOwnsContent && isSameMarkdown(contentRef.current, saved.content)) {
             setLocalContentDirty(false);
         }
-    }, [save]);
+    }, [save, setSelectedDocument, roomOwnsContent]);
+
+    // The room is authoritative for content, so its clean ack is what clears
+    // the local dirty flag. Remote-only text never reached that flag.
+    useEffect(() => {
+        if (!roomOwnsContent || collaborationPersistence !== 'clean') return;
+        setLocalContentDirty(false);
+    }, [roomOwnsContent, collaborationPersistence]);
+
+    // A room ack advances the note revision without replacing the editor body.
+    useEffect(() => {
+        if (!document || collaborationRevision <= 0) return;
+        if (collaborationRevision <= (document.revision ?? 0)) return;
+        const next = { ...document, revision: collaborationRevision };
+        setSelectedDocument(next);
+        // Keep the adopted record in sync with the render so the status
+        // comparison does not treat the revision-only update as a doc switch.
+        setSyncedDocument(next);
+    }, [collaborationRevision, document, setSelectedDocument]);
 
     const { isSavingRef } = useDocumentLoader({
         urlDocumentId,
         document,
-        hasUnsavedChanges,
+        hasUnsavedChanges: globalHasUnsavedChanges,
         isTrashDocument,
         initialTitle: initialTitle || '',
         initialContent: initialContent || '',
@@ -164,7 +237,7 @@ export function useDocumentEditorState() {
         removedAttachments,
         isDraggingFile,
         isMouseOverEditor,
-        isAutoSaving,
+        isAutoSaving: clientAutoSaving,
         setIsAutoSaving,
         setNewAttachments,
         setRemovedAttachments,
@@ -182,6 +255,19 @@ export function useDocumentEditorState() {
         onShowToast: showToast,
     });
 
+    const persistenceNeedsAttention = roomOwnsContent
+        && (collaborationPersistence === 'conflict' || collaborationPersistence === 'error');
+    const hasUnsavedChangesForDisplay = document && document !== syncedDocument
+        ? globalHasUnsavedChanges
+        : document
+            ? (title.trim() || 'Untitled') !== document.title
+                || pendingContentChanges
+                || JSON.stringify(tags) !== JSON.stringify(document.tags || [])
+                || newAttachments.length > 0
+                || removedAttachments.length > 0
+                || persistenceNeedsAttention
+            : title.trim().length > 0 || content.trim().length > 0 || newAttachments.length > 0;
+
     useAutoSave({
         urlDocumentId,
         document,
@@ -191,9 +277,10 @@ export function useDocumentEditorState() {
         newAttachments,
         removedAttachments,
         autoSaveDelayMs: autoSaveDelay,
-        hasUnsavedChanges,
+        hasUnsavedChanges: hasUnsavedChangesForDisplay,
         localEditVersion,
         isReadOnly,
+        contentPersistence: roomOwnsContent ? 'room' : 'client',
         folderId,
         creationSessionId,
         isSavingRef,
@@ -202,6 +289,13 @@ export function useDocumentEditorState() {
         onSetIsAutoSaving: setIsAutoSaving,
         onShowToast: showToast,
     });
+
+    // Server saving is content persistence for this note. Gate it on local
+    // content so a collaborator's write does not make this viewer look busy.
+    const serverContentSaving = roomOwnsContent
+        && collaborationPersistence === 'saving'
+        && localContentDirty;
+    const isAutoSaving = clientAutoSaving || serverContentSaving;
 
     useEffect(() => {
         if (autoSaveDelay < MIN_AUTO_SAVE_DELAY) {
@@ -293,11 +387,6 @@ export function useDocumentEditorState() {
     // new values, so the intermediate (stale) state never reaches the DOM.
     const [lastSyncedDocId, setLastSyncedDocId] = useState<string | undefined>(document?.id);
     const [lastSyncedSession, setLastSyncedSession] = useState(creationSessionId);
-    // The document record whose values are already reflected in local state.
-    // Same-ID realtime updates arrive through the atom before the local setters,
-    // so dirty comparison must ignore that one committed render.
-    const [syncedDocument, setSyncedDocument] = useState<Document | null>(document);
-
     if (document?.id !== lastSyncedDocId || creationSessionId !== lastSyncedSession) {
         setLastSyncedDocId(document?.id);
         setLastSyncedSession(creationSessionId);
@@ -352,14 +441,14 @@ export function useDocumentEditorState() {
             // The live room owns content while it is connected. A PocketBase
             // broadcast can arrive out of order relative to the Yjs stream and
             // applying it would briefly rewind another user's keystrokes.
-            if (!hasUnsavedChanges) {
+            if (!globalHasUnsavedChanges) {
                 setTitle(document.title || '');
                 setTags(document.tags || []);
             }
             return;
         }
 
-        if (hasUnsavedChanges || localContentDirty) {
+        if (globalHasUnsavedChanges || pendingContentChanges) {
             logger.debug('Skipping realtime state sync - user has unsaved changes');
             return;
         }
@@ -375,7 +464,7 @@ export function useDocumentEditorState() {
         // touching local dirty state, and never replay it as a local edit.
         applyExternalContent(nextContent);
         setTags(document.tags || []);
-    }, [document, urlDocumentId, hasUnsavedChanges, localContentDirty, collaborationStatus, applyExternalContent]);
+    }, [document, urlDocumentId, globalHasUnsavedChanges, pendingContentChanges, collaborationStatus, applyExternalContent]);
 
     useEffect(() => {
         // The atom can change one render before the realtime effect adopts it.
@@ -394,15 +483,16 @@ export function useDocumentEditorState() {
             const normalizedTitle = title.trim() || 'Untitled';
             hasChanges =
                 normalizedTitle !== document.title ||
-                localContentDirty ||
+                pendingContentChanges ||
                 JSON.stringify(tags) !== JSON.stringify(document.tags || []) ||
                 newAttachments.length > 0 ||
-                removedAttachments.length > 0;
+                removedAttachments.length > 0 ||
+                persistenceNeedsAttention;
         }
 
 
         setGlobalUnsavedChanges(hasChanges);
-    }, [title, localContentDirty, tags, newAttachments, removedAttachments, document, syncedDocument, setGlobalUnsavedChanges]);
+    }, [title, pendingContentChanges, tags, newAttachments, removedAttachments, document, syncedDocument, setGlobalUnsavedChanges, roomOwnsContent, collaborationPersistence]);
 
     const contentStats = useMemo(() => {
         const words = content.trim().split(/\s+/).filter((w) => w.length > 0);
@@ -494,7 +584,7 @@ export function useDocumentEditorState() {
         loading,
         error,
         documentNotFound,
-        hasUnsavedChanges,
+        hasUnsavedChanges: hasUnsavedChangesForDisplay,
         isDesktop,
         MOBILE_EDITOR_HEIGHT,
         viewMode: effectiveViewMode,
@@ -527,6 +617,7 @@ export function useDocumentEditorState() {
         isLoadingDocument,
         collaborators,
         collaborationStatus,
+        collaborationPersistence,
         handleEditorSelection,
         handleContentChange,
         applyExternalContent,

@@ -2,8 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import { pb } from "../pocketbase";
 import type { Collaborator } from "./types";
+import type {
+    CollabConflictFrame,
+    CollabPersistencePhase,
+} from "./protocol";
 import {
     CollabSession,
+    type CollabPersistenceSnapshot,
     type CollabPresenceWire,
     type CollabSelection,
     type CollabStatus,
@@ -12,6 +17,8 @@ import {
 interface UseDocumentCollaborationOptions {
     documentId: string | undefined;
     initialContent: string;
+    /** Loaded note revision, used until the room acknowledges a newer one. */
+    initialRevision?: number;
     content: string;
     enabled: boolean;
     onRemoteContent: (content: string) => void;
@@ -21,12 +28,34 @@ export interface DocumentCollaboration {
     collaborators: Collaborator[];
     status: CollabStatus;
     canEdit: boolean;
+    persistence: CollabPersistencePhase;
+    durableSeq: number;
+    revision: number;
+    conflict: CollabConflictFrame | null;
     updateSelection: (selection: CollabSelection) => void;
     /** Fold an editor-originated Markdown value into Yjs synchronously. */
     applyLocalContent: (content: string) => void;
 }
 
 const EMPTY_COLLABORATORS: Collaborator[] = [];
+
+interface PersistenceUiState {
+    documentId: string | undefined;
+    phase: CollabPersistencePhase;
+    durableSeq: number;
+    revision: number;
+    conflict: CollabConflictFrame | null;
+}
+
+interface PermissionUiState {
+    documentId: string | undefined;
+    canEdit: boolean;
+}
+
+interface ConnectionUiState {
+    documentId: string | undefined;
+    status: CollabStatus;
+}
 
 function resolvePresence(
     session: CollabSession,
@@ -73,27 +102,44 @@ function resolvePresence(
  * The hook is intentionally transport-only: it does not save, change privacy,
  * or bypass the editor's read-only states. Editor-originated values are folded
  * into Yjs synchronously; remote values are applied by the editor without
- * being replayed as local edits. The existing autosave still owns persistence,
- * and a conflict retry in the save path repairs any stale revision.
+ * being replayed as local edits. The room owns content persistence and reports
+ * it through ack/status/conflict frames; autosave only persists metadata while
+ * the room is connected.
  */
 export function useDocumentCollaboration({
     documentId,
     initialContent,
+    initialRevision,
     content,
     enabled,
     onRemoteContent,
 }: UseDocumentCollaborationOptions): DocumentCollaboration {
     const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
-    const [status, setStatus] = useState<CollabStatus>("offline");
-    const [canEdit, setCanEdit] = useState(true);
+    const [connection, setConnection] = useState<ConnectionUiState>({
+        documentId,
+        status: "offline",
+    });
+    const [permission, setPermission] = useState<PermissionUiState>({
+        documentId,
+        canEdit: true,
+    });
+    const [persistence, setPersistence] = useState<PersistenceUiState>({
+        documentId,
+        phase: "clean",
+        durableSeq: 0,
+        revision: initialRevision ?? 0,
+        conflict: null,
+    });
     const sessionRef = useRef<CollabSession | null>(null);
     const presenceRef = useRef<CollabPresenceWire[]>([]);
     const contentRef = useRef(content);
     const initialContentRef = useRef(initialContent);
+    const initialRevisionRef = useRef(initialRevision ?? 0);
     const onRemoteContentRef = useRef(onRemoteContent);
 
     contentRef.current = content;
     initialContentRef.current = initialContent;
+    initialRevisionRef.current = initialRevision ?? 0;
     onRemoteContentRef.current = onRemoteContent;
 
     const refreshCollaborators = useCallback(() => {
@@ -116,16 +162,31 @@ export function useDocumentCollaboration({
     }, []);
 
     useEffect(() => {
-        if (!enabled || !documentId) {
-            setStatus("offline");
+        const resetState = () => {
+            setConnection({ documentId, status: "offline" });
+            setPermission({ documentId, canEdit: true });
+            setPersistence({
+                documentId,
+                phase: "clean",
+                durableSeq: 0,
+                revision: initialRevisionRef.current,
+                conflict: null,
+            });
             setCollaborators([]);
+        };
+
+        if (!enabled || !documentId) {
+            presenceRef.current = [];
+            resetState();
             return;
         }
 
         presenceRef.current = [];
+        resetState();
         const session = new CollabSession({
             documentId,
             initialContent: initialContentRef.current,
+            initialRevision: initialRevisionRef.current,
             getToken: () => pb.authStore.token,
             onRemoteText: (text) => {
                 refreshCollaborators();
@@ -135,22 +196,47 @@ export function useDocumentCollaboration({
                 presenceRef.current = entries;
                 refreshCollaborators();
             },
-            onStatus: (next) => setStatus(next),
+            onStatus: (next) => {
+                if (sessionRef.current !== session) return;
+                setConnection({ documentId, status: next });
+            },
             onPermission: (next) => {
-                setCanEdit(next);
+                if (sessionRef.current !== session) return;
+                setPermission({ documentId, canEdit: next });
                 if (!next) onRemoteContentRef.current(session.markdown);
+            },
+            onPersistence: (state: CollabPersistenceSnapshot) => {
+                if (sessionRef.current !== session) return;
+                setPersistence({
+                    documentId,
+                    phase: state.phase,
+                    durableSeq: state.durableSeq,
+                    revision: state.revision,
+                    conflict: state.conflict,
+                });
+            },
+            onConflict: (conflict) => {
+                if (sessionRef.current !== session) return;
+                setPersistence((previous) => previous.documentId === documentId
+                    ? {
+                        ...previous,
+                        phase: "conflict",
+                        revision: Math.max(previous.revision, conflict.revision),
+                        conflict,
+                    }
+                    : previous);
             },
         });
         sessionRef.current = session;
         session.applyLocalMarkdown(contentRef.current);
         session.start();
-        setStatus("connecting");
+        setConnection({ documentId, status: "connecting" });
 
         return () => {
             sessionRef.current = null;
             presenceRef.current = [];
             session.destroy();
-            setStatus("offline");
+            setConnection({ documentId, status: "offline" });
             setCollaborators([]);
         };
     }, [documentId, enabled, refreshCollaborators]);
@@ -166,5 +252,30 @@ export function useDocumentCollaboration({
         sessionRef.current?.sendSelection(selection);
     }, []);
 
-    return { collaborators, status, canEdit, updateSelection, applyLocalContent };
+    const status = connection.documentId === documentId ? connection.status : "offline";
+    // A disabled or newly opened note must never inherit a previous room's
+    // read-only permission or persistence state.
+    const canEdit = !enabled || !documentId || permission.documentId !== documentId
+        ? true
+        : permission.canEdit;
+    const persistenceForDocument = enabled && documentId && persistence.documentId === documentId
+        ? persistence
+        : {
+            phase: "clean" as const,
+            durableSeq: 0,
+            revision: initialRevisionRef.current,
+            conflict: null,
+        };
+
+    return {
+        collaborators,
+        status,
+        canEdit,
+        persistence: persistenceForDocument.phase,
+        durableSeq: persistenceForDocument.durableSeq,
+        revision: persistenceForDocument.revision,
+        conflict: persistenceForDocument.conflict,
+        updateSelection,
+        applyLocalContent,
+    };
 }
