@@ -65,14 +65,14 @@ Groups:
 | `bootstrap.js` | Seed `site_url` from `SITE_URL`, sync `meta.appURL`, provision the superuser, first-user/signup bootstrap, legacy migration filename compatibility. |
 | `documents/` | Word count and reading time. |
 | `guards/` | Signup lock, user deletion, owner locking, folder-cycle prevention, incoming relation ownership. |
-| `mailer/` | Password reset, email change, OTP, auth alert templates. |
+| `mailer/` | Password reset, email change, OTP, and auth-alert templates. Auth alerts are disabled for the `users` and `_superusers` collections. |
 | `routes/` | Soft-delete trash routes and public share routes. |
 | `templates/` | HTML/text email templates. |
 | `public_sharing_cron.js` | Clears expired public shares every 15 minutes. |
 
 ### Migrations
 
-Files are sequential and zero-padded. **The next migration is `0000034_<description>.js`.**
+Files are sequential and zero-padded. **The next migration is `0000035_<description>.js`.**
 
 | Migration | Purpose |
 | --- | --- |
@@ -109,6 +109,7 @@ Files are sequential and zero-padded. **The next migration is `0000034_<descript
 | `0000031_message_usage.js` | Adds `messages.usage`, the final-step token accounting used by the chat context ring. |
 | `0000032_remove_document_versions.js` | Drops `document_versions` and `documents.published`; rebuilds `trash_documents` without the removed column. |
 | `0000033_message_parts.js` | Adds `messages.parts`, the ordered chat timeline. |
+| `0000034_disable_auth_alerts.js` | Disables PocketBase's default "new device login" auth alert emails for users and superusers. |
 
 Use the migration API, not `module.exports`:
 
@@ -136,7 +137,7 @@ Rules:
 - Guard additions/removals so retries are idempotent.
 - Never rename an existing migration. `bootstrap.js` contains a temporary compatibility hook that rewrites old filenames in the `_migrations` table.
 - For data migrations, use `findRecordsByFilter` and tolerate missing records when the schema may not be seeded yet.
-- Migrations are append-only; start the next one at `0000034`.
+- Migrations are append-only; start the next one at `0000035`.
 - View collections reject `SELECT *`; list explicit columns. When a source field is added, update the view query in the same migration.
 
 ### Collections

@@ -247,7 +247,7 @@ The browser facade is the replacement for `/pb`. It is public-facing Elysia code
 | `POST` | `/api/v1/auth/password-reset/confirm` | public | Confirm with token and new password. |
 | `POST` | `/api/v1/auth/email-change/request` | user | Request an email change. |
 | `POST` | `/api/v1/auth/email-change/confirm` | public | Confirm with token and password. |
-| `POST` | `/api/v1/auth/oauth2` | public | Exchange an OAuth2 code. |
+| `POST` | `/api/v1/auth/oauth2` | public | Exchange an OAuth2 code with the provider's PKCE `codeVerifier` from `/auth/methods`. |
 | `GET` | `/api/v1/auth/oauth2/callback` | public | Popup callback page; posts the provider query back to the opener. Configure providers to allow `<origin>/api/v1/auth/oauth2/callback`. |
 | `GET` | `/api/v1/me` | user | The caller's own user record. |
 | `GET` | `/api/v1/records/:collection` | user | Allowlisted PocketBase list with `filter`, `sort`, `expand`, `fields`, `page`, `perPage`, `skipTotal`. |
