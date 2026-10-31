@@ -8,6 +8,8 @@ import {
 } from '@heroicons/react/24/outline';
 import { useRef, type KeyboardEvent, type MouseEvent, type TouchEvent } from 'react';
 import type { BoardSummary } from '../../lib/boards';
+import { useSharedWithPeople } from '../../state/hooks/useOwnedShares';
+import { SharedWithUsersIcon } from '../sharing/SharedWithUsersIcon';
 import { highlightText } from '../../lib/highlightText';
 import { IconButton } from '../ui';
 import { formatUpdatedLabel } from './dates';
@@ -39,6 +41,7 @@ export function TimelineBoardCard({
   onLongPressMenu,
   highlightQuery = '',
 }: TimelineBoardCardProps) {
+  const sharedWithPeople = useSharedWithPeople('board', board.id);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -136,6 +139,7 @@ export function TimelineBoardCard({
                   aria-label="Shared publicly"
                 />
               )}
+              {sharedWithPeople && <SharedWithUsersIcon className="h-3.5 w-3.5" />}
             </div>
             <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] leading-4 text-ink-muted">
               <span className="inline-flex items-center gap-1 tabular-nums">

@@ -3,6 +3,7 @@ import { bunRequest, expectStatus, readJson } from "../helpers/client";
 import {
     createAdmin,
     createFolder,
+    createNote,
     createNoteWithAttachment,
     createUser,
     type TestUser,
@@ -94,6 +95,37 @@ describe("browser record facade", () => {
         expect(note.content).not.toContain("<script");
         expect(note.content).toContain("Safe body");
         expect(note.word_count).not.toBe(999);
+    });
+
+    test("lists only the caller's direct shares for workspace badges", async () => {
+        const note = await createNote(user, { title: `Shared badge ${uniqueSuffix()}` });
+
+        const createShare = await bunRequest(api("/sharing/links"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({
+                targetType: "document",
+                targetId: note.id,
+                userId: other.id,
+                permission: "view",
+            }),
+        });
+        await expectStatus(createShare, 200, "create direct share");
+
+        const shares = await bunRequest(
+            api(`/records/shares?filter=${encodeURIComponent(`shared_by = "${user.id}"`)}&fields=document,folder,board`),
+            { headers: authHeaders(user.token) },
+        );
+        await expectStatus(shares, 200, "list own shares");
+        const body = await readJson<{ items: Array<{ document?: string; folder?: string; board?: string }> }>(shares);
+        expect(body.items.some((share) => share.document === note.id)).toBe(true);
+
+        const write = await bunRequest(api("/records/shares"), {
+            method: "POST",
+            headers: jsonHeaders(user.token),
+            body: JSON.stringify({ document: note.id, user: other.id }),
+        });
+        await expectStatus(write, 405, "shares are read-only through the facade");
     });
 
     test("rejects a folder owned by another user", async () => {

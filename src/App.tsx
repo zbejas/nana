@@ -27,7 +27,7 @@ const DocumentEditor = lazy(() => import("./components/DocumentEditor"));
 const PublicDocumentPage = lazy(() => import("./pages/PublicDocumentPage"));
 const PublicFolderPage = lazy(() => import("./pages/PublicFolderPage"));
 const PublicBoardPage = lazy(() => import("./pages/PublicBoardPage"));
-import { useSidebar, useDocumentEditor, useDocumentData, useToasts } from "./state/hooks";
+import { useSidebar, useDocumentEditor, useDocumentData, useOwnedShares, useToasts } from "./state/hooks";
 import { subscribeWorkspaceChanged, type WorkspaceChangeDetail } from "./lib/workspace-events";
 import {
   chatConversationIdAtom,
@@ -166,6 +166,9 @@ function AppContent() {
   // Initialize data subscriptions ONCE at top level - DO NOT call this hook anywhere else
   // All data is stored in Jotai atoms and accessible from child components
   useDocumentData({ enabled: !isPublicRoute });
+
+  // Keep the per-record "shared with people" badges current across surfaces.
+  useOwnedShares();
 
   // Ensure startup-dependent pages (like timeline) wait for a fresh init cycle
   // before running their initial fetches.

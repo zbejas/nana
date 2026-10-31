@@ -5,6 +5,8 @@ import {
   ViewColumnsIcon,
 } from '@heroicons/react/24/outline';
 import type { Board } from '../../lib/boards';
+import { useSharedWithPeople } from '../../state/hooks/useOwnedShares';
+import { SharedWithUsersIcon } from '../sharing/SharedWithUsersIcon';
 import type { OnDragStartBoard, OnDragEnd } from '../file-folder-handling';
 
 const INDENT_PX = 16;
@@ -38,6 +40,7 @@ export function BoardItem({
   };
 
   const indent = depth * INDENT_PX + INDENT_PX;
+  const sharedWithPeople = useSharedWithPeople('board', board.id);
 
   return (
     <div className="group relative">
@@ -71,6 +74,7 @@ export function BoardItem({
         {board.is_public && (
           <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />
         )}
+        {sharedWithPeople && <SharedWithUsersIcon />}
       </button>
       <button
         onClick={handleMenuClick}

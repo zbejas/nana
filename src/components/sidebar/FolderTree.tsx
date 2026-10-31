@@ -1,5 +1,8 @@
 import { FolderIcon, ChevronRightIcon, EllipsisVerticalIcon, LockClosedIcon, ShareIcon } from '@heroicons/react/24/outline';
 import { useState, useRef, useEffect } from 'react';
+import { useAtomValue } from 'jotai';
+import { ownedShareTargetsAtom } from '../../state/sharing';
+import { SharedWithUsersIcon } from '../sharing/SharedWithUsersIcon';
 import type { FolderTreeNode } from "../../lib/folders";
 import type { Board } from "../../lib/boards";
 import type { Document } from "../../lib/documents";
@@ -144,6 +147,8 @@ export function FolderTree({
   onRenameSubmit,
   onRenameCancel,
 }: FolderTreeProps) {
+  const ownedShares = useAtomValue(ownedShareTargetsAtom);
+
   const handleFolderClick = async (folderId: string, hasContent: boolean) => {
     if (!hasContent) return;
 
@@ -220,6 +225,7 @@ export function FolderTree({
                   </span>
                   {folder.is_private && <LockClosedIcon className="h-3 w-3 shrink-0 text-warning" aria-label="Private" />}
                   {folder.is_public && <ShareIcon className="h-3 w-3 shrink-0 text-success" aria-label="Shared publicly" />}
+                  {ownedShares.folders.has(folder.id) && <SharedWithUsersIcon />}
                 </button>
 
                 {isDropTarget && dropPosition === 'below' && (

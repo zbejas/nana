@@ -9,6 +9,7 @@ export { PermissionSelect } from './PermissionSelect';
 export { PublicShareSection } from './PublicShareSection';
 export type { PublicShareSectionTarget } from './PublicShareSection';
 export { SharedItemRow } from './SharedItemRow';
+export { SharedWithUsersIcon } from './SharedWithUsersIcon';
 export {
   PERMISSION_DESCRIPTIONS,
   PERMISSION_LABELS,

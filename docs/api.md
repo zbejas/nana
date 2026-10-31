@@ -306,6 +306,7 @@ Allowed record collections:
 | `labels` | yes | yes | Author-scoped label definitions. |
 | `task_relations` | yes | no | Writes go through typed REST; reads are symmetric. |
 | `task_activity` | yes | no | Server writes only. |
+| `shares` | yes | no | Owner/grantee-scoped direct-share rows from PocketBase rules; used for workspace share badges. Mutations stay on `/api/v1/sharing/links`. |
 | `trash_documents`, `trash_folders` | yes | no | Mutations only through `/trash/:action`. Trashed boards are read from `boards` with `archived=true`. |
 | `users` | yes | self/admin | Self updates exclude `admin`/`verified`; admin routes use the custom admin endpoints. |
 | `settings` | admin | admin | `site_url`, `ai_config`, and `rate_limits`. Use `/api/v1/admin/rate-limits` for rate-limit writes so the limiter reloads. |
