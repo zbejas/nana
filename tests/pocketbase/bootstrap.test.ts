@@ -91,6 +91,19 @@ describe("PocketBase bootstrap", () => {
         }
     });
 
+    test("new-device login alerts are disabled", async () => {
+        const token = await authenticateSuperuser();
+
+        for (const name of ["users", "_superusers"]) {
+            const res = await pbRequest(`/collections/${name}`, {
+                headers: { Authorization: token },
+            });
+            await expectStatus(res, 200, `read ${name} schema`);
+            const collection = await readJson<{ authAlert?: { enabled?: boolean } }>(res);
+            expect(collection.authAlert?.enabled).toBe(false);
+        }
+    });
+
     test("legacy document version storage and the publish flag are removed", async () => {
         const token = await authenticateSuperuser();
 

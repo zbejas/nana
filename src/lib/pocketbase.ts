@@ -557,7 +557,9 @@ class RecordCollection<T extends RecordModel = RecordModel> {
         urlCallback?: (url: string) => void | Promise<void>;
     }): Promise<{ token: string; record: AuthRecord }> {
         const methods = await this.listAuthMethods();
-        const oauth2 = methods.oauth2 as { providers?: Array<{ name: string; authURL: string }> } | undefined;
+        const oauth2 = methods.oauth2 as {
+            providers?: Array<{ name: string; authURL: string; codeVerifier?: string }>;
+        } | undefined;
         const provider = oauth2?.providers?.find((item) => item.name === options.provider);
         if (!provider) {
             throw new ClientResponseError({ message: `Missing or invalid provider "${options.provider}".` });
@@ -596,12 +598,16 @@ class RecordCollection<T extends RecordModel = RecordModel> {
         if (query.state !== state) throw new ClientResponseError({ message: "OAuth state did not match." });
         if (!query.code) throw new ClientResponseError({ message: "OAuth provider returned no code." });
 
+        // PocketBase's auth-methods response contains the PKCE verifier paired
+        // with the code_challenge embedded in provider.authURL. Reusing it is
+        // required for OIDC providers such as Authentik, which reject the token
+        // exchange when the verifier is missing or empty.
         const result = await this.client.request<{ token: string; record: AuthRecord }>("/auth/oauth2", {
             method: "POST",
             body: {
                 provider: provider.name,
                 code: query.code,
-                codeVerifier: query.code_verifier ?? "",
+                codeVerifier: provider.codeVerifier ?? query.code_verifier ?? "",
                 redirectURL,
                 createData: options.createData ?? {},
             },
