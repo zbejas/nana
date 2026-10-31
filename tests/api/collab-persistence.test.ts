@@ -13,6 +13,8 @@ import {
     type TestRecord,
     type TestUser,
 } from "../helpers/factories";
+import { readNote } from "../../src/api/chat/tools/notes";
+import { getOrCreateRoom } from "../../src/api/rest/collab/room";
 import { authHeaders, BASE_URL, uniqueSuffix } from "../helpers/setup";
 
 interface SyncEvent {
@@ -488,6 +490,53 @@ describe("collab room persistence", () => {
         const persisted = await pbGetRecord<DocumentRecord>(owner.token, "documents", note.id);
         expect(String(persisted.content)).toBe(expected);
         expect(Number(persisted.revision)).toBe(revision + 1);
+    }, 30_000);
+
+    test("read_note flushes an unpersisted live update before returning the body", async () => {
+        const note = await createNote(owner, {
+            title: `Persist chat read ${uniqueSuffix()}`,
+            content: "fresh base",
+        });
+        const revision = initialRevision(note);
+
+        // Integration tests run in their own Bun process, so the server's
+        // in-memory room is not visible here. Create the same room locally and
+        // use its real apply/flush path; only the PocketBase write crosses
+        // processes.
+        const room = getOrCreateRoom(note.id, String(note.content ?? ""), {
+            token: owner.token,
+            revision,
+        });
+        const client = room.addClient({
+            userId: owner.id,
+            name: owner.email,
+            avatar: "",
+            canEdit: true,
+        }, owner.token);
+
+        const doc = new Y.Doc();
+        Y.applyUpdate(doc, Buffer.from(room.fullUpdate, "base64"));
+        const baseVector = Y.encodeStateVector(doc);
+        const text = doc.getText("content");
+        text.insert(text.length, " before chat read");
+        const update = Y.encodeStateAsUpdate(doc, baseVector);
+        const expected = text.toString();
+
+        const seq = room.applyUpdate(client.clientId, owner.id, update, owner.token);
+        expect(seq).not.toBeNull();
+
+        // Do not wait for the debounce or an ack: the chat read must flush the
+        // room itself and return the fresh body and revision.
+        const result = await readNote(
+            { authHeader: owner.token, userId: owner.id },
+            { noteId: note.id, limit: 600 },
+        );
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.content).toBe(expected);
+        expect(result.revision).toBe(revision + 1);
+
+        room.removeClient(client.clientId);
     }, 30_000);
 
     test("does not let a viewer flush the room body", async () => {

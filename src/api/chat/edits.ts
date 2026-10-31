@@ -2,6 +2,7 @@ import { deleteNote, restoreNoteSnapshot, type NoteSnapshot } from "../workspace
 import { deleteBoard } from "../workspace/boards";
 import { deleteFolder } from "../workspace/folders";
 import { deleteTask } from "../workspace/tasks";
+import { resolveSharingAccess } from "../workspace/sharing";
 import { ApiError, conflict, notFound } from "../workspace/errors";
 import type { ToolContext } from "../pocketbase/client";
 import { getSuperuserToken } from "./superuser";
@@ -339,6 +340,18 @@ export async function undoChatEdit(
         const snapshot = parseSnapshot(operations.before);
         if (!snapshot) throw conflict("That edit has no saved snapshot to restore.");
 
+        // A shared-note grantee with edit access may undo an AI edit on that
+        // note. Owners keep the normal broad path; view/comment cannot reach it.
+        const access = await resolveSharingAccess(context, "document", record.target_id)
+            .catch(() => null);
+        const noteScope = access && access.level >= 3
+            ? {
+                documentId: record.target_id,
+                accessLevel: access.level,
+                strict: true,
+            }
+            : undefined;
+
         await restoreNoteSnapshot(
             context,
             "ai",
@@ -346,6 +359,7 @@ export async function undoChatEdit(
             snapshot,
             afterRevision,
             typeof operations.afterUpdated === "string" ? operations.afterUpdated : undefined,
+            noteScope,
         );
     }
 

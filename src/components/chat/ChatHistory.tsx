@@ -160,6 +160,8 @@ export function ChatHistory({
             {group.conversations.map((conversation) => {
               const active = conversation.id === activeConversationId;
               const renaming = renamingId === conversation.id;
+              const sharedNote = conversation.scope === 'note';
+              const canManage = conversation.canManage !== false;
 
               if (renaming) {
                 return (
@@ -212,31 +214,38 @@ export function ChatHistory({
                           aria-label="Nana is editing"
                         />
                       )}
-                      <span className="truncate" title={conversation.title}>{conversation.title}</span>
+                      <span className="min-w-0 flex-1 truncate" title={conversation.title}>{conversation.title}</span>
+                      {sharedNote && (
+                        <span className="shrink-0 rounded-[3px] border border-line bg-surface-sunken px-1 py-px text-[9.5px] font-medium uppercase tracking-[0.04em] text-ink-muted">
+                          Shared note
+                        </span>
+                      )}
                     </span>
                     <span className="mt-0.5 text-[10.5px] text-ink-muted">
                       {conversationSubtitle(conversation)}
                     </span>
                   </button>
 
-                  <div className="mr-1 flex shrink-0 items-center gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
-                    <IconButton
-                      label={`Rename ${conversation.title}`}
-                      size="sm"
-                      className="h-7 w-7"
-                      onClick={() => startRename(conversation)}
-                    >
-                      <PencilSquareIcon />
-                    </IconButton>
-                    <IconButton
-                      label={`Delete ${conversation.title}`}
-                      size="sm"
-                      className="h-7 w-7 hover:text-danger"
-                      onClick={() => setPendingDelete(conversation)}
-                    >
-                      <TrashIcon />
-                    </IconButton>
-                  </div>
+                  {canManage && (
+                    <div className="mr-1 flex shrink-0 items-center gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+                      <IconButton
+                        label={`Rename ${conversation.title}`}
+                        size="sm"
+                        className="h-7 w-7"
+                        onClick={() => startRename(conversation)}
+                      >
+                        <PencilSquareIcon />
+                      </IconButton>
+                      <IconButton
+                        label={`Delete ${conversation.title}`}
+                        size="sm"
+                        className="h-7 w-7 hover:text-danger"
+                        onClick={() => setPendingDelete(conversation)}
+                      >
+                        <TrashIcon />
+                      </IconButton>
+                    </div>
+                  )}
                 </div>
               );
             })}

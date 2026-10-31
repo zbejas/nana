@@ -2,6 +2,7 @@ import { generateSlug } from "../../lib/documents/utils";
 import { sanitizeHtml } from "../../lib/sanitize";
 import { escapeFilterString } from "../chat/tools/text";
 import { noteVersionToken } from "../chat/tools/version";
+import type { ChatNoteScope } from "../chat/types";
 import {
     pbRequest,
     queryString,
@@ -10,7 +11,11 @@ import {
 } from "../pocketbase/client";
 import { ApiError, conflict, notFound, upstream } from "./errors";
 import { folderIsLocked, recordIsLocked, workspaceVisibilityConditions } from "./privacy";
-import { flushLiveNoteBeforeExternalWrite } from "./live";
+import {
+    adoptLiveNoteContent,
+    adoptLiveNoteRevision,
+    flushLiveNoteBeforeExternalWrite,
+} from "./live";
 import {
     assertFolderVisible,
     assertRecordId,
@@ -63,6 +68,8 @@ export interface NoteEditOptions {
     versionToken?: string;
     /** Section edits pre-sanitize the fragments and must not reformat the note. */
     sanitizeContent?: boolean;
+    /** Shared-note chat scope; non-owners may write only the bound document. */
+    noteScope?: ChatNoteScope;
 }
 
 export interface NoteEditResult {
@@ -156,13 +163,37 @@ function snapshotNote(record: PBNoteRecord): NoteSnapshot {
     };
 }
 
-async function loadNoteRecord(context: ToolContext, id: string): Promise<PBNoteRecord> {
+interface NoteRecordScope {
+    noteScope?: ChatNoteScope;
+    /** True for write tools; shared access must be edit level. */
+    requireEdit?: boolean;
+}
+
+function scopeAllows(scope: ChatNoteScope | undefined, noteId: string, requireEdit: boolean): boolean {
+    if (!scope) return false;
+    if (scope.documentId !== noteId) return false;
+    return requireEdit ? scope.accessLevel >= 3 : scope.accessLevel >= 1;
+}
+
+async function loadNoteRecord(
+    context: ToolContext,
+    id: string,
+    scope?: NoteRecordScope,
+): Promise<PBNoteRecord> {
     const noteId = assertRecordId(id, "That note id is not valid.");
+    const noteScope = scope?.noteScope;
+    const requireEdit = scope?.requireEdit === true;
+
+    if (noteScope && !scopeAllows(noteScope, noteId, requireEdit)) {
+        throw notFound();
+    }
+
     const path = `/api/collections/documents/records/${encodeURIComponent(noteId)}${queryString({
         fields: NOTE_FIELDS,
     })}`;
     const record = unwrap(await pbRequest<PBNoteRecord>(path, context));
-    if (typeof record.id !== "string" || record.author !== context.userId) {
+    const owner = typeof record.id === "string" && record.author === context.userId;
+    if (!owner && !(noteScope && scopeAllows(noteScope, record.id, requireEdit))) {
         throw notFound();
     }
     return record;
@@ -331,6 +362,17 @@ export async function updateNote(
 
     const path = `/api/collections/documents/records/${encodeURIComponent(current.id)}`;
     const record = unwrap(await pbRequest<PBNoteRecord>(path, context, { method: "PATCH", body }));
+
+    if (patch.content !== undefined) {
+        const storedContent = typeof record.content === "string"
+            ? record.content
+            : typeof body.content === "string"
+                ? body.content
+                : current.content ?? "";
+        await adoptLiveNoteContent(current.id, storedContent, noteRevision(record));
+    } else {
+        adoptLiveNoteRevision(current.id, noteRevision(record));
+    }
     return toNoteDto(record);
 }
 
@@ -355,7 +397,10 @@ export async function editNoteRecord(
     // room first so a pending keystroke cannot be missed or overwritten.
     await flushLiveNoteBeforeExternalWrite(id);
 
-    const current = await loadNoteRecord(context, id);
+    const current = await loadNoteRecord(context, id, {
+        noteScope: options.noteScope,
+        requireEdit: Boolean(options.noteScope),
+    });
     const visibility = await visibilityFor(context, surface);
     if (recordIsLocked(visibility, surface, current)) throw notFound();
 
@@ -419,6 +464,13 @@ export async function editNoteRecord(
     const path = `/api/collections/documents/records/${encodeURIComponent(current.id)}`;
     const record = unwrap(await pbRequest<PBNoteRecord>(path, context, { method: "PATCH", body }));
 
+    // Content adoption happens in the chat write tool after the section result
+    // is known. Metadata-only edits advance the room revision here so the next
+    // flush does not self-conflict.
+    if (patch.content === undefined) {
+        adoptLiveNoteRevision(current.id, noteRevision(record));
+    }
+
     return {
         note: toNoteDto(record),
         revision: noteRevision(record),
@@ -438,10 +490,15 @@ export async function restoreNoteSnapshot(
     snapshot: NoteSnapshot,
     revision: number,
     expectedUpdated?: string,
+    noteScope?: ChatNoteScope,
 ): Promise<{ note: NoteDto; revision: number; versionToken: string }> {
     assertWritable(context);
 
-    const current = await loadNoteRecord(context, id);
+    await flushLiveNoteBeforeExternalWrite(id);
+    const current = await loadNoteRecord(context, id, {
+        noteScope,
+        requireEdit: Boolean(noteScope),
+    });
     const visibility = await visibilityFor(context, surface);
     if (recordIsLocked(visibility, surface, current)) throw notFound();
 
@@ -481,6 +538,11 @@ export async function restoreNoteSnapshot(
 
     const path = `/api/collections/documents/records/${encodeURIComponent(current.id)}`;
     const record = unwrap(await pbRequest<PBNoteRecord>(path, context, { method: "PATCH", body }));
+
+    const restoredContent = typeof record.content === "string"
+        ? record.content
+        : snapshot.content;
+    await adoptLiveNoteContent(current.id, restoredContent, noteRevision(record));
 
     return {
         note: toNoteDto(record),

@@ -5,6 +5,7 @@ import type { AIConfig } from "../../lib/ai/types";
 import {
     sanitizeAttachmentRef,
     sanitizeChatUsage,
+    sanitizeToolError,
     type PBConversation,
     type PBMessage,
     type ChatAttachmentRef,
@@ -136,14 +137,25 @@ function sanitizeTools(value: unknown): ChatToolActivity[] {
 
     for (const entry of value) {
         if (!entry || typeof entry !== "object") continue;
-        const { name, status } = entry as { name?: unknown; status?: unknown };
+        const { name, status, error } = entry as {
+            name?: unknown;
+            status?: unknown;
+            error?: unknown;
+        };
         if (typeof name !== "string" || !ALLOWED_TOOLS.has(name)) continue;
         if (typeof status !== "string" || !ALLOWED_TOOL_STATUSES.has(status)) continue;
 
         const nextStatus = status as ChatToolActivity["status"];
         const existing = byName.get(name);
+        const safeError = nextStatus === "error"
+            ? sanitizeToolError(error) ?? existing?.error
+            : undefined;
         if (!existing || nextStatus === "error") {
-            byName.set(name, { name, status: nextStatus });
+            byName.set(name, {
+                name,
+                status: nextStatus,
+                ...(safeError ? { error: safeError } : {}),
+            });
         }
     }
 
@@ -193,14 +205,17 @@ async function sanitizeParts(value: unknown): Promise<ChatPart[]> {
                 : undefined;
             const rawTargetId = typeof source.targetId === "string" ? source.targetId : "";
             const targetId = /^[A-Za-z0-9]{1,64}$/.test(rawTargetId) ? rawTargetId : undefined;
+            const status = source.status === "success" ? "success" : "error";
+            const error = status === "error" ? sanitizeToolError(source.error) : undefined;
             parts.push({
                 type: "tool",
                 name,
-                status: source.status === "success" ? "success" : "error",
+                status,
                 ...(id ? { id } : {}),
                 ...(title ? { title } : {}),
                 ...(targetType ? { targetType } : {}),
                 ...(targetId ? { targetId } : {}),
+                ...(error ? { error } : {}),
             });
             continue;
         }
@@ -282,6 +297,16 @@ function sanitizeSources(value: unknown): ChatSource[] {
     return sources;
 }
 
+function cleanAuthorLabel(value: unknown): string | undefined {
+    if (typeof value !== "string") return undefined;
+    const cleaned = value
+        .replace(/[\u0000-\u001f\u007f]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120);
+    return cleaned || undefined;
+}
+
 /**
  * Build a safe stored message: keep only known fields and sanitize content.
  * Older stored messages may contain extra fields; they are tolerated on read
@@ -292,6 +317,12 @@ async function sanitizeMessage(msg: ChatMessage): Promise<ChatMessage> {
         role: msg.role,
         content: await sanitizeHtml(msg.content),
     };
+
+    if (typeof msg.authorId === "string" && /^[A-Za-z0-9]{1,64}$/.test(msg.authorId)) {
+        sanitized.authorId = msg.authorId;
+    }
+    const authorLabel = cleanAuthorLabel(msg.authorLabel);
+    if (authorLabel) sanitized.authorLabel = authorLabel;
 
     if (typeof msg.reasoning === "string" && msg.reasoning) {
         sanitized.reasoning = msg.reasoning;
@@ -339,25 +370,30 @@ export async function createConversation(
 
     const conversation = await pbFetch<PBConversation>("/api/collections/conversations/records", authHeader, {
         method: "POST",
-        body: JSON.stringify({ title, author: userId }),
+        body: JSON.stringify({ title, author: userId, scope: "personal" }),
     });
 
     for (const message of initialMessages) {
         await appendMessage(authHeader, conversation.id, message);
     }
 
-    return conversation;
+    return { ...conversation, scope: "personal", can_manage: true };
 }
 
 /**
- * List all conversations for the authenticated user, sorted by most recent first.
+ * List every conversation visible to the caller: their own personal chats plus
+ * shared-note conversations they participate in.
  */
 export async function listConversations(authHeader: string): Promise<PBConversation[]> {
     const result = await pbFetch<PBListResponse<PBConversation>>(
         "/api/collections/conversations/records?sort=-updated&perPage=100",
         authHeader
     );
-    return result.items;
+    const userId = await getUserIdFromAuth(authHeader);
+    return (result.items ?? []).map((conversation) => ({
+        ...conversation,
+        can_manage: conversation.author === userId,
+    }));
 }
 
 /**
@@ -395,13 +431,18 @@ function messageFilter(conversationId: string): string {
 /**
  * Touch the conversation so `updated` (and the sidebar order) reflects the
  * latest message. Messages are separate records now, so this cannot rely on a
- * JSON field write.
+ * JSON field write. A shared-note participant may append messages but the
+ * conversation rule reserves updates for the note owner, so the server touches
+ * the timestamp with its own credential.
  */
 async function touchConversation(authHeader: string, conversationId: string): Promise<void> {
     const conversation = await getConversation(authHeader, conversationId);
+    const token = conversation.scope === "note"
+        ? await getSuperuserToken()
+        : authHeader;
     await pbFetch<PBConversation>(
         `/api/collections/conversations/records/${encodeURIComponent(conversationId)}`,
-        authHeader,
+        token,
         {
             method: "PATCH",
             body: JSON.stringify({ title: conversation.title }),
@@ -435,6 +476,8 @@ export async function appendMessage(
             conversation: conversationId,
             role: sanitizedMessage.role,
             content: sanitizedMessage.content,
+            ...(sanitizedMessage.authorId ? { author: sanitizedMessage.authorId } : {}),
+            ...(sanitizedMessage.authorLabel ? { author_label: sanitizedMessage.authorLabel } : {}),
             ...(sanitizedMessage.reasoning ? { reasoning: sanitizedMessage.reasoning } : {}),
             ...(sanitizedMessage.model ? { model: sanitizedMessage.model } : {}),
             ...(sanitizedMessage.tools?.length ? { tools: sanitizedMessage.tools } : {}),
@@ -476,6 +519,11 @@ export async function getConversationMessages(
                 role: row.role,
                 content: row.content || "",
             };
+            if (typeof row.author === "string" && row.author) message.authorId = row.author;
+            if (typeof row.author_label === "string" && row.author_label) {
+                const label = cleanAuthorLabel(row.author_label);
+                if (label) message.authorLabel = label;
+            }
             if (typeof row.reasoning === "string" && row.reasoning) message.reasoning = row.reasoning;
             if (typeof row.model === "string" && row.model) message.model = row.model;
             const tools = sanitizeTools(row.tools);

@@ -11,7 +11,6 @@ import type {
   ChatMode,
   ChatSource,
   ChatStatusResponse,
-  ChatPart,
 } from '../../api/chat/types';
 import type {
   AIChatAttachmentSettings,
@@ -22,9 +21,13 @@ import { cleanChatTitle } from '../ai/title';
 import type {
   ChatConversation,
   ChatError,
+  ChatScope,
   ChatUiEdit,
   ChatUiMessage,
+  ChatUiPart,
   ChatUiTool,
+  NoteChatReason,
+  NoteChatStatus,
 } from './types';
 
 const CHAT_BASE = '/api/chat';
@@ -100,24 +103,106 @@ function numberValue(...values: unknown[]): number | undefined {
   return undefined;
 }
 
+function booleanValue(...values: unknown[]): boolean | undefined {
+  for (const value of values) {
+    if (typeof value === 'boolean') return value;
+  }
+  return undefined;
+}
+
+/** Server error codes arrive in several shapes; normalize for stable checks. */
+function errorCode(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '');
+    if (normalized) return normalized;
+  }
+  return undefined;
+}
+
 function errorFromResponse(status: number, data: unknown): ChatApiError {
   const record = asRecord(data);
   const message = stringValue(record.error, record.message, record.errorText)
     || (status === 401 ? 'Your session expired. Sign in again.' : 'Chat request failed.');
-  const code = stringValue(record.code, record.errorCode) || undefined;
+  const code = errorCode(record.code, record.errorCode, record.error_code);
   return new ChatApiError(message, status, code);
+}
+
+function normalizeConversationScope(value: unknown): ChatScope | undefined {
+  if (value === 'note' || value === 'personal') return value;
+  return undefined;
 }
 
 function normalizeConversation(value: unknown): ChatConversation | null {
   const record = asRecord(value);
   const id = stringValue(record.id);
   if (!id) return null;
+  const scope = normalizeConversationScope(record.scope);
+  const documentId = stringValue(
+    record.documentId,
+    record.document_id,
+    typeof record.document === 'string' ? record.document : '',
+    record.noteId,
+    record.note_id,
+  );
+  const canManage = booleanValue(record.canManage, record.can_manage);
   return {
     id,
     title: cleanChatTitle(stringValue(record.title, record.name) || 'Untitled chat', 'Untitled chat'),
     created: stringValue(record.created),
     updated: stringValue(record.updated, record.created),
     pending_edits: numberValue(record.pending_edits, record.pendingEdits),
+    ...(scope ? { scope } : {}),
+    ...(documentId ? { documentId } : {}),
+    ...(canManage !== undefined ? { canManage } : {}),
+  };
+}
+
+const NOTE_CHAT_REASONS = new Set<NoteChatReason>([
+  'not_shared',
+  'private',
+  'trashed',
+  'unavailable',
+]);
+
+function normalizeNoteChatReason(value: unknown): NoteChatReason | null {
+  const raw = errorCode(value);
+  return raw && NOTE_CHAT_REASONS.has(raw as NoteChatReason) ? raw as NoteChatReason : null;
+}
+
+function normalizeAccessRole(value: unknown): NoteChatStatus['accessRole'] {
+  const raw = errorCode(value);
+  if (raw === 'owner' || raw === 'edit' || raw === 'comment' || raw === 'view') return raw;
+  return 'view';
+}
+
+function normalizeNoteChatStatus(value: unknown): NoteChatStatus | null {
+  const record = asRecord(value);
+  const noteId = stringValue(
+    record.noteId,
+    record.note_id,
+    record.documentId,
+    record.document_id,
+    record.id,
+  );
+  if (!noteId) return null;
+
+  const accessRole = normalizeAccessRole(record.accessRole ?? record.access_role ?? record.role);
+  const explicitCanEdit = booleanValue(record.canEdit, record.can_edit);
+  const explicitCanManage = booleanValue(record.canManage, record.can_manage);
+  const conversation = normalizeConversation(record.conversation);
+
+  return {
+    noteId,
+    noteTitle: stringValue(record.noteTitle, record.note_title, record.title) || 'This note',
+    enabled: record.enabled === true,
+    reason: normalizeNoteChatReason(record.reason),
+    shared: record.shared === true,
+    accessRole,
+    accessLevel: numberValue(record.accessLevel, record.access_level) ?? 0,
+    canEdit: explicitCanEdit ?? (accessRole === 'owner' || accessRole === 'edit'),
+    canManage: explicitCanManage ?? accessRole === 'owner',
+    conversation,
   };
 }
 
@@ -255,11 +340,22 @@ export function normalizeEdit(value: unknown): ChatUiEdit | null {
   };
 }
 
+const MAX_TOOL_ERROR_CHARS = 400;
+
+function boundedToolError(...values: unknown[]): string | undefined {
+  const text = stringValue(...values).replace(/\s+/g, ' ').trim();
+  if (!text) return undefined;
+  return text.length > MAX_TOOL_ERROR_CHARS
+    ? `${text.slice(0, MAX_TOOL_ERROR_CHARS - 1)}…`
+    : text;
+}
+
 function normalizeTool(raw: Record<string, unknown>, fallbackName?: string): ChatUiTool | null {
   const type = stringValue(raw.type, raw.event, fallbackName);
   const name = stringValue(raw.name, raw.toolName, raw.tool);
   const id = stringValue(raw.id, raw.toolCallId, raw.tool_call_id);
   const input = asRecord(raw.input ?? raw.args);
+  const output = asRecord(raw.output ?? raw.result);
 
   let normalizedName = name;
   if (!normalizedName && type === 'tool-input-start') normalizedName = fallbackName ?? '';
@@ -286,7 +382,6 @@ function normalizeTool(raw: Record<string, unknown>, fallbackName?: string): Cha
   );
 
   if (type === 'tool-output-available' || type === 'tool-output-error' || type === 'tool-output-denied') {
-    const output = asRecord(raw.output ?? raw.result);
     const failed = type !== 'tool-output-available'
       || raw.isError === true
       || output.ok === false
@@ -304,11 +399,23 @@ function normalizeTool(raw: Record<string, unknown>, fallbackName?: string): Cha
     status = 'error';
   }
 
+  const error = status === 'error' || raw.error !== undefined
+    ? boundedToolError(
+      raw.error,
+      raw.errorText,
+      raw.error_text,
+      output.error,
+      output.errorText,
+      output.message,
+    )
+    : undefined;
+
   return {
     id: id || undefined,
     name: normalizedName,
     status,
     ...(title ? { title } : {}),
+    ...(error ? { error } : {}),
     ...(targetTypeValue === 'document' || targetTypeValue === 'board'
       ? { targetType: targetTypeValue as 'document' | 'board' }
       : input.noteId
@@ -320,9 +427,9 @@ function normalizeTool(raw: Record<string, unknown>, fallbackName?: string): Cha
   };
 }
 
-function normalizeParts(value: unknown): ChatPart[] {
+function normalizeParts(value: unknown): ChatUiPart[] {
   if (!Array.isArray(value)) return [];
-  const parts: ChatPart[] = [];
+  const parts: ChatUiPart[] = [];
   for (const item of value) {
     const record = asRecord(item);
     const type = stringValue(record.type);
@@ -352,7 +459,7 @@ function normalizeStreamError(raw: unknown): ChatError {
   return {
     message: stringValue(record.message, record.errorText, record.error)
       || 'Nana could not finish that answer.',
-    code: stringValue(record.code, record.errorCode) || undefined,
+    code: errorCode(record.code, record.errorCode, record.error_code),
     status: numberValue(record.status),
   };
 }
@@ -613,6 +720,52 @@ export async function getChatStatus(auth: ChatAuth): Promise<ChatStatusResponse>
   };
 }
 
+/** GET /api/chat/notes/:id/chat — shared-chat availability for one note. */
+export async function getNoteChatStatus(
+  auth: ChatAuth,
+  documentId: string,
+): Promise<NoteChatStatus> {
+  const response = await fetch(
+    `${CHAT_BASE}/notes/${encodeURIComponent(documentId)}/chat`,
+    { headers: authHeaders(auth) },
+  );
+  const data = await readJson(response);
+  if (!response.ok) throw errorFromResponse(response.status, data);
+  const record = asRecord(data);
+  const status = normalizeNoteChatStatus(record.status ?? data);
+  if (!status) throw new ChatApiError('Shared chat status was not readable.', 502, 'invalid_response');
+  return status;
+}
+
+/** POST /api/chat/notes/:id/chat — open or create the note's shared conversation. */
+export async function openNoteChat(
+  auth: ChatAuth,
+  documentId: string,
+): Promise<{ status: NoteChatStatus; conversation: ChatConversation | null }> {
+  const response = await fetch(
+    `${CHAT_BASE}/notes/${encodeURIComponent(documentId)}/chat`,
+    { method: 'POST', headers: authHeaders(auth) },
+  );
+  const data = await readJson(response);
+  if (!response.ok) throw errorFromResponse(response.status, data);
+  const record = asRecord(data);
+  const status = normalizeNoteChatStatus(record.status ?? data);
+  if (!status) throw new ChatApiError('Shared chat status was not readable.', 502, 'invalid_response');
+  const conversation = normalizeConversation(record.conversation)
+    ?? status.conversation
+    ?? null;
+  return {
+    status,
+    conversation: conversation
+      ? {
+        ...conversation,
+        scope: conversation.scope ?? 'note',
+        documentId: conversation.documentId ?? status.noteId,
+      }
+      : null,
+  };
+}
+
 /** Upload one draft attachment; the server classifies and extracts it. */
 export async function uploadChatAttachment(
   file: File,
@@ -688,13 +841,31 @@ export async function loadConversation(auth: ChatAuth, id: string): Promise<Load
   const messages: ChatUiMessage[] = rawMessages
     .map((item): ChatUiMessage => {
       const message = asRecord(item);
+      const expand = asRecord(message.expand);
+      const authorRecord = asRecord(expand.author);
       const role: 'assistant' | 'user' = message.role === 'assistant' ? 'assistant' : 'user';
       const idValue = stringValue(message.id);
       const usage = sanitizeChatUsage(message.usage);
+      const authorId = stringValue(
+        message.authorId,
+        message.author_id,
+        typeof message.author === 'string' ? message.author : '',
+        authorRecord.id,
+      );
+      const authorLabel = stringValue(
+        message.authorLabel,
+        message.author_label,
+        message.authorName,
+        message.author_name,
+        authorRecord.name,
+        authorRecord.email,
+      );
       return {
         ...(idValue ? { id: idValue } : {}),
         role,
         content: stringValue(message.content),
+        ...(authorId ? { authorId } : {}),
+        ...(authorLabel ? { authorLabel } : {}),
         ...(stringValue(message.reasoning) ? { reasoning: stringValue(message.reasoning) } : {}),
         ...(Array.isArray(message.tools)
           ? {

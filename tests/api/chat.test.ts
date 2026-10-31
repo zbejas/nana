@@ -332,6 +332,33 @@ describe("Chat API", () => {
             });
             expect(messages[1]?.stopped).toBe(true);
         });
+
+        test("persists bounded safe tool errors in tools and parts", async () => {
+            const conversation = await createConversation(user, {
+                title: "Tool errors",
+                messages: [],
+            });
+            const rawError = `read failed\u0000\n${"x".repeat(400)}`;
+
+            await appendMessage(user.token, conversation.id, {
+                role: "assistant",
+                content: "I could not read that note.",
+                tools: [{ name: "read_note", status: "error", error: rawError }],
+                parts: [{ type: "tool", name: "read_note", status: "error", error: rawError }],
+            });
+
+            const messages = await getConversationMessages(user.token, conversation.id);
+            const persisted = messages[0];
+            expect(persisted?.tools?.[0]?.error).toBeDefined();
+            expect(persisted?.tools?.[0]?.error).not.toContain("\u0000");
+            expect(persisted?.tools?.[0]?.error).not.toContain("\n");
+            expect(persisted?.tools?.[0]?.error?.length).toBe(200);
+
+            const part = persisted?.parts?.find((entry) => entry.type === "tool");
+            expect(part?.type).toBe("tool");
+            if (!part || part.type !== "tool") return;
+            expect(part.error).toBe(persisted?.tools?.[0]?.error);
+        });
     });
 
     describe("GET /api/chat/status", () => {

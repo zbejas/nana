@@ -44,12 +44,14 @@ Authorization: Bearer <nana_api_key>
 | `src/api/pocketbase/client.ts` | Caller-token PocketBase REST client and status mapping. |
 | `src/api/auth.ts` | `verifyAuth()` and `AuthError`. |
 | `src/api/chat/index.ts` | Chat request parsing, mode/context/attachment validation, SSE response, conversation dispatch. |
-| `src/api/chat/context.ts` | Server-side document/board/folder context resolution with ownership, trash, and private-lock checks; the prompt note carries only the id. |
+| `src/api/chat/context.ts` | Server-side document/board/folder context resolution with ownership, trash, sharing, and private-lock checks; a shared document returns access level/owner and becomes note-scoped; the prompt note carries only the id. |
+| `src/api/chat/group.ts` | Shared-note status and server-created group conversations; access/reason resolution and disabled errors. |
+| `src/api/workspace/sharing.ts` | Caller-token effective person access (`owner`/`view`/`comment`/`edit`) used by shared-note chat; public-link flags are excluded. |
 | `src/api/chat/attachments.ts` | Multipart validation, magic-byte MIME/kind checks, PDF text extraction, draft binding/deletion, and protected-file downloads. |
 | `src/api/chat/stream.ts` | Named SSE events, legacy AI-SDK chunks, final-step usage mapping, and stream accumulation. |
-| `src/api/chat/edits.ts` | `chat_edits` recording, edit-card listing, and undo. |
+| `src/api/chat/edits.ts` | `chat_edits` recording, edit-card listing, owner-scoped undo/confirm/cancel. |
 | `src/api/chat/tool-names.ts` | Persisted read/write chat tool allowlists. |
-| `src/api/chat/tools/` | Read tools plus Work-mode create, rename, move, trash/restore, and confirm-first delete tools for folders, notes, boards, and tasks. |
+| `src/api/chat/tools/` | Read tools plus Work-mode create, rename, move, trash/restore, and confirm-first delete tools for folders, notes, boards, and tasks; a strict note scope registers only the bound-note tools. |
 | `src/api/export/` | Markdown and ZIP export. |
 | `src/api/app-version.ts` | Cached GitHub Releases lookup. |
 | `src/lib/pocketbase.ts` | Browser client over `/api/v1`; preserves the small `pb.collection` / `pb.authStore` / `pb.files` surface the SPA uses. |
@@ -331,7 +333,8 @@ The collaboration routes are a session-only, in-memory surface for open notes:
 - The first SSE `sync` frame is `{ type: "sync", clientId, update, stateVector, canEdit, epoch, presence, protocol: 2, documentId, durableSeq, revision, persistence }`. `update` is a base64 Yjs state update seeded from the saved Markdown. `canEdit` is true for the owner and `edit` grantees. `epoch` identifies the in-memory room incarnation; a change tells the client to reset its replica before folding in its draft.
 - `POST .../update` accepts `{ clientId, update }` (base64). It applies to the room, broadcasts `{ type: "update", clientId, update, seq, source }` to the other viewers, and returns `{ ok, seq }`. A viewer gets `403`; a stale client/room gets `409` so the browser reconnects. The server-only `source: "system"` update is the room reconciling an external body.
 - `POST .../presence` accepts `{ clientId, presence: { anchor, head, focused } }` where anchor/head are JSON Yjs `RelativePosition` values. It broadcasts `{ type: "presence", clientId, userId, name, avatar, color, anchor, head, focused, updatedAt }`; disconnect emits `presence-leave`. Presence older than 45 seconds is dropped.
-- The room is the durable content writer. It debounces a PocketBase `PATCH` for 800 ms, caps continuous typing at 5 seconds, and writes `{ content, revision }` with the caller's session token. It emits `{ type: "ack", durableSeq, revision, savedAt }`, `{ type: "status", persistence: "clean"|"dirty"|"saving"|"error"|"conflict", revision }`, and `{ type: "conflict", revision, reason }` frames. A revision conflict adopts a metadata-only bump or merges a non-overlapping external body; it never falls back to a superuser token. The last disconnect and graceful shutdown flush pending content.
+- The room is the durable content writer. It debounces a PocketBase `PATCH` for 800 ms, caps continuous typing at 5 seconds, and writes `{ content, revision }` with the caller's session token. It emits `{ type: "ack", durableSeq, revision, savedAt }`, `{ type: "status", persistence: "clean"|"dirty"|"saving"|"error"|"conflict", revision }`, and `{ type: "conflict", revision, reason }` frames. A revision conflict adopts a metadata-only bump or merges a non-overlapping external body; it never falls back to a superuser token. A hard `error` stops flush and timer retries; a new editor connection with an edit token can re-arm persistence. The last disconnect and graceful shutdown flush pending content.
+- An external AI/typed REST/MCP content write is adopted into the room as one server-origin diff after merging concurrent local text. A non-mergeable body puts the room in `conflict` instead of overwriting. The room revision follows the external write; metadata-only writes adopt the revision without replacing the body. The next `read_note` therefore sees one coherent revision.
 - `POST .../flush` drains pending content and returns the durable snapshot. It requires an edit grant. It is used before Save version and restore, and by typed REST/MCP/chat writes before they read a revision. A room in `conflict` or `error` returns `409` instead of a stale snapshot.
 - Rooms are process-local. A room with no viewers is disposed after 45 seconds. While connected, the browser autosaves metadata only; it does not PATCH `content`.
 - Request bodies are capped at 9 MB; presence payloads at 4 KB.
@@ -459,6 +462,65 @@ Requires a session token (`verifyAuth`; API keys are rejected). Multipart form w
 
 Requires a session token and owner. Deletes an unbound draft row and its protected file. `204` on success; `404` for another user's or missing id; `409 attachment_in_use` once the row is bound to a message. Conversations and messages cascade their attachment rows when deleted.
 
+#### `GET/POST /api/chat/notes/:id/chat`
+
+Requires a session token (`verifyAuth`). Resolves one shared-note conversation. `GET` returns availability and the existing thread without creating it; `POST` returns the same status and creates the one conversation when the caller may participate.
+
+`GET` response:
+
+```json
+{
+  "status": {
+    "noteId": "note123",
+    "noteTitle": "Q4 plan",
+    "enabled": true,
+    "reason": null,
+    "shared": true,
+    "accessRole": "edit",
+    "accessLevel": 3,
+    "canEdit": true,
+    "canManage": false,
+    "conversation": {
+      "id": "conv123",
+      "title": "Q4 plan",
+      "author": "owner123",
+      "scope": "note",
+      "document": "note123",
+      "can_manage": false,
+      "created": "2026-10-31 09:00:00.000Z",
+      "updated": "2026-10-31 09:05:00.000Z"
+    }
+  }
+}
+```
+
+`POST` returns `{ status, conversation }`; `conversation` is the same object and is never `null` on success. A first open creates the row with `scope: "note"`, `document: noteId`, the note title, and the **note owner** as `author`, using the server credential. A concurrent open that loses the unique-index race returns the winning conversation.
+
+Access:
+
+| Caller | Result |
+| --- | --- |
+| Note owner | Allowed unless the note is private or trashed. `shared` is true only when another person has a direct or inherited grant; with no such grant `enabled: false`, `reason: "not_shared"`. |
+| Person grantee (`view`/`comment`/`edit`) | Allowed on a live, non-private note. `shared: true`; `canEdit` only at `edit`; `canManage: false`. |
+| Public-link visitor | No access. Public flags never authorize chat. |
+| Missing, foreign, private, or trashed note | `404` for a missing/foreign/no-access caller; an owner still gets the status object for a private/trashed note with `enabled: false` and `reason: "private"`/`"trashed"` so existing owner history is readable. |
+
+`reason` is `not_shared`, `private`, `trashed`, `unavailable`, or `null`. `accessRole` is `owner`, `view`, `comment`, or `edit`; `accessLevel` is `1` (view), `2` (comment), or `3` (edit/owner). `canEdit` is true only when `enabled` is true and access is `edit`/owner; `canManage` is true only for the note owner. `conversation` is the existing note conversation when one exists; it is returned even when `enabled` is false for the owner, so paused history stays visible. The payload never contains a body, email address, or another note id.
+
+`GET` reports a disabled note as `200` with `enabled: false` and the `reason`; `POST` refuses it with a `409`/`503`. Errors:
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `400` | — | The note id does not match `[A-Za-z0-9]{1,64}`. |
+| `404` | — | The note is missing/foreign/no longer shared, or the caller has no effective person grant. |
+| `409` | `note_not_shared` | The owner has not shared the note with another person. |
+| `409` | `note_private` | The note is private. |
+| `409` | `note_trashed` | The note is in trash. |
+| `409` | `note_chat_disabled` | The status is disabled without a more specific reason. |
+| `503` | `note_unavailable` / — | The note or effective-access lookup failed. A failed conversation/owner-grant snapshot makes `GET` return `200` with `reason: "unavailable"`; `POST` maps that disabled status to `503 note_unavailable`. |
+
+The status route is rate-limited with `/api/chat/*` and does not disable the Bun timeout. It is session-only: API keys are rejected like every other chat route.
+
 #### `POST /api/chat/send`
 
 Requires auth. Request:
@@ -478,14 +540,15 @@ Requires auth. Request:
 - `message` may be empty only when `attachmentIds` has at least one id. Ids must match `[A-Za-z0-9]{1,64}`, are deduplicated, and are capped at the configured `maxFiles` (hard ceiling 20).
 - `attachmentIds` reference owner-scoped draft rows from `POST /api/chat/attachments`. The server verifies ownership, unbound state, count, per-file size, total size, and the selected model's `vision`/`files` capabilities before creating a conversation or SSE stream. Invalid/bound/too many ids are `400`; disabled attachments are `403`; size overflow is `413`; unsupported types or model capability failures are `415`; missing or foreign ids are `404`.
 - `modelId` is optional and must be an enabled id from `GET /api/chat/status.models`. Omit it to use `defaultModelId`, then the first enabled model. An explicit unknown or disabled id returns `400` with code `model_not_found` before any conversation or stream work.
-- `mode` is `"ask"` or `"edit"`; omit it for the safe read-only default. The UI's Work mode sends `"edit"` and is the default there; Ask sends `"ask"`. Edit adds create, rename, move, and update tools for folders, notes, boards, and tasks; boards and notes can be moved to trash or restored, and deletes use a pending confirmation card.
-- `context` is optional and accepts only `{ type: "document" | "board" | "folder", id }`. Bun resolves the title, ownership, trash state, and private lock with the caller's token, then persists `messages.context` with the resolved title on the user message. The system prompt receives only the type and id; titles and bodies stay out. A missing, foreign, trashed, private, or hidden record is `404`; a malformed type/id is `400`; an unreadable visibility snapshot is `503`. Client-supplied titles and bodies are ignored.
-- Omit `conversationId` to create a conversation. The first message seeds the title from the user text or the first attachment name; a background title call refines it after the first reply when the stream is not stopped and has no error. Title generation never receives attachment bytes or extracted text.
-- `regenerate: true` trims the previous user/assistant exchange before re-sending.
-- There is no `documentIds` field. `attachmentIds` is the only file payload; context is metadata only and tools read notes, boards, and tasks on demand.
-- The persisted user message carries sanitized attachment refs. Chat history sends role, content, and attachment content for user messages only. Stored reasoning, tool activity, the ordered `parts` timeline, sources, context metadata, and model metadata stay out of the prompt; the resolved context contributes a short system note.
+- `mode` is `"ask"` or `"edit"`; omit it for the safe read-only default. The UI's Work mode sends `"edit"` and is the default there; Ask sends `"ask"`. Edit adds create, rename, move, and update tools for folders, notes, boards, and tasks; boards and notes can be moved to trash or restored, and deletes use a pending confirmation card. In a shared-note or shared-document note scope, view/comment access forces the effective mode to `"ask"` even when the request says `"edit"`.
+- `context` is optional and accepts only `{ type: "document" | "board" | "folder", id }`. Bun resolves the title and trash state with the caller's token, applies the private lock to owned records, and persists `messages.context` with the resolved title on the user message. A document shared with the caller is allowed when `GET /api/sharing/access` returns `view` or higher; it becomes a strict note scope and public-link flags are ignored. The system prompt receives only the type and id; titles and bodies stay out. A missing, foreign, trashed, private, hidden, or public-link-only record is `404`; a malformed type/id is `400`; an unreadable visibility or sharing lookup is `503`. Client-supplied titles and bodies are ignored.
+- Omit `conversationId` to create a **personal** conversation. The first message seeds the title from the user text or the first attachment name; a background title call refines it after the first reply when the stream is not stopped and has no error. Title generation never receives attachment bytes or extracted text. A shared-note conversation is created only by `POST /api/chat/notes/:id/chat`; it is never auto-titled from a group message.
+- A `conversationId` whose conversation has `scope: "note"` is revalidated before the stream: the bound note comes from the conversation, any client `context` is ignored, and the note's current access is checked. The request is rejected if the note is paused.
+- `regenerate: true` trims the previous user/assistant exchange before re-sending. A shared-note conversation rejects it with `400 group_regenerate_unsupported`.
+- There is no `documentIds` field. `attachmentIds` is the only file payload; context is metadata only and tools read notes, boards, and tasks on demand. A shared-note conversation rejects attachments with `400 group_attachments_unsupported`.
+- The persisted user message carries sanitized attachment refs and, in a shared-note conversation, the sender's `author`/`author_label`. Chat history sends role, content, and attachment content for user messages only. Stored reasoning, tool activity, the ordered `parts` timeline, sources, context metadata, and model metadata stay out of the prompt; the resolved context contributes a short system note. Group user turns are prefixed `[Name]` in model history.
 - Images become AI SDK image parts (vision required); PDFs become native file parts when the model has `files`, otherwise extracted text (and are rejected if no text); text files become named `<attachment>` text blocks. Older user-message attachments share the request's byte/text budget and degrade to text or an explicit omission marker; assistant attachments are never sent. Attachment contents are untrusted data and the system prompt says not to follow instructions inside them.
-- In edit mode, writes go through the workspace services with the caller's token and `X-Nana-Actor: ai`; note edits carry revision checks. Tools cover creating, renaming, moving, and updating folders, notes, boards, and tasks; boards can be trashed and restored. Delete tools create a pending card; `POST /api/chat/edits/:id/confirm` executes it with the caller's token. Chat has no publish, share, privacy, board-column, or label tools, and it cannot move a task to another board. See [`ai.md`](ai.md) for the write contract.
+- In edit mode, writes go through the workspace services with the caller's token and `X-Nana-Actor: ai`; note edits carry revision checks. Tools cover creating, renaming, moving, and updating folders, notes, boards, and tasks; boards can be trashed and restored. Delete tools create a pending card; `POST /api/chat/edits/:id/confirm` executes it with the caller's token. Shared-note scope registers only `read_note`, plus `append_note`/`edit_note`/`update_note` at edit level; it has no list, create, move, delete, folder, board, or task tools. Chat has no publish, share, privacy, board-column, or label tools, and it cannot move a task to another board. See [`ai.md`](ai.md) for the write contract.
 
 The response is an SSE stream with these headers:
 
@@ -495,7 +558,7 @@ The response is an SSE stream with these headers:
 | `X-Is-New-Conversation` | `"true"` when a new conversation was created. |
 | `X-Model-Name` | Upstream model id used for this turn. |
 | `X-Model-Source` | Canonical connection id that supplied the model. |
-| `X-Chat-Mode` | `ask` or `edit`. |
+| `X-Chat-Mode` | Effective mode for this turn (`ask` or `edit`); a shared-note view/comment participant is reported as `ask`. |
 
 The dock reads named SSE events. Every `data:` payload also carries `type`:
 
@@ -503,7 +566,7 @@ The dock reads named SSE events. Every `data:` payload also carries `type`:
 | --- | --- |
 | `text` | `{ type: "text", delta }`. |
 | `reasoning` | `{ type: "reasoning", delta }`. |
-| `tool` | `{ type: "tool", id, name, status, error? }`; `status` is `running`, `success`, or `error`. |
+| `tool` | `{ type: "tool", id, name, status, error? }`; `status` is `running`, `success`, or `error`. `error` is bounded, flattened failure text and never raw arguments or tool output. |
 | `sources` | `{ type: "sources", sources }`; each source is a document or board with `{ id, title }`. |
 | `edit` | `{ type: "edit", edit }`; one applied write, emitted before the model's next token where possible. |
 | `done` | `{ type: "done", conversationId, messageId, stopped, model, sources, usage? }`; `messageId` is `null` if persistence failed, and `usage` is the final model step's token accounting when the provider reported it. |
@@ -511,46 +574,49 @@ The dock reads named SSE events. Every `data:` payload also carries `type`:
 
 A request that omits `mode` also receives legacy AI-SDK UI chunks for text, reasoning, tools, completion, and errors: `text-delta`, `reasoning-delta`, `tool-input-start`, `tool-output-available`/`tool-output-error`, `finish`, `[DONE]`, and `error`. A request that sends `mode` (the dock) receives only the named events. There is no `X-RAG-Sources` header; sources travel as the `sources` event and the persisted `sources` field. There are no embeddings or retrieval metadata.
 
-After the model stream ends, the pump persists the assistant message with `content`, optional `reasoning`, optional `tools`, optional `parts`, optional `sources`, optional `usage`, optional `stopped`, and `model`. `parts` is the ordered timeline of `{ type: "text" | "reasoning", text }`, `{ type: "tool", name, status, ... }`, and `{ type: "edit", editId }`; it is what lets the UI render a call where it happened. Persisted tool parts keep only `{ name, status }` plus optional safe title/target fields, with `status` `success` or `error`; names are restricted to `CHAT_TOOL_NAMES`, and inputs/outputs are dropped. See [`ai.md`](ai.md) for the tool contracts, bounds, and prompt-injection stance.
+After the model stream ends, the pump persists the assistant message with `content`, optional `reasoning`, optional `tools`, optional `parts`, optional `sources`, optional `usage`, optional `stopped`, and `model`. `parts` is the ordered timeline of `{ type: "text" | "reasoning", text }`, `{ type: "tool", name, status, ... }`, and `{ type: "edit", editId }`; it is what lets the UI render a call where it happened. Persisted tool parts keep only `{ name, status }`, optional bounded `error` text on failure, and optional safe title/target fields, with `status` `success` or `error`; names are restricted to `CHAT_TOOL_NAMES`, and inputs/outputs are dropped. See [`ai.md`](ai.md) for the tool contracts, bounds, and prompt-injection stance.
 
 Chat errors:
 
 | Status | Meaning |
 | --- | --- |
-| `400` | Invalid JSON, an empty turn (no text and no attachments), invalid `mode`, malformed `context`, an invalid/bound/too-many attachment id, or an unknown/disabled `modelId` with code `model_not_found`. |
+| `400` | Invalid JSON, an empty turn (no text and no attachments), invalid `mode`, malformed `context`, an invalid/bound/too-many attachment id, an unknown/disabled `modelId` with code `model_not_found`, or a shared-note send with attachments/regeneration (`group_attachments_unsupported`/`group_regenerate_unsupported`). |
 | `401` | Missing or invalid user token. |
 | `403` | Attachments are disabled (`attachments_disabled`). |
-| `404` | The context record is missing, trashed, foreign, or hidden; an attachment id is missing or foreign; or the conversation is missing or foreign. |
+| `404` | The context record is missing, trashed, foreign, or hidden; the note is not shared with the caller; an attachment id is missing or foreign; or the conversation is missing or foreign. |
+| `409` | A shared-note conversation is paused: `note_not_shared`, `note_private`, `note_trashed`, or `note_chat_disabled`. |
 | `413` | An attachment or the combined attachment set exceeds the configured byte cap (`too_large`). |
 | `415` | Unsupported/SVG/mismatched file content, or the selected model lacks the required vision/files capability (`unsupported_model`). |
 | `502` | The provider failed before the SSE stream started; the message is mapped by `getAIErrorMessage()`. Failures after streaming begins arrive as an `error` event. |
-| `503` | `ai_config` is missing, no enabled model (including the legacy active-provider fallback) is configured, or the context visibility snapshot could not be loaded. |
+| `503` | `ai_config` is missing, no enabled model (including the legacy active-provider fallback) is configured, the context visibility/sharing lookup could not be loaded, or a shared-note check returns `note_unavailable`/`note_chat_unavailable`. |
 
 #### Chat conversations
 
 | Route | Method | Response |
 | --- | --- | --- |
-| `/api/chat/conversations` | GET | The current user's conversations, newest first. |
-| `/api/chat/conversations/:id` | GET | `{ conversation, messages }`. |
-| `/api/chat/conversations/:id` | PATCH | `{ conversation }`; body `{ title }`, trimmed, 1–120 characters. |
-| `/api/chat/conversations/:id` | DELETE | `204` on success. |
+| `/api/chat/conversations` | GET | Personal conversations plus shared-note conversations visible to the caller, newest first. |
+| `/api/chat/conversations/:id` | GET | `{ conversation, messages }`; a current shared-note participant may read it. |
+| `/api/chat/conversations/:id` | PATCH | `{ conversation }`; body `{ title }`, trimmed, 1–120 characters. Personal owner or shared-note note owner. |
+| `/api/chat/conversations/:id` | DELETE | `204` on success. Personal owner or shared-note note owner. |
 
-Conversation list/view/rename/delete are author-scoped by PocketBase rules. Bun creates a conversation with the author derived from the token, then writes each turn to the `messages` collection. Every route forwards the caller's token. Unknown conversations and another user's conversation both return `404`. `GET /api/chat/conversations/:id` returns `{ conversation, messages }`, with messages ordered by `position` and sanitized on read. Messages may carry `context`, `attachments`, `sources`, `usage`, `stopped`, and the ordered `parts` timeline; attachment refs contain only `{ id, name, mimeType, size, kind }`. See [`ai.md`](ai.md) for the persisted shapes.
+Personal conversations are author-scoped. A shared-note conversation is visible to the note owner and to every current person grantee, but only the note owner can rename or delete it; its `author` is the note owner. `listConversations()` returns both personal and visible shared-note rows and adds `can_manage` (`author === caller`). A rename or delete by a grantee is rejected by the collection rules and surfaces as `404`.
+
+Bun creates a personal conversation with the author derived from the token, then writes each turn to `messages`. A shared-note conversation is created by `POST /api/chat/notes/:id/chat`, and a participant's user turn stores `author`/`author_label`; assistant turns have an empty author. Because the conversation update rule is owner-only, the server touches a group conversation's `updated` timestamp with its own credential after proving the caller can read it. Every route forwards the caller's token. Unknown conversations, another user's personal conversation, and a revoked shared-note conversation all return `404`. `GET /api/chat/conversations/:id` returns `{ conversation, messages }`, with messages ordered by `position` and sanitized on read. Messages may carry `authorId`/`authorLabel` (shared-note user turns), `context`, `attachments`, `sources`, `usage`, `stopped`, and the ordered `parts` timeline; attachment refs contain only `{ id, name, mimeType, size, kind }`. See [`ai.md`](ai.md) for the persisted shapes.
 
 #### Chat edits and undo
 
 | Route | Method | Response |
 | --- | --- | --- |
-| `/api/chat/conversations/:id/edits` | GET | `{ edits }`, oldest first. |
-| `/api/chat/edits/:id/undo` | POST | `{ edit, alreadyUndone }`. |
-| `/api/chat/edits/:id/confirm` | POST | `{ edit }`; executes a pending delete with the caller's token. |
-| `/api/chat/edits/:id/cancel` | POST | `{ edit }`; cancels a pending delete without a write. |
+| `/api/chat/conversations/:id/edits` | GET | `{ edits }`, oldest first. Personal owner or any current shared-note participant. |
+| `/api/chat/edits/:id/undo` | POST | `{ edit, alreadyUndone }`; conversation owner only. |
+| `/api/chat/edits/:id/confirm` | POST | `{ edit }`; executes a pending delete with the caller's token; conversation owner only. |
+| `/api/chat/edits/:id/cancel` | POST | `{ edit }`; cancels a pending delete without a write; conversation owner only. |
 
 An edit card carries `id`, `conversationId`, `messageId`, `target { type, id, title, url }`, `tool`, `summary`, `status`, `actorType: "ai"`, `actorLabel`, `changed { sections?, fields? }`, `undo { kind, available }`, and timestamps. Target types are `document`, `board`, `task`, and `folder`. `status` is `pending`, `applied`, `undone`, `cancelled`, or `failed`; `undo.kind` is `trash`, `restore`, or `none`.
 
-- Both routes require the conversation owner. Another user's conversation or edit returns `404`, matching a missing record.
+- The list requires the personal conversation owner or a current shared-note participant. Undo, confirm, and cancel require the conversation owner; a shared-note grantee can read the cards but cannot manage them. Another user's conversation or edit returns `404`, matching a missing record.
 - `create_note` undo moves the created note to trash. `append_note`, `edit_note`, and `update_note` undo restore the pre-edit snapshot.
-- Pending delete cards are created by `delete_note`, `delete_task`, `delete_folder`, and `delete_board`. The confirm route re-checks ownership and visibility, then executes the workspace delete; cancel only changes the audit row status. Board and task edits have `undo.kind: "none"` and `available: false`; undoing one returns `409`.
+- Pending delete cards are created by `delete_note`, `delete_task`, `delete_folder`, and `delete_board`. Shared-note chats do not register delete tools, so they cannot create pending cards. The confirm route re-checks ownership and visibility, then executes the workspace delete; cancel only changes the audit row status. Board and task edits have `undo.kind: "none"` and `available: false`; undoing one returns `409`.
 - Note-edit undo is revision-aware. If the note changed after Nana's edit, the route returns `409` instead of overwriting newer work. Created-note undo trashes the target without a revision check. A second undo of a successful edit returns `alreadyUndone: true` and does not apply the edit twice.
 - A note-edit undo with no saved revision or snapshot returns `409`. An applied non-AI audit row returns `409`; only Nana edits are undoable from chat.
 
@@ -745,22 +811,23 @@ Folder response includes `rootFolder`, `folders`, `documents`, `boards`, and `en
 - **Ownership is server-injected.** Browser `author` values are ignored on create and removed on update. Folder parents, board folders, task boards, and note links are checked before the upstream write.
 - **Document content is sanitized at the edge.** The facade calls `sanitizeHtml()` on create/update; PocketBase is still the storage and rules engine.
 - **`revision` is part of the document update contract.** The facade forwards it so the PocketBase revision guard can reject a stale content/title/tags write; do not remove it from `UPDATE_FIELDS.documents`.
-- **Live rooms are not persisted.** Collaboration keeps Yjs state in Bun memory and relies on the editor's debounced save. A restart resets the room from the saved note. Add a shared room bus only if Nana stops being a single Bun process.
+- **Live rooms are not persisted.** Collaboration keeps Yjs state in Bun memory; the room writes the Markdown body to PocketBase and a restart reseeds from that saved note. Add a shared room bus only if Nana stops being a single Bun process.
 - **Only the server seeds Yjs.** Clients apply the room's sync update before folding in their loaded draft; seeding both sides independently duplicates the entire note.
 - **Private records are visible to their owner.** `/api/v1` is the owner surface. Only chat and MCP apply the private lock; do not add `aiVisibilityConditions()` to REST or browser facade handlers.
 - **`/docs` is public.** The OpenAPI document and Scalar assets are intentionally unauthenticated; `/api/v1` routes are not.
 - **Scalar renders only tags listed in `x-tagGroups`.** When the extension is present, the sidebar is built from each group's tag names; a tag declared in `tags` but omitted from every group disappears from the nav. Add new reference tags to the `Workspace` group in `src/api/rest/openapi.ts`.
 - **MCP is POST-only and stateless.** There is no session to continue. Every request authenticates, builds a server, handles one payload, and closes the transport.
 - **MCP tool failures are model-facing, not HTTP failures.** An `isError` text result still returns `200`; only auth, parse, and transport failures return HTTP errors.
-- **Chat context is metadata, not retrieval.** `POST /api/chat/send` accepts only `{ type, id }` and resolves the title server-side for history. The prompt note contains only the type and id; there are no `documentIds` or attachments; extra request fields are ignored.
-- **Chat mode gates writes.** Ask mode has only the read tools. Work (`edit`) adds create, rename, move, and update tools, board trash/restore, and confirm-first deletes. The mode lives in the request and the tool registry, not in the prompt.
-- **Chat note edits require a revision.** `read_note` returns `revision` and `versionToken`; the note update tools pass one back. A stale value is a `conflict` tool result, not a silent overwrite.
+- **Shared-note access comes from person sharing, not public flags.** `GET/POST /api/chat/notes/:id/chat` uses effective `view`/`comment`/`edit` access and ignores `is_public`/`public_share_token`. The note owner is the group conversation author; one partial unique index enforces one conversation per note.
+- **Chat context is metadata, not retrieval.** `POST /api/chat/send` accepts only `{ type, id }` and resolves the title server-side for history. The prompt note contains only the type and id; `attachmentIds` is the separate file payload; extra request fields are ignored. A shared document with a person grant may attach and becomes a strict note scope; public links do not.
+- **Chat mode gates writes.** Ask mode has only the read tools. Work (`edit`) adds create, rename, move, and update tools, board trash/restore, and confirm-first deletes. The mode lives in the request and the tool registry, not in the prompt. A strict note scope returns only `read_note`, plus the three note tools at edit level, and forces `ask` below edit access.
+- **Chat note edits require a revision.** `read_note` returns `revision` and `versionToken`; the note update tools pass one back. A stale value is a `conflict` tool result, not a silent overwrite. A live room that cannot persist also returns `conflict` from `read_note`.
 - **Version history is manual-only.** Only `POST /api/v1/documents/:id/versions` commits a version. Autosave, chat writes, and MCP writes never create one. Version detail loads the body separately from the paginated list. `documents.published` and `document_versions` no longer exist; do not reintroduce either.
-- **`chat_edits` is server-owned.** It has no public create/update/delete rules. Bun writes it after checking conversation ownership; board/task cards are informational and cannot be undone.
+- **`chat_edits` is server-owned.** It has no public create/update/delete rules. Bun writes it after checking access to the conversation; a shared-note participant can read the cards, but only the note owner can undo or confirm. Board/task cards are informational and cannot be undone.
 - **Sources are event data.** No `X-RAG-Sources` header exists, but new assistant messages do carry server-collected `sources` in the stream and in `messages.sources`. Sources come from content reads and successful writes, not list-only searches. Do not derive sources from model text.
-- **Chat tool errors are model-facing, not HTTP errors.** `list_notes` etc. return `{ ok: false, code, message }` inside the stream; the chat `POST` still succeeds. Undo and other JSON routes do use HTTP statuses, including `409` for newer work.
-- **Persisted chat tool activity is allowlisted.** Only `CHAT_TOOL_NAMES` entries (read and write) and `success`/`error` statuses survive `sanitizeTools()`; args and outputs are never stored. MCP tool activity is not persisted in conversations.
-- **Messages are records.** `conversations.messages` no longer exists. Appending a message writes a `messages` row and touches the conversation's `updated` timestamp so the sidebar order stays current.
+- **Chat tool errors are model-facing, not HTTP errors.** `list_notes` etc. return `{ ok: false, code, message }` inside the stream; the chat `POST` still succeeds. Failed tool events and persisted parts carry bounded failure text; provider errors are reduced to `The tool failed.` Undo and other JSON routes do use HTTP statuses, including `409` for newer work.
+- **Persisted chat tool activity is allowlisted.** Only `CHAT_TOOL_NAMES` entries (read and write), `success`/`error` statuses, and bounded safe failure text survive `sanitizeTools()`; args and raw outputs are never stored. MCP tool activity is not persisted in conversations.
+- **Messages are records.** `conversations.messages` no longer exists. Appending a message writes a `messages` row and touches the conversation's `updated` timestamp so the sidebar order stays current. A shared-note user row stores `author`/`author_label`; assistant rows do not.
 - **Deleting a board moves it to trash.** `DELETE /api/v1/boards/:id` and chat confirmation soft-delete it; permanent delete is `/api/v1/trash/permanent-delete-board` from Trash.
 - **Task deletion still works on a trashed board.** The trash rule blocks create/update, not delete; this is intentional so cleanup stays possible.
 - **A `403` and a `404` can look identical through the services.** PocketBase hides unauthorized records; the shared client maps both to a generic `not_found`.

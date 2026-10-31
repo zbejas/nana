@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDownIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, LockClosedIcon } from '@heroicons/react/24/outline';
 import { ChatComposer } from './ChatComposer';
 import { ChatEmptyState } from './ChatEmptyState';
 import { ChatErrorCard } from './ChatErrorCard';
 import { ChatMessage } from './ChatMessage';
 import { ChatModelPicker } from './ChatModelPicker';
+import { noteChatUnavailableMessage } from './ChatScopeTabs';
 import { toContextInput, useChatContextTarget } from '../../lib/chat/context';
 import {
   cancelDelete,
   confirmDelete,
+  refreshActiveConversation,
   retryLastMessage,
   sendMessage,
   setActiveConversation,
@@ -51,6 +53,11 @@ export function ChatThread({
   const selectedModelId = useChatStore((snapshot) => snapshot.selectedModelId);
   const loadingConversation = useChatStore((snapshot) => snapshot.loadingConversation);
   const conversationId = useChatStore((snapshot) => snapshot.conversationId);
+  const conversation = useChatStore((snapshot) => snapshot.conversation);
+  const scope = useChatStore((snapshot) => snapshot.scope);
+  const noteChatStatus = useChatStore((snapshot) => snapshot.noteChatStatus);
+  const noteChatLoading = useChatStore((snapshot) => snapshot.noteChatLoading);
+  const noteChatError = useChatStore((snapshot) => snapshot.noteChatError);
   const editing = useChatStore((snapshot) => snapshot.editing);
 
   const target = useChatContextTarget();
@@ -58,7 +65,40 @@ export function ChatThread({
   const models = chatModelOptions(status);
   const selectedModel = findChatModel(status, selectedModelId);
   const attachmentLimits = status?.limits;
-  const attachmentsEnabled = Boolean(attachmentLimits?.enabled);
+  const groupChat = scope === 'note';
+  const attachmentsEnabled = !groupChat && Boolean(attachmentLimits?.enabled);
+  const canManage = !groupChat
+    || conversation?.canManage === true
+    || noteChatStatus?.canManage === true;
+  const currentUserId = pb.authStore.record?.id ?? null;
+  const effectiveMode = groupChat && noteChatStatus?.canEdit === false ? 'ask' : mode;
+
+  const notePaused = groupChat && noteChatStatus !== null && !noteChatStatus.enabled;
+  const noteUnavailable = groupChat && !noteChatStatus;
+  const noteMissingConversation = groupChat
+    && noteChatStatus?.enabled === true
+    && !conversationId
+    && !noteChatLoading;
+  const noteOpening = groupChat
+    && messages.length === 0
+    && (noteChatLoading || (noteChatStatus?.enabled === true && !conversationId && !noteChatError));
+  const noteDisabled = notePaused || noteUnavailable || noteMissingConversation;
+  const noteDisabledCopy = notePaused
+    ? noteChatUnavailableMessage(noteChatStatus?.reason ?? null, false, noteChatError)
+    : noteDisabled
+      ? noteChatError || noteChatUnavailableMessage(noteChatStatus?.reason ?? null, false, noteChatError)
+      : null;
+  const noteNotReady = groupChat && !conversationId;
+  const composerDisabled = noteDisabled || noteNotReady;
+  const composerDisabledReason = groupChat && composerDisabled
+    ? noteChatLoading && !noteChatStatus
+      ? 'Checking shared access…'
+      : noteOpening || noteChatLoading
+        ? 'Opening the shared chat…'
+        : notePaused
+          ? 'This shared chat is paused.'
+          : noteChatError || 'Note chat is unavailable.'
+    : null;
 
   const [input, setInput] = useState('');
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -99,6 +139,44 @@ export function ChatThread({
       discardDraft(attachment);
     }
   }, [discardDraft]);
+
+  // Shared note chats pick up other people's turns. Personal chats never
+  // subscribe; the store skips the refresh while a local stream is running.
+  useEffect(() => {
+    if (scope !== 'note' || !conversationId) return;
+
+    let cancelled = false;
+    let debounce = 0;
+    let unsubscribe: (() => Promise<void>) | undefined;
+    const schedule = () => {
+      window.clearTimeout(debounce);
+      debounce = window.setTimeout(() => {
+        if (cancelled) return;
+        void refreshActiveConversation();
+      }, 450);
+    };
+
+    void pb
+      .collection('messages')
+      .subscribe(
+        '*',
+        schedule,
+        { filter: pb.filter('conversation = {:id}', { id: conversationId }) },
+      )
+      .then((off) => {
+        if (cancelled) void off();
+        else unsubscribe = off;
+      })
+      .catch(() => {
+        // Realtime is an enhancement; reopening the conversation still refreshes.
+      });
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(debounce);
+      if (unsubscribe) void unsubscribe();
+    };
+  }, [scope, conversationId]);
 
   useEffect(() => {
     messageCountRef.current = messages.length;
@@ -164,7 +242,7 @@ export function ChatThread({
     .find((message) => message.role === 'assistant' && message.usage)?.usage ?? null;
 
   const addFiles = useCallback((files: FileList | null) => {
-    if (!files || files.length === 0 || !attachmentLimits?.enabled || active || uploadingAttachments) return;
+    if (!files || files.length === 0 || groupChat || !attachmentLimits?.enabled || active || uploadingAttachments) return;
     const incoming = Array.from(files);
     let next = [...attachmentsRef.current];
     let total = next.reduce((sum, attachment) => sum + attachment.size, 0);
@@ -240,7 +318,7 @@ export function ChatThread({
           setAttachmentError(message);
         });
     }
-  }, [active, attachmentLimits, selectedModel, setDraftAttachments, uploadingAttachments]);
+  }, [active, attachmentLimits, groupChat, selectedModel, setDraftAttachments, uploadingAttachments]);
 
   const removeAttachment = useCallback((localId: string) => {
     cancelledUploads.current.add(localId);
@@ -251,20 +329,20 @@ export function ChatThread({
 
   const send = useCallback(() => {
     const text = input.trim();
-    if ((!text && readyAttachments.length === 0) || active || uploadingAttachments || attachmentWarning) return;
-    const refs = readyAttachments.map((attachment) => attachment.ref);
+    if (composerDisabled || (!text && readyAttachments.length === 0) || active || uploadingAttachments || attachmentWarning) return;
+    const refs = groupChat ? [] : readyAttachments.map((attachment) => attachment.ref);
     setInput('');
     setDraftAttachments([]);
     setAttachmentError(null);
     autoScroll.current = true;
     setShowScrollButton(false);
     void sendMessage(text, {
-      mode,
+      mode: effectiveMode,
       ...(selectedModelId ? { modelId: selectedModelId } : {}),
       ...(refs.length > 0 ? { attachments: refs } : {}),
-      context: contextInput,
+      ...(!groupChat && contextInput ? { context: contextInput } : {}),
     });
-  }, [input, readyAttachments, active, uploadingAttachments, attachmentWarning, selectedModelId, mode, contextInput, setDraftAttachments]);
+  }, [input, readyAttachments, composerDisabled, groupChat, active, uploadingAttachments, attachmentWarning, selectedModelId, effectiveMode, contextInput, setDraftAttachments]);
 
   const prompt = useCallback((value: string) => {
     setInput(value);
@@ -279,8 +357,17 @@ export function ChatThread({
     retryLastMessage(contextInput);
   }, [messages.length, error, conversationId, contextInput]);
 
-  const loadError = Boolean(error && messages.length === 0);
-  const isEmpty = messages.length === 0 && !loadingConversation && !loadError;
+  const loadError = Boolean(error && messages.length === 0)
+    && !(groupChat && noteDisabled);
+  const showOpening = loadingConversation || (noteOpening && !loadError);
+  const isEmpty = messages.length === 0
+    && !showOpening
+    && !loadError
+    && !noteDisabled;
+  const showNoteNotice = groupChat
+    && !noteOpening
+    && !(noteChatLoading && !noteChatStatus)
+    && Boolean(noteDisabledCopy);
   const widthClass = variant === 'page' ? 'mx-auto w-full max-w-[800px]' : 'w-full';
 
   return (
@@ -293,11 +380,23 @@ export function ChatThread({
             variant === 'page' ? 'sm:px-2' : ''
           }`}
         >
-          <div className={`${widthClass} ${loadingConversation || isEmpty || loadError ? 'flex min-h-full flex-col justify-center' : ''}`}>
-            {loadingConversation ? (
+          <div className={`${widthClass} ${showOpening || isEmpty || loadError ? 'flex min-h-full flex-col justify-center' : ''}`}>
+            {showNoteNotice && (
+              <div className="mb-3 rounded-control border border-warning/25 bg-warning-soft px-3.5 py-2.5 text-[12.5px] leading-relaxed text-ink-secondary" role="status">
+                <p className="flex items-center gap-2 font-medium text-warning">
+                  <LockClosedIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {notePaused ? 'Note chat paused' : 'Note chat unavailable'}
+                </p>
+                <p className="mt-1">{noteDisabledCopy}</p>
+                {notePaused && messages.length > 0 && (
+                  <p className="mt-1 text-ink-muted">Earlier messages stay readable while this note is not shared.</p>
+                )}
+              </div>
+            )}
+            {showOpening ? (
               <div className="flex h-full min-h-[12rem] flex-col items-center justify-center gap-3 text-ink-muted">
-                <Spinner label="Opening conversation" />
-                <p className="text-[12.5px]">Opening conversation…</p>
+                <Spinner label={noteOpening ? 'Opening shared chat' : 'Opening conversation'} />
+                <p className="text-[12.5px]">{noteOpening ? 'Opening shared chat…' : 'Opening conversation…'}</p>
               </div>
             ) : loadError && error ? (
               <div className="mx-auto my-6 max-w-[32rem]">
@@ -306,10 +405,11 @@ export function ChatThread({
             ) : isEmpty ? (
               <ChatEmptyState
                 target={target}
-                mode={mode}
+                mode={effectiveMode}
                 configured={status?.configured ?? null}
                 onPrompt={prompt}
                 onOpenSettings={onOpenSettings}
+                groupChat={groupChat}
               />
             ) : (
               <>
@@ -317,12 +417,15 @@ export function ChatThread({
                   <ChatMessage
                     key={message.id ?? `${message.role}:${index}`}
                     message={message}
+                    groupChat={groupChat}
+                    currentUserId={currentUserId}
+                    canManage={canManage}
                     onUndoEdit={(id) => void undoEdit(id)}
                     onConfirmDelete={(id) => void confirmDelete(id)}
                     onCancelDelete={(id) => void cancelDelete(id)}
                   />
                 ))}
-                {error && (
+                {error && !(groupChat && noteDisabled) && (
                   <div className="mb-8">
                     <ChatErrorCard error={error} onRetry={retry} onOpenSettings={onOpenSettings} />
                   </div>
@@ -368,9 +471,11 @@ export function ChatThread({
             onChange={setInput}
             onSend={send}
             onStop={stopStream}
-            mode={mode}
+            mode={effectiveMode}
             streaming={active}
             stopping={stopping}
+            disabled={composerDisabled}
+            disabledReason={composerDisabledReason}
             textareaRef={inputRef}
             contextUsage={contextUsage}
             contextModel={selectedModel}
@@ -379,10 +484,10 @@ export function ChatThread({
                 models={models}
                 selectedModelId={selectedModelId}
                 onSelect={setChatModel}
-                disabled={active}
+                disabled={active || composerDisabled}
               />
             }
-            attachments={attachments}
+            attachments={groupChat ? [] : attachments}
             attachmentsEnabled={attachmentsEnabled}
             uploadingAttachments={uploadingAttachments}
             attachmentError={attachmentError}

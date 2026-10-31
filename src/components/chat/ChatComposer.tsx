@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
-import { PaperClipIcon, PaperAirplaneIcon, StopIcon } from '@heroicons/react/24/outline';
+import { useCallback, useId, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
+import { LockClosedIcon, PaperClipIcon, PaperAirplaneIcon, StopIcon } from '@heroicons/react/24/outline';
 import { ChatAttachmentTray } from './ChatAttachmentTray';
 import { ChatContextUsage } from './ChatContextUsage';
 import { CHAT_ATTACHMENT_ACCEPT } from '../../lib/chat/attachments';
@@ -9,6 +9,10 @@ import type { ChatMode, PendingChatAttachment } from '../../lib/chat/types';
 
 export const CHAT_MESSAGE_LIMIT = 12_000;
 const WARN_AT = CHAT_MESSAGE_LIMIT - 1_500;
+/** Matches the composer textarea's `max-h-48`. */
+const MAX_COMPOSER_HEIGHT = 192;
+/** Let the dock's width animation finish before re-measuring the textarea. */
+const WIDTH_SETTLE_MS = 120;
 
 interface ChatComposerProps {
   value: string;
@@ -18,6 +22,10 @@ interface ChatComposerProps {
   mode: ChatMode;
   streaming: boolean;
   stopping: boolean;
+  /** True when the conversation cannot accept a new message right now. */
+  disabled?: boolean;
+  /** Short explanation shown above a disabled composer. */
+  disabledReason?: string | null;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
   /** Model selector or other compact control in the composer toolbar. */
   modelControl?: ReactNode;
@@ -40,6 +48,8 @@ export function ChatComposer({
   mode,
   streaming,
   stopping,
+  disabled = false,
+  disabledReason = null,
   textareaRef,
   modelControl,
   contextUsage = null,
@@ -65,14 +75,53 @@ export function ChatComposer({
     && !tooLong
     && !streaming
     && !uploadingAttachments
-    && !attachmentWarning;
+    && !attachmentWarning
+    && !disabled;
 
-  useEffect(() => {
+  const resize = useCallback(() => {
     const el = ref.current;
     if (!el) return;
+    // The dock stays mounted at width 0 while it is closed. Measuring there
+    // wraps the placeholder one character per line and pins the textarea to
+    // its maximum height, so the composer opened huge until the next
+    // keystroke. Only measure once the textarea has wrapping room.
+    const styles = window.getComputedStyle(el);
+    const contentWidth = el.clientWidth
+      - Number.parseFloat(styles.paddingLeft)
+      - Number.parseFloat(styles.paddingRight);
+    if (contentWidth <= 0) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
-  }, [value, ref]);
+    el.style.height = `${Math.min(el.scrollHeight, MAX_COMPOSER_HEIGHT)}px`;
+  }, [ref]);
+
+  useLayoutEffect(() => {
+    resize();
+  }, [resize, value]);
+
+  // Text wraps differently at a different width, so re-measure when the dock
+  // is resized or opened, the history panel toggles, or the window changes.
+  // The dock animates its width while opening, so measure once the width has
+  // settled rather than on every frame. Measuring from a timer also keeps the
+  // height change out of the observer callback, which would report a resize
+  // loop.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let lastWidth = -1;
+    let timer = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width ?? 0;
+      if (width === lastWidth) return;
+      lastWidth = width;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(resize, WIDTH_SETTLE_MS);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, [resize, ref]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey) return;
@@ -83,7 +132,22 @@ export function ChatComposer({
 
   return (
     <div className="w-full">
-      <div className="rounded-panel border border-line bg-surface p-1.5 transition-colors focus-within:border-signal/50 focus-within:ring-4 focus-within:ring-signal/10">
+      {disabled && disabledReason && (
+        <p
+          className="mb-1.5 flex items-start gap-1.5 px-1 text-[11.5px] leading-relaxed text-ink-muted"
+          role="status"
+        >
+          <LockClosedIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>{disabledReason}</span>
+        </p>
+      )}
+      <div
+        className={`rounded-panel border p-1.5 transition-colors ${
+          disabled
+            ? 'border-line bg-surface-sunken/60'
+            : 'border-line bg-surface focus-within:border-signal/50 focus-within:ring-4 focus-within:ring-signal/10'
+        }`}
+      >
         {attachmentsEnabled && (
           <ChatAttachmentTray
             attachments={attachments}
@@ -102,9 +166,14 @@ export function ChatComposer({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={mode === 'edit' ? 'Ask anything, or tell Nana what to change…' : 'Ask about your notes…'}
+          disabled={disabled}
+          placeholder={disabled
+            ? 'Chat is paused'
+            : mode === 'edit'
+              ? 'Ask anything, or tell Nana what to change…'
+              : 'Ask about your notes…'}
           rows={1}
-          className="max-h-48 w-full resize-none overflow-y-auto scrollbar-autohide bg-transparent px-3 pb-1 pt-2.5 text-[14px] leading-relaxed text-ink placeholder:text-ink-muted focus:outline-none"
+          className="max-h-48 w-full resize-none overflow-y-auto scrollbar-autohide bg-transparent px-3 pb-1 pt-2.5 text-[14px] leading-relaxed text-ink placeholder:text-ink-muted focus:outline-none disabled:cursor-not-allowed"
           style={{ minHeight: '2.75rem' }}
         />
 
@@ -126,7 +195,7 @@ export function ChatComposer({
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
-                  disabled={streaming || uploadingAttachments}
+                  disabled={disabled || streaming || uploadingAttachments}
                   aria-label="Attach files"
                   title="Attach files"
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-line bg-surface text-ink-muted transition-colors hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 sm:h-8 sm:w-8"
@@ -145,7 +214,7 @@ export function ChatComposer({
               </span>
             ) : (
               <span className="hidden select-none text-[11.5px] text-ink-muted sm:block">
-                Enter to send · Shift+Enter for a new line
+                {disabled ? 'Read-only' : 'Enter to send · Shift+Enter for a new line'}
               </span>
             )}
           </div>
@@ -169,7 +238,7 @@ export function ChatComposer({
                 onClick={onSend}
                 disabled={!canSend}
                 aria-label="Send message"
-                title="Send message"
+                title={disabled ? disabledReason ?? 'Chat is paused' : 'Send message'}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control bg-signal-bright text-on-signal transition-colors hover:bg-signal-bright-strong disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
               >
                 <PaperAirplaneIcon className="h-[1.1rem] w-[1.1rem]" aria-hidden="true" />

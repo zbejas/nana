@@ -11,9 +11,11 @@ import {
   confirmEdit as confirmEditRequest,
   deleteConversation as deleteConversationRequest,
   getChatStatus,
+  getNoteChatStatus as getNoteChatStatusRequest,
   listConversations as listConversationsRequest,
   listEdits as listEditsRequest,
   loadConversation as loadConversationRequest,
+  openNoteChat as openNoteChatRequest,
   renameConversation as renameConversationRequest,
   streamChat,
   undoEdit as undoEditRequest,
@@ -22,18 +24,21 @@ import { getAiEditing, setAiEditing } from './presence';
 import { notifyWorkspaceChanged, removalMessage } from '../workspace-events';
 import type {
   ChatContextInput,
+  ChatConversation,
   ChatError,
   ChatMode,
-  ChatPart,
+  ChatScope,
   ChatUiEdit,
   ChatUiMessage,
+  ChatUiPart,
   ChatUiState,
   ChatUiTool,
   ChatAttachmentRef,
   ChatUsage,
+  NoteChatStatus,
 } from './types';
 
-type ChatParts = ChatPart[];
+type ChatParts = ChatUiPart[];
 
 const WRITE_TOOL = /^(create|update|edit|append|move|archive|restore)_/;
 
@@ -67,6 +72,11 @@ function initialState(): ChatUiState {
     loadedConversationId: null,
     editing: null,
     pendingEditConversationIds: [],
+    scope: 'personal',
+    noteChatStatus: null,
+    noteChatLoading: false,
+    noteChatError: null,
+    noteChatDocumentId: null,
   };
 }
 
@@ -123,6 +133,9 @@ let streamToken = 0;
 let loadToken = 0;
 let conversationListToken = 0;
 let statusToken = 0;
+let noteChatToken = 0;
+let refreshToken = 0;
+let refreshPromise: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -153,8 +166,21 @@ export function useChatStore<T>(selector: (snapshot: ChatUiState) => T): T {
 }
 
 function rememberConversation(id: string | null): void {
+  // A shared note conversation is never the personal last-chat.
+  if (state.scope === 'note') return;
   getDefaultStore().set(chatConversationIdAtom, id);
   if (id) setLastChat(id);
+}
+
+function persistedPersonalConversationId(): string | null {
+  return getDefaultStore().get(chatConversationIdAtom) ?? null;
+}
+
+function abortActiveStream(): void {
+  if (!state.active && !state.stopping) return;
+  abortController?.abort();
+  abortController = null;
+  streamToken += 1;
 }
 
 function updateLastAssistant(
@@ -370,15 +396,14 @@ export function setActiveConversation(id: string | null): void {
     return;
   }
 
-  if (state.active) {
-    abortController?.abort();
-    abortController = null;
-    streamToken += 1;
-  }
+  abortActiveStream();
 
   loadToken += 1;
   state = convergence({
     ...state,
+    // The loaded conversation decides its scope. A note conversation never
+    // writes the personal last-chat atom.
+    scope: id ? 'personal' : state.scope,
     conversationId: id,
     conversation: null,
     messages: [],
@@ -389,10 +414,13 @@ export function setActiveConversation(id: string | null): void {
     loadedConversationId: null,
     edits: [],
   });
-  rememberConversation(id);
   emit();
 
-  if (id) void loadConversationById(id);
+  if (!id) {
+    if (state.scope === 'personal') rememberConversation(null);
+    return;
+  }
+  void loadConversationById(id);
 }
 
 async function loadConversationById(id: string): Promise<void> {
@@ -401,18 +429,55 @@ async function loadConversationById(id: string): Promise<void> {
   try {
     const data = await loadConversationRequest(auth(), id);
     if (token !== loadToken || state.conversationId !== id) return;
-    setState({
-      conversation: data.conversation,
-      messages: data.messages,
-      edits: data.edits,
-      loadedConversationId: id,
-      loadingConversation: false,
-      error: null,
-    });
+
+    const noteConversation = data.conversation.scope === 'note'
+      || Boolean(data.conversation.documentId);
+    if (noteConversation) {
+      setState({
+        scope: 'note',
+        noteChatDocumentId: data.conversation.documentId ?? state.noteChatDocumentId,
+        conversation: {
+          ...data.conversation,
+          scope: 'note',
+          ...(data.conversation.documentId
+            ? { documentId: data.conversation.documentId }
+            : state.noteChatDocumentId
+              ? { documentId: state.noteChatDocumentId }
+              : {}),
+        },
+        messages: data.messages,
+        edits: data.edits,
+        loadedConversationId: id,
+        loadingConversation: false,
+        error: null,
+        ...(state.noteChatStatus?.canEdit === false ? { mode: 'ask' as ChatMode } : {}),
+      });
+      if (data.conversation.documentId) void loadNoteChatStatus(data.conversation.documentId);
+    } else {
+      setState({
+        scope: 'personal',
+        conversation: data.conversation,
+        messages: data.messages,
+        edits: data.edits,
+        loadedConversationId: id,
+        loadingConversation: false,
+        error: null,
+      });
+      rememberConversation(id);
+    }
     void refreshEdits(id);
   } catch (error) {
     if (token !== loadToken || state.conversationId !== id) return;
     if (error instanceof ChatApiError && error.status === 404) {
+      if (state.scope === 'note') {
+        setState({
+          loadingConversation: false,
+          loadedConversationId: null,
+          error: { message: 'This shared conversation is no longer available.' },
+        });
+        if (state.noteChatDocumentId) void loadNoteChatStatus(state.noteChatDocumentId);
+        return;
+      }
       startNewConversation();
       return;
     }
@@ -425,15 +490,243 @@ async function loadConversationById(id: string): Promise<void> {
   }
 }
 
-export function startNewConversation(): void {
-  if (state.active) {
-    abortController?.abort();
-    abortController = null;
-    streamToken += 1;
+function activateNoteConversation(
+  id: string,
+  conversation?: ChatConversation | null,
+): void {
+  if (
+    state.conversationId === id
+    && (
+      state.loadedConversationId === id
+      || state.loadingConversation
+      || state.messages.length > 0
+    )
+  ) {
+    if (conversation) setState({ conversation });
+    return;
   }
+  if (state.active) return;
+
   loadToken += 1;
   state = convergence({
     ...state,
+    scope: 'note',
+    conversationId: id,
+    conversation: conversation ?? null,
+    messages: [],
+    active: false,
+    stopping: false,
+    error: null,
+    loadingConversation: true,
+    loadedConversationId: null,
+    edits: [],
+  });
+  emit();
+  void loadConversationById(id);
+}
+
+/** Switch between the persisted personal chat and the current note's shared chat. */
+export function setChatScope(scope: ChatScope): void {
+  if (state.scope === scope) return;
+  // Cancel any pending note status/open request from the previous scope.
+  noteChatToken += 1;
+  abortActiveStream();
+  loadToken += 1;
+
+  if (scope === 'personal') {
+    const personalId = persistedPersonalConversationId();
+    state = convergence({
+      ...state,
+      scope: 'personal',
+      conversationId: personalId,
+      conversation: null,
+      messages: [],
+      active: false,
+      stopping: false,
+      error: null,
+      loadingConversation: Boolean(personalId),
+      loadedConversationId: null,
+      edits: [],
+    });
+    emit();
+    if (personalId) void loadConversationById(personalId);
+    return;
+  }
+
+  const documentId = state.noteChatDocumentId;
+  const status = state.noteChatStatus;
+  state = convergence({
+    ...state,
+    scope: 'note',
+    conversationId: null,
+    conversation: null,
+    messages: [],
+    active: false,
+    stopping: false,
+    error: null,
+    loadingConversation: false,
+    loadedConversationId: null,
+    edits: [],
+  });
+  emit();
+
+  if (status?.conversation && (!documentId || status.noteId === documentId)) {
+    if (status.enabled && documentId) {
+      // POST is idempotent: it refreshes access and returns the one thread.
+      void openNoteChat(documentId);
+    } else {
+      activateNoteConversation(status.conversation.id, status.conversation);
+    }
+  } else if (documentId && status?.enabled) {
+    void openNoteChat(documentId);
+  }
+}
+
+/**
+ * Refresh shared-chat availability for one note. It never switches scope on its
+ * own; the dock decides whether to restore the note tab.
+ */
+export async function loadNoteChatStatus(documentId: string): Promise<NoteChatStatus | null> {
+  const token = ++noteChatToken;
+  setState((current) => ({
+    noteChatDocumentId: documentId,
+    ...(current.noteChatDocumentId === documentId ? {} : { noteChatStatus: null }),
+    noteChatLoading: true,
+    noteChatError: null,
+  }));
+
+  try {
+    const status = await getNoteChatStatusRequest(auth(), documentId);
+    if (token !== noteChatToken || state.noteChatDocumentId !== documentId) return null;
+    setState({
+      noteChatStatus: status,
+      noteChatLoading: false,
+      noteChatError: null,
+      ...(status.enabled ? {} : { error: null }),
+      ...(state.scope === 'note' && !status.canEdit ? { mode: 'ask' as ChatMode } : {}),
+    });
+    if (
+      state.scope === 'note'
+      && status.conversation
+      && state.conversationId !== status.conversation.id
+      && !state.active
+    ) {
+      activateNoteConversation(status.conversation.id, status.conversation);
+    }
+    return status;
+  } catch (error) {
+    if (token !== noteChatToken || state.noteChatDocumentId !== documentId) return null;
+    if (error instanceof ChatApiError && error.status === 404) {
+      setState({
+        noteChatStatus: null,
+        noteChatLoading: false,
+        noteChatError: 'You no longer have access to this note’s shared chat.',
+      });
+      return null;
+    }
+    setState({
+      noteChatLoading: false,
+      noteChatError: error instanceof Error ? error.message : 'Shared chat is unavailable.',
+    });
+    return null;
+  }
+}
+
+/** Open or create the one shared conversation for a note. */
+export async function openNoteChat(documentId: string): Promise<void> {
+  const token = ++noteChatToken;
+  setState((current) => ({
+    ...(current.noteChatDocumentId === documentId ? {} : { noteChatStatus: null }),
+    noteChatDocumentId: documentId,
+    noteChatLoading: true,
+    noteChatError: null,
+  }));
+
+  try {
+    const result = await openNoteChatRequest(auth(), documentId);
+    if (token !== noteChatToken || state.noteChatDocumentId !== documentId) return;
+    setState({
+      scope: 'note',
+      noteChatStatus: result.status,
+      noteChatLoading: false,
+      noteChatError: null,
+      ...(!result.status.canEdit ? { mode: 'ask' as ChatMode } : {}),
+    });
+    if (result.conversation) {
+      activateNoteConversation(result.conversation.id, result.conversation);
+      void refreshConversations(true);
+    }
+  } catch (error) {
+    if (token !== noteChatToken || state.noteChatDocumentId !== documentId) return;
+    if (error instanceof ChatApiError && error.code?.startsWith('note_')) {
+      setState({
+        scope: 'note',
+        noteChatStatus: error.code === 'note_not_shared' && state.noteChatStatus
+          ? { ...state.noteChatStatus, enabled: false, reason: state.noteChatStatus.reason ?? 'not_shared' }
+          : state.noteChatStatus,
+        noteChatLoading: false,
+        noteChatError: error.message,
+      });
+      // Re-read availability so private/trash/access-loss states settle into
+      // the same paused or disabled UI as the GET path.
+      void loadNoteChatStatus(documentId);
+      return;
+    }
+    setState({
+      noteChatLoading: false,
+      noteChatError: error instanceof Error ? error.message : 'Could not open the shared chat.',
+    });
+  }
+}
+
+/**
+ * Silently reload the open conversation after a realtime event. Never replaces
+ * an in-flight local stream or clears the thread while loading.
+ */
+export function refreshActiveConversation(): Promise<void> {
+  if (refreshPromise) return refreshPromise;
+  const conversationId = state.conversationId;
+  if (!conversationId || state.active || state.stopping || state.loadingConversation) {
+    return Promise.resolve();
+  }
+
+  const token = ++refreshToken;
+  const request = (async () => {
+    try {
+      const data = await loadConversationRequest(auth(), conversationId);
+      if (
+        token !== refreshToken
+        || state.conversationId !== conversationId
+        || state.active
+      ) {
+        return;
+      }
+      setState({
+        conversation: data.conversation,
+        messages: data.messages,
+        edits: data.edits,
+        loadedConversationId: conversationId,
+      });
+      void refreshConversations(true);
+    } catch {
+      // Realtime is an enhancement; the next event or manual load retries.
+    }
+  })();
+  refreshPromise = request;
+  void request.finally(() => {
+    if (refreshPromise === request) refreshPromise = null;
+  });
+  return request;
+}
+
+export function startNewConversation(): void {
+  abortActiveStream();
+  loadToken += 1;
+  state = convergence({
+    ...state,
+    // New chat always starts a personal conversation. Note scope never creates
+    // a second group thread.
+    scope: 'personal',
     conversationId: null,
     conversation: null,
     messages: [],
@@ -451,8 +744,11 @@ export function startNewConversation(): void {
 }
 
 export function setChatMode(mode: ChatMode): void {
-  if (state.mode === mode) return;
-  setState({ mode });
+  const forced = state.scope === 'note' && state.noteChatStatus?.canEdit === false
+    ? 'ask'
+    : mode;
+  if (state.mode === forced) return;
+  setState({ mode: forced });
 }
 
 export async function refreshStatus(): Promise<void> {
@@ -587,8 +883,15 @@ export async function deleteConversation(id: string): Promise<void> {
   await deleteConversationRequest(auth(), id);
   const conversations = state.conversations.filter((conversation) => conversation.id !== id);
   if (state.conversationId === id) {
-    startNewConversation();
-    setState({ conversations });
+    if (state.scope === 'note') {
+      // Deleting a shared conversation returns to the personal chat without
+      // touching the persisted personal last-chat.
+      setState({ conversations });
+      setChatScope('personal');
+    } else {
+      startNewConversation();
+      setState({ conversations });
+    }
   } else {
     setState({ conversations });
   }
@@ -717,10 +1020,14 @@ export interface SendOptions {
 
 export async function sendMessage(text: string, options: SendOptions = {}): Promise<void> {
   const content = text.trim();
-  const attachments = options.attachments ?? [];
+  const noteScope = state.scope === 'note';
+  if (noteScope && (!state.noteChatStatus?.enabled || !state.conversationId)) return;
+  const attachments = noteScope ? [] : options.attachments ?? [];
   if ((!content && attachments.length === 0) || state.active) return;
 
-  const mode = options.mode ?? state.mode;
+  const mode = noteScope && !state.noteChatStatus?.canEdit
+    ? 'ask'
+    : options.mode ?? state.mode;
   const modelId = options.modelId ?? state.selectedModelId ?? undefined;
   const token = ++streamToken;
   const controller = new AbortController();
@@ -752,6 +1059,13 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
   let stopped = false;
 
   const current = () => token === streamToken;
+  const refreshNoteAccess = (code?: string, status?: number) => {
+    if (!noteScope) return;
+    if (code?.startsWith('note_') || status === 403 || status === 409) {
+      const documentId = state.noteChatDocumentId;
+      if (documentId) void loadNoteChatStatus(documentId);
+    }
+  };
 
   try {
     await streamChat({
@@ -760,7 +1074,7 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
       mode,
       ...(modelId ? { modelId } : {}),
       ...(attachments.length > 0 ? { attachmentIds: attachments.map((attachment) => attachment.id) } : {}),
-      context: options.context,
+      context: noteScope ? undefined : options.context,
       signal: controller.signal,
       auth: auth(),
     }, {
@@ -775,6 +1089,13 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
               title: stripTitleEmoji(content.length > 60 ? `${content.slice(0, 57)}…` : content, 'New chat'),
               created: new Date().toISOString(),
               updated: new Date().toISOString(),
+              ...(noteScope
+                ? {
+                  scope: 'note' as ChatScope,
+                  ...(state.noteChatDocumentId ? { documentId: state.noteChatDocumentId } : {}),
+                  ...(state.noteChatStatus ? { canManage: state.noteChatStatus.canManage } : {}),
+                }
+                : {}),
             },
           });
         }
@@ -832,7 +1153,11 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
           }, 3200);
         }
 
-        if (edit.target.type === 'document' && typeof window !== 'undefined') {
+        if (
+          edit.status === 'applied'
+          && edit.target.type === 'document'
+          && typeof window !== 'undefined'
+        ) {
           window.dispatchEvent(new CustomEvent('nana:ai-edit', { detail: { edit } }));
         }
       },
@@ -845,6 +1170,7 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
       onError: (error) => {
         if (!current()) return;
         errored = true;
+        refreshNoteAccess(error.code, error.status);
         finalizeError(error, retryText);
         controller.abort();
       },
@@ -868,6 +1194,7 @@ export async function sendMessage(text: string, options: SendOptions = {}): Prom
     }
 
     if (error instanceof ChatApiError) {
+      refreshNoteAccess(error.code, error.status);
       finalizeError({
         message: error.message,
         code: error.code,
@@ -920,8 +1247,11 @@ export function resetChatStore(): void {
   ++loadToken;
   ++conversationListToken;
   ++statusToken;
+  ++noteChatToken;
+  ++refreshToken;
   abortController?.abort();
   abortController = null;
+  refreshPromise = null;
   state = initialState();
   state = { ...state, conversationId: null };
   rememberConversation(null);

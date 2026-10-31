@@ -248,7 +248,11 @@ export function NanaSourceEditor({
     onSelectionChangeRef.current?.({ anchor, head, focused, pane: 'source' });
   };
 
-  useEffect(() => {
+  // Create the view in a layout effect so the session-binding layout effect
+  // below can attach in the same commit. A passive effect would run after the
+  // binding effect on a mode switch to Source/Split, leaving the pane detached
+  // from the room until the component remounted.
+  useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host) return;
 
