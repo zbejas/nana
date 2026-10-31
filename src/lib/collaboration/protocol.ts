@@ -50,6 +50,14 @@ export interface CollabPermissionFrame {
     reason?: "share-changed" | "revoked" | "trashed";
 }
 
+/** Durable snapshot returned by an explicit flush request. */
+export interface CollabFlushResult {
+    content: string;
+    revision: number;
+    durableSeq: number;
+    persistence: CollabPersistencePhase;
+}
+
 export interface CollabProtocolFields {
     protocol?: typeof COLLAB_PROTOCOL;
     documentId?: string;

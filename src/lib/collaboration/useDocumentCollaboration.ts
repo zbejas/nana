@@ -4,8 +4,10 @@ import { pb } from "../pocketbase";
 import type { Collaborator } from "./types";
 import type {
     CollabConflictFrame,
+    CollabFlushResult,
     CollabPersistencePhase,
 } from "./protocol";
+import { flushCollabDocument } from "./flush";
 import {
     CollabSession,
     type CollabPersistenceSnapshot,
@@ -25,6 +27,11 @@ interface UseDocumentCollaborationOptions {
 }
 
 export interface DocumentCollaboration {
+    /**
+     * The one live session for the open note. Stable across renders and
+     * metadata updates; null while the note is new, trashed, or disabled.
+     */
+    session: CollabSession | null;
     collaborators: Collaborator[];
     status: CollabStatus;
     canEdit: boolean;
@@ -35,6 +42,11 @@ export interface DocumentCollaboration {
     updateSelection: (selection: CollabSelection) => void;
     /** Fold an editor-originated Markdown value into Yjs synchronously. */
     applyLocalContent: (content: string) => void;
+    /**
+     * Write the room's pending body before a version/restore snapshot. Null
+     * means there is no live room for this note (new note, trash, or offline).
+     */
+    flushContent: () => Promise<CollabFlushResult | null>;
 }
 
 const EMPTY_COLLABORATORS: Collaborator[] = [];
@@ -55,6 +67,11 @@ interface PermissionUiState {
 interface ConnectionUiState {
     documentId: string | undefined;
     status: CollabStatus;
+}
+
+interface CollaboratorUiState {
+    documentId: string | undefined;
+    entries: Collaborator[];
 }
 
 function resolvePresence(
@@ -114,7 +131,14 @@ export function useDocumentCollaboration({
     enabled,
     onRemoteContent,
 }: UseDocumentCollaborationOptions): DocumentCollaboration {
-    const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+    const [collaborators, setCollaborators] = useState<CollaboratorUiState>({
+        documentId,
+        entries: EMPTY_COLLABORATORS,
+    });
+    // The session handle is state-backed so bindings can attach to the live
+    // room. A ref alone was invisible to React and could expose a destroyed
+    // room for one render after a note switch.
+    const [session, setSession] = useState<CollabSession | null>(null);
     const [connection, setConnection] = useState<ConnectionUiState>({
         documentId,
         status: "offline",
@@ -143,21 +167,28 @@ export function useDocumentCollaboration({
     onRemoteContentRef.current = onRemoteContent;
 
     const refreshCollaborators = useCallback(() => {
-        const session = sessionRef.current;
-        if (!session) {
-            setCollaborators([]);
+        const current = sessionRef.current;
+        if (!current) {
+            setCollaborators((previous) => previous.entries.length === 0
+                ? previous
+                : { documentId: previous.documentId, entries: EMPTY_COLLABORATORS });
             return;
         }
         const resolved = resolvePresence(
-            session,
+            current,
             presenceRef.current,
             pb.authStore.record?.id ?? "",
         );
         setCollaborators((previous) => {
-            if (resolved.length === 0) {
-                return previous.length === 0 ? previous : EMPTY_COLLABORATORS;
+            if (previous.documentId !== current.documentId) {
+                return { documentId: current.documentId, entries: resolved };
             }
-            return resolved;
+            if (resolved.length === 0) {
+                return previous.entries.length === 0
+                    ? previous
+                    : { documentId: current.documentId, entries: EMPTY_COLLABORATORS };
+            }
+            return { documentId: current.documentId, entries: resolved };
         });
     }, []);
 
@@ -172,7 +203,8 @@ export function useDocumentCollaboration({
                 revision: initialRevisionRef.current,
                 conflict: null,
             });
-            setCollaborators([]);
+            setCollaborators({ documentId, entries: EMPTY_COLLABORATORS });
+            setSession(null);
         };
 
         if (!enabled || !documentId) {
@@ -189,10 +221,12 @@ export function useDocumentCollaboration({
             initialRevision: initialRevisionRef.current,
             getToken: () => pb.authStore.token,
             onRemoteText: (text) => {
+                if (sessionRef.current !== session) return;
                 refreshCollaborators();
                 onRemoteContentRef.current(text);
             },
             onPresence: (entries) => {
+                if (sessionRef.current !== session) return;
                 presenceRef.current = entries;
                 refreshCollaborators();
             },
@@ -228,6 +262,7 @@ export function useDocumentCollaboration({
             },
         });
         sessionRef.current = session;
+        setSession(session);
         session.applyLocalMarkdown(contentRef.current);
         session.start();
         setConnection({ documentId, status: "connecting" });
@@ -236,8 +271,9 @@ export function useDocumentCollaboration({
             sessionRef.current = null;
             presenceRef.current = [];
             session.destroy();
+            setSession(null);
             setConnection({ documentId, status: "offline" });
-            setCollaborators([]);
+            setCollaborators({ documentId, entries: EMPTY_COLLABORATORS });
         };
     }, [documentId, enabled, refreshCollaborators]);
 
@@ -252,9 +288,21 @@ export function useDocumentCollaboration({
         sessionRef.current?.sendSelection(selection);
     }, []);
 
+    const flushContent = useCallback(async (): Promise<CollabFlushResult | null> => {
+        const current = sessionRef.current;
+        if (!current || !enabled || current.documentId !== documentId) return null;
+        return flushCollabDocument(current.documentId);
+    }, [documentId, enabled]);
+
     const status = connection.documentId === documentId ? connection.status : "offline";
     // A disabled or newly opened note must never inherit a previous room's
-    // read-only permission or persistence state.
+    // session, collaborators, read-only permission, or persistence state.
+    const activeSession = enabled && documentId && session?.documentId === documentId
+        ? session
+        : null;
+    const activeCollaborators = enabled && documentId && collaborators.documentId === documentId
+        ? collaborators.entries
+        : EMPTY_COLLABORATORS;
     const canEdit = !enabled || !documentId || permission.documentId !== documentId
         ? true
         : permission.canEdit;
@@ -268,7 +316,8 @@ export function useDocumentCollaboration({
         };
 
     return {
-        collaborators,
+        session: activeSession,
+        collaborators: activeCollaborators,
         status,
         canEdit,
         persistence: persistenceForDocument.phase,
@@ -277,5 +326,6 @@ export function useDocumentCollaboration({
         conflict: persistenceForDocument.conflict,
         updateSelection,
         applyLocalContent,
+        flushContent,
     };
 }

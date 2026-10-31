@@ -6,6 +6,7 @@ import { diffText } from './milkdown/aiDiff';
 import type { AiChangedSection } from './milkdown/aiEdits';
 import { normalizeMarkdown } from './milkdown/helpers';
 import type { ViewMode } from './EditorHeader';
+import type { CollabSession } from '../../lib/collaboration/session';
 import type { Collaborator } from '../../lib/collaboration/types';
 
 export interface EditorAiEdit {
@@ -23,6 +24,8 @@ interface EditorContentProps {
   onDropFiles?: (event: DragEvent<HTMLDivElement>) => void;
   aiEdit?: EditorAiEdit | null;
   collaborators?: Collaborator[];
+  /** Live session for the open note; null/absent keeps the controlled path. */
+  session?: CollabSession | null;
   onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean; pane?: "source" | "wysiwyg" }) => void;
   fullscreen?: boolean;
 }
@@ -40,6 +43,7 @@ export function EditorContent({
   onDropFiles,
   aiEdit = null,
   collaborators = [],
+  session = null,
   onSelectionChange,
   fullscreen = false,
 }: EditorContentProps) {
@@ -86,6 +90,7 @@ export function EditorContent({
               className="h-full"
               aiDiff={sourceAiDiff}
               collaborators={collaborators}
+              session={session}
               onSelectionChange={onSelectionChange}
             />
           </div>
@@ -102,6 +107,7 @@ export function EditorContent({
             aiEdit={aiEdit}
             aiDiff={sourceAiDiff}
             collaborators={collaborators}
+            session={session}
             onSelectionChange={onSelectionChange}
           />
         )}
@@ -118,6 +124,7 @@ export function EditorContent({
             enableSlash
             aiEdit={aiEdit}
             collaborators={collaborators}
+            session={session}
             onSelectionChange={onSelectionChange}
           />
         )}

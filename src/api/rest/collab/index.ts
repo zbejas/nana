@@ -130,6 +130,29 @@ export const collabApi = new Elysia({ name: "nana-collab" })
             },
         });
     }, { detail: { hide: true } })
+    .post("/api/v1/collab/documents/:id/flush", async ({ request, params }) => {
+        let access;
+        try {
+            access = await loadCollabDocumentAccess(request, params.id);
+        } catch (error) {
+            if (error instanceof BrowserAuthError) return jsonError(error.status, error.message);
+            log.warn("Live session flush authorization failed", {
+                documentId: params.id,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return jsonError(502, "The live session is unavailable right now.");
+        }
+        if (!access) return jsonError(404, "Not found.");
+        if (!access.identity.canEdit) return jsonError(403, "You can view this note but not edit it.");
+
+        const room = getRoom(params.id);
+        if (!room) return jsonError(409, "Reconnect to the live session.");
+        const result = await room.flushDocument();
+        if (result.persistence === "conflict" || result.persistence === "error") {
+            return jsonError(409, "The latest changes could not be saved. Try again.");
+        }
+        return Response.json(result);
+    }, { detail: { hide: true } })
     .post("/api/v1/collab/documents/:id/update", async ({ request, params }) => {
         let auth;
         try {

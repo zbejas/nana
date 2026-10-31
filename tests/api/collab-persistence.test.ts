@@ -449,6 +449,64 @@ describe("collab room persistence", () => {
         expect(String(persisted.content)).not.toBe(expected);
     }, 30_000);
 
+    test("flushes pending content on demand before a version snapshot", async () => {
+        const note = await createNote(owner, {
+            title: `Persist flush ${uniqueSuffix()}`,
+            content: "flush base",
+        });
+        const revision = initialRevision(note);
+        const client = await PersistenceClient.open(note.id, owner.token);
+        clients.push(client);
+
+        const doc = docFromSync(client.sync);
+        const { update, expected } = editUpdate(doc, (text) => {
+            text.insert(text.length, " before snapshot");
+        });
+        await publish(note.id, owner.token, client.clientId, update);
+
+        // The debounce has not fired yet. The explicit flush must make the
+        // body durable and return the revision the version route should use.
+        const response = await bunRequest(
+            `/api/v1/collab/documents/${encodeURIComponent(note.id)}/flush`,
+            {
+                method: "POST",
+                headers: authHeaders(owner.token),
+            },
+        );
+        await expectStatus(response, 200, "flush live content");
+        const flushed = await readJson<{
+            content: string;
+            revision: number;
+            durableSeq: number;
+            persistence: string;
+        }>(response, "flush live content");
+        expect(flushed.content).toBe(expected);
+        expect(flushed.revision).toBe(revision + 1);
+        expect(flushed.durableSeq).toBeGreaterThanOrEqual(1);
+        expect(flushed.persistence).toBe("clean");
+
+        const persisted = await pbGetRecord<DocumentRecord>(owner.token, "documents", note.id);
+        expect(String(persisted.content)).toBe(expected);
+        expect(Number(persisted.revision)).toBe(revision + 1);
+    }, 30_000);
+
+    test("does not let a viewer flush the room body", async () => {
+        const note = await createNote(owner, {
+            title: `Persist flush viewer ${uniqueSuffix()}`,
+            content: "viewer flush base",
+        });
+        await share(owner, note.id, editor.id, "view");
+
+        const response = await bunRequest(
+            `/api/v1/collab/documents/${encodeURIComponent(note.id)}/flush`,
+            {
+                method: "POST",
+                headers: authHeaders(editor.token),
+            },
+        );
+        expect(response.status).toBe(403);
+    }, 30_000);
+
     test("persists through an edit grantee's own session token", async () => {
         const note = await createNote(owner, {
             title: `Persist grantee ${uniqueSuffix()}`,

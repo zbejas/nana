@@ -10,6 +10,7 @@ import {
 } from "../pocketbase/client";
 import { ApiError, conflict, notFound, upstream } from "./errors";
 import { folderIsLocked, recordIsLocked, workspaceVisibilityConditions } from "./privacy";
+import { flushLiveNoteBeforeExternalWrite } from "./live";
 import {
     assertFolderVisible,
     assertRecordId,
@@ -282,6 +283,13 @@ export async function updateNote(
 ): Promise<NoteDto> {
     assertWritable(context);
 
+    // A content write must see every keystroke the room has already accepted.
+    // Metadata-only changes can proceed because the room reconciles a revision
+    // bump without touching the body.
+    if (patch.content !== undefined) {
+        await flushLiveNoteBeforeExternalWrite(id);
+    }
+
     const current = await loadNoteRecord(context, id);
     const visibility = await visibilityFor(context, surface);
     if (recordIsLocked(visibility, surface, current)) throw notFound();
@@ -342,6 +350,10 @@ export async function editNoteRecord(
     options: NoteEditOptions,
 ): Promise<NoteEditResult> {
     assertWritable(context);
+
+    // AI section edits read the body and revision before writing. Flush the
+    // room first so a pending keystroke cannot be missed or overwritten.
+    await flushLiveNoteBeforeExternalWrite(id);
 
     const current = await loadNoteRecord(context, id);
     const visibility = await visibilityFor(context, surface);

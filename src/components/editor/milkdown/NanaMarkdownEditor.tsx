@@ -10,6 +10,7 @@ import type { AiChangedSection } from './aiEdits';
 import type { EditorActionId } from './helpers';
 import type { SlashTriggerPosition } from './createEditor';
 import type { Collaborator } from '../../../lib/collaboration/types';
+import type { CollabSession } from '../../../lib/collaboration/session';
 
 export interface NanaMarkdownEditorProps {
   value: string;
@@ -31,6 +32,12 @@ export interface NanaMarkdownEditorProps {
     sections: AiChangedSection[];
   } | null;
   collaborators?: Collaborator[];
+  /**
+   * Live note session. When set, Milkdown binds to the canonical text and
+   * `value`/`onChange` remain UI state; when omitted, the controlled snapshot
+   * path is used (task descriptions and comment composers).
+   */
+  session?: CollabSession | null;
   onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean; pane?: "source" | "wysiwyg" }) => void;
   onFocusChange?: (focused: boolean) => void;
   onViewReady?: (view: EditorView) => void;
@@ -39,7 +46,8 @@ export interface NanaMarkdownEditorProps {
 
 /**
  * The WYSIWYG Markdown surface. Milkdown owns the ProseMirror document; React
- * owns the toolbar and slash menu. Storage stays Markdown through `onChange`.
+ * owns the toolbar and slash menu. Storage stays Markdown through `onChange`,
+ * or through the live session when one is supplied.
  */
 export function NanaMarkdownEditor({
   value,
@@ -56,6 +64,7 @@ export function NanaMarkdownEditor({
   uploadImage,
   aiEdit = null,
   collaborators = [],
+  session = null,
   onSelectionChange,
   onFocusChange,
   onViewReady,
@@ -75,6 +84,7 @@ export function NanaMarkdownEditor({
     uploadImage,
     aiEdit,
     collaborators,
+    session,
     onSelectionChange,
     onFocusChange,
     onSlash: (position) => setSlashPosition(position),

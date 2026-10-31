@@ -67,6 +67,14 @@ export interface CollabRoomSeed {
     revision: number;
 }
 
+/** Durable snapshot returned by an explicit room flush. */
+export interface CollabRoomFlushResult {
+    content: string;
+    revision: number;
+    durableSeq: number;
+    persistence: CollabPersistencePhase;
+}
+
 interface ProtocolEnvelope {
     protocol: typeof COLLAB_PROTOCOL;
     documentId: string;
@@ -370,6 +378,21 @@ export class CollabRoom {
         this.presence.set(clientId, presence);
         this.broadcast({ type: "presence", ...presence, ...this.envelope() }, clientId);
         return true;
+    }
+
+    /**
+     * Flush pending content and return the durable snapshot. Save-version uses
+     * this so a git commit cannot snapshot the record before the room's last
+     * keystrokes reach PocketBase.
+     */
+    async flushDocument(): Promise<CollabRoomFlushResult> {
+        await this.flush();
+        return {
+            content: persistedContent(this.text.toString()),
+            revision: this.revision,
+            durableSeq: this.durableSeq,
+            persistence: this.persistence,
+        };
     }
 
     /**

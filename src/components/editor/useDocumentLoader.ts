@@ -10,6 +10,8 @@ import type { Document } from '../../lib/documents/types';
 interface UseDocumentLoaderOptions {
     urlDocumentId: string | undefined;
     document: Document | null;
+    /** Id just created by this editor session; the save already selected it. */
+    promotedDocumentId?: string | null;
     hasUnsavedChanges: boolean;
     isTrashDocument: boolean;
     initialTitle: string;
@@ -22,6 +24,7 @@ interface UseDocumentLoaderOptions {
 export function useDocumentLoader({
     urlDocumentId,
     document,
+    promotedDocumentId = null,
     hasUnsavedChanges,
     isTrashDocument,
     initialTitle,
@@ -41,6 +44,13 @@ export function useDocumentLoader({
         const loadDocumentFromUrl = async () => {
             // If URL is 'new', we're creating a new document
             if (urlDocumentId === 'new') {
+                return;
+            }
+
+            // The first save already selected this record. Re-fetching it here
+            // could replace title/body/tags typed while the create request was
+            // still in flight, before the room gets a chance to fold them in.
+            if (promotedDocumentId && promotedDocumentId === urlDocumentId) {
                 return;
             }
 
@@ -95,7 +105,7 @@ export function useDocumentLoader({
         };
 
         loadDocumentFromUrl();
-    }, [urlDocumentId, document?.id, isTrashDocument, onSave, navigate, onReset, onShowToast]);
+    }, [urlDocumentId, document?.id, promotedDocumentId, isTrashDocument, onSave, navigate, onReset, onShowToast]);
 
     // Real-time subscription for document updates
     const subscriptionIdRef = useRef<string | null>(null);

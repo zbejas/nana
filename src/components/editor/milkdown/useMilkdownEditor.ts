@@ -23,7 +23,14 @@ import {
 import { applyAiMarkdown, type AiChangedSection } from './aiEdits';
 import type { EditorActionId } from './helpers';
 import { normalizeMarkdown } from './helpers';
+import {
+  WYSIWYG_BINDING_ORIGIN,
+  WysiwygSessionBinding,
+  initialWysiwygMarkdown,
+  wysiwygLocalOps,
+} from './wysiwygBinding';
 import type { Collaborator } from '../../../lib/collaboration/types';
+import type { CollabSession } from '../../../lib/collaboration/session';
 
 export interface UseMilkdownEditorOptions {
   value: string;
@@ -41,6 +48,12 @@ export interface UseMilkdownEditorOptions {
     sections: AiChangedSection[];
   } | null;
   collaborators?: Collaborator[];
+  /**
+   * The open note's live session. When present, the editor publishes canonical
+   * ops and applies observed session text directly; `value`/`onChange` stay as
+   * UI state only. When null, the controlled snapshot path is unchanged.
+   */
+  session?: CollabSession | null;
   onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean; pane?: "source" | "wysiwyg" }) => void;
   onFocusChange?: (focused: boolean) => void;
   onSlash?: (position: SlashTriggerPosition) => void;
@@ -91,6 +104,11 @@ function sameToolbarState(left: EditorToolbarState, right: EditorToolbarState): 
  * and applied in a layout effect so a remote update reaches the editor before
  * the next keystroke. ProseMirror maps the local selection through the
  * incremental change.
+ *
+ * With a live `session`, the canonical text replaces that snapshot loop: local
+ * transactions publish ops tagged `WYSIWYG_BINDING_ORIGIN`, and every other
+ * canonical transaction is applied here without echoing back. Inline editors
+ * and notes without a room keep the controlled `value`/`onChange` path.
  */
 export function useMilkdownEditor({
   value,
@@ -103,6 +121,7 @@ export function useMilkdownEditor({
   uploadImage,
   aiEdit = null,
   collaborators = [],
+  session = null,
   onSelectionChange,
   onFocusChange,
   onSlash,
@@ -110,6 +129,8 @@ export function useMilkdownEditor({
 }: UseMilkdownEditorOptions): UseMilkdownEditorResult {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  const sessionRef = useRef(session);
+  const bindingRef = useRef<WysiwygSessionBinding | null>(null);
   const [ready, setReady] = useState(false);
   const [focused, setFocused] = useState(false);
   const [toolbar, setToolbar] = useState<EditorToolbarState>(EMPTY_TOOLBAR_STATE);
@@ -128,10 +149,14 @@ export function useMilkdownEditor({
   const lastAiEditRef = useRef<string | null>(null);
   const lastEmittedRef = useRef(normalizeMarkdown(value));
   const lastAppliedRef = useRef(normalizeMarkdown(value));
+  // Canonical baseline used before the binding effect attaches. It tracks the
+  // session, not the React value, so an early keystroke diffs against Yjs.
+  const lastCanonicalRef = useRef(initialWysiwygMarkdown(session?.markdown, value));
   const toolbarRef = useRef(toolbar);
   const suppressDocChangeRef = useRef(false);
 
   valueRef.current = value;
+  sessionRef.current = session;
   readOnlyRef.current = readOnly;
   placeholderRef.current = placeholder;
   onChangeRef.current = onChange;
@@ -158,6 +183,33 @@ export function useMilkdownEditor({
     // The editor already shows this value; remembering it here keeps the
     // incoming-value effect from replaying our own keystrokes.
     lastAppliedRef.current = normalized;
+
+    const binding = bindingRef.current;
+    if (binding) {
+      const changed = binding.publishLocal(normalized);
+      lastCanonicalRef.current = binding.canonicalMarkdown;
+      if (!changed || normalized === lastEmittedRef.current) return;
+      lastEmittedRef.current = normalized;
+      // UI statistics, AI diff, and dirty state only. The canonical edit was
+      // already published through this pane's ops, so onChange must not be a
+      // second session write.
+      onChangeRef.current?.(normalized);
+      return;
+    }
+
+    const activeSession = sessionRef.current;
+    if (activeSession) {
+      // The editor became editable before the attach effect ran. Publish the
+      // same minimal ops instead of falling back to a full snapshot write.
+      const ops = wysiwygLocalOps(lastCanonicalRef.current, normalized);
+      lastCanonicalRef.current = normalized;
+      if (ops.length > 0) activeSession.applyLocalOps(ops, WYSIWYG_BINDING_ORIGIN);
+      if (normalized === lastEmittedRef.current) return;
+      lastEmittedRef.current = normalized;
+      onChangeRef.current?.(normalized);
+      return;
+    }
+
     if (normalized === lastEmittedRef.current) return;
     lastEmittedRef.current = normalized;
     onChangeRef.current?.(normalized);
@@ -184,7 +236,9 @@ export function useMilkdownEditor({
     const bootstrap = async () => {
       const editor = await createMilkdownEditor({
         root,
-        initialValue: valueRef.current,
+        // In session mode the canonical text is the source; `value` is only the
+        // fallback before the room's first sync.
+        initialValue: initialWysiwygMarkdown(sessionRef.current?.markdown, valueRef.current),
         readOnlyRef,
         placeholderRef,
         ariaLabel,
@@ -225,6 +279,7 @@ export function useMilkdownEditor({
 
       const baseline = editor.action((ctx) => getEditorMarkdown(ctx));
       lastEmittedRef.current = baseline;
+      lastCanonicalRef.current = baseline;
       editor.action((ctx) => setEditorEditable(ctx, readOnlyRef.current));
       setReady(true);
       refreshToolbar();
@@ -244,11 +299,54 @@ export function useMilkdownEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The session binding owns content in live mode. It applies every canonical
+  // transaction that did not originate in this pane, and catches up when the
+  // editor mounts after the room already synced.
+  useLayoutEffect(() => {
+    if (!ready || !session) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const binding = new WysiwygSessionBinding(
+      session,
+      {
+        getMarkdown: () => {
+          const current = editorRef.current;
+          return current
+            ? current.action((ctx) => getEditorMarkdown(ctx))
+            : lastCanonicalRef.current;
+        },
+        applyMarkdown: (markdown) => {
+          lastAppliedRef.current = markdown;
+          lastEmittedRef.current = markdown;
+          lastCanonicalRef.current = markdown;
+          runExternalApply(() => {
+            const current = editorRef.current;
+            current?.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, markdown));
+          });
+          refreshToolbar();
+        },
+      },
+      lastCanonicalRef.current,
+    );
+
+    bindingRef.current = binding;
+    binding.attach();
+    lastCanonicalRef.current = binding.canonicalMarkdown;
+
+    return () => {
+      if (bindingRef.current === binding) bindingRef.current = null;
+      binding.dispose();
+    };
+  }, [ready, session, refreshToolbar, runExternalApply]);
+
   // Incoming values from the other pane, realtime, or a document switch.
   // Layout timing is deliberate: a remote Yjs update must reach this editor
   // before the next local keystroke can diff against a newer Y.Doc.
+  // In session mode the canonical observer is the only content path; replaying
+  // `value` here would apply source→WYS updates twice.
   useLayoutEffect(() => {
-    if (!ready) return;
+    if (!ready || session) return;
     const incoming = normalizeMarkdown(value);
     if (incoming === lastAppliedRef.current) return;
 
@@ -261,7 +359,7 @@ export function useMilkdownEditor({
       editor.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, incoming));
     });
     refreshToolbar();
-  }, [value, ready, refreshToolbar, runExternalApply]);
+  }, [value, ready, session, refreshToolbar, runExternalApply]);
 
   useEffect(() => {
     if (!ready) return;
@@ -277,6 +375,13 @@ export function useMilkdownEditor({
   // update already pushed the new Markdown into the editor. The previous
   // Markdown is parsed independently; the current doc is never reused as the
   // "before" snapshot.
+  //
+  // In session mode the AI body already reached Yjs through
+  // `applyPersistedContent()` and the canonical observer applied it here. This
+  // effect still runs for the AI highlights and replaces the document again
+  // inside the suppression path, but never publishes, so it cannot double-write
+  // the shared text. Keep the ordinary full replacement: it preserves the
+  // existing diff/scroll behavior and the AI edit is an intentional replace.
   useEffect(() => {
     if (!ready || !aiEdit) return;
     if (lastAiEditRef.current === aiEdit.id) return;
@@ -295,9 +400,11 @@ export function useMilkdownEditor({
   }, [aiEdit, ready, refreshToolbar, runExternalApply]);
 
   // A pane that was focused while an external value arrived catches up on blur.
+  // Session mode has no deferred apply: the canonical observer always reaches
+  // the editor, even while it is focused.
   useEffect(() => {
     const root = containerRef.current;
-    if (!root) return;
+    if (!root || session) return;
 
     const handleFocusOut = () => {
       window.setTimeout(() => {
@@ -316,7 +423,7 @@ export function useMilkdownEditor({
 
     root.addEventListener('focusout', handleFocusOut);
     return () => root.removeEventListener('focusout', handleFocusOut);
-  }, [refreshToolbar, runExternalApply]);
+  }, [session, refreshToolbar, runExternalApply]);
 
   useEffect(() => {
     if (!ready) return;

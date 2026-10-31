@@ -73,10 +73,13 @@ export function DocumentEditor() {
     isTrashDocument,
     isReadOnly,
     isLoadingDocument,
+    editorSurfaceKey,
     loading,
     collaborators,
     collaborationPersistence,
+    collaborationSession,
     handleEditorSelection,
+    flushContent,
   } = useDocumentEditorState();
 
   const navigate = useNavigate();
@@ -376,7 +379,7 @@ export function DocumentEditor() {
           style={isDesktop ? { paddingBottom: 'calc(var(--nana-footer-height, 3rem) + 0.75rem)' } : undefined}
         >
           <EditorContent
-            key={document?.id ?? urlDocumentId ?? 'new'}
+            key={editorSurfaceKey}
             content={content}
             onContentChange={handleContentChange}
             readOnly={isReadOnly}
@@ -384,6 +387,7 @@ export function DocumentEditor() {
             onDropFiles={handleDrop}
             aiEdit={aiEdit}
             collaborators={collaborators}
+            session={collaborationSession}
             onSelectionChange={handleEditorSelection}
             fullscreen={fullscreen}
           />
@@ -412,6 +416,7 @@ export function DocumentEditor() {
             newAttachments={newAttachments}
             removedAttachments={removedAttachments}
             onDocumentRestored={handleDocumentRestored}
+            onBeforeRestore={async () => (await flushContent())?.revision ?? null}
             onCreateNewFromVersion={handleCreateNewFromVersion}
             onAttachmentsChange={handleAttachmentsChange}
             onAttachmentRemove={handleAttachmentRemove}
@@ -439,6 +444,7 @@ export function DocumentEditor() {
             newAttachments={newAttachments}
             removedAttachments={removedAttachments}
             onDocumentRestored={handleDocumentRestored}
+            onBeforeRestore={async () => (await flushContent())?.revision ?? null}
             onCreateNewFromVersion={handleCreateNewFromVersion}
             onAttachmentsChange={handleAttachmentsChange}
             onAttachmentRemove={handleAttachmentRemove}

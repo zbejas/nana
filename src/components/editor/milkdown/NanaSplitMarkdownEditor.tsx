@@ -6,6 +6,7 @@ import { NanaMarkdownEditor } from './NanaMarkdownEditor';
 import { NanaSourceEditor, type SourceAiDiff } from './NanaSourceEditor';
 import { computeScrollRatio, scrollTopForRatio } from './helpers';
 import type { AiChangedSection } from './aiEdits';
+import type { CollabSession } from '../../../lib/collaboration/session';
 import type { Collaborator } from '../../../lib/collaboration/types';
 
 export interface NanaSplitMarkdownEditorProps {
@@ -23,6 +24,8 @@ export interface NanaSplitMarkdownEditorProps {
   } | null;
   aiDiff?: SourceAiDiff | null;
   collaborators?: Collaborator[];
+  /** Live session shared by both panes. */
+  session?: CollabSession | null;
   onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean; pane?: "source" | "wysiwyg" }) => void;
   onEditorReady?: (editor: Editor) => void;
 }
@@ -43,6 +46,7 @@ export function NanaSplitMarkdownEditor({
   aiEdit = null,
   aiDiff = null,
   collaborators = [],
+  session = null,
   onSelectionChange,
   onEditorReady,
 }: NanaSplitMarkdownEditorProps) {
@@ -102,6 +106,7 @@ export function NanaSplitMarkdownEditor({
               ariaLabel={`${ariaLabel} Markdown source`}
               aiDiff={aiDiff}
               collaborators={collaborators}
+              session={session}
               onSelectionChange={onSelectionChange}
               onReady={setSourceView}
             />
@@ -118,6 +123,7 @@ export function NanaSplitMarkdownEditor({
             enableSlash
             aiEdit={aiEdit}
             collaborators={collaborators}
+            session={session}
             onSelectionChange={onSelectionChange}
             onViewReady={setWysiwygView}
             onEditorReady={onEditorReady}

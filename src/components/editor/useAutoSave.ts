@@ -191,7 +191,8 @@ export function useAutoSave({
             isMountedRef.current = false;
             // Navigation clears timers but keeps the unsaved local draft. The
             // live room has already received every Yjs update this client
-            // published; there is no client content-flush endpoint to call.
+            // published; explicit version/restore and external writes call the
+            // room flush endpoint themselves.
             if (autoSaveTimerRef.current) {
                 clearTimeout(autoSaveTimerRef.current);
             }

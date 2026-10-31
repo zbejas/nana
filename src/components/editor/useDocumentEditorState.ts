@@ -22,6 +22,7 @@ import { useAttachmentHandlers } from './useAttachmentHandlers';
 import { useDocumentActions } from './useDocumentActions';
 import { useDocumentCollaboration } from '../../lib/collaboration/useDocumentCollaboration';
 import { setRoomContentAuthority } from '../../lib/documents/save';
+import { adoptEditorDocument } from '../../lib/documents/drafts';
 
 export function useDocumentEditorState() {
     const navigate = useNavigate();
@@ -78,6 +79,9 @@ export function useDocumentEditorState() {
     const tagsRef = useRef(tags);
     const prevDocumentIdRef = useRef(document?.id);
     const remoteContentChangeRef = useRef<{ from: string; to: string } | null>(null);
+    // Set by the first save of the current /document/new session. The next
+    // document id is a promotion, not a switch to another note.
+    const promotedDocumentIdRef = useRef<string | null>(null);
 
     useEffect(() => { titleRef.current = title; }, [title]);
     useEffect(() => { contentRef.current = content; }, [content]);
@@ -103,6 +107,7 @@ export function useDocumentEditorState() {
     }, [setContent]);
 
     const {
+        session: collaborationSession,
         collaborators,
         status: collaborationStatus,
         canEdit: collaborationCanEdit,
@@ -110,6 +115,7 @@ export function useDocumentEditorState() {
         revision: collaborationRevision,
         updateSelection: handleEditorSelection,
         applyLocalContent,
+        flushContent,
     } = useDocumentCollaboration({
         documentId: document?.id,
         initialContent: document?.content ?? initialContent ?? '',
@@ -141,16 +147,19 @@ export function useDocumentEditorState() {
     }, [document?.id, roomOwnsContent]);
 
     // Editor input must reach Yjs in the same event as the ProseMirror change,
-    // not one React commit later. External writes (AI, restore, a merged save)
-    // use the same path explicitly, but never through a passive content effect.
+    // not one React commit later. In live session mode the Source/WYSIWYG
+    // bindings own the canonical Y.Text write and call this only to mirror the
+    // new value into React state. Applying the same value again here would
+    // duplicate every keystroke.
+    const bindingOwnsContent = Boolean(collaborationSession);
     const handleContentChange = useCallback((next: string) => {
         const normalized = normalizeMarkdown(next);
-        applyLocalContent(normalized);
+        if (!bindingOwnsContent) applyLocalContent(normalized);
         contentRef.current = normalized;
         setLocalContentDirty(true);
         setLocalEditVersion((version) => version + 1);
         setContent(normalized);
-    }, [applyLocalContent]);
+    }, [applyLocalContent, bindingOwnsContent]);
 
     const applyExternalContent = useCallback((next: string) => {
         const normalized = normalizeMarkdown(next);
@@ -172,6 +181,12 @@ export function useDocumentEditorState() {
         saved: Document,
         options?: { creationSessionId?: number; preserveContent?: boolean },
     ) => {
+        // The first save of this new-note session turns /document/new into a
+        // real note. Mark it so the id change adopts the saved record without
+        // discarding anything typed while the create request was in flight.
+        if (!document && options?.creationSessionId === creationSessionId) {
+            promotedDocumentIdRef.current = saved.id;
+        }
         if (options?.preserveContent) {
             // A metadata-only save must not rewind the editor to the room's
             // last persisted body. Adopt the record fields it did write and
@@ -200,7 +215,7 @@ export function useDocumentEditorState() {
         if (!roomOwnsContent && isSameMarkdown(contentRef.current, saved.content)) {
             setLocalContentDirty(false);
         }
-    }, [save, setSelectedDocument, roomOwnsContent]);
+    }, [save, setSelectedDocument, roomOwnsContent, document, creationSessionId]);
 
     // The room is authoritative for content, so its clean ack is what clears
     // the local dirty flag. Remote-only text never reached that flag.
@@ -223,6 +238,7 @@ export function useDocumentEditorState() {
     const { isSavingRef } = useDocumentLoader({
         urlDocumentId,
         document,
+        promotedDocumentId: promotedDocumentIdRef.current,
         hasUnsavedChanges: globalHasUnsavedChanges,
         isTrashDocument,
         initialTitle: initialTitle || '',
@@ -317,6 +333,7 @@ export function useDocumentEditorState() {
         isSavingRef,
         onSave: handleSavedDocument,
         onApplyMergedContent: applyExternalContent,
+        onFlushContent: flushContent,
         onReset: reset,
         onSetSaving: setSaving,
         onSetPublishing: setPublishing,
@@ -387,24 +404,45 @@ export function useDocumentEditorState() {
     // new values, so the intermediate (stale) state never reaches the DOM.
     const [lastSyncedDocId, setLastSyncedDocId] = useState<string | undefined>(document?.id);
     const [lastSyncedSession, setLastSyncedSession] = useState(creationSessionId);
+    // The mounted editor follows the note session, not the raw record id. A
+    // first-save promotion (/document/new -> /document/:id) must not remount
+    // the editor and lose its scroll/selection/undo history.
+    const [editorSurfaceKey, setEditorSurfaceKey] = useState<string>(() => (
+        document?.id ? `document:${document.id}` : `new:${creationSessionId}`
+    ));
     if (document?.id !== lastSyncedDocId || creationSessionId !== lastSyncedSession) {
+        const promotedId = promotedDocumentIdRef.current;
+        const isPromotion = Boolean(document?.id && !lastSyncedDocId && promotedId === document.id);
+        const adoption = adoptEditorDocument({
+            mode: isPromotion ? 'promotion' : document ? 'document' : 'blank',
+            document,
+            current: { title, content, tags },
+            initialTitle: initialTitle || '',
+            initialContent: initialContent || '',
+        });
+
         setLastSyncedDocId(document?.id);
         setLastSyncedSession(creationSessionId);
         setSyncedDocument(document);
         remoteContentChangeRef.current = null;
-
-        if (document) {
-            setTitle(document.title || '');
-            setContent(normalizeMarkdown(document.content));
-            setTags(document.tags || []);
-        } else {
-            setTitle(initialTitle || '');
-            setContent(initialContent || '');
-            setTags([]);
-        }
+        setTitle(adoption.title);
+        setContent(adoption.content);
+        setTags(adoption.tags);
         setNewAttachments([]);
         setRemovedAttachments([]);
-        setLocalContentDirty(false);
+        setLocalContentDirty(adoption.contentDirty);
+
+        // Keep the promoted id while this note is open so the loader does not
+        // race the promotion with a snapshot fetch. It is replaced by the next
+        // new-note save or cleared when another document becomes selected.
+        if (promotedId && promotedId !== document?.id) promotedDocumentIdRef.current = null;
+
+        const nextEditorKey = isPromotion
+            ? editorSurfaceKey
+            : document
+                ? `document:${document.id}`
+                : `new:${creationSessionId}`;
+        if (nextEditorKey !== editorSurfaceKey) setEditorSurfaceKey(nextEditorKey);
     }
 
     useLayoutEffect(() => {
@@ -560,7 +598,14 @@ export function useDocumentEditorState() {
         };
     }, [handleSave]);
 
-    const isLoadingDocument = Boolean(urlDocumentId && urlDocumentId !== 'new' && document?.id !== urlDocumentId);
+    const isLoadingDocument = Boolean(
+        urlDocumentId
+        && urlDocumentId !== 'new'
+        && document?.id !== urlDocumentId
+        // The first save already selected the new id; do not flash the loading
+        // surface (which unmounts the editor) while that atom update settles.
+        && promotedDocumentIdRef.current !== urlDocumentId
+    );
 
     return {
         urlDocumentId,
@@ -615,11 +660,14 @@ export function useDocumentEditorState() {
         isTrashDocument,
         isReadOnly,
         isLoadingDocument,
+        editorSurfaceKey,
+        collaborationSession,
         collaborators,
         collaborationStatus,
         collaborationPersistence,
         handleEditorSelection,
         handleContentChange,
+        flushContent,
         applyExternalContent,
         applyPersistedContent,
     };

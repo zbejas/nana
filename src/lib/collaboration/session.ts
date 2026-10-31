@@ -11,6 +11,7 @@
 import * as Y from "yjs";
 import { createLogger } from "../logger";
 import { normalizeCollabMarkdown } from "./normalize";
+import { applyOps, type CanonicalOp } from "./ops";
 import { minimalTextChange } from "./text";
 import { mergeConcurrentMarkdown } from "./merge";
 import type {
@@ -22,8 +23,10 @@ import type {
 
 const logger = createLogger("Collab");
 
-const REMOTE_ORIGIN = "nana-collab-remote";
-const RESET_ORIGIN = "nana-collab-reset";
+/** Transaction origins shared by the session, bindings, and tests. */
+export const COLLAB_LOCAL_ORIGIN = "nana-collab-local";
+export const COLLAB_REMOTE_ORIGIN = "nana-collab-remote";
+export const COLLAB_RESET_ORIGIN = "nana-collab-reset";
 const UPDATE_FLUSH_MS = 70;
 const PRESENCE_FLUSH_MS = 120;
 const HEARTBEAT_MS = 15_000;
@@ -170,6 +173,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+/** Coarse origin of one canonical text transaction. */
+export type CollabContentOrigin = "local" | "remote" | "reset";
+
+/** One content transaction observed on the canonical `Y.Text`. */
+export interface CollabContentChange {
+    /** Canonical Markdown after the transaction. */
+    readonly markdown: string;
+    readonly origin: CollabContentOrigin;
+    /** Raw Yjs origin, preserved for bindings that tag their own transactions. */
+    readonly rawOrigin: unknown;
+}
+
+/** Classify a Yjs transaction origin without losing the original value. */
+export function classifyCollabContentOrigin(origin: unknown): CollabContentOrigin {
+    if (origin === COLLAB_REMOTE_ORIGIN) return "remote";
+    if (origin === COLLAB_RESET_ORIGIN) return "reset";
+    return "local";
+}
+
 export class CollabSession {
     readonly doc = new Y.Doc();
     readonly text: Y.Text;
@@ -297,7 +319,50 @@ export class CollabSession {
             if (change.insert) {
                 this.text.insert(change.from, change.insert);
             }
-        }, "nana-collab-local");
+        }, COLLAB_LOCAL_ORIGIN);
+    }
+
+    /**
+     * Apply ordered canonical operations directly to the shared text.
+     *
+     * Editor bindings use this instead of diffing a full Markdown snapshot.
+     * Operations stay in the one canonical `Y.Text`; local transactions are
+     * queued and acknowledged by the same persistence path as
+     * `applyLocalMarkdown()`. Before the first sync the operations are folded
+     * into the pending local draft, which the server sync then reconciles.
+     */
+    applyLocalOps(ops: readonly CanonicalOp[], origin: unknown = COLLAB_LOCAL_ORIGIN): void {
+        if (this.destroyed || !Array.isArray(ops) || ops.length === 0) return;
+        if (!this.synced) {
+            this.pendingLocalMarkdown = applyOps(this.pendingLocalMarkdown, ops);
+            return;
+        }
+        if (!this.canEdit) return;
+        this.doc.transact(() => {
+            applyOps(this.text, ops);
+        }, origin);
+    }
+
+    /**
+     * Subscribe to canonical text transactions. The listener receives the
+     * post-transaction Markdown and the transaction origin, so a binding can
+     * ignore changes it applied itself without diffing the whole document.
+     * Returns an idempotent unsubscribe function.
+     */
+    observeContent(listener: (change: CollabContentChange) => void): () => void {
+        if (this.destroyed || typeof listener !== "function") return () => {};
+        const handler = (_update: Uint8Array, origin: unknown): void => {
+            if (this.destroyed) return;
+            listener({
+                markdown: this.text.toString(),
+                origin: classifyCollabContentOrigin(origin),
+                rawOrigin: origin,
+            });
+        };
+        this.doc.on("update", handler);
+        return () => {
+            this.doc.off("update", handler);
+        };
     }
 
     sendSelection(selection: CollabSelection): void {
@@ -381,13 +446,13 @@ export class CollabSession {
         const changed = next !== this.lastText;
         this.lastText = next;
 
-        if (origin === REMOTE_ORIGIN) {
+        if (origin === COLLAB_REMOTE_ORIGIN) {
             if (changed && !this.applyingSync && this.synced) {
                 this.options.onRemoteText(next);
             }
             return;
         }
-        if (origin === RESET_ORIGIN) return;
+        if (origin === COLLAB_RESET_ORIGIN) return;
 
         this.queueUpdate(update);
     };
@@ -711,7 +776,7 @@ export class CollabSession {
         }
         if (type === "update" && typeof event.update === "string") {
             try {
-                Y.applyUpdate(this.doc, base64ToBytes(event.update), REMOTE_ORIGIN);
+                Y.applyUpdate(this.doc, base64ToBytes(event.update), COLLAB_REMOTE_ORIGIN);
             } catch {
                 // A malformed frame is ignored; the next sync repairs state.
             }
@@ -798,13 +863,13 @@ export class CollabSession {
             this.lastRelativeSelection = null;
             this.doc.transact(() => {
                 if (this.text.length > 0) this.text.delete(0, this.text.length);
-            }, RESET_ORIGIN);
+            }, COLLAB_RESET_ORIGIN);
         }
 
         this.applyingSync = true;
         if (typeof event.update === "string") {
             try {
-                Y.applyUpdate(this.doc, base64ToBytes(event.update), REMOTE_ORIGIN);
+                Y.applyUpdate(this.doc, base64ToBytes(event.update), COLLAB_REMOTE_ORIGIN);
             } catch {
                 logger.warn("Live session sync was malformed", { documentId: this.options.documentId });
             }

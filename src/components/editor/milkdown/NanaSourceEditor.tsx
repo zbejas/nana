@@ -24,7 +24,9 @@ import { useSpellcheck } from '../../../lib/settings';
 import type { AiTextChange } from './aiDiff';
 import { isSameMarkdown, normalizeMarkdown } from './helpers';
 import { withSuppressedDocumentChange } from './createEditor';
+import { isRemoteSourceTransaction, SourceBinding } from './sourceBinding';
 import { minimalTextChange } from '../../../lib/collaboration/text';
+import type { CollabSession } from '../../../lib/collaboration/session';
 import type { Collaborator } from '../../../lib/collaboration/types';
 
 export interface SourceAiDiff {
@@ -190,15 +192,21 @@ export interface NanaSourceEditorProps {
   className?: string;
   aiDiff?: SourceAiDiff | null;
   collaborators?: Collaborator[];
+  /**
+   * Live session for this note. When present, the pane binds straight to the
+   * canonical `Y.Text` through `SourceBinding` and `value`/`onChange` is only
+   * a UI-stat mirror. Without it the pane keeps the controlled value path.
+   */
+  session?: CollabSession | null;
   onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean; pane?: "source" | "wysiwyg" }) => void;
   onReady?: (view: EditorView) => void;
 }
 
 /**
- * CodeMirror 6 source pane. The component owns its view; `value` sync follows
- * the same last-emitted rule as the Milkdown pane. Remote values apply as a
- * minimal CodeMirror change in a layout effect, and CodeMirror maps the local
- * selection through it.
+ * CodeMirror 6 source pane. The component owns its view. In live mode a
+ * `SourceBinding` converts local transactions into canonical ops and applies
+ * remote Markdown as an annotated minimal change; otherwise `value` sync
+ * follows the same last-emitted rule as the Milkdown pane.
  */
 export function NanaSourceEditor({
   value,
@@ -209,12 +217,14 @@ export function NanaSourceEditor({
   className,
   aiDiff = null,
   collaborators = [],
+  session = null,
   onSelectionChange,
   onReady,
 }: NanaSourceEditorProps) {
   const spellcheck = useSpellcheck();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const sourceBindingRef = useRef<SourceBinding | null>(null);
   const lastAiDiffRef = useRef<string | null>(null);
   const readOnlyCompartment = useRef(new Compartment());
   const valueRef = useRef(value);
@@ -267,12 +277,18 @@ export function NanaSourceEditor({
         EditorView.updateListener.of((update) => {
           // Remote/live snapshots and merged values are applied below. They
           // must not be echoed back into Yjs as local edits, which would
-          // duplicate the other writer's text.
-          if (update.docChanged && !applyingExternalRef.current) {
+          // duplicate the other writer's text. Live binding applies its own
+          // remote updates with an annotation, so the same rule covers both.
+          if (update.docChanged) {
             const next = normalizeMarkdown(update.state.doc.toString());
-            if (next !== lastEmittedRef.current) {
+            lastAppliedRef.current = next;
+            const binding = sourceBindingRef.current;
+            if (isRemoteSourceTransaction(update)) {
+              // Applied from the canonical session; never emit it again.
+            } else if (binding && !applyingExternalRef.current) {
+              binding.handleUpdate(update);
+            } else if (!binding && !applyingExternalRef.current && next !== lastEmittedRef.current) {
               lastEmittedRef.current = next;
-              lastAppliedRef.current = next;
               onChangeRef.current?.(next);
             }
           }
@@ -297,6 +313,9 @@ export function NanaSourceEditor({
     const handleFocusOut = () => {
       window.setTimeout(() => {
         if (viewRef.current !== view || view.hasFocus) return;
+        // In live mode the session observer owns every non-local apply. A
+        // stale controlled `value` must not overwrite canonical text.
+        if (sourceBindingRef.current) return;
         const incoming = normalizeMarkdown(valueRef.current);
         if (incoming === lastAppliedRef.current) return;
         lastAppliedRef.current = incoming;
@@ -322,6 +341,10 @@ export function NanaSourceEditor({
         window.clearTimeout(timer);
         sourceAiTimers.delete(view);
       }
+      // Unsubscribe before the view goes away; the binding effect cleanup is
+      // idempotent and may already have run.
+      sourceBindingRef.current?.destroy();
+      sourceBindingRef.current = null;
       view.destroy();
       viewRef.current = null;
     };
@@ -329,9 +352,37 @@ export function NanaSourceEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Bind the live session to the existing view. The binding registers its
+  // observer first and aligns the pane second; its remote annotation keeps
+  // the update listener above from treating that alignment as local input.
   useLayoutEffect(() => {
     const view = viewRef.current;
-    if (!view) return;
+    if (!view || !session) return;
+
+    const binding = new SourceBinding({
+      view,
+      session,
+      onChange: (markdown) => {
+        const next = normalizeMarkdown(markdown);
+        lastEmittedRef.current = next;
+        lastAppliedRef.current = next;
+        onChangeRef.current?.(next);
+      },
+    });
+    sourceBindingRef.current = binding;
+
+    return () => {
+      binding.destroy();
+      if (sourceBindingRef.current === binding) sourceBindingRef.current = null;
+    };
+  }, [session]);
+
+  useLayoutEffect(() => {
+    const view = viewRef.current;
+    // Live mode writes canonical text through SourceBinding; the controlled
+    // snapshot is only a mirror for React state. Keying this on the prop (not
+    // the ref) also restores the controlled path when a session goes away.
+    if (!view || session) return;
     const incoming = normalizeMarkdown(value);
     if (incoming === lastAppliedRef.current || isSameMarkdown(incoming, view.state.doc.toString())) return;
     lastAppliedRef.current = incoming;
@@ -344,7 +395,7 @@ export function NanaSourceEditor({
         annotations: Transaction.addToHistory.of(false),
       });
     });
-  }, [value]);
+  }, [value, session]);
 
   useEffect(() => {
     const view = viewRef.current;
