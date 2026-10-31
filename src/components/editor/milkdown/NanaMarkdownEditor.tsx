@@ -9,6 +9,7 @@ import { useMilkdownEditor } from './useMilkdownEditor';
 import type { AiChangedSection } from './aiEdits';
 import type { EditorActionId } from './helpers';
 import type { SlashTriggerPosition } from './createEditor';
+import type { Collaborator } from '../../../lib/collaboration/types';
 
 export interface NanaMarkdownEditorProps {
   value: string;
@@ -29,6 +30,8 @@ export interface NanaMarkdownEditorProps {
     markdown: string;
     sections: AiChangedSection[];
   } | null;
+  collaborators?: Collaborator[];
+  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean }) => void;
   onFocusChange?: (focused: boolean) => void;
   onViewReady?: (view: EditorView) => void;
   onEditorReady?: (editor: Editor) => void;
@@ -52,6 +55,8 @@ export function NanaMarkdownEditor({
   enableSlash = true,
   uploadImage,
   aiEdit = null,
+  collaborators = [],
+  onSelectionChange,
   onFocusChange,
   onViewReady,
   onEditorReady,
@@ -69,6 +74,8 @@ export function NanaMarkdownEditor({
     enableSlash: enableSlash && !readOnly,
     uploadImage,
     aiEdit,
+    collaborators,
+    onSelectionChange,
     onFocusChange,
     onSlash: (position) => setSlashPosition(position),
     onReady: (instance) => {

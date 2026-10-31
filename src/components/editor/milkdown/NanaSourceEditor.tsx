@@ -1,7 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
-import { Compartment, EditorState, StateEffect, StateField, type Range } from '@codemirror/state';
+import {
+  Compartment,
+  EditorState,
+  StateEffect,
+  StateField,
+  Transaction,
+  type Range,
+} from '@codemirror/state';
 import {
   Decoration,
   EditorView,
@@ -16,6 +23,8 @@ import { cn } from '../../ui';
 import { useSpellcheck } from '../../../lib/settings';
 import type { AiTextChange } from './aiDiff';
 import { isSameMarkdown, normalizeMarkdown } from './helpers';
+import { minimalTextChange } from '../../../lib/collaboration/text';
+import type { Collaborator } from '../../../lib/collaboration/types';
 
 export interface SourceAiDiff {
   id: string;
@@ -34,6 +43,67 @@ const sourceAiDiffField = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field),
 });
 const sourceAiTimers = new WeakMap<EditorView, number>();
+
+function collaboratorCaretElement(name: string, color: string): HTMLElement {
+  const caret = document.createElement('span');
+  caret.className = 'nana-collab-caret';
+  caret.style.setProperty('--nana-collab', color);
+  caret.setAttribute('aria-hidden', 'true');
+
+  const label = document.createElement('span');
+  label.className = 'nana-collab-caret-label';
+  label.textContent = name;
+  caret.appendChild(label);
+  return caret;
+}
+
+class CollaboratorCaretWidget extends WidgetType {
+  constructor(
+    readonly name: string,
+    readonly color: string,
+  ) {
+    super();
+  }
+
+  eq(other: CollaboratorCaretWidget): boolean {
+    return other.name === this.name && other.color === this.color;
+  }
+
+  toDOM(): HTMLElement {
+    return collaboratorCaretElement(this.name, this.color);
+  }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+function sourceCollaboratorDecorations(
+  length: number,
+  collaborators: readonly Collaborator[],
+): DecorationSet {
+  const ranges: Range<Decoration>[] = [];
+
+  for (const collaborator of collaborators) {
+    if (!collaborator.focused) continue;
+    const anchor = Math.max(0, Math.min(collaborator.anchor, length));
+    const head = Math.max(0, Math.min(collaborator.head, length));
+    const from = Math.min(anchor, head);
+    const to = Math.max(anchor, head);
+    if (to > from) {
+      ranges.push(Decoration.mark({
+        class: 'nana-collab-selection',
+        attributes: { style: `--nana-collab: ${collaborator.color}` },
+      }).range(from, to));
+    }
+    ranges.push(Decoration.widget({
+      widget: new CollaboratorCaretWidget(collaborator.name, collaborator.color),
+      side: 1,
+    }).range(head));
+  }
+
+  return Decoration.set(ranges, true);
+}
 
 class DeletedTextWidget extends WidgetType {
   constructor(readonly text: string) {
@@ -106,6 +176,8 @@ export interface NanaSourceEditorProps {
   placeholder?: string;
   className?: string;
   aiDiff?: SourceAiDiff | null;
+  collaborators?: Collaborator[];
+  onSelectionChange?: (selection: { anchor: number; head: number; focused: boolean }) => void;
   onReady?: (view: EditorView) => void;
 }
 
@@ -122,6 +194,8 @@ export function NanaSourceEditor({
   placeholder = 'Start writing…',
   className,
   aiDiff = null,
+  collaborators = [],
+  onSelectionChange,
   onReady,
 }: NanaSourceEditorProps) {
   const spellcheck = useSpellcheck();
@@ -129,9 +203,13 @@ export function NanaSourceEditor({
   const viewRef = useRef<EditorView | null>(null);
   const lastAiDiffRef = useRef<string | null>(null);
   const readOnlyCompartment = useRef(new Compartment());
+  const collaboratorsCompartment = useRef(new Compartment());
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onReadyRef = useRef(onReady);
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  const collaboratorsRef = useRef(collaborators);
+  const hadCollaboratorsRef = useRef(false);
   const lastEmittedRef = useRef(normalizeMarkdown(value));
   const lastAppliedRef = useRef(normalizeMarkdown(value));
   const readOnlyRef = useRef(readOnly);
@@ -139,7 +217,14 @@ export function NanaSourceEditor({
   valueRef.current = value;
   onChangeRef.current = onChange;
   onReadyRef.current = onReady;
+  onSelectionChangeRef.current = onSelectionChange;
+  collaboratorsRef.current = collaborators;
   readOnlyRef.current = readOnly;
+
+  const notifySelection = (view: EditorView, focused = view.hasFocus) => {
+    const { anchor, head } = view.state.selection.main;
+    onSelectionChangeRef.current?.({ anchor, head, focused });
+  };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -157,6 +242,12 @@ export function NanaSourceEditor({
         EditorState.tabSize.of(2),
         cmPlaceholder(placeholder),
         sourceAiDiffField,
+        collaboratorsCompartment.current.of(
+          EditorView.decorations.of(sourceCollaboratorDecorations(
+            normalizeMarkdown(valueRef.current).length,
+            collaboratorsRef.current,
+          )),
+        ),
         EditorView.contentAttributes.of({
           'aria-label': ariaLabel,
           'aria-multiline': 'true',
@@ -167,12 +258,17 @@ export function NanaSourceEditor({
           EditorView.editable.of(!readOnlyRef.current),
         ]),
         EditorView.updateListener.of((update) => {
-          if (!update.docChanged) return;
-          const next = normalizeMarkdown(update.state.doc.toString());
-          if (next === lastEmittedRef.current) return;
-          lastEmittedRef.current = next;
-          lastAppliedRef.current = next;
-          onChangeRef.current?.(next);
+          if (update.docChanged) {
+            const next = normalizeMarkdown(update.state.doc.toString());
+            if (next !== lastEmittedRef.current) {
+              lastEmittedRef.current = next;
+              lastAppliedRef.current = next;
+              onChangeRef.current?.(next);
+            }
+          }
+          if (update.selectionSet || update.docChanged || update.focusChanged) {
+            notifySelection(update.view);
+          }
         }),
       ],
     });
@@ -181,6 +277,12 @@ export function NanaSourceEditor({
     viewRef.current = view;
     lastAppliedRef.current = normalizeMarkdown(state.doc.toString());
     onReadyRef.current?.(view);
+    notifySelection(view, false);
+
+    const handleFocus = () => notifySelection(view, true);
+    const handleBlur = () => notifySelection(view, false);
+    view.dom.addEventListener('focus', handleFocus);
+    view.dom.addEventListener('blur', handleBlur);
 
     const handleFocusOut = () => {
       window.setTimeout(() => {
@@ -189,8 +291,11 @@ export function NanaSourceEditor({
         if (incoming === lastAppliedRef.current) return;
         lastAppliedRef.current = incoming;
         lastEmittedRef.current = incoming;
+        const change = minimalTextChange(view.state.doc.toString(), incoming);
+        if (!change) return;
         view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: incoming },
+          changes: change,
+          annotations: Transaction.addToHistory.of(false),
         });
       }, 0);
     };
@@ -198,6 +303,8 @@ export function NanaSourceEditor({
 
     return () => {
       host.removeEventListener('focusout', handleFocusOut);
+      view.dom.removeEventListener('focus', handleFocus);
+      view.dom.removeEventListener('blur', handleBlur);
       const timer = sourceAiTimers.get(view);
       if (timer !== undefined) {
         window.clearTimeout(timer);
@@ -215,13 +322,31 @@ export function NanaSourceEditor({
     if (!view) return;
     const incoming = normalizeMarkdown(value);
     if (incoming === lastAppliedRef.current || isSameMarkdown(incoming, view.state.doc.toString())) return;
-    if (view.hasFocus) return;
     lastAppliedRef.current = incoming;
     lastEmittedRef.current = incoming;
+    const change = minimalTextChange(view.state.doc.toString(), incoming);
+    if (!change) return;
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: incoming },
+      changes: change,
+      annotations: Transaction.addToHistory.of(false),
     });
   }, [value]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const hasCollaborators = collaborators.length > 0;
+    if (!hasCollaborators && !hadCollaboratorsRef.current) return;
+    hadCollaboratorsRef.current = hasCollaborators;
+    view.dispatch({
+      effects: collaboratorsCompartment.current.reconfigure(
+        EditorView.decorations.of(sourceCollaboratorDecorations(
+          view.state.doc.length,
+          collaborators,
+        )),
+      ),
+    });
+  }, [collaborators, value]);
 
   useEffect(() => {
     const view = viewRef.current;

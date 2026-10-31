@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createDocument, updateDocument } from '../../lib/documents';
+import { saveDocumentWithMerge } from '../../lib/documents/save';
 import { createLogger } from '../../lib/logger';
 
 const logger = createLogger('AutoSave');
@@ -22,6 +23,7 @@ interface UseAutoSaveOptions {
     creationSessionId: number;
     isSavingRef: React.MutableRefObject<boolean>;
     onSave: (document: Document, options?: { creationSessionId?: number }) => void;
+    onApplyMergedContent?: (content: string) => void;
     onSetIsAutoSaving: (saving: boolean) => void;
     onShowToast: (message: string, type: 'error' | 'success' | 'info') => void;
 }
@@ -41,6 +43,7 @@ export function useAutoSave({
     creationSessionId,
     isSavingRef,
     onSave,
+    onApplyMergedContent,
     onSetIsAutoSaving,
     onShowToast,
 }: UseAutoSaveOptions) {
@@ -51,6 +54,7 @@ export function useAutoSave({
     const isMountedRef = useRef(true);
     const creationSessionIdRef = useRef(creationSessionId);
     const onSaveRef = useRef(onSave);
+    const onApplyMergedContentRef = useRef(onApplyMergedContent);
     const onSetIsAutoSavingRef = useRef(onSetIsAutoSaving);
     const onShowToastRef = useRef(onShowToast);
     const navigateRef = useRef(navigate);
@@ -58,10 +62,11 @@ export function useAutoSave({
     useEffect(() => {
         creationSessionIdRef.current = creationSessionId;
         onSaveRef.current = onSave;
+        onApplyMergedContentRef.current = onApplyMergedContent;
         onSetIsAutoSavingRef.current = onSetIsAutoSaving;
         onShowToastRef.current = onShowToast;
         navigateRef.current = navigate;
-    }, [creationSessionId, onSave, onSetIsAutoSaving, onShowToast, navigate]);
+    }, [creationSessionId, onSave, onApplyMergedContent, onSetIsAutoSaving, onShowToast, navigate]);
 
     useEffect(() => {
         return () => {
@@ -123,15 +128,16 @@ export function useAutoSave({
                     // Updating existing document
                     logger.debug('Auto-saving existing document', { id: document.id });
 
-                    savedDocument = await updateDocument(document.id, {
+                    const result = await saveDocumentWithMerge({
+                        base: document,
                         title: title.trim() || 'Untitled',
-                        content: content.trim(),
+                        content,
                         tags,
-                        revision: document.revision,
-                        attachments: newAttachments.length > 0 ? newAttachments : undefined,
-                        removeAttachments: removedAttachments.length > 0 ? removedAttachments : undefined,
+                        attachments: newAttachments,
+                        removeAttachments: removedAttachments,
+                        onMergedContent: (merged) => onApplyMergedContentRef.current?.(merged),
                     });
-
+                    savedDocument = result.document;
                     logger.info('Document auto-saved successfully', { id: document.id });
                 } else {
                     // Creating new document

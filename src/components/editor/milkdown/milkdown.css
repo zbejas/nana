@@ -764,3 +764,40 @@
 .nana-milkdown .ProseMirror .nana-details-body.nana-details-closed {
   display: none;
 }
+
+/* ── Live collaboration presence ───────────────────────────────────── */
+.nana-collab-caret {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 1.25em;
+  border-left: 2px solid var(--nana-collab, var(--signal));
+  vertical-align: text-bottom;
+  pointer-events: none;
+}
+
+.nana-collab-caret-label {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: -2px;
+  z-index: 2;
+  border-radius: 4px 4px 4px 0;
+  background: var(--nana-collab, var(--signal));
+  padding: 2px 5px;
+  color: #0c0c0d;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  opacity: 0.95;
+}
+
+.nana-collab-selection {
+  border-radius: 2px;
+  background-color: color-mix(in srgb, var(--nana-collab, var(--signal)) 18%, transparent);
+}
+
+.nana-source .nana-collab-caret {
+  vertical-align: baseline;
+}

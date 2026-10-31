@@ -79,6 +79,7 @@ import {
 } from "./schemas";
 import { adminApi } from "./admin";
 import { browserApi } from "./browser";
+import { collabApi } from "./collab";
 import {
     apiOpenApiConfig,
     GEIST_FONT_PATH,
@@ -560,6 +561,7 @@ export const apiApp = new Elysia({ name: "nana-api" })
         detail: { hide: true },
     })
     .use(browserApi)
+    .use(collabApi)
     .use(adminApi)
     .use(v1);
 

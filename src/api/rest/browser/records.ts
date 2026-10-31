@@ -59,7 +59,10 @@ const TASK_UPDATE_FIELDS = new Set([
 ]);
 
 const UPDATE_FIELDS: Record<string, Set<string>> = {
-    documents: CREATE_FIELDS.documents,
+    // `revision` is the optimistic-concurrency token for content/title/tags.
+    // It is server-validated by the PocketBase revision guard; dropping it here
+    // silently turns every stale save into an overwrite.
+    documents: new Set([...CREATE_FIELDS.documents, "revision"]),
     folders: CREATE_FIELDS.folders,
     boards: CREATE_FIELDS.boards,
     board_columns: new Set(["name", "slug", "position", "icon", "color", "is_final"]),

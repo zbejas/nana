@@ -1,0 +1,528 @@
+/**
+ * Ephemeral live-editing session.
+ *
+ * Yjs owns convergence. The server keeps one in-memory room per open note and
+ * relays binary updates plus cursor presence over the existing same-origin
+ * HTTP surface. Persistence stays with the editor's debounced save; this client
+ * never writes PocketBase directly.
+ */
+
+import * as Y from "yjs";
+import { createLogger } from "../logger";
+import { normalizeCollabMarkdown } from "./normalize";
+import { minimalTextChange } from "./text";
+import { mergeConcurrentMarkdown } from "./merge";
+
+const logger = createLogger("Collab");
+
+const REMOTE_ORIGIN = "nana-collab-remote";
+const RESET_ORIGIN = "nana-collab-reset";
+const UPDATE_FLUSH_MS = 70;
+const PRESENCE_FLUSH_MS = 120;
+const HEARTBEAT_MS = 15_000;
+const RECONNECT_MAX_MS = 10_000;
+
+export type CollabStatus = "connecting" | "connected" | "offline";
+
+export interface CollabPresenceWire {
+    clientId: string;
+    userId: string;
+    name: string;
+    avatar: string;
+    color: string;
+    anchor: unknown;
+    head: unknown;
+    focused: boolean;
+    updatedAt: number;
+}
+
+export interface CollabSelection {
+    anchor: number;
+    head: number;
+    focused: boolean;
+}
+
+export interface CollabSessionOptions {
+    documentId: string;
+    initialContent: string;
+    getToken: () => string;
+    onRemoteText: (text: string) => void;
+    onPresence: (presence: CollabPresenceWire[]) => void;
+    onStatus: (status: CollabStatus) => void;
+    onPermission: (canEdit: boolean) => void;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+    let binary = "";
+    const chunk = 0x8000;
+    for (let index = 0; index < bytes.length; index += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+    }
+    return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export class CollabSession {
+    readonly doc = new Y.Doc();
+    readonly text: Y.Text;
+
+    private clientId = "";
+    private canEdit = false;
+    private status: CollabStatus = "connecting";
+    private destroyed = false;
+    private abortController: AbortController | null = null;
+    private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    private reconnectAttempt = 0;
+    private updateTimer: ReturnType<typeof setTimeout> | null = null;
+    private presenceTimer: ReturnType<typeof setTimeout> | null = null;
+    private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    private queuedUpdates: Uint8Array[] = [];
+    private presence: CollabPresenceWire[] = [];
+    private lastSelection: CollabSelection | null = null;
+    private lastText = "";
+    private synced = false;
+    private applyingSync = false;
+    private roomEpoch = "";
+    private pendingLocalMarkdown: string;
+
+    constructor(private readonly options: CollabSessionOptions) {
+        this.text = this.doc.getText("content");
+        this.pendingLocalMarkdown = normalizeCollabMarkdown(options.initialContent);
+        this.doc.on("update", this.handleUpdate);
+    }
+
+    get documentId(): string {
+        return this.options.documentId;
+    }
+
+    get sessionId(): string {
+        return this.clientId;
+    }
+
+    get editPermission(): boolean {
+        return this.canEdit;
+    }
+
+    get currentStatus(): CollabStatus {
+        return this.status;
+    }
+
+    get markdown(): string {
+        return this.text.toString();
+    }
+
+    get collaborators(): CollabPresenceWire[] {
+        return this.presence;
+    }
+
+    start(): void {
+        if (this.destroyed) return;
+        void this.connect();
+        this.heartbeatTimer = setInterval(() => this.flushPresence(), HEARTBEAT_MS);
+        globalThis.addEventListener?.("blur", this.handleWindowBlur);
+    }
+
+    /**
+     * Fold a value that did not come from Yjs into the shared text. This covers
+     * local typing, split-pane synchronization, and external writes such as an
+     * AI edit or a PocketBase refresh.
+     */
+    applyLocalMarkdown(markdown: string): void {
+        if (this.destroyed) return;
+        const next = normalizeCollabMarkdown(markdown);
+        if (!this.synced) {
+            // The server owns the initial Yjs state. Applying the loaded note
+            // before the first sync would create a second independent insert
+            // and duplicate the whole document when the states merge.
+            this.pendingLocalMarkdown = next;
+            return;
+        }
+        // Viewers can watch the room but their local keystrokes must not enter
+        // the shared replica. The editor shell also treats a non-edit grant as
+        // read-only once the server has reported the permission.
+        if (!this.canEdit) return;
+        const current = this.text.toString();
+        if (next === current) return;
+        const change = minimalTextChange(current, next);
+        if (!change) return;
+        this.doc.transact(() => {
+            if (change.to > change.from) {
+                this.text.delete(change.from, change.to - change.from);
+            }
+            if (change.insert) {
+                this.text.insert(change.from, change.insert);
+            }
+        }, "nana-collab-local");
+    }
+
+    sendSelection(selection: CollabSelection): void {
+        if (this.destroyed) return;
+        // Split mode has two editors. The unfocused pane also reports its
+        // selection when the shared value changes; it must not overwrite the
+        // caret of the pane the user is actually typing in.
+        if (
+            !selection.focused
+            && this.lastSelection?.focused
+            && globalThis.document?.hasFocus?.()
+        ) {
+            return;
+        }
+        this.lastSelection = selection;
+        if (!this.clientId) return;
+        if (this.presenceTimer) return;
+        this.presenceTimer = setTimeout(() => {
+            this.presenceTimer = null;
+            this.flushPresence();
+        }, PRESENCE_FLUSH_MS);
+    }
+
+    destroy(): void {
+        if (this.destroyed) return;
+        this.destroyed = true;
+        this.doc.off("update", this.handleUpdate);
+        this.abortController?.abort();
+        this.abortController = null;
+        for (const timer of [this.reconnectTimer, this.updateTimer, this.presenceTimer]) {
+            if (timer) clearTimeout(timer);
+        }
+        if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+        globalThis.removeEventListener?.("blur", this.handleWindowBlur);
+        this.reconnectTimer = null;
+        this.updateTimer = null;
+        this.presenceTimer = null;
+        this.heartbeatTimer = null;
+        this.queuedUpdates = [];
+        this.doc.destroy();
+    }
+
+    private handleWindowBlur = (): void => {
+        if (!this.lastSelection) return;
+        this.lastSelection = { ...this.lastSelection, focused: false };
+        void this.flushPresence();
+    };
+
+    private handleUpdate = (update: Uint8Array, origin: unknown): void => {
+        const next = this.text.toString();
+        const changed = next !== this.lastText;
+        this.lastText = next;
+
+        if (origin === REMOTE_ORIGIN) {
+            if (changed && !this.applyingSync && this.synced) {
+                this.options.onRemoteText(next);
+            }
+            return;
+        }
+        if (origin === RESET_ORIGIN) return;
+
+        this.queueUpdate(update);
+    };
+
+    private queueUpdate(update: Uint8Array): void {
+        if (this.destroyed || !this.canEdit) return;
+        this.queuedUpdates.push(update);
+        if (this.updateTimer) return;
+        this.updateTimer = setTimeout(() => {
+            this.updateTimer = null;
+            void this.flushUpdates();
+        }, UPDATE_FLUSH_MS);
+    }
+
+    private async flushUpdates(): Promise<void> {
+        if (this.destroyed || !this.clientId || this.queuedUpdates.length === 0) return;
+        const merged = Y.mergeUpdates(this.queuedUpdates);
+        this.queuedUpdates = [];
+        try {
+            const response = await fetch(
+                `/api/v1/collab/documents/${encodeURIComponent(this.options.documentId)}/update`,
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: this.options.getToken(),
+                        "Content-Type": "application/json",
+                        Accept: "application/json",
+                    },
+                    body: JSON.stringify({
+                        clientId: this.clientId,
+                        update: bytesToBase64(merged),
+                    }),
+                },
+            );
+            if (response.status === 409) {
+                this.disconnectForRetry();
+                return;
+            }
+            if (!response.ok) {
+                // Keep the work locally; a later sync resends the state diff.
+                this.queuedUpdates.unshift(merged);
+            }
+        } catch {
+            this.queuedUpdates.unshift(merged);
+            this.disconnectForRetry();
+        }
+    }
+
+    private async flushPresence(): Promise<void> {
+        const selection = this.lastSelection;
+        if (
+            this.destroyed
+            || !selection
+            || !this.clientId
+            || this.status !== "connected"
+        ) {
+            return;
+        }
+
+        const max = Math.max(0, this.text.length);
+        const anchor = Math.max(0, Math.min(selection.anchor, max));
+        const head = Math.max(0, Math.min(selection.head, max));
+        const anchorPosition = Y.createRelativePositionFromTypeIndex(this.text, anchor);
+        const headPosition = Y.createRelativePositionFromTypeIndex(this.text, head);
+
+        try {
+            await fetch(
+                `/api/v1/collab/documents/${encodeURIComponent(this.options.documentId)}/presence`,
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: this.options.getToken(),
+                        "Content-Type": "application/json",
+                        Accept: "application/json",
+                    },
+                    body: JSON.stringify({
+                        clientId: this.clientId,
+                        presence: {
+                            anchor: anchorPosition,
+                            head: headPosition,
+                            focused: selection.focused,
+                        },
+                    }),
+                },
+            );
+        } catch {
+            // Presence is best-effort and must never interrupt typing.
+        }
+    }
+
+    private setStatus(status: CollabStatus): void {
+        if (this.status === status) return;
+        this.status = status;
+        this.options.onStatus(status);
+    }
+
+    private async connect(): Promise<void> {
+        if (this.destroyed) return;
+        if (this.abortController) this.abortController.abort();
+        const controller = new AbortController();
+        this.abortController = controller;
+        this.setStatus("connecting");
+
+        try {
+            const response = await fetch(
+                `/api/v1/collab/documents/${encodeURIComponent(this.options.documentId)}/events`,
+                {
+                    headers: {
+                        Authorization: this.options.getToken(),
+                        Accept: "text/event-stream",
+                    },
+                    signal: controller.signal,
+                },
+            );
+
+            if (!response.ok || !response.body) {
+                throw new Error(`live session rejected (${response.status})`);
+            }
+
+            this.reconnectAttempt = 0;
+            await this.readStream(response.body);
+            if (!this.destroyed && !controller.signal.aborted) {
+                this.disconnectForRetry();
+            }
+        } catch (error) {
+            if (this.destroyed || controller.signal.aborted) return;
+            logger.debug("Live session disconnected", {
+                documentId: this.options.documentId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            this.disconnectForRetry();
+        }
+    }
+
+    private disconnectForRetry(): void {
+        if (this.destroyed) return;
+        this.clientId = "";
+        this.setStatus("offline");
+        this.abortController?.abort();
+        this.abortController = null;
+        if (this.reconnectTimer) return;
+        const delay = Math.min(RECONNECT_MAX_MS, 750 * 2 ** this.reconnectAttempt);
+        this.reconnectAttempt += 1;
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            void this.connect();
+        }, delay);
+    }
+
+    private async readStream(body: ReadableStream<Uint8Array>): Promise<void> {
+        const reader = body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (!this.destroyed) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            let boundary = buffer.indexOf("\n\n");
+            while (boundary >= 0) {
+                const frame = buffer.slice(0, boundary);
+                buffer = buffer.slice(boundary + 2);
+                this.handleFrame(frame);
+                boundary = buffer.indexOf("\n\n");
+            }
+        }
+    }
+
+    private handleFrame(frame: string): void {
+        const data = frame
+            .split("\n")
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice(5).trimStart())
+            .join("\n");
+        if (!data) return;
+
+        let event: Record<string, unknown>;
+        try {
+            const parsed = JSON.parse(data) as unknown;
+            if (!isRecord(parsed)) return;
+            event = parsed;
+        } catch {
+            return;
+        }
+
+        const type = event.type;
+        if (type === "sync") {
+            this.handleSync(event);
+            return;
+        }
+        if (type === "update" && typeof event.update === "string") {
+            try {
+                Y.applyUpdate(this.doc, base64ToBytes(event.update), REMOTE_ORIGIN);
+            } catch {
+                // A malformed frame is ignored; the next sync repairs state.
+            }
+            return;
+        }
+        if (type === "presence") {
+            const presence = event as unknown as CollabPresenceWire;
+            if (!presence.clientId) return;
+            this.presence = [
+                ...this.presence.filter((entry) => entry.clientId !== presence.clientId),
+                presence,
+            ];
+            this.options.onPresence(this.presence);
+            return;
+        }
+        if (type === "presence-leave" && typeof event.clientId === "string") {
+            this.presence = this.presence.filter((entry) => entry.clientId !== event.clientId);
+            this.options.onPresence(this.presence);
+        }
+    }
+
+    private handleSync(event: Record<string, unknown>): void {
+        if (typeof event.clientId !== "string") return;
+        const epoch = typeof event.epoch === "string" ? event.epoch : "";
+        const roomChanged = Boolean(this.roomEpoch && epoch && epoch !== this.roomEpoch);
+        if (epoch) this.roomEpoch = epoch;
+
+        const firstSync = !this.synced || roomChanged;
+        const beforeSync = this.text.toString();
+        const localDraft = roomChanged ? beforeSync : this.pendingLocalMarkdown;
+        this.clientId = event.clientId;
+        this.canEdit = event.canEdit === true;
+        if (Array.isArray(event.presence)) {
+            this.presence = event.presence.filter(isRecord) as unknown as CollabPresenceWire[];
+        } else {
+            this.presence = [];
+        }
+
+        if (roomChanged) {
+            // The server dropped the old room and seeded a new Y.Doc from the
+            // saved note. Clear the stale replica so the two seeds cannot both
+            // survive as independent insertions.
+            this.queuedUpdates = [];
+            this.doc.transact(() => {
+                if (this.text.length > 0) this.text.delete(0, this.text.length);
+            }, RESET_ORIGIN);
+        }
+
+        this.applyingSync = true;
+        if (typeof event.update === "string") {
+            try {
+                Y.applyUpdate(this.doc, base64ToBytes(event.update), REMOTE_ORIGIN);
+            } catch {
+                logger.warn("Live session sync was malformed", { documentId: this.options.documentId });
+            }
+        }
+        this.applyingSync = false;
+
+        const serverText = this.text.toString();
+        if (firstSync) {
+            this.synced = true;
+            let target: string;
+            if (roomChanged) {
+                // Keep the writer's unsaved draft; the new room was seeded from
+                // the last persisted body and has no shared history with the
+                // replica that was just cleared.
+                target = localDraft || serverText;
+            } else {
+                // The server seeded the document, so the local draft is folded
+                // in once here instead of being inserted independently before.
+                const base = normalizeCollabMarkdown(this.options.initialContent);
+                target = localDraft;
+                if (localDraft === base) {
+                    target = serverText;
+                } else if (serverText !== base) {
+                    target = mergeConcurrentMarkdown(base, localDraft, serverText);
+                }
+            }
+            this.pendingLocalMarkdown = target;
+            this.applyLocalMarkdown(target);
+            if (target !== localDraft) {
+                this.options.onRemoteText(target);
+            }
+        } else if (this.canEdit && typeof event.stateVector === "string") {
+            // Reconnect: push whatever the room did not have, including edits
+            // made while the stream was offline.
+            try {
+                const diff = Y.encodeStateAsUpdate(this.doc, base64ToBytes(event.stateVector));
+                if (diff.byteLength > 2) {
+                    this.queuedUpdates = [diff];
+                    void this.flushUpdates();
+                }
+            } catch {
+                // A stale vector is harmless; the next local edit syncs.
+            }
+        }
+        if (!firstSync && serverText !== beforeSync) {
+            this.options.onRemoteText(serverText);
+        }
+
+        this.setStatus("connected");
+        this.reconnectAttempt = 0;
+        this.options.onPermission(this.canEdit);
+        this.options.onPresence(this.presence);
+        if (this.lastSelection) this.flushPresence();
+    }
+}

@@ -70,8 +70,11 @@ export function DocumentEditor() {
     handleDocumentRestored,
     handleCreateNewFromVersion,
     isTrashDocument,
+    isReadOnly,
     isLoadingDocument,
     loading,
+    collaborators,
+    handleEditorSelection,
   } = useDocumentEditorState();
 
   const navigate = useNavigate();
@@ -316,7 +319,7 @@ export function DocumentEditor() {
           <EditorHeader
             title={title}
             onTitleChange={setTitle}
-            readOnly={isTrashDocument}
+            readOnly={isReadOnly}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             isMobile={!isDesktop}
@@ -326,13 +329,14 @@ export function DocumentEditor() {
             hasUnsavedChanges={hasUnsavedChanges}
             isNewDocument={urlDocumentId === 'new'}
             autoSaving={isAutoSaving}
+            collaborators={collaborators}
             onToggleHeader={!isDesktop ? () => setHeaderVisible(!headerVisible) : undefined}
             titleInputRef={titleInputRef}
             onShare={handleShare}
             onExport={handleExport}
             onDelete={handleDelete}
             onAskNana={() => setChatDockOpen(true)}
-            askNanaDisabled={urlDocumentId === 'new' || Boolean(isTrashDocument)}
+            askNanaDisabled={urlDocumentId === 'new' || Boolean(isReadOnly)}
             fullscreen={fullscreen}
             onToggleFullscreen={() => setFullscreen((value) => !value)}
           />
@@ -350,14 +354,17 @@ export function DocumentEditor() {
           <EditorTags
             tags={tags}
             tagInput={tagInput}
-            readOnly={isTrashDocument}
+            readOnly={isReadOnly}
             onTagInputChange={setTagInput}
             onAddTag={handleAddTag}
             onRemoveTag={handleRemoveTag}
           />
         </div>
 
-        <EditorReadOnlyOverlay visible={isTrashDocument} />
+        <EditorReadOnlyOverlay
+          visible={isReadOnly}
+          reason={isTrashDocument ? 'trash' : 'view'}
+        />
 
         {!isTrashDocument && <ContentSizeWarning content={content} />}
 
@@ -369,10 +376,12 @@ export function DocumentEditor() {
             key={document?.id ?? urlDocumentId ?? 'new'}
             content={content}
             onContentChange={setContent}
-            readOnly={isTrashDocument}
+            readOnly={isReadOnly}
             viewMode={effectiveViewMode}
             onDropFiles={handleDrop}
             aiEdit={aiEdit}
+            collaborators={collaborators}
+            onSelectionChange={handleEditorSelection}
             fullscreen={fullscreen}
           />
         </div>
@@ -407,7 +416,7 @@ export function DocumentEditor() {
             onAutoSaveAttachments={handleAutoSaveAttachments}
             onPublish={handlePublish}
             publishing={publishing}
-            readOnly={isTrashDocument}
+            readOnly={isReadOnly}
           />
         </div>
       )}
@@ -434,7 +443,7 @@ export function DocumentEditor() {
             onAutoSaveAttachments={handleAutoSaveAttachments}
             onPublish={handlePublish}
             publishing={publishing}
-            readOnly={isTrashDocument}
+            readOnly={isReadOnly}
             usePortal
           />
         </div>

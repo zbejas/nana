@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nana is a self-hosted document workspace: Markdown notes in folders, multiple task boards, version history, trash, user-to-user and public sharing, a read/edit AI assistant, a JSON API, and an MCP server for external AI clients. Notes are `documents`; tasks are separate `tasks` records grouped by author-scoped `boards`. Boards and notes live in the same folder tree, can be marked private, and can be shared with other accounts or through a public link.
+Nana is a self-hosted document workspace: Markdown notes in folders, multiple task boards, version history, trash, user-to-user and public sharing, live multiplayer editing, a read/edit AI assistant, a JSON API, and an MCP server for external AI clients. Notes are `documents`; tasks are separate `tasks` records grouped by author-scoped `boards`. Boards and notes live in the same folder tree, can be marked private, and can be shared with other accounts or through a public link.
 
 The system is one deployable with two processes: **Bun** serves the SPA, the application API, the Elysia REST API at `/api/v1`, the public OpenAPI docs at `/docs`, and the MCP endpoint at `/mcp` on port `3000`; **PocketBase** serves data, auth, hooks, and admin APIs on `127.0.0.1:8090`. PocketBase is loopback-only; the browser never reaches it directly.
 
@@ -18,6 +18,8 @@ The system is one deployable with two processes: **Bun** serves the SPA, the app
 | `src/api/api-keys/` | API key token format, hashing, superuser lookup, impersonation, and owner key management. |
 | `src/api/rest/browser/` | Browser-only facade: auth, allowlisted records, files, SSE relay, trash, admin, public shares, version history. Session JWT only. |
 | `src/api/versioning/` | Server-side git version store, per-note lock, document reader/patcher, and the version service used by the browser routes. |
+| `src/api/rest/collab/` | Session-authenticated Yjs rooms, live text updates, and cursor presence for open notes. |
+| `src/lib/collaboration/` | Browser Yjs session, SSE transport, presence resolution, text/merge helpers, and the editor collaboration hook. |
 | `src/api/mcp/` | Stateless Streamable HTTP MCP server, tool registration, and per-request transport handling. |
 | `src/api/workspace/` | Shared folder, note, board, and task services used by REST and MCP; `Surface` selection and the AI visibility lock. |
 | `src/api/pocketbase/` | Caller-token PocketBase REST client shared by chat tools, REST services, and MCP. Never accepts the superuser token. |
@@ -62,6 +64,7 @@ Bun :3000 ── src/index.ts
   │                          ├── typed workspace ──▶ workspace services ──▶ PB REST (user token)
   │                          ├── browser facade ───▶ allowlists + auth ──▶ PB REST (user token)
   │                          ├── versions ─────────▶ version service ──▶ git store + PB REST
+  │                          ├── collab ───────────▶ Yjs rooms + presence ──▶ PB REST (read/access)
   │                          └── auth/files/realtime/public/trash/admin ──▶ PB REST
   ├── /pb, /pb/* ─────────▶ 404 (the public PocketBase proxy is gone)
   ├── /docs, /docs/json ──▶ OpenAPI spec + self-hosted Scalar reference (public)
@@ -79,7 +82,7 @@ There is no embedding service, vector store, or background indexer in the topolo
 
 | Process | Owns | Entry point |
 | --- | --- | --- |
-| Bun | SPA serving, application API routes, Elysia `/api/v1`, public OpenAPI docs, MCP endpoint, auth verification, rate limiting, CSP, export, chat/provider orchestration, workspace services, ask/edit chat tools, chat edit audit, server-side git version history | `src/index.ts` |
+| Bun | SPA serving, application API routes, Elysia `/api/v1`, public OpenAPI docs, MCP endpoint, auth verification, rate limiting, CSP, export, chat/provider orchestration, workspace services, ask/edit chat tools, chat edit audit, server-side git version history, live Yjs rooms | `src/index.ts` |
 | PocketBase | Data, auth records, API rules, schema, hooks, custom routes, mailers, cron; loopback only | `pocketbase/pb_hooks/index.pb.js` |
 | Browser | React UI, Jotai state, `/api/v1` client calls, SSE chat client, SSE realtime relay | `src/frontend.tsx` |
 | API / MCP clients | JSON requests to `/api/v1` or `/mcp` with a PocketBase user token or a scoped `nana_…` API key; no browser session required | `src/api/rest/`, `src/api/mcp/`, `src/api/api-keys/` |
@@ -146,6 +149,15 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 7. Trashing is a board `POST /api/trash/move-board` (or `PATCH { archived: true }`). Permanent delete is allowed only for trashed boards and cascades their tasks.
 8. Public board links use `public_share_token`; `/api/public/boards/:token` validates `is_public`, privacy, expiry, and trash state before returning tasks.
 
+### Live note editing
+
+1. The editor opens a Yjs session from `src/lib/collaboration/` for an existing, non-trash note. The room is keyed by document id and lives in the Bun process.
+2. `GET /api/v1/collab/documents/:id/events` accepts a session JWT, resolves the note and effective sharing level through PocketBase, then sends a `sync` frame with the room's Yjs state, state vector, permissions, and current presence. The server seeded the Yjs text from the persisted Markdown; clients never seed a second copy.
+3. Local edits become Yjs updates after a short debounce and are posted to `POST .../update`. The room applies them, broadcasts the binary diff, and increments an in-memory sequence. View-only grantees receive updates and presence but cannot publish text.
+4. Cursor and selection changes are posted as Yjs relative positions to `POST .../presence`. The room survives brief reconnects; a room with no viewers is disposed after 45 seconds. Presence older than 45 seconds is dropped.
+5. Remote text is applied to both editor panes through a minimal splice, preserving the local caret, and the presence layer paints the other writer's colored caret and selection. A split-pane callback only reports presence for the focused pane.
+6. Persistence remains the normal editor debounce. Both clients converge on the same Markdown, and `saveDocumentWithMerge()` retries a stale revision by folding in the other writer's lines instead of overwriting them. `revision` is forwarded by the browser facade, so PocketBase still rejects a truly stale write.
+
 ### Data flows
 
 | Flow | Path |
@@ -169,6 +181,7 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 | Browser auth | Browser → `/api/v1/auth/*` → PB auth endpoints; token and record keep the PB shape |
 | Browser files | Browser → `/api/v1/files/token` + `/api/v1/files/:collection/:record/:file` → PB file token/bytes/thumbnails |
 | Browser realtime | Browser → `GET /api/v1/realtime` SSE handshake + authenticated `POST /api/v1/realtime` subscription → PB realtime |
+| Live note editing | Browser → `GET /api/v1/collab/documents/:id/events` SSE + `POST .../update` Yjs diffs + `POST .../presence` → per-document room; the editor's normal autosave persists the merged Markdown |
 | Typed REST read/write | API client → `/api/v1` → Elysia handler → workspace service (`surface: "user"`) → PB REST with user token → JSON |
 | MCP tool call | MCP client → `POST /mcp` → per-request MCP server → workspace service (`surface: "ai"`) → PB REST with user token → tool result |
 | Chat read | Browser → `/api/chat/send` (`mode: "ask"`) → `streamText` + read tools → PB REST with user token → named SSE |
@@ -197,7 +210,9 @@ Production detection is deliberate: Bun treats the app as production only when `
 - **REST is the owner surface.** `/api/v1` uses `surface: "user"`, so the owner sees their private records; the AI lock is deliberately not applied there.
 - **One AI visibility rule.** `src/api/workspace/privacy.ts` defines hidden folders, list conditions, and record checks. Chat and MCP both consume it.
 - **No background indexing.** Document saves and trash moves have no fire-and-forget search side effects.
-- **SSE needs no timeout.** Chat and PocketBase realtime requests explicitly disable Bun's request timeout.
+- **Live rooms are process-local and ephemeral.** Yjs state lives in Bun memory; PocketBase remains the persisted source. A restart drops unsent presence and live-only state, and a new room seeds from the note's saved Markdown. The deployment is single-container/single-Bun, so no cross-instance room bus is needed.
+- **Live editing is session-only.** The browser sends its PocketBase JWT; API keys, public links, and unauthenticated callers cannot join a room. View grantees can watch; only `edit`/owner can publish updates.
+- **SSE needs no timeout.** Chat, PocketBase realtime, and the collaboration event stream explicitly disable Bun's request timeout.
 - **Boards trash before permanent deletion.** PocketBase rejects deleting an active board; task creation and updates are blocked on trashed boards.
 - **Boards are not trashed with folders.** `boards.folder` does not cascade; folder trash rehomes affected boards to the root.
 
@@ -219,13 +234,15 @@ Production detection is deliberate: Bun treats the app as production only when `
 ## Gotchas & invariants
 
 - **Production needs both `NODE_ENV=production` and `dist/index.html`.** Missing `dist` silently serves the dev SPA.
-- **`server.timeout(req, 0)` is required** on `/api/chat/send` and `/api/v1/realtime`; otherwise long streams are cut off.
+- **`server.timeout(req, 0)` is required** on `/api/chat/send`, `/api/v1/realtime`, and the collaboration event stream; otherwise long streams are cut off.
 - **The browser facade is an allowlist, not a proxy.** It forwards only allowlisted collections and routes, never system/schema/log/backup/superuser paths, and never injects a superuser token.
 - **PocketBase is loopback-only.** The container entrypoint binds `127.0.0.1:8090`; `/pb` returns `404`. Do not publish `8090` or add a pass-through proxy back to PocketBase.
 - **The superuser token belongs to configuration, credential exchange, and server-owned audit rows.** `fetchAIConfig()`, the rate limiter, API key lookup/exchange, and `chat_edits` persistence use it; chat tool workspace calls, REST, and MCP must use the caller's token.
 - **Chat writes are mode-gated; MCP has its own write surface.** Ask mode exposes reads only. Work-mode writes go through `src/api/workspace/` with a user token, `X-Nana-Actor: ai`, `chat_edits`, and note revision checks; deletes are confirm-first; MCP has a separate tool list and destructive-tool design.
 - **Chat note edits are section-scoped and revision-checked.** `read_note` returns `revision` and `versionToken`; the note update tools pass one back. A stale value returns `conflict`. `src/lib/markdown/sections.ts` carries untouched sections through instead of replacing the whole note.
-- **Version history is manual-only and git-backed.** Only an explicit Save version commits the current note state into `pb_data/versioning/<noteId>.git`. Autosave, chat, MCP, and trash moves never commit. Restoring commits the current state first (when it differs from HEAD), then applies only the Markdown body; title, tags, folder, and privacy stay. Permanent delete removes the repository. The UI never exposes commit ids, branches, or git terms.
+- **Version history is manual-only and git-backed.** Only an explicit Save version commits the current note state into `pb_data/versioning/<noteId>.git`. Autosave, chat, MCP, live editing, and trash moves never commit. Restoring commits the current state first (when it differs from HEAD), then applies only the Markdown body; title, tags, folder, and privacy stay. Permanent delete removes the repository. The UI never exposes commit ids, branches, or git terms.
+- **Only the server seeds a live Yjs room.** Clients apply the room's `sync` update before folding their loaded Markdown in. Seeding both sides independently duplicates the whole note when Yjs merges the two inserts.
+- **The browser facade must forward `revision`.** PocketBase's revision guard is the concurrency boundary; dropping the field turns every stale save into a silent overwrite.
 - **Private means hidden from AI, not from the owner.** `/api/v1` is the owner surface and intentionally returns private notes, boards, and folder contents. Only chat and MCP apply `loadAiVisibility()`.
 - **MCP tool failures are not HTTP failures.** `POST /mcp` returns `200` with an `isError` text result; only auth, transport, and JSON-RPC errors use HTTP statuses.
 - **`/docs` is public by design.** The API itself is authenticated. The Scalar bundle and Geist fonts are served under `/docs/` from `node_modules` and `src/assets/fonts`, not a CDN.

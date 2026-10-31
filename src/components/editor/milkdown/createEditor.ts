@@ -17,12 +17,14 @@ import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
 import { upload, uploadConfig } from '@milkdown/kit/plugin/upload';
 import { $prose, $view } from '@milkdown/kit/utils';
 import { Fragment, Slice, type Node as ProseNode } from '@milkdown/kit/prose/model';
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
+import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state';
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view';
 import { prism } from '@milkdown/plugin-prism';
 import { rewriteLegacyFileUrl } from '../../../lib/legacy-urls';
 import type { AiTextChange } from './aiDiff';
 import { normalizeMarkdown } from './helpers';
+import { alignMarkdownToText, mapOffsetThroughChange, markdownOffsetToTextOffset, minimalTextChange, textOffsetToMarkdownOffset } from '../../../lib/collaboration/text';
+import type { Collaborator } from '../../../lib/collaboration/types';
 
 export interface SlashTriggerPosition {
   left: number;
@@ -40,6 +42,7 @@ export interface CreateMilkdownEditorOptions {
   enableSlash?: boolean;
   onDocChangeRef: { current: ((markdown: string) => void) | undefined };
   onSelectionRef: { current: (() => void) | undefined };
+  onSelectionChangeRef?: { current: (() => void) | undefined };
   onFocusRef: { current: (() => void) | undefined };
   onBlurRef: { current: (() => void) | undefined };
   onSlashRef: { current: ((position: SlashTriggerPosition) => void) | undefined };
@@ -268,6 +271,96 @@ function positionAt(map: ProseTextMap, offset: number): number {
     }
   }
   return map.segments[map.segments.length - 1]!.to;
+}
+
+const COLLAB_PRESENCE_KEY = new PluginKey<DecorationSet>('NANA_COLLAB_PRESENCE');
+
+function collaboratorCaret(name: string, color: string): HTMLElement {
+  const caret = document.createElement('span');
+  caret.className = 'nana-collab-caret';
+  caret.style.setProperty('--nana-collab', color);
+  caret.setAttribute('aria-hidden', 'true');
+  caret.setAttribute('contenteditable', 'false');
+
+  const label = document.createElement('span');
+  label.className = 'nana-collab-caret-label';
+  label.textContent = name;
+  caret.appendChild(label);
+  return caret;
+}
+
+function collaboratorDecorations(
+  doc: ProseNode,
+  collaborators: readonly Collaborator[],
+  markdown: string,
+): DecorationSet {
+  const focused = collaborators.filter((collaborator) => collaborator.focused);
+  if (focused.length === 0) return DecorationSet.empty;
+
+  const map = proseTextMap(doc);
+  const segments = alignMarkdownToText(markdown, map.text);
+  const decorations: Decoration[] = [];
+
+  for (const collaborator of focused) {
+    const anchorText = markdownOffsetToTextOffset(segments, collaborator.anchor);
+    const headText = markdownOffsetToTextOffset(segments, collaborator.head);
+    if (anchorText === null || headText === null) continue;
+    const anchor = positionAt(map, anchorText);
+    const head = positionAt(map, headText);
+    const from = Math.min(anchor, head);
+    const to = Math.max(anchor, head);
+
+    if (to > from) {
+      decorations.push(Decoration.inline(from, to, {
+        class: 'nana-collab-selection',
+        style: `--nana-collab: ${collaborator.color}`,
+      }));
+    }
+    decorations.push(Decoration.widget(head, collaboratorCaret(
+      collaborator.name,
+      collaborator.color,
+    ), { side: 1 }));
+  }
+
+  return DecorationSet.create(doc, decorations);
+}
+
+/** Update the remote-caret layer without touching the document or history. */
+export function setCollaboratorHighlights(
+  view: EditorView,
+  collaborators: readonly Collaborator[],
+  markdown: string,
+): void {
+  if (view.isDestroyed) return;
+  view.dispatch(
+    view.state.tr.setMeta(COLLAB_PRESENCE_KEY, collaboratorDecorations(
+      view.state.doc,
+      collaborators,
+      markdown,
+    )),
+  );
+}
+
+function collaboratorPresencePlugin() {
+  return $prose(
+    () =>
+      new Plugin<DecorationSet>({
+        key: COLLAB_PRESENCE_KEY,
+        state: {
+          init: () => DecorationSet.empty,
+          apply(tr, previous) {
+            const next = tr.getMeta(COLLAB_PRESENCE_KEY) as DecorationSet | undefined;
+            if (next) return next;
+            return previous.map(tr.mapping, tr.doc);
+          },
+        },
+        props: {
+          decorations(state) {
+            return COLLAB_PRESENCE_KEY.getState(state) ?? null;
+          },
+        },
+      }),
+  );
 }
 
 function scrollToTextPosition(view: EditorView, pos: number): void {
@@ -708,6 +801,7 @@ export async function createMilkdownEditor(options: CreateMilkdownEditorOptions)
   editor.use(aiHighlightPlugin());
   editor.use(softBreakPlugin());
   editor.use(taskListClickPlugin());
+  editor.use(collaboratorPresencePlugin());
   editor.use(documentChangePlugin(options.onDocChangeRef));
   if (options.enableSlash !== false) editor.use(slashPlugin(options.onSlashRef));
   if (options.uploadImageRef.current) editor.use(upload);
@@ -720,15 +814,19 @@ export async function createMilkdownEditor(options: CreateMilkdownEditorOptions)
     const listenerManager = ctx.get(listenerCtx);
     listenerManager.selectionUpdated(() => {
       options.onSelectionRef.current?.();
+      options.onSelectionChangeRef?.current?.();
     });
     listenerManager.updated(() => {
       options.onSelectionRef.current?.();
+      options.onSelectionChangeRef?.current?.();
     });
     listenerManager.focus(() => {
       options.onFocusRef.current?.();
+      options.onSelectionChangeRef?.current?.();
     });
     listenerManager.blur(() => {
       options.onBlurRef.current?.();
+      options.onSelectionChangeRef?.current?.();
     });
   });
 
@@ -737,6 +835,96 @@ export async function createMilkdownEditor(options: CreateMilkdownEditorOptions)
 
 export function getEditorMarkdown(ctx: Ctx): string {
   return normalizeMarkdown(ctx.get(serializerCtx)(ctx.get(editorStateCtx).doc));
+}
+
+function textOffsetForProsePosition(map: ProseTextMap, position: number): number {
+  let fallback = 0;
+  for (const segment of map.segments) {
+    if (position < segment.from) return segment.textStart;
+    if (position <= segment.to) {
+      return segment.textStart + Math.max(0, Math.min(position - segment.from, segment.textEnd - segment.textStart));
+    }
+    fallback = segment.textEnd;
+  }
+  return fallback;
+}
+
+/** Project the ProseMirror caret into Markdown source offsets. */
+export function getMarkdownSelection(ctx: Ctx): { anchor: number; head: number } | null {
+  const view = ctx.get(editorViewCtx);
+  if (view.isDestroyed) return null;
+  const markdown = getEditorMarkdown(ctx);
+  const map = proseTextMap(view.state.doc);
+  const segments = alignMarkdownToText(markdown, map.text);
+  const anchorText = textOffsetForProsePosition(map, view.state.selection.anchor);
+  const headText = textOffsetForProsePosition(map, view.state.selection.head);
+  const anchor = textOffsetToMarkdownOffset(segments, anchorText);
+  const head = textOffsetToMarkdownOffset(segments, headText);
+  const max = markdown.length;
+  const ratio = (position: number) => {
+    const size = Math.max(1, view.state.doc.content.size);
+    return Math.max(0, Math.min(max, Math.round((position / size) * max)));
+  };
+  return {
+    anchor: anchor ?? ratio(view.state.selection.anchor),
+    head: head ?? ratio(view.state.selection.head),
+  };
+}
+
+/** Resolve a Markdown offset to a ProseMirror position, when alignable. */
+function prosePositionForMarkdownOffset(doc: ProseNode, markdown: string, offset: number): number | null {
+  const map = proseTextMap(doc);
+  const segments = alignMarkdownToText(markdown, map.text);
+  const textOffset = markdownOffsetToTextOffset(segments, offset);
+  if (textOffset === null) return null;
+  return positionAt(map, textOffset);
+}
+
+/**
+ * Apply an incoming value without replacing the whole document when only a
+ * small region changed. The selection is projected through the Markdown edit,
+ * so a remote keystroke elsewhere does not move the local caret.
+ */
+export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: string): void {
+  const view = ctx.get(editorViewCtx);
+  const parser = ctx.get(parserCtx);
+  const current = getEditorMarkdown(ctx);
+  const next = normalizeMarkdown(markdown);
+  if (current === next) return;
+
+  const selection = getMarkdownSelection(ctx);
+  const change = minimalTextChange(current, next);
+  const nextDoc = parser(next);
+  if (!change || !nextDoc) return;
+
+  const anchor = selection
+    ? mapOffsetThroughChange(selection.anchor, change, -1)
+    : null;
+  const head = selection
+    ? mapOffsetThroughChange(selection.head, change, 1)
+    : null;
+
+  const transaction = view.state.tr
+    .replace(0, view.state.doc.content.size, new Slice(nextDoc.content, 0, 0))
+    .setMeta('addToHistory', false);
+
+  if (anchor !== null && head !== null) {
+    const anchorPosition = prosePositionForMarkdownOffset(nextDoc, next, anchor);
+    const headPosition = prosePositionForMarkdownOffset(nextDoc, next, head);
+    if (anchorPosition !== null && headPosition !== null) {
+      const max = Math.max(1, nextDoc.content.size);
+      const from = Math.max(0, Math.min(anchorPosition, max));
+      const to = Math.max(0, Math.min(headPosition, max));
+      try {
+        transaction.setSelection(TextSelection.create(nextDoc, Math.min(from, to), Math.max(from, to)));
+      } catch {
+        // The mapped point landed on a node boundary; leave the selection to
+        // ProseMirror's default mapping rather than failing the update.
+      }
+    }
+  }
+
+  view.dispatch(transaction);
 }
 
 export function replaceEditorMarkdown(ctx: Ctx, markdown: string): void {

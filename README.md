@@ -32,6 +32,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 
 - Self-hosted by default. Your data stays on your server.
 - Markdown-first editing with a rendered editor, source, and split view, plus attachments.
+- Live co-editing: another person’s typing appears in place, with their caret and a presence badge in the editor header.
 - Multiple kanban boards with custom columns, labels, assignees, comments, and board/list/calendar views.
 - Built-in AI chat that reads and edits notes and boards, with section-level undo.
 - A first-class Elysia `/api/v1` API with self-hosted Scalar docs, plus an MCP endpoint for external AI clients.
@@ -48,7 +49,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | **AI chat** | Work is the default: ask about your notes and boards, or ask Nana to create, rename, and move folders, notes, and boards, manage tasks, and trash/restore boards. Ask is the read-only lock. Deletes require an explicit confirmation card; sharing and privacy changes stay out of chat. The composer rings the selected model's context usage and opens a token breakdown on click. |
 | **API and MCP** | Reach the same workspace from your own tools with a JSON API and a stateless MCP endpoint. Private records stay hidden from AI. |
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline of recent notes and boards. |
-| **Sharing** | Share notes, boards, and folders with other people at view, comment, or edit access, or publish a public read-only link with optional expiration. |
+| **Sharing** | Share notes, boards, and folders with other people at view, comment, or edit access, or publish a public read-only link with optional expiration. Open notes show live edits, remote carets, and who is editing. |
 | **Version history** | Save a version explicitly, then preview and restore an earlier note body when needed. |
 | **Trash system** | Recover deleted notes and folders intact, including attachments and version history; permanent delete is a separate step. |
 | **Mobile-friendly** | Clean, responsive interface across screen sizes, with dark and light themes. |

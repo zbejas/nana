@@ -1,6 +1,6 @@
 {
   "name": "nana",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -42,6 +42,7 @@
     "react-router-dom": "^7.14.2",
     "rehype-sanitize": "^6.0.0",
     "tailwindcss": "^4.2.4",
+    "yjs": "^13.6.33",
     "zod": "^4.3.6"
   },
   "devDependencies": {

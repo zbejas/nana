@@ -31,6 +31,8 @@ Authorization: Bearer <nana_api_key>
 | `src/api/rest/browser/versions.ts` | Session-authenticated, owner-only version history, detail, save, and restore routes. |
 | `src/api/versioning/` | Server-side git store, per-note lock, PocketBase document reader/patcher, and version service used by the browser routes. |
 | `src/api/rest/browser/realtime.ts` | SSE relay for `/api/v1/realtime` plus authenticated subscription POSTs. |
+| `src/api/rest/collab/` | Session-authenticated live note rooms: Yjs sync, update relay, cursor presence, and idle cleanup. |
+| `src/lib/collaboration/` | Browser Yjs session, SSE client, presence resolution, markdown/text mapping, and conflict merge helpers. |
 | `src/api/rest/openapi.ts` | OpenAPI document metadata, Scalar configuration, Graphite docs theme, and shared docs paths. |
 | `src/api/rest/responses.ts` | Shared error response schemas used by runtime validation and the OpenAPI document. |
 | `src/api/rest/auth.ts` | `authenticateApiRequest()`; raw/Bearer token handling, `auth-refresh`, and API key exchange for typed workspace routes and MCP. |
@@ -72,7 +74,7 @@ Authorization: Bearer <nana_api_key>
 | Application API errors | Bun handlers return `{ "error": "message" }`; PocketBase returns its standard error envelope. |
 | Auth failure | Missing or invalid user token (`401`); authenticated non-admin on an admin route (`403`). |
 | Rate limit | `429` with `Retry-After` when `settings.rate_limits.enabled` is true. `/api/v1` uses the API bucket (`pbMaxPerMinute`); everything else uses the app bucket (`appMaxPerMinute`). |
-| SSE | `/api/chat/send` and `/api/v1/realtime` disable the Bun request timeout. Chat emits named events and, for mode-less requests, legacy AI-SDK UI chunks; realtime relays PocketBase SSE. |
+| SSE | `/api/chat/send`, `/api/v1/realtime`, and `/api/v1/collab/documents/:id/events` disable the Bun request timeout. Chat emits named events and, for mode-less requests, legacy AI-SDK UI chunks; realtime relays PocketBase SSE; collaboration relays Yjs frames and presence. |
 | Browser URLs | Always same-origin `/api/v1`, never `:8090`. |
 
 ### Elysia `/api/v1`
@@ -80,7 +82,7 @@ Authorization: Bearer <nana_api_key>
 `/api/v1` is the **owner surface**. It has three layers:
 
 1. **Typed workspace API** — `/folders`, `/notes`, `/boards`, `/tasks`. These use the workspace services with `surface: "user"`, so the owner sees their private notes, boards, folders, and private-folder contents. The AI visibility lock applies only to chat and MCP.
-2. **Browser facade** — `/auth`, `/records`, `/files`, `/realtime`, `/trash`, `/admin`, `/public`, `/check-users`, `/me`, and `/documents/:id/versions`. These keep the PocketBase record/error shape the SPA already understands while Elysia owns the public edge.
+2. **Browser facade** — `/auth`, `/records`, `/files`, `/realtime`, `/trash`, `/admin`, `/public`, `/check-users`, `/me`, `/documents/:id/versions`, and `/collab/documents/:id/*`. These keep the PocketBase record/error shape the SPA already understands while Elysia owns the public edge. Collaboration routes are session-only and use the browser auth envelope, not PocketBase's record shape.
 3. **Admin settings** — `/admin/rate-limits`. This Bun-native route requires the admin flag, persists `settings.rate_limits` with the server's superuser token, and reloads the in-memory limiter in the same request. It is hidden from the public OpenAPI document.
 
 The workspace and facade layers do not replace PocketBase. They call the loopback PocketBase REST API with the caller's own token; PocketBase still enforces API rules, guards, hooks, relation cascades, soft-delete trash routes, and file protection. The browser facade adds the missing public-edge checks: collection allowlisting, author injection, relation ownership, and note sanitization.
@@ -259,6 +261,9 @@ The browser facade is the replacement for `/pb`. It is public-facing Elysia code
 | `GET` | `/api/v1/files/:collection/:recordId/:filename` | token/query | Protected file or thumbnail; supports `?token=`, `?thumb=`, `?download=`. |
 | `GET` | `/api/v1/realtime` | public handshake | SSE stream; PocketBase sends `PB_CONNECT`. |
 | `POST` | `/api/v1/realtime` | user | `{ clientId, subscriptions }`; authenticated subscription POST. |
+| `GET` | `/api/v1/collab/documents/:id/events` | session | Live SSE stream; first frame is `sync` with Yjs state, state vector, `canEdit`, and presence. |
+| `POST` | `/api/v1/collab/documents/:id/update` | session edit | `{ clientId, update }`; base64 Yjs update. Viewers get `403`. |
+| `POST` | `/api/v1/collab/documents/:id/presence` | session | `{ clientId, presence: { anchor, head, focused } }`; Yjs relative positions, `204`. |
 | `POST` | `/api/v1/trash/:action` | user | `move-document`, `restore-document`, `permanent-delete-document`, `move-folder`, `restore-folder`, `permanent-delete-folder`, `move-board`, `restore-board`, `permanent-delete-board`. |
 | `GET/PATCH` | `/api/v1/admin/smtp` | admin | SMTP settings; password is never returned. |
 | `POST` | `/api/v1/admin/smtp/test`, `/api/v1/admin/smtp/send-password` | admin | Test mail / send a password email. |
@@ -315,6 +320,19 @@ Browser facade behavior:
 - **Error shape.** The facade preserves PocketBase's `{ code, message, data }` error envelope and status codes so the client's field-error and auth handling stays intact.
 - **Files.** Only `documents`, `users`, `trash_documents`, and `chat_attachments` file paths are allowlisted. Protected files still require a PocketBase file token or a public-share route; chat attachment bytes are fetched server-side with the caller's short-lived file token.
 - **Realtime.** The SSE handshake is unauthenticated, like PocketBase; the subscription POST requires the user token. Elysia sets the Bun timeout to `0` for `/api/v1/realtime`.
+
+#### Live editing
+
+The collaboration routes are a session-only, in-memory surface for open notes:
+
+- `GET /api/v1/collab/documents/:id/events` requires `Authorization` (no query token), resolves the note and effective sharing access through PocketBase with the caller's token, and returns `text/event-stream`. Access failures return `401`/`404` before a stream opens.
+- The first SSE `sync` frame is `{ type: "sync", clientId, update, stateVector, canEdit, epoch, presence }`. `update` is a base64 Yjs state update seeded from the saved Markdown. `canEdit` is true for the owner and `edit` grantees. `epoch` identifies the in-memory room incarnation; a change tells the client to reset its replica before folding in its draft.
+- `POST .../update` accepts `{ clientId, update }` (base64). It applies to the room, broadcasts `{ type: "update", clientId, update, seq }` to the other viewers, and returns `{ ok, seq }`. A viewer gets `403`; a stale client/room gets `409` so the browser reconnects.
+- `POST .../presence` accepts `{ clientId, presence: { anchor, head, focused } }` where anchor/head are JSON Yjs `RelativePosition` values. It broadcasts `{ type: "presence", clientId, userId, name, avatar, color, anchor, head, focused, updatedAt }`; disconnect emits `presence-leave`. Presence older than 45 seconds is dropped.
+- Rooms are process-local. A room with no viewers is disposed after 45 seconds. Persistence stays with the editor's normal debounced save; live updates are not written to PocketBase by the room.
+- Request bodies are capped at 9 MB; presence payloads at 4 KB.
+
+When a save loses the revision race, the browser re-reads the note, merges non-overlapping line changes from both writers, and retries against the current revision. The facade forwards `revision` to PocketBase, so a genuinely stale write still returns the revision-guard `400` if the retry cannot merge.
 
 #### Version history
 
@@ -722,6 +740,9 @@ Folder response includes `rootFolder`, `folders`, `documents`, `boards`, and `en
 - **The browser facade is an allowlist, not a proxy.** Do not add system collections, schema, logs, backups, or superuser paths to `/api/v1/records`. New collections need an explicit entry in `src/api/rest/browser/records.ts`.
 - **Ownership is server-injected.** Browser `author` values are ignored on create and removed on update. Folder parents, board folders, task boards, and note links are checked before the upstream write.
 - **Document content is sanitized at the edge.** The facade calls `sanitizeHtml()` on create/update; PocketBase is still the storage and rules engine.
+- **`revision` is part of the document update contract.** The facade forwards it so the PocketBase revision guard can reject a stale content/title/tags write; do not remove it from `UPDATE_FIELDS.documents`.
+- **Live rooms are not persisted.** Collaboration keeps Yjs state in Bun memory and relies on the editor's debounced save. A restart resets the room from the saved note. Add a shared room bus only if Nana stops being a single Bun process.
+- **Only the server seeds Yjs.** Clients apply the room's sync update before folding in their loaded draft; seeding both sides independently duplicates the entire note.
 - **Private records are visible to their owner.** `/api/v1` is the owner surface. Only chat and MCP apply the private lock; do not add `aiVisibilityConditions()` to REST or browser facade handlers.
 - **`/docs` is public.** The OpenAPI document and Scalar assets are intentionally unauthenticated; `/api/v1` routes are not.
 - **Scalar renders only tags listed in `x-tagGroups`.** When the extension is present, the sidebar is built from each group's tag names; a tag declared in `tags` but omitted from every group disappears from the nav. Add new reference tags to the `Workspace` group in `src/api/rest/openapi.ts`.
