@@ -32,7 +32,7 @@ export function DocumentEditor() {
     setTitle,
     content,
     handleContentChange,
-    applyExternalContent,
+    applyPersistedContent,
     setSelectedDocument,
     remoteContentChangeRef,
     tags,
@@ -73,9 +73,13 @@ export function DocumentEditor() {
     isTrashDocument,
     isReadOnly,
     isLoadingDocument,
+    editorSurfaceKey,
     loading,
     collaborators,
+    collaborationPersistence,
+    collaborationSession,
     handleEditorSelection,
+    flushContent,
   } = useDocumentEditorState();
 
   const navigate = useNavigate();
@@ -129,7 +133,7 @@ export function DocumentEditor() {
           const nextContent = normalizeMarkdown(fresh.content);
           setSelectedDocument({ ...fresh, content: nextContent });
           setTitle(fresh.title);
-          applyExternalContent(nextContent);
+          applyPersistedContent(nextContent);
           setTags(fresh.tags || []);
           setGlobalUnsavedChanges(false);
           setAiEdit({
@@ -158,7 +162,7 @@ export function DocumentEditor() {
     return () => window.removeEventListener('nana:ai-edit', handleAiEdit);
   }, [
     document?.id,
-    applyExternalContent,
+    applyPersistedContent,
     setGlobalUnsavedChanges,
     setSelectedDocument,
     setTags,
@@ -330,6 +334,7 @@ export function DocumentEditor() {
             hasUnsavedChanges={hasUnsavedChanges}
             isNewDocument={urlDocumentId === 'new'}
             autoSaving={isAutoSaving}
+            persistence={collaborationPersistence}
             collaborators={collaborators}
             onToggleHeader={!isDesktop ? () => setHeaderVisible(!headerVisible) : undefined}
             titleInputRef={titleInputRef}
@@ -374,7 +379,7 @@ export function DocumentEditor() {
           style={isDesktop ? { paddingBottom: 'calc(var(--nana-footer-height, 3rem) + 0.75rem)' } : undefined}
         >
           <EditorContent
-            key={document?.id ?? urlDocumentId ?? 'new'}
+            key={editorSurfaceKey}
             content={content}
             onContentChange={handleContentChange}
             readOnly={isReadOnly}
@@ -382,6 +387,7 @@ export function DocumentEditor() {
             onDropFiles={handleDrop}
             aiEdit={aiEdit}
             collaborators={collaborators}
+            session={collaborationSession}
             onSelectionChange={handleEditorSelection}
             fullscreen={fullscreen}
           />
@@ -410,6 +416,7 @@ export function DocumentEditor() {
             newAttachments={newAttachments}
             removedAttachments={removedAttachments}
             onDocumentRestored={handleDocumentRestored}
+            onBeforeRestore={async () => (await flushContent())?.revision ?? null}
             onCreateNewFromVersion={handleCreateNewFromVersion}
             onAttachmentsChange={handleAttachmentsChange}
             onAttachmentRemove={handleAttachmentRemove}
@@ -437,6 +444,7 @@ export function DocumentEditor() {
             newAttachments={newAttachments}
             removedAttachments={removedAttachments}
             onDocumentRestored={handleDocumentRestored}
+            onBeforeRestore={async () => (await flushContent())?.revision ?? null}
             onCreateNewFromVersion={handleCreateNewFromVersion}
             onAttachmentsChange={handleAttachmentsChange}
             onAttachmentRemove={handleAttachmentRemove}

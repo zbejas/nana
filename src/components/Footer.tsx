@@ -38,6 +38,8 @@ interface FooterProps {
   newAttachments: File[];
   removedAttachments: string[];
   onDocumentRestored?: () => void;
+  /** Flush live content and return the revision to restore against. */
+  onBeforeRestore?: () => Promise<number | null>;
   onCreateNewFromVersion?: (content: string) => void;
   onAttachmentsChange: (files: File[]) => void;
   onAttachmentRemove: (filename: string, isExisting: boolean) => void;
@@ -49,7 +51,7 @@ interface FooterProps {
   readOnly?: boolean;
 }
 
-export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, document, documentId, words = 0, readingTime = 0, characters = 0, lastUpdated, newAttachments, removedAttachments, onDocumentRestored, onCreateNewFromVersion, onAttachmentsChange, onAttachmentRemove, onImmediateAttachmentDelete, onAutoSaveAttachments, onPublish, publishing = false, usePortal = false, readOnly = false }: FooterProps) {
+export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, document, documentId, words = 0, readingTime = 0, characters = 0, lastUpdated, newAttachments, removedAttachments, onDocumentRestored, onBeforeRestore, onCreateNewFromVersion, onAttachmentsChange, onAttachmentRemove, onImmediateAttachmentDelete, onAutoSaveAttachments, onPublish, publishing = false, usePortal = false, readOnly = false }: FooterProps) {
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
@@ -215,13 +217,17 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
   const handleRevertVersion = async (versionId: string) => {
     if (!documentId) return;
 
-    const revision = document?.revision;
-    if (typeof revision !== 'number') {
+    const loadedRevision = document?.revision;
+    if (typeof loadedRevision !== 'number') {
       showToast('Reload the note before restoring a version.', 'error');
       return;
     }
 
     try {
+      // The live room owns the body. Flush it before the restore route
+      // snapshots current state and applies the selected version.
+      const flushedRevision = await onBeforeRestore?.();
+      const revision = flushedRevision ?? loadedRevision;
       await restoreDocumentVersion(documentId, versionId, revision);
       setShowPreviewModal(false);
       if (onDocumentRestored) {

@@ -69,6 +69,12 @@ function diffHunks(base: string[], next: string[]): Hunk[] {
 }
 
 function overlaps(left: Hunk, right: Hunk): boolean {
+    if (left.start === left.end && right.start === right.end) {
+        // Two insertions at the same base point conflict even though their
+        // ranges are empty; keeping the local hunk collapses identical Enter
+        // presses to one line and drops the remote alternative.
+        return left.start === right.start;
+    }
     return left.start < right.end && right.start < left.end;
 }
 

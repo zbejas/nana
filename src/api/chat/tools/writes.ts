@@ -4,6 +4,7 @@ import { createLogger } from "../../../lib/logger";
 import { applySectionEdits, MarkdownSectionError, type AppliedSectionEdit, type MarkdownEditOperation } from "../../../lib/markdown/sections";
 import { pbGet, queryString, type ToolContext } from "../../pocketbase/client";
 import { loadAiVisibility, noteIsLocked } from "../../workspace/privacy";
+import { flushLiveNoteBeforeExternalWrite } from "../../workspace/live";
 import { createBoard, getBoard, moveBoard, updateBoard } from "../../workspace/boards";
 import { createFolder, listFolders, updateFolder } from "../../workspace/folders";
 import {
@@ -358,6 +359,14 @@ async function loadEditableNote(
 ): Promise<EditableNote | ToolFailure> {
     if (!isValidRecordId(noteId)) {
         return { ok: false, code: "invalid_input", message: "That note id is not valid." };
+    }
+
+    // Chat edit tools read the body and revision before writing. Flush the
+    // live room first so a pending keystroke is part of the snapshot.
+    try {
+        await flushLiveNoteBeforeExternalWrite(noteId);
+    } catch (error) {
+        return failureFromError(error);
     }
 
     const path = `/api/collections/documents/records/${encodeURIComponent(noteId)}${queryString({

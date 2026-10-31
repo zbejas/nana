@@ -7,6 +7,7 @@ import { createLogger } from '../../lib/logger';
 const logger = createLogger('DocActions');
 import { getDefaultHomepageRoute, getLastNonDocumentRoute } from '../../lib/settings';
 import type { Document } from '../../lib/documents/types';
+import type { CollabFlushResult } from '../../lib/collaboration/protocol';
 
 interface UseDocumentActionsOptions {
     urlDocumentId: string | undefined;
@@ -22,6 +23,8 @@ interface UseDocumentActionsOptions {
     isSavingRef: React.MutableRefObject<boolean>;
     onSave: (document: Document, options?: { creationSessionId?: number }) => void;
     onApplyMergedContent?: (content: string) => void;
+    /** Flush the live room before a save/version snapshot. Null when offline. */
+    onFlushContent?: () => Promise<CollabFlushResult | null>;
     onReset: () => void;
     onSetSaving: (saving: boolean) => void;
     onSetPublishing: (publishing: boolean) => void;
@@ -43,6 +46,7 @@ export function useDocumentActions({
     isSavingRef,
     onSave,
     onApplyMergedContent,
+    onFlushContent,
     onReset,
     onSetSaving,
     onSetPublishing,
@@ -100,6 +104,19 @@ export function useDocumentActions({
                     onMergedContent: onApplyMergedContent,
                 });
                 savedDocument = result.document;
+                // Metadata saves can advance the revision. Let the live room
+                // write its pending body now so the saved record, the room,
+                // and the version snapshot agree before the UI reports success.
+                try {
+                    const flushed = await onFlushContent?.();
+                    if (flushed) {
+                        savedDocument = { ...savedDocument, revision: flushed.revision };
+                    }
+                } catch (flushError) {
+                    logger.warn('Live content flush failed after save', {
+                        error: flushError instanceof Error ? flushError.message : String(flushError),
+                    });
+                }
                 logger.info('Document saved successfully', { id: document.id });
             } else {
                 savedDocument = await createDocument({
@@ -159,6 +176,7 @@ export function useDocumentActions({
         isSavingRef,
         onSave,
         onApplyMergedContent,
+        onFlushContent,
         onSetSaving,
         onSetError,
         onShowToast,
@@ -190,12 +208,18 @@ export function useDocumentActions({
                 removeAttachments: removedAttachments,
                 onMergedContent: onApplyMergedContent,
             });
-            const savedDocument = saved.document;
+            // The room owns the body. Flush it before the server commits a
+            // version; otherwise a debounce window can snapshot the previous
+            // keystroke even though the editor shows the new text.
+            const flushed = await onFlushContent?.();
+            const savedDocument = flushed
+                ? { ...saved.document, revision: flushed.revision }
+                : saved.document;
 
             // Update global state with the save even if the version commit fails.
             onSave(savedDocument, { creationSessionId: creationSessionIdRef.current });
 
-            const revision = savedDocument.revision ?? document.revision;
+            const revision = flushed?.revision ?? savedDocument.revision ?? document.revision;
             if (typeof revision !== 'number') {
                 throw new Error('Reload the note before saving a version.');
             }
@@ -224,6 +248,7 @@ export function useDocumentActions({
         isSavingRef,
         onSave,
         onApplyMergedContent,
+        onFlushContent,
         onSetPublishing,
         onShowToast,
         isReadOnly,

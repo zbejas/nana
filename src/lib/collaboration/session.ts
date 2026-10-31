@@ -3,20 +3,30 @@
  *
  * Yjs owns convergence. The server keeps one in-memory room per open note and
  * relays binary updates plus cursor presence over the existing same-origin
- * HTTP surface. Persistence stays with the editor's debounced save; this client
- * never writes PocketBase directly.
+ * HTTP surface. The room owns content persistence and acknowledges durable
+ * updates; this client never writes PocketBase content while the room is
+ * connected.
  */
 
 import * as Y from "yjs";
 import { createLogger } from "../logger";
 import { normalizeCollabMarkdown } from "./normalize";
+import { applyOps, type CanonicalOp } from "./ops";
 import { minimalTextChange } from "./text";
 import { mergeConcurrentMarkdown } from "./merge";
+import type {
+    CollabAckFrame,
+    CollabConflictFrame,
+    CollabPersistencePhase,
+    CollabStatusFrame,
+} from "./protocol";
 
 const logger = createLogger("Collab");
 
-const REMOTE_ORIGIN = "nana-collab-remote";
-const RESET_ORIGIN = "nana-collab-reset";
+/** Transaction origins shared by the session, bindings, and tests. */
+export const COLLAB_LOCAL_ORIGIN = "nana-collab-local";
+export const COLLAB_REMOTE_ORIGIN = "nana-collab-remote";
+export const COLLAB_RESET_ORIGIN = "nana-collab-reset";
 const UPDATE_FLUSH_MS = 70;
 const PRESENCE_FLUSH_MS = 120;
 const HEARTBEAT_MS = 15_000;
@@ -44,14 +54,101 @@ export interface CollabSelection {
     pane?: "source" | "wysiwyg";
 }
 
+export interface CollabPersistenceSnapshot {
+    phase: CollabPersistencePhase;
+    durableSeq: number;
+    revision: number;
+    conflict: CollabConflictFrame | null;
+}
+
+export interface CollabPersistenceContext {
+    /** The room sequence last acknowledged by this client's own update POST. */
+    lastLocalSeq: number;
+    /** Local updates are queued or in flight and have not reached the room yet. */
+    pendingLocalUpdates: boolean;
+}
+
 export interface CollabSessionOptions {
     documentId: string;
     initialContent: string;
+    initialRevision?: number;
     getToken: () => string;
     onRemoteText: (text: string) => void;
     onPresence: (presence: CollabPresenceWire[]) => void;
     onStatus: (status: CollabStatus) => void;
     onPermission: (canEdit: boolean) => void;
+    onPersistence?: (state: CollabPersistenceSnapshot) => void;
+    onAck?: (frame: CollabAckFrame) => void;
+    onConflict?: (frame: CollabConflictFrame) => void;
+}
+
+export function isCollabPersistencePhase(value: unknown): value is CollabPersistencePhase {
+    return value === "clean"
+        || value === "dirty"
+        || value === "saving"
+        || value === "error"
+        || value === "conflict";
+}
+
+function finiteNumber(value: unknown): number | null {
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Apply an acknowledgement. A stale ack (older than the last update this
+ * client sent) leaves the note dirty; an ack that covers every local update
+ * returns it to clean.
+ */
+export function reduceCollabAck(
+    state: CollabPersistenceSnapshot,
+    ack: CollabAckFrame,
+    context: CollabPersistenceContext,
+): CollabPersistenceSnapshot {
+    const durableSeq = Math.max(state.durableSeq, ack.durableSeq);
+    const revision = Math.max(state.revision, ack.revision);
+    const unackedLocal = context.pendingLocalUpdates
+        || context.lastLocalSeq > ack.durableSeq;
+    if (unackedLocal) {
+        return {
+            phase: state.phase === "conflict" ? "conflict" : "dirty",
+            durableSeq,
+            revision,
+            conflict: state.conflict,
+        };
+    }
+    return { phase: "clean", durableSeq, revision, conflict: null };
+}
+
+/** Apply a server status frame, never letting a premature clean hide local work. */
+export function reduceCollabStatus(
+    state: CollabPersistenceSnapshot,
+    status: CollabStatusFrame,
+    context: CollabPersistenceContext,
+): CollabPersistenceSnapshot {
+    const revision = Math.max(state.revision, status.revision);
+    const localStillPending = context.pendingLocalUpdates
+        || context.lastLocalSeq > state.durableSeq;
+    const phase = status.persistence === "clean" && localStillPending
+        ? (state.phase === "conflict" ? "conflict" : "dirty")
+        : status.persistence;
+    return {
+        phase,
+        durableSeq: state.durableSeq,
+        revision,
+        conflict: phase === "clean" ? null : state.conflict,
+    };
+}
+
+export function reduceCollabConflict(
+    state: CollabPersistenceSnapshot,
+    conflict: CollabConflictFrame,
+): CollabPersistenceSnapshot {
+    return {
+        phase: "conflict",
+        durableSeq: state.durableSeq,
+        revision: Math.max(state.revision, conflict.revision),
+        conflict,
+    };
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -74,6 +171,25 @@ function base64ToBytes(value: string): Uint8Array {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Coarse origin of one canonical text transaction. */
+export type CollabContentOrigin = "local" | "remote" | "reset";
+
+/** One content transaction observed on the canonical `Y.Text`. */
+export interface CollabContentChange {
+    /** Canonical Markdown after the transaction. */
+    readonly markdown: string;
+    readonly origin: CollabContentOrigin;
+    /** Raw Yjs origin, preserved for bindings that tag their own transactions. */
+    readonly rawOrigin: unknown;
+}
+
+/** Classify a Yjs transaction origin without losing the original value. */
+export function classifyCollabContentOrigin(origin: unknown): CollabContentOrigin {
+    if (origin === COLLAB_REMOTE_ORIGIN) return "remote";
+    if (origin === COLLAB_RESET_ORIGIN) return "reset";
+    return "local";
 }
 
 export class CollabSession {
@@ -104,10 +220,21 @@ export class CollabSession {
     private applyingSync = false;
     private roomEpoch = "";
     private pendingLocalMarkdown: string;
+    private persistenceState: CollabPersistenceSnapshot;
+    private inflightUpdates = 0;
+    private lastLocalSeq = 0;
+    private pendingAck: CollabAckFrame | null = null;
 
     constructor(private readonly options: CollabSessionOptions) {
         this.text = this.doc.getText("content");
         this.pendingLocalMarkdown = normalizeCollabMarkdown(options.initialContent);
+        const initialRevision = finiteNumber(options.initialRevision) ?? 0;
+        this.persistenceState = {
+            phase: "clean",
+            durableSeq: 0,
+            revision: initialRevision,
+            conflict: null,
+        };
         this.doc.on("update", this.handleUpdate);
     }
 
@@ -125,6 +252,26 @@ export class CollabSession {
 
     get currentStatus(): CollabStatus {
         return this.status;
+    }
+
+    get persistence(): CollabPersistencePhase {
+        return this.persistenceState.phase;
+    }
+
+    get durableSeq(): number {
+        return this.persistenceState.durableSeq;
+    }
+
+    get revision(): number {
+        return this.persistenceState.revision;
+    }
+
+    get conflict(): CollabConflictFrame | null {
+        return this.persistenceState.conflict;
+    }
+
+    get persistenceSnapshot(): CollabPersistenceSnapshot {
+        return { ...this.persistenceState };
     }
 
     get markdown(): string {
@@ -172,7 +319,50 @@ export class CollabSession {
             if (change.insert) {
                 this.text.insert(change.from, change.insert);
             }
-        }, "nana-collab-local");
+        }, COLLAB_LOCAL_ORIGIN);
+    }
+
+    /**
+     * Apply ordered canonical operations directly to the shared text.
+     *
+     * Editor bindings use this instead of diffing a full Markdown snapshot.
+     * Operations stay in the one canonical `Y.Text`; local transactions are
+     * queued and acknowledged by the same persistence path as
+     * `applyLocalMarkdown()`. Before the first sync the operations are folded
+     * into the pending local draft, which the server sync then reconciles.
+     */
+    applyLocalOps(ops: readonly CanonicalOp[], origin: unknown = COLLAB_LOCAL_ORIGIN): void {
+        if (this.destroyed || !Array.isArray(ops) || ops.length === 0) return;
+        if (!this.synced) {
+            this.pendingLocalMarkdown = applyOps(this.pendingLocalMarkdown, ops);
+            return;
+        }
+        if (!this.canEdit) return;
+        this.doc.transact(() => {
+            applyOps(this.text, ops);
+        }, origin);
+    }
+
+    /**
+     * Subscribe to canonical text transactions. The listener receives the
+     * post-transaction Markdown and the transaction origin, so a binding can
+     * ignore changes it applied itself without diffing the whole document.
+     * Returns an idempotent unsubscribe function.
+     */
+    observeContent(listener: (change: CollabContentChange) => void): () => void {
+        if (this.destroyed || typeof listener !== "function") return () => {};
+        const handler = (_update: Uint8Array, origin: unknown): void => {
+            if (this.destroyed) return;
+            listener({
+                markdown: this.text.toString(),
+                origin: classifyCollabContentOrigin(origin),
+                rawOrigin: origin,
+            });
+        };
+        this.doc.on("update", handler);
+        return () => {
+            this.doc.off("update", handler);
+        };
     }
 
     sendSelection(selection: CollabSelection): void {
@@ -237,6 +427,8 @@ export class CollabSession {
         this.presenceTimer = null;
         this.heartbeatTimer = null;
         this.queuedUpdates = [];
+        this.inflightUpdates = 0;
+        this.pendingAck = null;
         this.doc.destroy();
     }
 
@@ -254,13 +446,13 @@ export class CollabSession {
         const changed = next !== this.lastText;
         this.lastText = next;
 
-        if (origin === REMOTE_ORIGIN) {
+        if (origin === COLLAB_REMOTE_ORIGIN) {
             if (changed && !this.applyingSync && this.synced) {
                 this.options.onRemoteText(next);
             }
             return;
         }
-        if (origin === RESET_ORIGIN) return;
+        if (origin === COLLAB_RESET_ORIGIN) return;
 
         this.queueUpdate(update);
     };
@@ -268,6 +460,7 @@ export class CollabSession {
     private queueUpdate(update: Uint8Array): void {
         if (this.destroyed || !this.canEdit) return;
         this.queuedUpdates.push(update);
+        this.markLocalDirty();
         if (this.updateTimer) return;
         this.updateTimer = setTimeout(() => {
             this.updateTimer = null;
@@ -279,6 +472,7 @@ export class CollabSession {
         if (this.destroyed || !this.clientId || this.queuedUpdates.length === 0) return;
         const merged = Y.mergeUpdates(this.queuedUpdates);
         this.queuedUpdates = [];
+        this.inflightUpdates += 1;
         try {
             const response = await fetch(
                 `/api/v1/collab/documents/${encodeURIComponent(this.options.documentId)}/update`,
@@ -296,17 +490,105 @@ export class CollabSession {
                 },
             );
             if (response.status === 409) {
+                this.pendingAck = null;
                 this.disconnectForRetry();
                 return;
             }
             if (!response.ok) {
                 // Keep the work locally; a later sync resends the state diff.
+                this.pendingAck = null;
                 this.queuedUpdates.unshift(merged);
+                return;
+            }
+            try {
+                const payload = (await response.json()) as unknown;
+                const seq = isRecord(payload) ? finiteNumber(payload.seq) : null;
+                if (seq !== null && seq >= 0) {
+                    this.lastLocalSeq = Math.max(this.lastLocalSeq, seq);
+                }
+            } catch {
+                // Older rooms return no sequence; the ack itself is sufficient.
             }
         } catch {
+            this.pendingAck = null;
             this.queuedUpdates.unshift(merged);
             this.disconnectForRetry();
+        } finally {
+            this.inflightUpdates = Math.max(0, this.inflightUpdates - 1);
+            this.settlePendingAck();
         }
+    }
+
+    private markLocalDirty(): void {
+        if (this.persistenceState.phase === "conflict") return;
+        this.setPersistenceState({
+            ...this.persistenceState,
+            phase: "dirty",
+        });
+    }
+
+    private setPersistenceState(next: CollabPersistenceSnapshot): void {
+        const previous = this.persistenceState;
+        if (
+            previous.phase === next.phase
+            && previous.durableSeq === next.durableSeq
+            && previous.revision === next.revision
+            && previous.conflict === next.conflict
+        ) {
+            return;
+        }
+        this.persistenceState = next;
+        this.options.onPersistence?.({ ...next });
+    }
+
+    private persistenceContext(): CollabPersistenceContext {
+        return {
+            lastLocalSeq: this.lastLocalSeq,
+            pendingLocalUpdates: this.queuedUpdates.length > 0 || this.inflightUpdates > 0,
+        };
+    }
+
+    private settlePendingAck(): void {
+        const ack = this.pendingAck;
+        if (!ack) return;
+        if (this.queuedUpdates.length > 0 || this.inflightUpdates > 0) return;
+        this.pendingAck = null;
+        this.setPersistenceState(reduceCollabAck(
+            this.persistenceState,
+            ack,
+            this.persistenceContext(),
+        ));
+    }
+
+    private handleAck(ack: CollabAckFrame): void {
+        this.options.onAck?.(ack);
+        const next = reduceCollabAck(
+            this.persistenceState,
+            ack,
+            this.persistenceContext(),
+        );
+        this.setPersistenceState(next);
+        if (next.phase === "clean") {
+            this.pendingAck = null;
+            return;
+        }
+        // A response to an in-flight update can arrive after its ack. Keep the
+        // ack until the POST sequence is known, then settle it.
+        this.pendingAck = ack;
+    }
+
+    private handleStatus(status: CollabStatusFrame): void {
+        this.setPersistenceState(reduceCollabStatus(
+            this.persistenceState,
+            status,
+            this.persistenceContext(),
+        ));
+    }
+
+    private handleConflict(conflict: CollabConflictFrame): void {
+        this.pendingAck = null;
+        this.setPersistenceState(reduceCollabConflict(this.persistenceState, conflict));
+        this.options.onConflict?.(conflict);
     }
 
     private async flushPresence(): Promise<void> {
@@ -448,9 +730,53 @@ export class CollabSession {
             this.handleSync(event);
             return;
         }
+        if (type === "ack") {
+            const durableSeq = finiteNumber(event.durableSeq);
+            const revision = finiteNumber(event.revision);
+            if (durableSeq === null || revision === null) return;
+            this.handleAck({
+                type: "ack",
+                durableSeq,
+                revision,
+                savedAt: typeof event.savedAt === "string" ? event.savedAt : "",
+            });
+            return;
+        }
+        if (type === "status") {
+            if (!isCollabPersistencePhase(event.persistence)) return;
+            const revision = finiteNumber(event.revision);
+            if (revision === null) return;
+            this.handleStatus({
+                type: "status",
+                persistence: event.persistence,
+                revision,
+                ...(typeof event.message === "string" ? { message: event.message } : {}),
+            });
+            return;
+        }
+        if (type === "conflict") {
+            const revision = finiteNumber(event.revision);
+            if (revision === null) return;
+            const reason = event.reason === "merge" ? "merge" : "revision";
+            this.handleConflict({
+                type: "conflict",
+                revision,
+                reason,
+                ...(typeof event.serverMarkdown === "string"
+                    ? { serverMarkdown: event.serverMarkdown }
+                    : {}),
+            });
+            return;
+        }
+        if (type === "permission") {
+            if (typeof event.canEdit !== "boolean") return;
+            this.canEdit = event.canEdit;
+            this.options.onPermission(event.canEdit);
+            return;
+        }
         if (type === "update" && typeof event.update === "string") {
             try {
-                Y.applyUpdate(this.doc, base64ToBytes(event.update), REMOTE_ORIGIN);
+                Y.applyUpdate(this.doc, base64ToBytes(event.update), COLLAB_REMOTE_ORIGIN);
             } catch {
                 // A malformed frame is ignored; the next sync repairs state.
             }
@@ -477,12 +803,51 @@ export class CollabSession {
         const epoch = typeof event.epoch === "string" ? event.epoch : "";
         const roomChanged = Boolean(this.roomEpoch && epoch && epoch !== this.roomEpoch);
         if (epoch) this.roomEpoch = epoch;
+        const syncRevision = finiteNumber(event.revision);
+        const syncDurableSeq = finiteNumber(event.durableSeq);
+        const syncPhase = isCollabPersistencePhase(event.persistence)
+            ? event.persistence
+            : null;
 
         const firstSync = !this.synced || roomChanged;
         const beforeSync = this.text.toString();
         const localDraft = roomChanged ? beforeSync : this.pendingLocalMarkdown;
         this.clientId = event.clientId;
         this.canEdit = event.canEdit === true;
+        if (firstSync) {
+            // A new room starts a new sequence space. Local drafts will be
+            // queued below and immediately mark the note dirty again.
+            this.lastLocalSeq = 0;
+            this.pendingAck = null;
+            this.setPersistenceState({
+                phase: syncPhase ?? "clean",
+                durableSeq: syncDurableSeq ?? 0,
+                revision: syncRevision ?? this.persistenceState.revision,
+                conflict: null,
+            });
+        } else if (syncRevision !== null || syncDurableSeq !== null || syncPhase !== null) {
+            let next: CollabPersistenceSnapshot = {
+                ...this.persistenceState,
+                durableSeq: syncDurableSeq !== null
+                    ? Math.max(this.persistenceState.durableSeq, syncDurableSeq)
+                    : this.persistenceState.durableSeq,
+                revision: syncRevision !== null
+                    ? Math.max(this.persistenceState.revision, syncRevision)
+                    : this.persistenceState.revision,
+            };
+            if (syncPhase !== null) {
+                next = reduceCollabStatus(
+                    next,
+                    {
+                        type: "status",
+                        persistence: syncPhase,
+                        revision: next.revision,
+                    },
+                    this.persistenceContext(),
+                );
+            }
+            this.setPersistenceState(next);
+        }
         if (Array.isArray(event.presence)) {
             this.presence = event.presence.filter(isRecord) as unknown as CollabPresenceWire[];
         } else {
@@ -498,13 +863,13 @@ export class CollabSession {
             this.lastRelativeSelection = null;
             this.doc.transact(() => {
                 if (this.text.length > 0) this.text.delete(0, this.text.length);
-            }, RESET_ORIGIN);
+            }, COLLAB_RESET_ORIGIN);
         }
 
         this.applyingSync = true;
         if (typeof event.update === "string") {
             try {
-                Y.applyUpdate(this.doc, base64ToBytes(event.update), REMOTE_ORIGIN);
+                Y.applyUpdate(this.doc, base64ToBytes(event.update), COLLAB_REMOTE_ORIGIN);
             } catch {
                 logger.warn("Live session sync was malformed", { documentId: this.options.documentId });
             }

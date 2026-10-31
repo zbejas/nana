@@ -11,6 +11,7 @@ import { createStaticFileHandler } from "./api/static-files";
 import { checkRateLimit, reloadRateLimiter } from "./api/rate-limiter";
 import { verifyAdmin, AuthError } from "./api/auth";
 import { apiApp } from "./api/rest";
+import { flushAllRooms } from "./api/rest/collab/room";
 import { handleMcpRequest } from "./api/mcp";
 import { createLogger } from "./lib/logger";
 
@@ -394,12 +395,33 @@ reloadRateLimiter().catch((err) => {
 });
 
 // ── Graceful shutdown ────────────────────────────────────────────────
-function gracefulShutdown(signal: string) {
+const SHUTDOWN_FLUSH_TIMEOUT_MS = 4_000;
+let shuttingDown = false;
+
+async function gracefulShutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   log.info(`Received ${signal}, shutting down…`);
+
+  try {
+    await Promise.race([
+      flushAllRooms(),
+      new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_FLUSH_TIMEOUT_MS)),
+    ]);
+  } catch (error) {
+    log.warn("Live note flush failed during shutdown", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   process.exit(0);
 }
 
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => {
+  void gracefulShutdown("SIGTERM");
+});
+process.on("SIGINT", () => {
+  void gracefulShutdown("SIGINT");
+});
 
 log.info(`Server running on port ${serverConfig.port} | version ${APP_VERSION}`);

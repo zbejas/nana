@@ -261,9 +261,10 @@ The browser facade is the replacement for `/pb`. It is public-facing Elysia code
 | `GET` | `/api/v1/files/:collection/:recordId/:filename` | token/query | Protected file or thumbnail; supports `?token=`, `?thumb=`, `?download=`. |
 | `GET` | `/api/v1/realtime` | public handshake | SSE stream; PocketBase sends `PB_CONNECT`. |
 | `POST` | `/api/v1/realtime` | user | `{ clientId, subscriptions }`; authenticated subscription POST. |
-| `GET` | `/api/v1/collab/documents/:id/events` | session | Live SSE stream; first frame is `sync` with Yjs state, state vector, `canEdit`, and presence. |
+| `GET` | `/api/v1/collab/documents/:id/events` | session | Live SSE stream; first frame is `sync` with Yjs state, state vector, `canEdit`, revision, and persistence state. |
 | `POST` | `/api/v1/collab/documents/:id/update` | session edit | `{ clientId, update }`; base64 Yjs update. Viewers get `403`. |
 | `POST` | `/api/v1/collab/documents/:id/presence` | session | `{ clientId, presence: { anchor, head, focused } }`; Yjs relative positions, `204`. |
+| `POST` | `/api/v1/collab/documents/:id/flush` | session edit | Drain the room's pending content; returns `{ content, revision, durableSeq, persistence }`. Viewers get `403`; no live room or persistence conflict/error returns `409`. |
 | `POST` | `/api/v1/trash/:action` | user | `move-document`, `restore-document`, `permanent-delete-document`, `move-folder`, `restore-folder`, `permanent-delete-folder`, `move-board`, `restore-board`, `permanent-delete-board`. |
 | `GET/PATCH` | `/api/v1/admin/smtp` | admin | SMTP settings; password is never returned. |
 | `POST` | `/api/v1/admin/smtp/test`, `/api/v1/admin/smtp/send-password` | admin | Test mail / send a password email. |
@@ -327,13 +328,15 @@ Browser facade behavior:
 The collaboration routes are a session-only, in-memory surface for open notes:
 
 - `GET /api/v1/collab/documents/:id/events` requires `Authorization` (no query token), resolves the note and effective sharing access through PocketBase with the caller's token, and returns `text/event-stream`. Access failures return `401`/`404` before a stream opens.
-- The first SSE `sync` frame is `{ type: "sync", clientId, update, stateVector, canEdit, epoch, presence }`. `update` is a base64 Yjs state update seeded from the saved Markdown. `canEdit` is true for the owner and `edit` grantees. `epoch` identifies the in-memory room incarnation; a change tells the client to reset its replica before folding in its draft.
-- `POST .../update` accepts `{ clientId, update }` (base64). It applies to the room, broadcasts `{ type: "update", clientId, update, seq }` to the other viewers, and returns `{ ok, seq }`. A viewer gets `403`; a stale client/room gets `409` so the browser reconnects.
+- The first SSE `sync` frame is `{ type: "sync", clientId, update, stateVector, canEdit, epoch, presence, protocol: 2, documentId, durableSeq, revision, persistence }`. `update` is a base64 Yjs state update seeded from the saved Markdown. `canEdit` is true for the owner and `edit` grantees. `epoch` identifies the in-memory room incarnation; a change tells the client to reset its replica before folding in its draft.
+- `POST .../update` accepts `{ clientId, update }` (base64). It applies to the room, broadcasts `{ type: "update", clientId, update, seq, source }` to the other viewers, and returns `{ ok, seq }`. A viewer gets `403`; a stale client/room gets `409` so the browser reconnects. The server-only `source: "system"` update is the room reconciling an external body.
 - `POST .../presence` accepts `{ clientId, presence: { anchor, head, focused } }` where anchor/head are JSON Yjs `RelativePosition` values. It broadcasts `{ type: "presence", clientId, userId, name, avatar, color, anchor, head, focused, updatedAt }`; disconnect emits `presence-leave`. Presence older than 45 seconds is dropped.
-- Rooms are process-local. A room with no viewers is disposed after 45 seconds. Persistence stays with the editor's normal debounced save; live updates are not written to PocketBase by the room.
+- The room is the durable content writer. It debounces a PocketBase `PATCH` for 800 ms, caps continuous typing at 5 seconds, and writes `{ content, revision }` with the caller's session token. It emits `{ type: "ack", durableSeq, revision, savedAt }`, `{ type: "status", persistence: "clean"|"dirty"|"saving"|"error"|"conflict", revision }`, and `{ type: "conflict", revision, reason }` frames. A revision conflict adopts a metadata-only bump or merges a non-overlapping external body; it never falls back to a superuser token. The last disconnect and graceful shutdown flush pending content.
+- `POST .../flush` drains pending content and returns the durable snapshot. It requires an edit grant. It is used before Save version and restore, and by typed REST/MCP/chat writes before they read a revision. A room in `conflict` or `error` returns `409` instead of a stale snapshot.
+- Rooms are process-local. A room with no viewers is disposed after 45 seconds. While connected, the browser autosaves metadata only; it does not PATCH `content`.
 - Request bodies are capped at 9 MB; presence payloads at 4 KB.
 
-When a save loses the revision race, the browser re-reads the note, merges non-overlapping line changes from both writers, and retries against the current revision. The facade forwards `revision` to PocketBase, so a genuinely stale write still returns the revision-guard `400` if the retry cannot merge.
+When a non-live save loses the revision race, the browser re-reads the note, merges non-overlapping line changes from both writers, and retries against the current revision. The facade forwards `revision` to PocketBase, so a genuinely stale write still returns the revision-guard `400` if the retry cannot merge. While the room is connected, `saveDocumentWithMerge()` sends metadata only; the room handles the body.
 
 #### Version history
 
@@ -341,8 +344,8 @@ The four `/api/v1/documents/:id/versions` routes are browser-facade routes: they
 
 - `id` is an opaque version id (a commit id internally). Treat it as a string; do not parse or display it as a record id.
 - List results are newest first and omit content. `page` defaults to 1, `perPage` defaults to 20 and is capped at 100. The response is `{ items, page, perPage, totalItems, totalPages }`.
-- `POST` commits the current note title, content, tags, folder, and privacy. The commit is a no-op when the current state already matches HEAD, so `created: false` means **No changes since the last version**.
-- `POST …/restore` commits the current state first when needed, then writes only the selected Markdown body. Title, tags, folder, and privacy are not restored. The response returns the updated PocketBase-shaped `document`.
+- `POST` commits the current note title, content, tags, folder, and privacy. The commit is a no-op when the current state already matches HEAD, so `created: false` means **No changes since the last version**. The browser flushes the live room first when connected, so the commit includes the latest keystroke.
+- `POST …/restore` commits the current state first when needed, then writes only the selected Markdown body. Title, tags, folder, and privacy are not restored. The browser flushes the live room first; the response returns the updated PocketBase-shaped `document`.
 - `expectedRevision` is required on both writes (`400` when missing). A stale revision returns `409`; a missing, foreign, or trashed note/version returns `404`; an unreachable PocketBase returns `502`, and an unexpected git failure returns `500`.
 
 ### MCP

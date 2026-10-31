@@ -68,8 +68,11 @@ export const collabApi = new Elysia({ name: "nana-collab" })
         }
         if (!access) return jsonError(404, "Not found.");
 
-        const room = getOrCreateRoom(params.id, access.content);
-        const client = room.addClient(access.identity);
+        const room = getOrCreateRoom(params.id, access.content, {
+            token: access.token,
+            revision: access.revision,
+        });
+        const client = room.addClient(access.identity, access.token);
         const encoder = new TextEncoder();
 
         let closed = false;
@@ -127,6 +130,29 @@ export const collabApi = new Elysia({ name: "nana-collab" })
             },
         });
     }, { detail: { hide: true } })
+    .post("/api/v1/collab/documents/:id/flush", async ({ request, params }) => {
+        let access;
+        try {
+            access = await loadCollabDocumentAccess(request, params.id);
+        } catch (error) {
+            if (error instanceof BrowserAuthError) return jsonError(error.status, error.message);
+            log.warn("Live session flush authorization failed", {
+                documentId: params.id,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return jsonError(502, "The live session is unavailable right now.");
+        }
+        if (!access) return jsonError(404, "Not found.");
+        if (!access.identity.canEdit) return jsonError(403, "You can view this note but not edit it.");
+
+        const room = getRoom(params.id);
+        if (!room) return jsonError(409, "Reconnect to the live session.");
+        const result = await room.flushDocument();
+        if (result.persistence === "conflict" || result.persistence === "error") {
+            return jsonError(409, "The latest changes could not be saved. Try again.");
+        }
+        return Response.json(result);
+    }, { detail: { hide: true } })
     .post("/api/v1/collab/documents/:id/update", async ({ request, params }) => {
         let auth;
         try {
@@ -146,7 +172,7 @@ export const collabApi = new Elysia({ name: "nana-collab" })
         const room = getRoom(params.id);
         if (!room) return jsonError(409, "Reconnect to the live session.");
         try {
-            const seq = room.applyUpdate(body.clientId, auth.userId, update);
+            const seq = room.applyUpdate(body.clientId, auth.userId, update, auth.token);
             if (seq === null) return jsonError(409, "Reconnect to the live session.");
             return Response.json({ ok: true, seq });
         } catch (error) {

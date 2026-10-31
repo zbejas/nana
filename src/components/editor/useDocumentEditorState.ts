@@ -21,6 +21,8 @@ import { isSameMarkdown, normalizeMarkdown } from './milkdown/helpers';
 import { useAttachmentHandlers } from './useAttachmentHandlers';
 import { useDocumentActions } from './useDocumentActions';
 import { useDocumentCollaboration } from '../../lib/collaboration/useDocumentCollaboration';
+import { setRoomContentAuthority } from '../../lib/documents/save';
+import { adoptEditorDocument } from '../../lib/documents/drafts';
 
 export function useDocumentEditorState() {
     const navigate = useNavigate();
@@ -32,7 +34,7 @@ export function useDocumentEditorState() {
         createInFolder: folderId,
         initialTitle,
         initialContent,
-        hasUnsavedChanges,
+        hasUnsavedChanges: globalHasUnsavedChanges,
         creationSessionId,
         save,
         reset,
@@ -54,6 +56,17 @@ export function useDocumentEditorState() {
     const [tagInput, setTagInput] = useState('');
     const [saving, setSaving] = useState(false);
     const [publishing, setPublishing] = useState(false);
+    // Content can change because this user typed or because a collaborator
+    // typed. Only the former belongs in this client's autosave/unsaved state;
+    // otherwise every live update makes idle viewers save and flicker.
+    const [localContentDirty, setLocalContentDirty] = useState(false);
+    // Drives the autosave debounce. Remote text leaves this untouched so a
+    // collaborator's keystrokes never reset or schedule this client's timer.
+    const [localEditVersion, setLocalEditVersion] = useState(0);
+    // The document record whose values are already reflected in local state.
+    // Same-ID realtime updates arrive through the atom before the local setters,
+    // so dirty comparison must ignore that one committed render.
+    const [syncedDocument, setSyncedDocument] = useState<Document | null>(document);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [documentNotFound, setDocumentNotFound] = useState(false);
@@ -66,6 +79,9 @@ export function useDocumentEditorState() {
     const tagsRef = useRef(tags);
     const prevDocumentIdRef = useRef(document?.id);
     const remoteContentChangeRef = useRef<{ from: string; to: string } | null>(null);
+    // Set by the first save of the current /document/new session. The next
+    // document id is a promotion, not a switch to another note.
+    const promotedDocumentIdRef = useRef<string | null>(null);
 
     useEffect(() => { titleRef.current = title; }, [title]);
     useEffect(() => { contentRef.current = content; }, [content]);
@@ -91,40 +107,143 @@ export function useDocumentEditorState() {
     }, [setContent]);
 
     const {
+        session: collaborationSession,
         collaborators,
         status: collaborationStatus,
         canEdit: collaborationCanEdit,
+        persistence: collaborationPersistence,
+        revision: collaborationRevision,
         updateSelection: handleEditorSelection,
         applyLocalContent,
+        flushContent,
     } = useDocumentCollaboration({
         documentId: document?.id,
         initialContent: document?.content ?? initialContent ?? '',
+        initialRevision: document?.revision ?? 0,
         content,
         enabled: Boolean(document?.id) && !isTrashDocument,
         onRemoteContent: handleRemoteContent,
     });
     const isReadOnly = isTrashDocument || !collaborationCanEdit;
+    // The room is the content writer only once it has synced. While it is
+    // connecting, offline, or absent (new/trashed notes), autosave keeps the
+    // full content path.
+    const roomOwnsContent = Boolean(document?.id)
+        && !isTrashDocument
+        && collaborationStatus === 'connected';
+    // While connected, a clean room persistence phase means the body is
+    // durable even if the local dirty flag has not re-rendered yet.
+    const pendingContentChanges = roomOwnsContent
+        ? localContentDirty && collaborationPersistence !== 'clean'
+        : localContentDirty;
+
+    // Explicit Save and Save version still call saveDocumentWithMerge(); the
+    // registry keeps those paths from writing a body the room already owns.
+    useEffect(() => {
+        const documentId = document?.id;
+        if (!documentId) return;
+        setRoomContentAuthority(documentId, roomOwnsContent);
+        return () => setRoomContentAuthority(documentId, false);
+    }, [document?.id, roomOwnsContent]);
 
     // Editor input must reach Yjs in the same event as the ProseMirror change,
-    // not one React commit later. External writes (AI, restore, a merged save)
-    // use the same path explicitly, but never through a passive content effect.
+    // not one React commit later. In live session mode the Source/WYSIWYG
+    // bindings own the canonical Y.Text write and call this only to mirror the
+    // new value into React state. Applying the same value again here would
+    // duplicate every keystroke.
+    const bindingOwnsContent = Boolean(collaborationSession);
     const handleContentChange = useCallback((next: string) => {
+        const normalized = normalizeMarkdown(next);
+        if (!bindingOwnsContent) applyLocalContent(normalized);
+        contentRef.current = normalized;
+        setLocalContentDirty(true);
+        setLocalEditVersion((version) => version + 1);
+        setContent(normalized);
+    }, [applyLocalContent, bindingOwnsContent]);
+
+    const applyExternalContent = useCallback((next: string) => {
         const normalized = normalizeMarkdown(next);
         applyLocalContent(normalized);
         contentRef.current = normalized;
         setContent(normalized);
     }, [applyLocalContent]);
 
-    const applyExternalContent = handleContentChange;
+    // AI edits and restores are explicit persisted writes, so they clear the
+    // local draft flag. A PocketBase broadcast uses applyExternalContent below:
+    // a stale broadcast must never clear dirty state or edit the autosave
+    // sequence.
+    const applyPersistedContent = useCallback((next: string) => {
+        applyExternalContent(next);
+        setLocalContentDirty(false);
+    }, [applyExternalContent]);
+
+    const handleSavedDocument = useCallback((
+        saved: Document,
+        options?: { creationSessionId?: number; preserveContent?: boolean },
+    ) => {
+        // The first save of this new-note session turns /document/new into a
+        // real note. Mark it so the id change adopts the saved record without
+        // discarding anything typed while the create request was in flight.
+        if (!document && options?.creationSessionId === creationSessionId) {
+            promotedDocumentIdRef.current = saved.id;
+        }
+        if (options?.preserveContent) {
+            // A metadata-only save must not rewind the editor to the room's
+            // last persisted body. Adopt the record fields it did write and
+            // leave the live content alone.
+            setSelectedDocument((previous) => {
+                if (!previous || previous.id !== saved.id) return previous ?? saved;
+                return {
+                    ...previous,
+                    title: saved.title,
+                    slug: saved.slug,
+                    tags: saved.tags,
+                    attachments: saved.attachments,
+                    revision: saved.revision,
+                    updated: saved.updated,
+                    word_count: saved.word_count,
+                    reading_time: saved.reading_time,
+                    last_edited_by: saved.last_edited_by,
+                    last_edit_source: saved.last_edit_source,
+                };
+            });
+        } else {
+            save(saved, options);
+        }
+        // A room-owned save writes metadata only; its clean ack owns the
+        // content dirty flag, so do not clear it from an explicit save.
+        if (!roomOwnsContent && isSameMarkdown(contentRef.current, saved.content)) {
+            setLocalContentDirty(false);
+        }
+    }, [save, setSelectedDocument, roomOwnsContent, document, creationSessionId]);
+
+    // The room is authoritative for content, so its clean ack is what clears
+    // the local dirty flag. Remote-only text never reached that flag.
+    useEffect(() => {
+        if (!roomOwnsContent || collaborationPersistence !== 'clean') return;
+        setLocalContentDirty(false);
+    }, [roomOwnsContent, collaborationPersistence]);
+
+    // A room ack advances the note revision without replacing the editor body.
+    useEffect(() => {
+        if (!document || collaborationRevision <= 0) return;
+        if (collaborationRevision <= (document.revision ?? 0)) return;
+        const next = { ...document, revision: collaborationRevision };
+        setSelectedDocument(next);
+        // Keep the adopted record in sync with the render so the status
+        // comparison does not treat the revision-only update as a doc switch.
+        setSyncedDocument(next);
+    }, [collaborationRevision, document, setSelectedDocument]);
 
     const { isSavingRef } = useDocumentLoader({
         urlDocumentId,
         document,
-        hasUnsavedChanges,
+        promotedDocumentId: promotedDocumentIdRef.current,
+        hasUnsavedChanges: globalHasUnsavedChanges,
         isTrashDocument,
         initialTitle: initialTitle || '',
         initialContent: initialContent || '',
-        onSave: save,
+        onSave: handleSavedDocument,
         onReset: reset,
         onShowToast: showToast,
     });
@@ -134,7 +253,7 @@ export function useDocumentEditorState() {
         removedAttachments,
         isDraggingFile,
         isMouseOverEditor,
-        isAutoSaving,
+        isAutoSaving: clientAutoSaving,
         setIsAutoSaving,
         setNewAttachments,
         setRemovedAttachments,
@@ -148,9 +267,22 @@ export function useDocumentEditorState() {
         handleDrop,
     } = useAttachmentHandlers({
         document,
-        onSave: save,
+        onSave: handleSavedDocument,
         onShowToast: showToast,
     });
+
+    const persistenceNeedsAttention = roomOwnsContent
+        && (collaborationPersistence === 'conflict' || collaborationPersistence === 'error');
+    const hasUnsavedChangesForDisplay = document && document !== syncedDocument
+        ? globalHasUnsavedChanges
+        : document
+            ? (title.trim() || 'Untitled') !== document.title
+                || pendingContentChanges
+                || JSON.stringify(tags) !== JSON.stringify(document.tags || [])
+                || newAttachments.length > 0
+                || removedAttachments.length > 0
+                || persistenceNeedsAttention
+            : title.trim().length > 0 || content.trim().length > 0 || newAttachments.length > 0;
 
     useAutoSave({
         urlDocumentId,
@@ -161,16 +293,25 @@ export function useDocumentEditorState() {
         newAttachments,
         removedAttachments,
         autoSaveDelayMs: autoSaveDelay,
-        hasUnsavedChanges,
+        hasUnsavedChanges: hasUnsavedChangesForDisplay,
+        localEditVersion,
         isReadOnly,
+        contentPersistence: roomOwnsContent ? 'room' : 'client',
         folderId,
         creationSessionId,
         isSavingRef,
-        onSave: save,
+        onSave: handleSavedDocument,
         onApplyMergedContent: applyExternalContent,
         onSetIsAutoSaving: setIsAutoSaving,
         onShowToast: showToast,
     });
+
+    // Server saving is content persistence for this note. Gate it on local
+    // content so a collaborator's write does not make this viewer look busy.
+    const serverContentSaving = roomOwnsContent
+        && collaborationPersistence === 'saving'
+        && localContentDirty;
+    const isAutoSaving = clientAutoSaving || serverContentSaving;
 
     useEffect(() => {
         if (autoSaveDelay < MIN_AUTO_SAVE_DELAY) {
@@ -190,8 +331,9 @@ export function useDocumentEditorState() {
         creationSessionId,
         isReadOnly,
         isSavingRef,
-        onSave: save,
+        onSave: handleSavedDocument,
         onApplyMergedContent: applyExternalContent,
+        onFlushContent: flushContent,
         onReset: reset,
         onSetSaving: setSaving,
         onSetPublishing: setPublishing,
@@ -262,28 +404,45 @@ export function useDocumentEditorState() {
     // new values, so the intermediate (stale) state never reaches the DOM.
     const [lastSyncedDocId, setLastSyncedDocId] = useState<string | undefined>(document?.id);
     const [lastSyncedSession, setLastSyncedSession] = useState(creationSessionId);
-    // The document record whose values are already reflected in local state.
-    // Same-ID realtime updates arrive through the atom before the local setters,
-    // so dirty comparison must ignore that one committed render.
-    const [syncedDocument, setSyncedDocument] = useState<Document | null>(document);
-
+    // The mounted editor follows the note session, not the raw record id. A
+    // first-save promotion (/document/new -> /document/:id) must not remount
+    // the editor and lose its scroll/selection/undo history.
+    const [editorSurfaceKey, setEditorSurfaceKey] = useState<string>(() => (
+        document?.id ? `document:${document.id}` : `new:${creationSessionId}`
+    ));
     if (document?.id !== lastSyncedDocId || creationSessionId !== lastSyncedSession) {
+        const promotedId = promotedDocumentIdRef.current;
+        const isPromotion = Boolean(document?.id && !lastSyncedDocId && promotedId === document.id);
+        const adoption = adoptEditorDocument({
+            mode: isPromotion ? 'promotion' : document ? 'document' : 'blank',
+            document,
+            current: { title, content, tags },
+            initialTitle: initialTitle || '',
+            initialContent: initialContent || '',
+        });
+
         setLastSyncedDocId(document?.id);
         setLastSyncedSession(creationSessionId);
         setSyncedDocument(document);
         remoteContentChangeRef.current = null;
-
-        if (document) {
-            setTitle(document.title || '');
-            setContent(normalizeMarkdown(document.content));
-            setTags(document.tags || []);
-        } else {
-            setTitle(initialTitle || '');
-            setContent(initialContent || '');
-            setTags([]);
-        }
+        setTitle(adoption.title);
+        setContent(adoption.content);
+        setTags(adoption.tags);
         setNewAttachments([]);
         setRemovedAttachments([]);
+        setLocalContentDirty(adoption.contentDirty);
+
+        // Keep the promoted id while this note is open so the loader does not
+        // race the promotion with a snapshot fetch. It is replaced by the next
+        // new-note save or cleared when another document becomes selected.
+        if (promotedId && promotedId !== document?.id) promotedDocumentIdRef.current = null;
+
+        const nextEditorKey = isPromotion
+            ? editorSurfaceKey
+            : document
+                ? `document:${document.id}`
+                : `new:${creationSessionId}`;
+        if (nextEditorKey !== editorSurfaceKey) setEditorSurfaceKey(nextEditorKey);
     }
 
     useLayoutEffect(() => {
@@ -320,14 +479,14 @@ export function useDocumentEditorState() {
             // The live room owns content while it is connected. A PocketBase
             // broadcast can arrive out of order relative to the Yjs stream and
             // applying it would briefly rewind another user's keystrokes.
-            if (!hasUnsavedChanges) {
+            if (!globalHasUnsavedChanges) {
                 setTitle(document.title || '');
                 setTags(document.tags || []);
             }
             return;
         }
 
-        if (hasUnsavedChanges) {
+        if (globalHasUnsavedChanges || pendingContentChanges) {
             logger.debug('Skipping realtime state sync - user has unsaved changes');
             return;
         }
@@ -339,9 +498,11 @@ export function useDocumentEditorState() {
             remoteContentChangeRef.current = { from: contentRef.current, to: nextContent };
         }
         setTitle(document.title || '');
+        // A broadcast is not this client's save. Apply its body without
+        // touching local dirty state, and never replay it as a local edit.
         applyExternalContent(nextContent);
         setTags(document.tags || []);
-    }, [document, urlDocumentId, hasUnsavedChanges, collaborationStatus, applyExternalContent]);
+    }, [document, urlDocumentId, globalHasUnsavedChanges, pendingContentChanges, collaborationStatus, applyExternalContent]);
 
     useEffect(() => {
         // The atom can change one render before the realtime effect adopts it.
@@ -360,15 +521,16 @@ export function useDocumentEditorState() {
             const normalizedTitle = title.trim() || 'Untitled';
             hasChanges =
                 normalizedTitle !== document.title ||
-                !isSameMarkdown(content.trim(), document.content.trim()) ||
+                pendingContentChanges ||
                 JSON.stringify(tags) !== JSON.stringify(document.tags || []) ||
                 newAttachments.length > 0 ||
-                removedAttachments.length > 0;
+                removedAttachments.length > 0 ||
+                persistenceNeedsAttention;
         }
 
 
         setGlobalUnsavedChanges(hasChanges);
-    }, [title, content, tags, newAttachments, removedAttachments, document, syncedDocument, setGlobalUnsavedChanges]);
+    }, [title, pendingContentChanges, tags, newAttachments, removedAttachments, document, syncedDocument, setGlobalUnsavedChanges, roomOwnsContent, collaborationPersistence]);
 
     const contentStats = useMemo(() => {
         const words = content.trim().split(/\s+/).filter((w) => w.length > 0);
@@ -399,14 +561,14 @@ export function useDocumentEditorState() {
         try {
             const updatedDocument = await getDocument(document.id);
             save(updatedDocument);
-            applyExternalContent(normalizeMarkdown(updatedDocument.content));
+            applyPersistedContent(normalizeMarkdown(updatedDocument.content));
             setGlobalUnsavedChanges(false);
             setRefreshTrigger((previous) => previous + 1);
         } catch (err: any) {
             logger.error('Failed to reload document after restore', { error: err.message });
             setError('Failed to reload document. Please refresh the page.');
         }
-    }, [document?.id, save, applyExternalContent, setGlobalUnsavedChanges, setRefreshTrigger]);
+    }, [document?.id, save, applyPersistedContent, setGlobalUnsavedChanges, setRefreshTrigger]);
 
     const handleCreateNewFromVersion = useCallback((versionContent: string) => {
         const docName = document?.title || 'Untitled';
@@ -436,7 +598,14 @@ export function useDocumentEditorState() {
         };
     }, [handleSave]);
 
-    const isLoadingDocument = Boolean(urlDocumentId && urlDocumentId !== 'new' && document?.id !== urlDocumentId);
+    const isLoadingDocument = Boolean(
+        urlDocumentId
+        && urlDocumentId !== 'new'
+        && document?.id !== urlDocumentId
+        // The first save already selected the new id; do not flash the loading
+        // surface (which unmounts the editor) while that atom update settles.
+        && promotedDocumentIdRef.current !== urlDocumentId
+    );
 
     return {
         urlDocumentId,
@@ -460,7 +629,7 @@ export function useDocumentEditorState() {
         loading,
         error,
         documentNotFound,
-        hasUnsavedChanges,
+        hasUnsavedChanges: hasUnsavedChangesForDisplay,
         isDesktop,
         MOBILE_EDITOR_HEIGHT,
         viewMode: effectiveViewMode,
@@ -491,10 +660,15 @@ export function useDocumentEditorState() {
         isTrashDocument,
         isReadOnly,
         isLoadingDocument,
+        editorSurfaceKey,
+        collaborationSession,
         collaborators,
         collaborationStatus,
+        collaborationPersistence,
         handleEditorSelection,
         handleContentChange,
+        flushContent,
         applyExternalContent,
+        applyPersistedContent,
     };
 }

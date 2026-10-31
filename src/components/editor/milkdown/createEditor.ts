@@ -16,8 +16,9 @@ import { history } from '@milkdown/kit/plugin/history';
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
 import { upload, uploadConfig } from '@milkdown/kit/plugin/upload';
 import { $prose, $view } from '@milkdown/kit/utils';
-import { Fragment, Slice, type Node as ProseNode } from '@milkdown/kit/prose/model';
+import { Fragment, Slice, type Attrs, type Node as ProseNode, type NodeType } from '@milkdown/kit/prose/model';
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state';
+import { Transform } from '@milkdown/kit/prose/transform';
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view';
 import { prism } from '@milkdown/plugin-prism';
 import { rewriteLegacyFileUrl } from '../../../lib/legacy-urls';
@@ -41,6 +42,8 @@ export interface CreateMilkdownEditorOptions {
   spellcheck: boolean;
   enableSlash?: boolean;
   onDocChangeRef: { current: ((markdown: string) => void) | undefined };
+  /** True while an external snapshot is dispatched; keeps remote applies out of Yjs. */
+  suppressDocChangeRef?: { current: boolean };
   onSelectionRef: { current: (() => void) | undefined };
   onSelectionChangeRef?: { current: (() => void) | undefined };
   onFocusRef: { current: (() => void) | undefined };
@@ -198,6 +201,10 @@ export interface AiHighlightRange {
   heading?: boolean;
 }
 
+function isLineBreakNode(node: ProseNode): boolean {
+  return node.type.name === 'hardbreak' || node.type.name === 'hard_break';
+}
+
 export interface ProseTextSegment {
   textStart: number;
   textEnd: number;
@@ -245,6 +252,19 @@ export function proseTextMap(doc: ProseNode): ProseTextMap {
       text += value;
       segments.push(segment);
       textSegments.push(segment);
+      return;
+    }
+
+    if (isLineBreakNode(node)) {
+      // A hardbreak is one document position but a newline in the plain-text
+      // projection, so cursor offsets on either side stay distinguishable.
+      segments.push({
+        textStart: text.length,
+        textEnd: text.length + 1,
+        from: pos,
+        to: pos + 1,
+      });
+      text += '\n';
       return;
     }
 
@@ -707,7 +727,10 @@ function githubDetailsPlugin() {
   );
 }
 
-function documentChangePlugin(onDocChangeRef: { current: ((markdown: string) => void) | undefined }) {
+function documentChangePlugin(
+  onDocChangeRef: { current: ((markdown: string) => void) | undefined },
+  suppressDocChangeRef?: { current: boolean },
+) {
   return $prose(
     (ctx) =>
       new Plugin({
@@ -715,12 +738,35 @@ function documentChangePlugin(onDocChangeRef: { current: ((markdown: string) => 
         view: () => ({
           update(view, previousState) {
             if (view.state.doc.eq(previousState.doc)) return;
+            // Remote/live snapshots must not be written back into Yjs. The
+            // external apply wraps its synchronous dispatch with this flag.
+            if (suppressDocChangeRef?.current) return;
             const markdown = normalizeMarkdown(ctx.get(serializerCtx)(view.state.doc));
             onDocChangeRef.current?.(markdown);
           },
         }),
       }),
   );
+}
+
+/**
+ * Run an external snapshot apply with the document-change emitter muted.
+ * ProseMirror delivers plugin `view.update` calls synchronously inside
+ * `dispatch`, so a plain flag around the call is enough. Nested applies restore
+ * the previous value, and the flag is always cleared after the callback even
+ * when the transaction throws.
+ */
+export function withSuppressedDocumentChange(
+  suppressRef: { current: boolean },
+  apply: () => void,
+): void {
+  const previous = suppressRef.current;
+  suppressRef.current = true;
+  try {
+    apply();
+  } finally {
+    suppressRef.current = previous;
+  }
 }
 
 function slashPlugin(onSlashRef: { current: ((position: SlashTriggerPosition) => void) | undefined }) {
@@ -802,7 +848,7 @@ export async function createMilkdownEditor(options: CreateMilkdownEditorOptions)
   editor.use(softBreakPlugin());
   editor.use(taskListClickPlugin());
   editor.use(collaboratorPresencePlugin());
-  editor.use(documentChangePlugin(options.onDocChangeRef));
+  editor.use(documentChangePlugin(options.onDocChangeRef, options.suppressDocChangeRef));
   if (options.enableSlash !== false) editor.use(slashPlugin(options.onSlashRef));
   if (options.uploadImageRef.current) editor.use(upload);
 
@@ -878,6 +924,388 @@ function prosePositionForMarkdownOffset(doc: ProseNode, markdown: string, offset
 }
 
 /**
+ * Keep a collapsed caret attached to the character that follows it. A caret at
+ * the end of a line has no following character, so it stays before content
+ * inserted there; a caret at the start or middle follows its text into a newly
+ * inserted block. This is the content-anchoring rule remote splices need.
+ */
+export function caretAssocForMarkdown(markdown: string, offset: number | null): -1 | 1 {
+  if (offset === null || offset < 0 || offset >= markdown.length) return -1;
+  const next = markdown.charAt(offset);
+  return next === '\n' || next === '\r' ? -1 : 1;
+}
+
+/**
+ * One step in a top-level document update. The steps stay close to
+ * ProseMirror's own transactions so the live selection is mapped by the
+ * transform instead of being re-resolved from an unrelated snapshot.
+ */
+export type DocumentSyncStep =
+  | { type: 'delete'; from: number; to: number }
+  | {
+    type: 'split';
+    pos: number;
+    depth: number;
+    typesAfter: Array<{ type: NodeType; attrs?: Attrs | null }> | null;
+  }
+  | { type: 'join'; pos: number; depth: number }
+  | { type: 'insert'; pos: number; content: Fragment }
+  | { type: 'replace'; from: number; to: number; content: Fragment };
+
+export interface DocumentSyncPlan {
+  /** `split`/`merge` preserve an open slice; `inline` is a text splice. */
+  kind: 'split' | 'merge' | 'inline' | 'replace';
+  steps: DocumentSyncStep[];
+  /** Map selection through this many steps, then through the rest backward. */
+  selectionStepCount?: number;
+}
+
+function topLevelStarts(doc: ProseNode): number[] {
+  const starts: number[] = [];
+  doc.forEach((_node, offset) => {
+    starts.push(offset);
+  });
+  starts.push(doc.content.size);
+  return starts;
+}
+
+function sameAttributes(left: Attrs, right: Attrs): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key) => Object.is(left[key], right[key]));
+}
+
+/** A textblock whose content only contains text or soft/hard line breaks. */
+function isPlainTextblock(node: ProseNode): boolean {
+  if (!node.isTextblock) return false;
+  let plain = true;
+  node.content.forEach((child) => {
+    if (!child.isText && !isLineBreakNode(child)) plain = false;
+  });
+  return plain;
+}
+
+function isUnmarkedTextblock(node: ProseNode): boolean {
+  if (!isPlainTextblock(node)) return false;
+  let plain = true;
+  node.content.forEach((child) => {
+    if (child.isText && child.marks.length > 0) plain = false;
+  });
+  return plain;
+}
+
+function sameTextblockMarkup(left: ProseNode, right: ProseNode): boolean {
+  return left.type === right.type && sameAttributes(left.attrs, right.attrs);
+}
+
+/** Plain text with hardbreaks represented as newlines. */
+function textWithBreaks(node: ProseNode): string {
+  let text = '';
+  node.content.forEach((child) => {
+    if (child.isText) text += child.text ?? '';
+    else if (isLineBreakNode(child)) text += '\n';
+  });
+  return text;
+}
+
+/** Convert a text offset (breaks count as one) into a content offset. */
+function textOffsetToContentOffset(node: ProseNode, textOffset: number): number {
+  let text = 0;
+  let content = 0;
+  for (let index = 0; index < node.childCount; index += 1) {
+    const child = node.child(index);
+    if (child.isText) {
+      const length = child.text?.length ?? 0;
+      if (textOffset <= text + length) return content + Math.max(0, textOffset - text);
+      text += length;
+      content += length;
+      continue;
+    }
+    if (isLineBreakNode(child)) {
+      if (textOffset <= text) return content;
+      text += 1;
+      content += 1;
+      continue;
+    }
+    content += child.nodeSize;
+  }
+  return content;
+}
+
+function sharedTopLevelRange(doc: ProseNode, nextDoc: ProseNode): { prefix: number; suffix: number } {
+  let prefix = 0;
+  while (
+    prefix < doc.childCount
+    && prefix < nextDoc.childCount
+    && doc.child(prefix).eq(nextDoc.child(prefix))
+  ) {
+    prefix += 1;
+  }
+
+  let suffix = 0;
+  while (
+    suffix < doc.childCount - prefix
+    && suffix < nextDoc.childCount - prefix
+    && doc.child(doc.childCount - 1 - suffix).eq(nextDoc.child(nextDoc.childCount - 1 - suffix))
+  ) {
+    suffix += 1;
+  }
+
+  return { prefix, suffix };
+}
+
+/**
+ * Detect one textblock splitting into two, the shape Enter produces. The old
+ * text may lose the whitespace at the caret, so a short whitespace separator
+ * between the halves is accepted and deleted before the split.
+ */
+interface TextblockSplitPlan {
+  steps: DocumentSyncStep[];
+  /** Number of structural steps; selection maps through these before any insertion. */
+  selectionStepCount: number;
+}
+
+function planTextblockSplit(
+  doc: ProseNode,
+  nextDoc: ProseNode,
+  prefix: number,
+  suffix: number,
+): TextblockSplitPlan | null {
+  if (doc.childCount - prefix - suffix !== 1) return null;
+  if (nextDoc.childCount - prefix - suffix !== 2) return null;
+
+  const current = doc.child(prefix);
+  const first = nextDoc.child(prefix);
+  const second = nextDoc.child(prefix + 1);
+  if (!isPlainTextblock(current) || !isPlainTextblock(first) || !isPlainTextblock(second)) {
+    return null;
+  }
+  if (!sameTextblockMarkup(current, first)) return null;
+
+  const text = textWithBreaks(current);
+  const firstText = textWithBreaks(first);
+  const secondText = textWithBreaks(second);
+  if (!text.startsWith(firstText)) return null;
+
+  const remainder = text.slice(firstText.length);
+  let separator = '';
+  let insertion = '';
+  let insertAt: 'start' | 'end' | null = null;
+
+  if (remainder.endsWith(secondText)) {
+    // The old remainder carries a separator (usually a soft break or the
+    // space at a split point) that the new blocks dropped.
+    separator = remainder.slice(0, remainder.length - secondText.length);
+    if (separator.length > 4 || !/^[ \t\r\n]*$/.test(separator)) return null;
+  } else if (secondText.endsWith(remainder)) {
+    // A remote insertion landed at the start of the moved tail while this
+    // client typed at the same boundary. Split first, then insert the new
+    // prefix into the second block.
+    insertion = secondText.slice(0, secondText.length - remainder.length);
+    insertAt = 'start';
+  } else if (secondText.startsWith(remainder)) {
+    insertion = secondText.slice(remainder.length);
+    insertAt = 'end';
+  } else {
+    return null;
+  }
+  if (/[\r\n]/.test(insertion)) return null;
+  if (!firstText && !secondText) return null;
+
+  const starts = topLevelStarts(doc);
+  const splitPos = starts[prefix]! + 1 + textOffsetToContentOffset(current, firstText.length);
+  const steps: DocumentSyncStep[] = [];
+  if (separator.length > 0) {
+    steps.push({ type: 'delete', from: splitPos, to: splitPos + separator.length });
+  }
+  steps.push({
+    type: 'split',
+    pos: splitPos,
+    depth: 1,
+    typesAfter: [{ type: second.type, attrs: second.attrs }],
+  });
+
+  const selectionStepCount = steps.length;
+  if (insertion) {
+    // Positions in the step list are relative to the document after the
+    // preceding steps. Use a probe to find the second block's content range.
+    const probe = new Transform(doc);
+    applyDocumentSyncSteps(probe, steps);
+    const splitStarts = topLevelStarts(probe.doc);
+    const secondStart = splitStarts[prefix + 1]! + 1;
+    const secondBlock = probe.doc.child(prefix + 1);
+    const insertPos = insertAt === 'start'
+      ? secondStart
+      : secondStart + textOffsetToContentOffset(secondBlock, textWithBreaks(secondBlock).length);
+    steps.push({
+      type: 'insert',
+      pos: insertPos,
+      content: Fragment.from(second.type.schema.text(insertion)),
+    });
+  }
+  return { steps, selectionStepCount };
+}
+
+/** Detect two adjacent textblocks merging back into one (Backspace/Delete). */
+function planTextblockMerge(
+  doc: ProseNode,
+  nextDoc: ProseNode,
+  prefix: number,
+  suffix: number,
+): DocumentSyncStep[] | null {
+  if (doc.childCount - prefix - suffix !== 2) return null;
+  if (nextDoc.childCount - prefix - suffix !== 1) return null;
+
+  const first = doc.child(prefix);
+  const second = doc.child(prefix + 1);
+  const merged = nextDoc.child(prefix);
+  if (!isPlainTextblock(first) || !isPlainTextblock(second) || !isPlainTextblock(merged)) {
+    return null;
+  }
+  if (!sameTextblockMarkup(first, merged)) return null;
+  if (textWithBreaks(first) + textWithBreaks(second) !== textWithBreaks(merged)) return null;
+
+  const starts = topLevelStarts(doc);
+  return [{ type: 'join', pos: starts[prefix + 1]!, depth: 1 }];
+}
+
+/**
+ * Apply an inline change inside one textblock with a normal delete/insert step.
+ * Replacing the whole block would collapse a caret in that block; a text splice
+ * lets ProseMirror map it. This covers typing that arrives while the Markdown
+ * source contains a hardbreak or a normalization-only formatting difference.
+ */
+function planTextblockInline(
+  doc: ProseNode,
+  nextDoc: ProseNode,
+  prefix: number,
+  suffix: number,
+): DocumentSyncStep[] | null {
+  if (doc.childCount - prefix - suffix !== 1) return null;
+  if (nextDoc.childCount - prefix - suffix !== 1) return null;
+
+  const current = doc.child(prefix);
+  const next = nextDoc.child(prefix);
+  if (!sameTextblockMarkup(current, next)) return null;
+  if (!isUnmarkedTextblock(current) || !isUnmarkedTextblock(next)) return null;
+
+  const currentText = textWithBreaks(current);
+  const nextText = textWithBreaks(next);
+  const change = minimalTextChange(currentText, nextText);
+  if (!change) return null;
+  if (/[\r\n]/.test(change.insert) || /[\r\n]/.test(currentText.slice(change.from, change.to))) {
+    return null;
+  }
+
+  const start = topLevelStarts(doc)[prefix]! + 1;
+  const from = textOffsetToContentOffset(current, change.from);
+  const to = textOffsetToContentOffset(current, change.to);
+  const steps: DocumentSyncStep[] = [];
+  if (to > from) steps.push({ type: 'delete', from: start + from, to: start + to });
+  if (change.insert) {
+    steps.push({
+      type: 'insert',
+      pos: start + from,
+      content: Fragment.from(next.type.schema.text(change.insert)),
+    });
+  }
+  return steps.length > 0 ? steps : null;
+}
+
+/** Replace only the changed top-level block range; the rest of the doc is intact. */
+function planTopLevelReplace(
+  doc: ProseNode,
+  nextDoc: ProseNode,
+  prefix: number,
+  suffix: number,
+): DocumentSyncStep[] {
+  const starts = topLevelStarts(doc);
+  const content: ProseNode[] = [];
+  for (let index = prefix; index < nextDoc.childCount - suffix; index += 1) {
+    content.push(nextDoc.child(index));
+  }
+  return [{
+    type: 'replace',
+    from: starts[prefix]!,
+    to: starts[doc.childCount - suffix]!,
+    content: Fragment.fromArray(content),
+  }];
+}
+
+export function applyDocumentSyncSteps(
+  transform: Transform,
+  steps: readonly DocumentSyncStep[],
+): void {
+  for (const step of steps) {
+    switch (step.type) {
+      case 'delete':
+        transform.delete(step.from, step.to);
+        break;
+      case 'split':
+        transform.split(step.pos, step.depth, step.typesAfter ?? undefined);
+        break;
+      case 'join':
+        transform.join(step.pos, step.depth);
+        break;
+      case 'insert':
+        transform.replaceWith(step.pos, step.pos, step.content);
+        break;
+      case 'replace':
+        transform.replace(step.from, step.to, new Slice(step.content, 0, 0));
+        break;
+    }
+  }
+}
+
+/**
+ * Plan the smallest document update between two parsed states.
+ *
+ * Textblock splits and merges get open-slice steps so ProseMirror keeps the
+ * local caret inside its block. Everything else replaces only the changed
+ * top-level node range. Returns `null` when no candidate reproduces `nextDoc`;
+ * the caller then has a conservative whole-document fallback.
+ */
+export function planDocumentSync(doc: ProseNode, nextDoc: ProseNode): DocumentSyncPlan | null {
+  if (doc.eq(nextDoc)) return null;
+
+  const { prefix, suffix } = sharedTopLevelRange(doc, nextDoc);
+  const candidates: DocumentSyncPlan[] = [];
+
+  const split = planTextblockSplit(doc, nextDoc, prefix, suffix);
+  if (split) {
+    candidates.push({
+      kind: 'split',
+      steps: split.steps,
+      selectionStepCount: split.selectionStepCount,
+    });
+  }
+
+  const merge = planTextblockMerge(doc, nextDoc, prefix, suffix);
+  if (merge) candidates.push({ kind: 'merge', steps: merge });
+
+  const inline = planTextblockInline(doc, nextDoc, prefix, suffix);
+  if (inline) candidates.push({ kind: 'inline', steps: inline });
+
+  candidates.push({
+    kind: 'replace',
+    steps: planTopLevelReplace(doc, nextDoc, prefix, suffix),
+  });
+
+  for (const candidate of candidates) {
+    try {
+      const probe = new Transform(doc);
+      applyDocumentSyncSteps(probe, candidate.steps);
+      if (probe.doc.eq(nextDoc)) return candidate;
+    } catch {
+      // Try the next, wider candidate.
+    }
+  }
+
+  return null;
+}
+
+/**
  * Apply an incoming value without replacing the whole document when only a
  * small region changed. The selection is projected through the Markdown edit,
  * so a remote keystroke elsewhere does not move the local caret.
@@ -893,50 +1321,117 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
   const change = minimalTextChange(current, next);
   if (!change) return;
 
+  const deletedText = current.slice(change.from, change.to);
+  const containsLineBreak = /[\r\n]/.test(change.insert) || /[\r\n]/.test(deletedText);
+
   // Fast path: a plain text insertion/deletion can be applied as a normal
   // ProseMirror transaction. ProseMirror then maps the live selection through
   // the change and leaves composition/local typing intact. The serializer
   // check below is the safety net: if the Markdown meaning changed (a marker,
   // block boundary, or formatting edit), fall back to a parsed document.
-  const textMap = proseTextMap(view.state.doc);
-  const segments = alignMarkdownToText(current, textMap.text);
-  const fromText = markdownOffsetToTextOffset(segments, change.from);
-  const toText = change.to === change.from
-    ? fromText
-    : markdownOffsetToTextOffset(segments, change.to);
+  //
+  // Never use it for a diff containing a line break. `insertText` would put a
+  // literal "\n\n" inside the current textblock instead of splitting it, and
+  // the serializer can still round-trip to the same Markdown even though the
+  // receiver's ProseMirror structure now differs from the sender's.
+  if (!containsLineBreak) {
+    const textMap = proseTextMap(view.state.doc);
+    const segments = alignMarkdownToText(current, textMap.text);
+    const fromText = markdownOffsetToTextOffset(segments, change.from);
+    const toText = change.to === change.from
+      ? fromText
+      : markdownOffsetToTextOffset(segments, change.to);
 
-  if (fromText !== null && toText !== null) {
-    const from = positionAt(textMap, fromText);
-    const to = positionAt(textMap, toText);
-    const $from = view.state.doc.resolve(from);
-    const $to = view.state.doc.resolve(to);
-    const sameTextblock = $from.parent.inlineContent
-      && $to.parent.inlineContent
-      && $from.parent === $to.parent;
+    if (fromText !== null && toText !== null) {
+      const from = positionAt(textMap, fromText);
+      const to = positionAt(textMap, toText);
+      const $from = view.state.doc.resolve(from);
+      const $to = view.state.doc.resolve(to);
+      const sameTextblock = $from.parent.inlineContent
+        && $to.parent.inlineContent
+        && $from.parent === $to.parent;
 
-    if (sameTextblock) {
-      const transaction = view.state.tr.setMeta('addToHistory', false);
-      if (change.to > change.from) transaction.delete(from, to);
-      if (change.insert) transaction.insertText(change.insert, from);
-      if (normalizeMarkdown(serializer(transaction.doc)) === next) {
-        view.dispatch(transaction);
-        return;
+      if (sameTextblock) {
+        const transaction = view.state.tr.setMeta('addToHistory', false);
+        if (change.to > change.from) transaction.delete(from, to);
+        if (change.insert) transaction.insertText(change.insert, from);
+        if (normalizeMarkdown(serializer(transaction.doc)) === next) {
+          view.dispatch(transaction);
+          return;
+        }
       }
     }
   }
 
-  // Structural or formatting change: replace the document, but map the
-  // selection against the transaction's own document. Creating a selection
-  // against the separately parsed document throws in ProseMirror, which used
-  // to leave every remote update with the caret at the end of the note.
+  // Structural or formatting change. Parse the target and apply the narrowest
+  // transaction that reproduces it. A textblock split/merge keeps the caret on
+  // the text that moved; a block replacement leaves every other block (and the
+  // selection mapping through it) untouched. Only the changed top-level range
+  // is replaced, never the whole document.
+  const nextDoc = parser(next);
+  if (!nextDoc) return;
+  if (view.state.doc.eq(nextDoc)) return;
+
+  const oldSelection = view.state.selection;
+  const oldMarkdownSelection = getMarkdownSelection(ctx);
+  const collapsedAssoc = oldMarkdownSelection
+    ? caretAssocForMarkdown(current, oldMarkdownSelection.head)
+    : -1;
+
+  const plan = planDocumentSync(view.state.doc, nextDoc);
+  if (plan) {
+    const transaction = view.state.tr.setMeta('addToHistory', false);
+    try {
+      applyDocumentSyncSteps(transaction, plan.steps);
+      if (transaction.doc.eq(nextDoc)) {
+        // Map the caret through the structural part first, then through any
+        // content inserted at the same boundary with backward association. A
+        // remote block inserted at the caret must not drag the local caret into
+        // the remote writer's text; the local user's following keystroke must
+        // stay in its own block.
+        if (transaction.docChanged) {
+          const selectionStepCount = plan.selectionStepCount ?? plan.steps.length;
+          const structural = transaction.mapping.slice(0, selectionStepCount);
+          const tail = transaction.mapping.slice(selectionStepCount);
+          const mapPosition = (position: number, assoc: -1 | 1) =>
+            tail.map(structural.map(position, assoc), -1);
+          const anchor = mapPosition(
+            oldSelection.anchor,
+            oldSelection.empty ? collapsedAssoc : -1,
+          );
+          const head = mapPosition(
+            oldSelection.head,
+            oldSelection.empty ? collapsedAssoc : 1,
+          );
+          try {
+            transaction.setSelection(TextSelection.create(
+              transaction.doc,
+              Math.min(anchor, head),
+              Math.max(anchor, head),
+            ));
+          } catch {
+            // A node selection cannot be restored as a text selection; leave
+            // ProseMirror's mapped selection in place.
+          }
+        }
+        view.dispatch(transaction);
+        return;
+      }
+    } catch {
+      // The schema rejected a targeted step; use the conservative fallback.
+    }
+  }
+
+  // Conservative fallback for documents the targeted diff cannot represent.
+  // Map the selection against the transaction's own document. When the
+  // Markdown projection cannot place it, leave ProseMirror's step mapping in
+  // charge rather than forcing the caret to the document end.
   const selection = getMarkdownSelection(ctx);
   const mapped = selection
     ? mapSelectionThroughChange(selection.anchor, selection.head, change)
     : null;
   const anchor = mapped?.anchor ?? null;
   const head = mapped?.head ?? null;
-  const nextDoc = parser(next);
-  if (!nextDoc) return;
 
   const transaction = view.state.tr
     .replace(0, view.state.doc.content.size, new Slice(nextDoc.content, 0, 0))

@@ -153,10 +153,12 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 
 1. The editor opens a Yjs session from `src/lib/collaboration/` for an existing, non-trash note. The room is keyed by document id and lives in the Bun process.
 2. `GET /api/v1/collab/documents/:id/events` accepts a session JWT, resolves the note and effective sharing level through PocketBase, then sends a `sync` frame with the room's Yjs state, state vector, permissions, and current presence. The server seeded the Yjs text from the persisted Markdown; clients never seed a second copy.
-3. Local edits become Yjs updates after a short debounce and are posted to `POST .../update`. The room applies them, broadcasts the binary diff, and increments an in-memory sequence. View-only grantees receive updates and presence but cannot publish text.
-4. Cursor and selection changes are posted as Yjs relative positions to `POST .../presence`. The room survives brief reconnects; a room with no viewers is disposed after 45 seconds. Presence older than 45 seconds is dropped.
-5. Remote text is applied to both editor panes through a minimal splice, preserving the local caret, and the presence layer paints the other writer's colored caret and selection. A split-pane callback only reports presence for the focused pane.
-6. Persistence remains the normal editor debounce. Both clients converge on the same Markdown, and `saveDocumentWithMerge()` retries a stale revision by folding in the other writer's lines instead of overwriting them. `revision` is forwarded by the browser facade, so PocketBase still rejects a truly stale write.
+3. The Source and WYSIWYG panes bind directly to the room's one canonical `Y.Text` Markdown. A local CodeMirror change becomes ordered canonical operations; a local ProseMirror change becomes the minimal Markdown splice for that transaction. Neither pane diffs React state, and split mode shares the same session rather than copying a value between panes.
+4. Local operations are posted to `POST .../update`. The room applies them, broadcasts the binary diff, and increments an in-memory sequence. View-only grantees receive updates and presence but cannot publish text.
+5. Cursor and selection changes are posted as Yjs relative positions to `POST .../presence`. The room survives brief reconnects; a room with no viewers is disposed after 45 seconds. Presence older than 45 seconds is dropped.
+6. Remote canonical operations are applied to both panes through minimal text/block changes, preserving the local caret, and the presence layer paints the other writer's colored caret and selection. A split-pane callback only reports presence for the focused pane.
+7. The room is the content writer. It debounces a PocketBase `PATCH` for 800 ms, caps continuous typing at 5 seconds, and writes with the caller's session token and revision. `ack`, `status`, and `conflict` frames drive the header; a room in error/conflict stops rather than overwriting. The last disconnect and graceful shutdown flush pending content.
+8. While the room is connected, the browser autosaves metadata only (title, tags, attachments) and never PATCHes `content`. `saveDocumentWithMerge()` routes explicit Save to the same metadata path. Save version and restore first call `POST .../flush` so their git snapshot cannot precede the room's last keystroke. Typed REST, MCP, and chat writes flush the room before reading a revision or writing the body.
 
 ### Data flows
 
@@ -181,7 +183,8 @@ MCP is an AI surface: private records and private-folder subtrees are hidden. It
 | Browser auth | Browser → `/api/v1/auth/*` → PB auth endpoints; token and record keep the PB shape |
 | Browser files | Browser → `/api/v1/files/token` + `/api/v1/files/:collection/:record/:file` → PB file token/bytes/thumbnails |
 | Browser realtime | Browser → `GET /api/v1/realtime` SSE handshake + authenticated `POST /api/v1/realtime` subscription → PB realtime |
-| Live note editing | Browser → `GET /api/v1/collab/documents/:id/events` SSE + `POST .../update` Yjs diffs + `POST .../presence` → per-document room; the editor's normal autosave persists the merged Markdown |
+| Live note editing | Browser → `GET /api/v1/collab/documents/:id/events` SSE + `POST .../update` Yjs diffs + `POST .../presence` → per-document room → debounced PB content write with the caller token; `ack`/`status` frames report durability |
+| Live note flush | Browser → `POST /api/v1/collab/documents/:id/flush` → room drains pending content and returns `{ content, revision, durableSeq, persistence }` before a version/restore snapshot |
 | Typed REST read/write | API client → `/api/v1` → Elysia handler → workspace service (`surface: "user"`) → PB REST with user token → JSON |
 | MCP tool call | MCP client → `POST /mcp` → per-request MCP server → workspace service (`surface: "ai"`) → PB REST with user token → tool result |
 | Chat read | Browser → `/api/chat/send` (`mode: "ask"`) → `streamText` + read tools → PB REST with user token → named SSE |
