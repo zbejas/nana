@@ -188,16 +188,16 @@ For a workspace route, do not add a parallel handler: add it to the Elysia app u
 2. Keep chat tools scoped to `context.authHeader` / `context.userId`. Never use the superuser token for a tool; `chat_edits` persistence is the server-owned exception.
 3. Add or preserve ownership scoping: filter lists on `author` (or `board.author` for tasks), and verify the owner on single-record reads, even when PocketBase rules also enforce it.
 4. Apply the private lock. Lists use `aiVisibilityConditions()`; reads and writes check `noteIsLocked()` / `boardIsLocked()` and return `not_found` for hidden records.
-5. Keep queries bounded (`perPage`, line windows, byte caps). Note/board reads keep the 8-second signal; task reads and writes use the workspace client's 30-second default.
+5. Keep queries bounded (`perPage`, line windows, byte caps). Note/board reads keep the 8-second signal; the pre-read/pre-write live-room flush gets its own bounded signal; task reads and writes use the workspace client's 30-second default.
 6. Register read tools in `readTools`; register create/update/delete tools only in the `mode === "edit"` branch of `createChatTools()`. Ask mode must never receive a write tool. Delete tools create pending cards; do not add a direct delete path.
 7. A strict `noteScope` is a separate registry: `read_note` only at view/comment, plus `append_note`/`edit_note`/`update_note` at edit. Do not filter the workspace tool set; remove the other tools. Force `ask` below edit access and keep the bound note server-selected.
-8. Route chat writes through `src/api/workspace/` with `actor: "ai"`. Note edits need a revision/`versionToken`, and section edits must use `src/lib/markdown/sections.ts`; do not add whole-note replacement.
+8. Route chat writes through `src/api/workspace/` with `actor: "ai"`. Note edits need a revision/`versionToken`, and section edits must use `src/lib/markdown/sections.ts`; do not add whole-note replacement. A section edit needs the target section and an exact anchor, not a full-note read; require `complete: true` only for a whole-note summary, claim, or whole-note edit.
 9. Record applied writes in `chat_edits` and emit an `edit` event. Do not fail a completed workspace write because the audit row failed.
 10. If you add or rename a chat tool, update `CHAT_READ_TOOL_NAMES` or `CHAT_WRITE_TOOL_NAMES` in `src/api/chat/tool-names.ts` and the label map in `src/components/chat/ChatToolStrip.tsx`; persisted activity is allowlisted. MCP tool names are not persisted.
 11. Persist only `{ name, status, error? }` for chat tool activity; `error` is bounded failure text, never raw inputs, outputs, or note text.
 12. Keep `stopWhen(stepCountIs(8))` unless you have measured the read/write fan-out; the default stops after one step.
 13. Handle missing provider/model configuration with actionable errors.
-14. Add or update `tests/api/chat-tools.test.ts`, `tests/api/chat-write-tools.test.ts`, `tests/api/chat-group.test.ts`, and `tests/api/chat.test.ts` for chat; use `tests/api/mcp.test.ts` for MCP. Verify with `DEBUG=true` when diagnosing provider failures.
+14. Add or update `tests/api/chat-tools.test.ts`, `tests/api/chat-write-tools.test.ts`, `tests/api/chat-group.test.ts`, and `tests/api/chat.test.ts` for chat; use `tests/api/mcp.test.ts` for MCP. Read-completeness changes also update `tests/unit/chat-input-schemas.test.ts`; section-anchor error changes update `tests/unit/markdown-sections.test.ts` for the failing anchor/index metadata, and `tests/api/chat-write-tools.test.ts` for the generic message plus model-only candidates. The `closestTextLines` fallback has no direct test. Verify with `DEBUG=true` when diagnosing provider failures.
 
 #### Add a frontend feature
 

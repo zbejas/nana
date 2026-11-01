@@ -181,9 +181,11 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
 
         read_note: tool({
             description:
-                "Read a bounded Markdown line window from one note id returned by list_notes. " +
-                "In a shared note chat, only the attached note is available. " +
-                "Use offset/nextOffset to page through long notes. Never guess note ids. " +
+                "Read one note id returned by list_notes. Omitting limit returns the whole note when it fits. " +
+                "`complete` is true only when this single result contains the whole note from line 1 with no omitted, clipped, or byte-capped text. " +
+                "If `hasMore` is true, follow `nextOffset`; if the notice reports clipping or the byte cap, the rest cannot be read. " +
+                "A section edit needs the target section and an exact anchor, not always a full read. Never infer omitted lines. " +
+                "In a shared note chat, only the attached note is available. Never guess note ids. " +
                 "The result includes `revision` and `versionToken`; pass either back as expectedRevision when editing.",
             inputSchema: readNoteInputSchema,
             execute: instrument<ReadNoteInput, Awaited<ReturnType<typeof readNote>>>(
@@ -294,18 +296,19 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
                 inputSchema: appendNoteInputSchema,
                 execute: instrument<AppendNoteInput, Awaited<ReturnType<typeof appendNoteTool>>>(
                     "append_note",
-                    (input) => appendNoteTool(write, input),
+                    (input, signal) => appendNoteTool(write, input, signal),
                 ),
             }),
             edit_note: tool({
                 description:
                     "Edit the shared note by section. Read it first, then pass the current revision (or versionToken) and one or more " +
                     "section operations. A missing or ambiguous heading aborts the whole edit; re-read and retry. " +
+                    "If the failure includes candidates, copy one candidate's exact text. " +
                     "Untouched sections are preserved. Do not replace whole documents.",
                 inputSchema: editNoteInputSchema,
                 execute: instrument<EditNoteInput, Awaited<ReturnType<typeof editNoteTool>>>(
                     "edit_note",
-                    (input) => editNoteTool(write, input),
+                    (input, signal) => editNoteTool(write, input, signal),
                 ),
             }),
             update_note: tool({
@@ -314,7 +317,7 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
                 inputSchema: updateNoteInputSchema,
                 execute: instrument<UpdateNoteInput, Awaited<ReturnType<typeof updateNoteTool>>>(
                     "update_note",
-                    (input) => updateNoteTool(write, input),
+                    (input, signal) => updateNoteTool(write, input, signal),
                 ),
             }),
         };
@@ -375,18 +378,19 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
             inputSchema: appendNoteInputSchema,
             execute: instrument<AppendNoteInput, Awaited<ReturnType<typeof appendNoteTool>>>(
                 "append_note",
-                (input) => appendNoteTool(write, input),
+                (input, signal) => appendNoteTool(write, input, signal),
             ),
         }),
         edit_note: tool({
             description:
                 "Edit a note by section. Read the note first, then pass the current revision (or versionToken) and one or more " +
                 "section operations. A missing or ambiguous heading aborts the whole edit; re-read and retry. " +
+                "If the failure includes candidates, copy one candidate's exact text. " +
                 "Untouched sections are preserved. Do not replace whole documents.",
             inputSchema: editNoteInputSchema,
             execute: instrument<EditNoteInput, Awaited<ReturnType<typeof editNoteTool>>>(
                 "edit_note",
-                (input) => editNoteTool(write, input),
+                (input, signal) => editNoteTool(write, input, signal),
             ),
         }),
         update_note: tool({
@@ -395,7 +399,7 @@ export function createChatTools(context: ToolContext, options: ChatToolOptions =
             inputSchema: updateNoteInputSchema,
             execute: instrument<UpdateNoteInput, Awaited<ReturnType<typeof updateNoteTool>>>(
                 "update_note",
-                (input) => updateNoteTool(write, input),
+                (input, signal) => updateNoteTool(write, input, signal),
             ),
         }),
         move_note: tool({

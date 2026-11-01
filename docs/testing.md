@@ -36,6 +36,7 @@ tests/
     factories.ts
     settings.ts
   unit/
+    ai-edit-apply.test.ts
     ai-visibility.test.ts
     api-key-scope.test.ts
     board-dates.test.ts
@@ -53,6 +54,7 @@ tests/
     document-utils.test.ts
     export-documents.test.ts
     folder-tree.test.ts
+    markdown-sections.test.ts
     public-board.test.ts
     sanitize.test.ts
     tasks-text.test.ts
@@ -266,12 +268,12 @@ Rules:
 | API key access/scope on REST and MCP, read-only tool filtering | `tests/api/api-keys.test.ts` + `tests/unit/api-key-scope.test.ts` |
 | Chat route, mode/context validation, provider validation, conversation persistence, status | `tests/api/chat.test.ts` |
 | Chat attachment upload, magic-byte/type checks, limits, ownership, drafts, binding | `tests/api/chat-attachments.test.ts` + `tests/unit/chat-attachments.test.ts` |
-| Chat read tool, bounds, or scoping | `tests/api/chat-tools.test.ts` + `tests/unit/chat-*` |
+| Chat read tool, completeness, bounds, offsets, or scoping | `tests/api/chat-tools.test.ts` + `tests/unit/chat-input-schemas.test.ts` |
 | Chat write tool, revision, edit card, or undo | `tests/api/chat-write-tools.test.ts` + `tests/unit/chat-version-token.test.ts` |
 | Shared-note status/access, group conversation, sender labels, paused history | `tests/api/chat-group.test.ts` |
 | Shared-note bound-note tools and view/edit scope | `tests/api/chat-write-tools.test.ts` |
 | Shared-note group rules and unique note conversation | `tests/api/chat-group.test.ts` |
-| Live-room read flush, merge, metadata adoption, hard-error stop | `tests/api/collab-persistence.test.ts` + `tests/api/collaboration.test.ts` |
+| Live-room read flush, bounded flush signal, merge, metadata adoption, hard-error stop | `tests/api/collab-persistence.test.ts` + `tests/api/collaboration.test.ts` |
 | Bounded tool-error persistence and flattening | `tests/api/chat.test.ts` + `tests/unit/chat-tool-errors.test.ts` |
 | Chunked/named chat SSE encoding | `tests/unit/chat-stream.test.ts` |
 | Tab-resume reconnect threshold and no reload | No dedicated file yet; add to `tests/unit/collab-session.test.ts` |
@@ -304,7 +306,7 @@ Rules:
 | Area | Assertions |
 | --- | --- |
 | `list_notes` | Author scoping; metadata without `content`; paging and sorting; tag and title search; filter injection is inert; private notes and private-folder subtrees excluded from items and totals; missing token → `unauthorized`; invalid token returns an empty guest page without leaking; malformed folder id → `invalid_input`. |
-| `read_note` | Line paging and `nextOffset`; long-line clipping and `truncated`; tail read has `hasMore: false`; another user's note → generic `not_found`; private note and notes in a private subtree → `not_found`; malformed ids and out-of-range windows. |
+| `read_note` | Whole-note default: `complete: true`, zero `omittedBefore`/`omittedAfter`/`omittedLines`, and no `notice`; an oversized note reports `complete: false`, `omittedAfter`, `omittedLines`, `nextOffset`, and a continuation notice; a window from line 2 reports both `omittedBefore` and `omittedAfter`; a tail-only read has `hasMore: false` but is still incomplete and points back to `offset=1`; long-line clipping sets `truncated: true`, names the per-line cap, and marks the clipped line unsafe; a byte-capped note sets `tailUnavailable: true` and says no later window has the tail; an offset past the last line is `invalid_input` with the actual line count; another user's note → generic `not_found`; private note and notes in a private subtree → `not_found`; malformed ids and out-of-range windows (`limit` > 2,000). |
 | `list_boards` | Active boards by default; exact open/done/total and per-column counts; trashed opt-in; paging; another user's boards never appear; private boards and boards in private folders excluded from items and totals. |
 | `read_board` | Column paging; whole-board order; task summaries expose `dueDate`, `labels`, `noteId`, sanitized excerpt; another user's board and trashed boards → `not_found`; private boards and boards in private folders → `not_found`; malformed ids and columns. |
 
@@ -322,6 +324,8 @@ Rules:
 
 The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), named/legacy SSE encoding (`tests/unit/chat-stream.test.ts`), route context derivation (`tests/unit/chat-context.test.ts`), revision tokens (`tests/unit/chat-version-token.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), API key token/scope helpers (`tests/unit/api-key-scope.test.ts`), and the git version store (`tests/unit/versioning-store.test.ts`).
 
+The missing-anchor error returns up to three closest source lines for the failing operation's anchor only as a structured `candidates` array; its `message` stays generic. `tests/unit/markdown-sections.test.ts` asserts that the error carries the failing anchor and operation index; the `closestTextLines` fallback itself has no direct test assertion. `tests/api/chat-write-tools.test.ts` asserts the generic `invalid_input` message and candidate presence.
+
 Shared-note chat has a dedicated integration file, `tests/api/chat-group.test.ts`:
 
 | Area | Assertions covered |
@@ -335,11 +339,13 @@ Shared-note chat has a dedicated integration file, `tests/api/chat-group.test.ts
 
 `tests/api/chat-write-tools.test.ts` adds the registry and scope assertions: strict `view` registers only `read_note`; strict `edit` registers `read_note` plus the three note write tools and no workspace tools; a grantee can read/edit the bound note, while a view scope or a different note id returns `not_found`. `tests/api/chat.test.ts` verifies bounded tool-error persistence, and `tests/unit/chat-tool-errors.test.ts` covers flattening and the 200-character bound.
 
-`tests/api/collab-persistence.test.ts` covers the room merge, metadata-only revision adoption, hard persistence error, explicit flush, and the new `read_note` pre-read flush. These gaps remain on this branch:
+`tests/api/collab-persistence.test.ts` covers the room merge, metadata-only revision adoption, hard persistence error, explicit flush, and the `read_note` pre-read flush. The flush path now accepts a caller abort signal, combined with each room request timeout; the integration file still covers the no-signal scheduled and explicit paths. These gaps remain on this branch:
 
 | Gap | Intended assertion |
 | --- | --- |
 | Unauthorized read flush | A caller without access to a live note cannot make `read_note` flush that room; the tool returns `not_found` before the flush. |
+| Bounded flush signal | A caller abort during the room PATCH/lookup path returns an `unavailable`/conflict-style tool failure instead of a stale read; the scheduled no-signal flush is unchanged. |
+| Non-clean explicit flush | The Save version flush route returns `409` for `dirty`/`saving` as well as `conflict`/`error`; only a `clean` snapshot is accepted. |
 | AI write adoption | A chat/tool write against a note with a live room merges concurrent local text, applies one server-origin diff, and returns the external/final revision; the editor does not re-apply the fetched body. |
 | Tab resume | `CollabSession` reconnects after 30 seconds hidden, keeps shorter hides connected, uses the `pagehide`/`pageshow` path, and `App.tsx` has no inactivity `window.location.reload()`. |
 

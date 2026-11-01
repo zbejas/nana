@@ -528,6 +528,18 @@ describe("edit_note", () => {
         if (missing.ok) return;
         expect(missing.code).toBe("invalid_input");
 
+        const nearMiss = await editNoteTool(writeContext(), {
+            noteId: notes.editable.id,
+            expectedRevision: before.revision,
+            operations: [{ op: "replace_text", find: "Intro  line.", markdown: "Replacement." }],
+            summary: "Near miss",
+        });
+        expect(nearMiss.ok).toBe(false);
+        if (nearMiss.ok) return;
+        expect(nearMiss.code).toBe("invalid_input");
+        expect(nearMiss.message).not.toContain("Intro line.");
+        expect(nearMiss.candidates?.map((candidate) => candidate.text)).toContain("Intro line.");
+
         const ambiguousNote = await createNote(owner, {
             title: "Ambiguous",
             content: "# Top\n\n## Same\n\nA\n\n## Same\n\nB",

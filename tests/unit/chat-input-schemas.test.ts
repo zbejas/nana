@@ -24,18 +24,22 @@ describe("listNotesInputSchema", () => {
 });
 
 describe("readNoteInputSchema", () => {
-    test("applies the default line window", () => {
+    test("omits the line cap by default so the note is read whole", () => {
         expect(readNoteInputSchema.parse({ noteId: "abc123" })).toEqual({
             noteId: "abc123",
             offset: 1,
-            limit: 300,
         });
     });
 
     test("rejects an empty id and out-of-range bounds", () => {
         expect(readNoteInputSchema.safeParse({ noteId: "" }).success).toBe(false);
         expect(readNoteInputSchema.safeParse({ noteId: "a", offset: 0 }).success).toBe(false);
-        expect(readNoteInputSchema.safeParse({ noteId: "a", limit: 601 }).success).toBe(false);
+        expect(readNoteInputSchema.safeParse({ noteId: "a", limit: 2_001 }).success).toBe(false);
+        expect(readNoteInputSchema.parse({ noteId: "a", limit: 601 }).limit).toBe(601);
+    });
+
+    test("does not cap offset in the schema; the note length is checked after reading", () => {
+        expect(readNoteInputSchema.parse({ noteId: "a", offset: 150_000 }).offset).toBe(150_000);
     });
 });
 

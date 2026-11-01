@@ -148,7 +148,9 @@ export const collabApi = new Elysia({ name: "nana-collab" })
         const room = getRoom(params.id);
         if (!room) return jsonError(409, "Reconnect to the live session.");
         const result = await room.flushDocument();
-        if (result.persistence === "conflict" || result.persistence === "error") {
+        // A dirty/saving room has not reached a durable revision yet. Returning
+        // its snapshot would let Save version commit stale content.
+        if (result.persistence !== "clean") {
             return jsonError(409, "The latest changes could not be saved. Try again.");
         }
         return Response.json(result);

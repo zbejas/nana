@@ -165,6 +165,32 @@ function jsonHeaders(token: string): HeadersInit {
     };
 }
 
+/** Combine a caller's abort signal with the per-request timeout. */
+function requestSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
+    const timeout = AbortSignal.timeout(timeoutMs);
+    return signal ? AbortSignal.any([timeout, signal]) : timeout;
+}
+
+/** Wait for an in-flight flush, or return early when the caller's signal aborts. */
+async function waitForFlush(task: Promise<void>, signal?: AbortSignal): Promise<void> {
+    if (!signal) {
+        await task;
+        return;
+    }
+    if (signal.aborted) return;
+
+    let onAbort: (() => void) | undefined;
+    const aborted = new Promise<void>((resolve) => {
+        onAbort = resolve;
+        signal.addEventListener("abort", onAbort, { once: true });
+    });
+    try {
+        await Promise.race([task, aborted]);
+    } finally {
+        if (onAbort) signal.removeEventListener("abort", onAbort);
+    }
+}
+
 async function readErrorBody(response: Response): Promise<Record<string, unknown>> {
     try {
         const body = (await response.json()) as unknown;
@@ -381,12 +407,13 @@ export class CollabRoom {
     }
 
     /**
-     * Flush pending content and return the durable snapshot. Save-version uses
-     * this so a git commit cannot snapshot the record before the room's last
-     * keystrokes reach PocketBase.
+     * Flush pending content and return the current room snapshot. Callers that
+     * need a durable revision must reject a result whose `persistence` is not
+     * `"clean"`; Save version uses this so a git commit cannot snapshot the
+     * record before the room's last keystrokes reach PocketBase.
      */
-    async flushDocument(): Promise<CollabRoomFlushResult> {
-        await this.flush();
+    async flushDocument(signal?: AbortSignal): Promise<CollabRoomFlushResult> {
+        await this.flush(signal);
         return {
             content: persistedContent(this.text.toString()),
             revision: this.revision,
@@ -404,7 +431,11 @@ export class CollabRoom {
      * second write; otherwise the merged body is persisted against that
      * revision before this returns.
      */
-    async applyExternalEdit(content: string, revision: number): Promise<number> {
+    async applyExternalEdit(
+        content: string,
+        revision: number,
+        signal?: AbortSignal,
+    ): Promise<number> {
         if (this.disposed) {
             return Number.isFinite(revision) ? revision : this.revision;
         }
@@ -452,9 +483,11 @@ export class CollabRoom {
         }
 
         // Concurrent local text remains. Persist it now against the external
-        // revision so the next tool call sees one coherent revision.
+        // revision so the next tool call sees one coherent revision. An
+        // aborted adoption leaves the room dirty for its scheduled flush; the
+        // completed external write still succeeds.
         this.markDirty();
-        await this.flush();
+        await this.flush(signal);
         return this.revision;
     }
 
@@ -482,22 +515,23 @@ export class CollabRoom {
      * Drain pending content. Used for the last disconnect and shutdown; timers
      * use the single in-flight write path instead of starting a second one.
      */
-    async flush(): Promise<void> {
+    async flush(signal?: AbortSignal): Promise<void> {
         this.clearFlushTimers();
         if (this.disposed || !this.needsPersist) return;
 
         let attempts = 0;
         while (
             !this.disposed
+            && !signal?.aborted
             && this.needsPersist
             && this.persistence !== "conflict"
             && this.persistence !== "error"
             && attempts < MAX_RECONCILE_ATTEMPTS
         ) {
             if (this.flushing) {
-                await this.flushing;
+                await waitForFlush(this.flushing, signal);
             } else {
-                await this.runFlush();
+                await this.runFlush(signal);
             }
             attempts += 1;
         }
@@ -569,7 +603,7 @@ export class CollabRoom {
         });
     }
 
-    private async runFlush(): Promise<void> {
+    private async runFlush(signal?: AbortSignal): Promise<void> {
         if (this.flushing) {
             await this.flushing;
             return;
@@ -583,7 +617,7 @@ export class CollabRoom {
             return;
         }
 
-        const task = this.persistOnce();
+        const task = this.persistOnce(signal);
         this.flushing = task;
         try {
             await task;
@@ -592,7 +626,7 @@ export class CollabRoom {
         }
     }
 
-    private async persistOnce(): Promise<void> {
+    private async persistOnce(signal?: AbortSignal): Promise<void> {
         const token = this.persistenceToken;
         if (!token) {
             this.failPersistence("The live session cannot save this note.");
@@ -613,9 +647,17 @@ export class CollabRoom {
         let lastServerMarkdown: string | undefined;
 
         for (let attempt = 0; attempt < MAX_RECONCILE_ATTEMPTS; attempt += 1) {
+            if (signal?.aborted) {
+                // The caller's tool window ended. Keep the body pending so the
+                // next no-signal scheduled flush can still save it; the caller
+                // sees a non-clean room and must not read stale text.
+                this.setPersistence("dirty");
+                return;
+            }
+
             content = persistedContent(this.text.toString());
             const seqAtWrite = this.seq;
-            const result = await this.patchDocument(token, content, this.revision);
+            const result = await this.patchDocument(token, content, this.revision, signal);
 
             if (result.ok) {
                 this.revision = result.revision;
@@ -627,12 +669,20 @@ export class CollabRoom {
             }
 
             if (!result.conflict) {
+                if (signal?.aborted) {
+                    this.setPersistence("dirty");
+                    return;
+                }
                 this.failPersistence(result.message);
                 return;
             }
 
-            const latest = await this.loadLatest(token);
+            const latest = await this.loadLatest(token, signal);
             if (!latest) {
+                if (signal?.aborted) {
+                    this.setPersistence("dirty");
+                    return;
+                }
                 this.reportConflict(
                     "revision",
                     "The note changed outside this live session and could not be reconciled.",
@@ -687,6 +737,7 @@ export class CollabRoom {
         token: string,
         content: string,
         revision: number,
+        signal?: AbortSignal,
     ): Promise<PatchResult> {
         let response: Response;
         try {
@@ -694,13 +745,14 @@ export class CollabRoom {
                 method: "PATCH",
                 headers: jsonHeaders(token),
                 body: JSON.stringify({ content, revision }),
-                signal: AbortSignal.timeout(PATCH_TIMEOUT_MS),
+                signal: requestSignal(PATCH_TIMEOUT_MS, signal),
             });
         } catch (error) {
+            const name = error instanceof Error ? error.name : "";
             return {
                 ok: false,
                 conflict: false,
-                message: error instanceof Error && error.name === "TimeoutError"
+                message: name === "TimeoutError" || name === "AbortError"
                     ? "Saving the note timed out. Your changes are still here."
                     : "The workspace is unavailable right now. Your changes are still here.",
             };
@@ -733,14 +785,17 @@ export class CollabRoom {
         };
     }
 
-    private async loadLatest(token: string): Promise<LatestDocument | null> {
+    private async loadLatest(
+        token: string,
+        signal?: AbortSignal,
+    ): Promise<LatestDocument | null> {
         try {
             const response = await fetch(recordPath(this.documentId), {
                 headers: {
                     Authorization: token,
                     Accept: "application/json",
                 },
-                signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+                signal: requestSignal(LOOKUP_TIMEOUT_MS, signal),
             });
             if (!response.ok) return null;
             const record = (await response.json()) as Record<string, unknown>;

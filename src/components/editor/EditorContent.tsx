@@ -11,9 +11,16 @@ import type { Collaborator } from '../../lib/collaboration/types';
 
 export interface EditorAiEdit {
   id: string;
+  /** Note this flash belongs to; a late event may not paint on another note. */
+  targetId: string;
   previousMarkdown: string;
   markdown: string;
   sections: AiChangedSection[];
+  /**
+   * false when a live room already owns the body. The editor paints the diff
+   * decorations only and never replaces the document.
+   */
+  replace: boolean;
 }
 
 interface EditorContentProps {
@@ -55,7 +62,7 @@ export function EditorContent({
       normalizeMarkdown(aiEdit.previousMarkdown),
       normalizeMarkdown(aiEdit.markdown),
     );
-    return changes.length > 0 ? { id: aiEdit.id, changes } : null;
+    return changes.length > 0 ? { id: aiEdit.id, markdown: normalizeMarkdown(aiEdit.markdown), changes } : null;
   }, [aiEdit]);
 
   return (

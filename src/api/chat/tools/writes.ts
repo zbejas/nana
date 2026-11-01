@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { sanitizeHtml } from "../../../lib/sanitize";
 import { createLogger } from "../../../lib/logger";
-import { applySectionEdits, MarkdownSectionError, type AppliedSectionEdit, type MarkdownEditOperation } from "../../../lib/markdown/sections";
+import { applySectionEdits, closestTextLines, MarkdownSectionError, type AppliedSectionEdit, type MarkdownEditOperation } from "../../../lib/markdown/sections";
 import { pbGet, queryString, type ToolContext } from "../../pocketbase/client";
 import { loadAiVisibility, noteIsLocked } from "../../workspace/privacy";
 import { adoptLiveNoteContent, adoptLiveNoteRevision, flushLiveNoteBeforeExternalWrite } from "../../workspace/live";
@@ -19,7 +19,7 @@ import type { FolderDto, TaskDto } from "../../workspace/types";
 import { failureFromError } from "./errors";
 import { recordChatEdit } from "../edits";
 import type { ChatRunRecorder } from "./recorder";
-import { isValidRecordId, truncate } from "./text";
+import { createToolSignal, isValidRecordId, truncate } from "./text";
 import { noteVersionToken, revisionMatches } from "./version";
 import type {
     ChatEditChanges,
@@ -360,6 +360,7 @@ async function loadEditableNote(
     context: ToolContext,
     noteId: string,
     noteScope?: ChatNoteScope,
+    abortSignal?: AbortSignal,
 ): Promise<EditableNote | ToolFailure> {
     if (!isValidRecordId(noteId)) {
         return { ok: false, code: "invalid_input", message: "That note id is not valid." };
@@ -377,7 +378,7 @@ async function loadEditableNote(
     const accessPath = `/api/collections/documents/records/${encodeURIComponent(noteId)}${queryString({
         fields: "id,author,is_private,folder,deleted_at",
     })}`;
-    const accessResult = await pbGet<PBEditableNote>(accessPath, context);
+    const accessResult = await pbGet<PBEditableNote>(accessPath, context, createToolSignal(abortSignal));
     if (!accessResult.ok) return accessResult;
 
     const accessRecord = accessResult;
@@ -392,7 +393,7 @@ async function loadEditableNote(
     }
 
     if (owner) {
-        const visibility = await loadAiVisibility(context);
+        const visibility = await loadAiVisibility(context, createToolSignal(abortSignal));
         if (!visibility.ok) return visibility;
         if (noteIsLocked(visibility, accessRecord)) {
             return { ok: false, code: "not_found", message: "That note was not found." };
@@ -401,8 +402,9 @@ async function loadEditableNote(
 
     // Chat edit tools read the body and revision before writing. Flush the
     // live room now that access is proven so a pending keystroke is included.
+    // The flush gets its own bounded signal; the body read below gets another.
     try {
-        await flushLiveNoteBeforeExternalWrite(noteId);
+        await flushLiveNoteBeforeExternalWrite(noteId, createToolSignal(abortSignal));
     } catch (error) {
         return failureFromError(error);
     }
@@ -410,7 +412,7 @@ async function loadEditableNote(
     const path = `/api/collections/documents/records/${encodeURIComponent(noteId)}${queryString({
         fields: "id,title,content,tags,folder,is_private,updated,revision,author",
     })}`;
-    const result = await pbGet<PBEditableNote>(path, context);
+    const result = await pbGet<PBEditableNote>(path, context, createToolSignal(abortSignal));
     if (!result.ok) return result;
 
     const record = result;
@@ -678,6 +680,7 @@ export async function moveFolderTool(
 export async function appendNoteTool(
     write: WriteContext,
     input: AppendNoteInput | unknown,
+    abortSignal?: AbortSignal,
 ): Promise<ChatWriteResult> {
     const parsed = appendNoteInputSchema.safeParse(input);
     if (!parsed.success) {
@@ -688,7 +691,7 @@ export async function appendNoteTool(
         return { ok: false, code: "invalid_input", message: "Nothing to append." };
     }
 
-    const note = await loadEditableNote(write.context, parsed.data.noteId, write.noteScope);
+    const note = await loadEditableNote(write.context, parsed.data.noteId, write.noteScope, abortSignal);
     if ("ok" in note) return note;
     if (!revisionMatches(parsed.data.expectedRevision, note)) return staleRevisionFailure();
 
@@ -711,7 +714,12 @@ export async function appendNoteTool(
             },
         );
 
-        const finalRevision = await adoptLiveNoteContent(note.id, applied.markdown, result.revision);
+        const finalRevision = await adoptLiveNoteContent(
+            note.id,
+            applied.markdown,
+            result.revision,
+            abortSignal,
+        );
         const tokenStillCurrent = finalRevision === result.revision;
         const summary = parsed.data.summary?.trim()
             || `Added a section at the end of “${truncate(note.title, 100)}”.`;
@@ -753,13 +761,14 @@ export async function appendNoteTool(
 export async function editNoteTool(
     write: WriteContext,
     input: EditNoteInput | unknown,
+    abortSignal?: AbortSignal,
 ): Promise<ChatWriteResult> {
     const parsed = editNoteInputSchema.safeParse(input);
     if (!parsed.success) {
         return { ok: false, code: "invalid_input", message: "The edit request was not valid." };
     }
 
-    const note = await loadEditableNote(write.context, parsed.data.noteId, write.noteScope);
+    const note = await loadEditableNote(write.context, parsed.data.noteId, write.noteScope, abortSignal);
     if ("ok" in note) return note;
     if (!revisionMatches(parsed.data.expectedRevision, note)) return staleRevisionFailure();
 
@@ -774,10 +783,22 @@ export async function editNoteTool(
         applied = applySectionEdits(note.content, operations);
     } catch (error) {
         if (error instanceof MarkdownSectionError) {
+            // Keep note text out of `message`: it is truncated and persisted as
+            // tool activity. Retry suggestions travel as model-only candidates.
+            const message = error.code === "ambiguous"
+                ? "That heading or text anchor is ambiguous. Read the note again and retry with an exact heading path or unique text."
+                : error.code === "invalid"
+                    ? "That section edit is not valid. Read the note again and retry with an exact heading or unique text."
+                    : "The heading or text anchor was not found. Read the note again and retry with an exact heading or unique text.";
+            const candidates = error.code === "not_found" && error.anchor
+                // Only the failing anchor is scanned; never every operation.
+                ? closestTextLines(note.content, error.anchor, 3)
+                : [];
             return {
                 ok: false,
                 code: error.code === "ambiguous" ? "conflict" : "invalid_input",
-                message: `${error.message} Read the note again and retry with an exact heading or unique text.`,
+                message,
+                ...(candidates.length > 0 ? { candidates } : {}),
             };
         }
         return { ok: false, code: "invalid_input", message: "Those section edits could not be applied." };
@@ -797,7 +818,12 @@ export async function editNoteTool(
             },
         );
 
-        const finalRevision = await adoptLiveNoteContent(note.id, applied.markdown, result.revision);
+        const finalRevision = await adoptLiveNoteContent(
+            note.id,
+            applied.markdown,
+            result.revision,
+            abortSignal,
+        );
         const tokenStillCurrent = finalRevision === result.revision;
         const summary = parsed.data.summary.trim();
         const changed: ChatEditChanges = { sections: sectionsFromApplied(applied.changed) };
@@ -835,13 +861,14 @@ export async function editNoteTool(
 export async function updateNoteTool(
     write: WriteContext,
     input: UpdateNoteInput | unknown,
+    abortSignal?: AbortSignal,
 ): Promise<ChatWriteResult> {
     const parsed = updateNoteInputSchema.safeParse(input);
     if (!parsed.success) {
         return { ok: false, code: "invalid_input", message: "Provide a title or tags to update." };
     }
 
-    const note = await loadEditableNote(write.context, parsed.data.noteId, write.noteScope);
+    const note = await loadEditableNote(write.context, parsed.data.noteId, write.noteScope, abortSignal);
     if ("ok" in note) return note;
     if (!revisionMatches(parsed.data.expectedRevision, note)) return staleRevisionFailure();
 

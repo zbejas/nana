@@ -21,6 +21,8 @@ export interface NanaSplitMarkdownEditorProps {
     previousMarkdown: string;
     markdown: string;
     sections: AiChangedSection[];
+    /** false when a live room already owns the body; paint only. */
+    replace?: boolean;
   } | null;
   aiDiff?: SourceAiDiff | null;
   collaborators?: Collaborator[];

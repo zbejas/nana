@@ -140,4 +140,21 @@ describe('applySectionEdits', () => {
     expect(result.markdown).toContain('## Risks\n\n### Schedule\n\nTight.');
     expect(result.markdown).toContain('## Next steps\n\nFollow up.');
   });
+
+  test('names the failing operation and its anchor', () => {
+    try {
+      applySectionEdits('# Alpha\n\nalpha beta\n\n# Gamma\n\ngamma delta', [
+        { op: 'replace_section', heading: 'Alpha', markdown: 'x' },
+        { op: 'replace_text', find: 'missing words', markdown: 'y' },
+      ]);
+      throw new Error('expected the edit to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(MarkdownSectionError);
+      const sectionError = error as MarkdownSectionError;
+      expect(sectionError.code).toBe('not_found');
+      expect(sectionError.anchor).toBe('missing words');
+      expect(sectionError.operationIndex).toBe(1);
+      expect(sectionError.operation).toBe('replace_text');
+    }
+  });
 });
