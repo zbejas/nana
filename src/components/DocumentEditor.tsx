@@ -5,6 +5,7 @@ import { EditorHeader } from './editor/EditorHeader';
 import { EditorTags } from './editor/EditorTags';
 import { EditorContent, type EditorAiEdit } from './editor/EditorContent';
 import { normalizeMarkdown } from './editor/milkdown/helpers';
+import { resolveAiEdit, type AiEditRoomStatus } from './editor/aiEditLifecycle';
 import { ContentSizeWarning } from './editor/ContentSizeWarning';
 import { Footer } from './Footer';
 import { useDocumentEditorState } from './editor/useDocumentEditorState';
@@ -34,7 +35,7 @@ export function DocumentEditor() {
     handleContentChange,
     applyPersistedContent,
     setSelectedDocument,
-    remoteContentChangeRef,
+    remoteContentTransitionsRef,
     tags,
     setTags,
     setGlobalUnsavedChanges,
@@ -78,6 +79,8 @@ export function DocumentEditor() {
     collaborators,
     collaborationPersistence,
     collaborationSession,
+    collaborationStatus,
+    collaborationRevision,
     handleEditorSelection,
     flushContent,
   } = useDocumentEditorState();
@@ -94,6 +97,9 @@ export function DocumentEditor() {
   const lastAiEditIdRef = useRef<string | null>(null);
   const currentDocumentIdRef = useRef(document?.id);
   const collaborationSessionRef = useRef(collaborationSession);
+  const collaborationStatusRef = useRef(collaborationStatus);
+  const collaborationRevisionRef = useRef(collaborationRevision);
+  const documentRevisionRef = useRef(document?.revision ?? 0);
   const aiEditPollTimerRef = useRef<number | null>(null);
   const aiEditRequestRef = useRef(0);
   const aiEditTargetIdRef = useRef<string | null>(null);
@@ -102,6 +108,9 @@ export function DocumentEditor() {
   contentRef.current = content;
   currentDocumentIdRef.current = document?.id;
   collaborationSessionRef.current = collaborationSession;
+  collaborationStatusRef.current = collaborationStatus;
+  collaborationRevisionRef.current = collaborationRevision;
+  documentRevisionRef.current = document?.revision ?? 0;
   showToastRef.current = showToast;
   applyPersistedContentRef.current = applyPersistedContent;
 
@@ -135,23 +144,18 @@ export function DocumentEditor() {
       // Compare against the current ref, not a closure: a fetch for a note the
       // user has just closed must not paint on the newly opened note.
       if (currentDocumentIdRef.current !== targetId) return;
-      if (lastAiEditIdRef.current === edit.id) return;
+      const previousHandledEventId = lastAiEditIdRef.current;
+      if (previousHandledEventId === edit.id) return;
       lastAiEditIdRef.current = edit.id;
 
       // A newer edit supersedes the previous edit's pending poll and flash.
+      // Each event carries its own before/after, so latest-wins never steals
+      // another edit's snapshot.
       aiEditRequestRef.current += 1;
       const requestId = aiEditRequestRef.current;
       aiEditTargetIdRef.current = targetId;
       clearAiEditPoll();
       setAiEdit(null);
-
-      const currentMarkdown = contentRef.current;
-      const remoteChange = remoteContentChangeRef.current;
-      const previousMarkdown = remoteChange
-        && normalizeMarkdown(currentMarkdown) === remoteChange.to
-        ? remoteChange.from
-        : currentMarkdown;
-      remoteContentChangeRef.current = null;
 
       const isCurrentRequest = () => (
         aiEditRequestRef.current === requestId
@@ -159,70 +163,85 @@ export function DocumentEditor() {
         && currentDocumentIdRef.current === targetId
       );
 
+      const connectionGraceMs = 1200;
+      const roomWaitMs = 2600;
+
       void getDocument(targetId)
         .then((fresh) => {
           if (!isCurrentRequest()) return;
           // The editor serializes normalized Markdown. Normalize the fetched
           // copy before putting it into state so the header and the editor do
           // not alternate between the raw and serialized byte counts.
-          const nextContent = normalizeMarkdown(fresh.content);
-          const liveContent = normalizeMarkdown(contentRef.current);
-          const eventBodyUnchanged = liveContent === normalizeMarkdown(previousMarkdown);
-          const bodyAlreadyApplied = liveContent === nextContent;
-          const liveSession = Boolean(collaborationSessionRef.current);
+          const fetchedMarkdown = normalizeMarkdown(fresh.content);
+          const startedAt = Date.now();
 
-          // Guard at fetch time for a note without a room: if a local
-          // keystroke landed while the request was in flight, keep it. The
-          // editor repeats this check against its own document before any
-          // replacement, so an older body cannot overwrite newer typing.
-          if (!liveSession && !eventBodyUnchanged && !bodyAlreadyApplied) return;
+          const attemptResolution = () => {
+            if (!isCurrentRequest()) return;
+            aiEditPollTimerRef.current = null;
 
-          setSelectedDocument({ ...fresh, content: nextContent });
-          setTitle(fresh.title);
-          setTags(fresh.tags || []);
-          setGlobalUnsavedChanges(false);
+            const session = collaborationSessionRef.current;
+            const connection = collaborationStatusRef.current;
+            const roomStatus: AiEditRoomStatus = connection === 'connected'
+              ? 'connected'
+              : connection === 'connecting'
+                ? 'connecting'
+                : session
+                  ? 'offline'
+                  : 'absent';
 
-          const aiEditValue: EditorAiEdit = {
-            id: edit.id,
-            targetId,
-            previousMarkdown,
-            markdown: nextContent,
-            replace: !liveSession,
-            sections: (edit.changed.sections ?? []).map((section) => ({
-              ...(section.heading ? { heading: section.heading } : {}),
-              ...(section.path ? { path: section.path } : {}),
-              ...(section.from !== undefined ? { from: section.from } : {}),
-              ...(section.to !== undefined ? { to: section.to } : {}),
-            })),
+            const resolution = resolveAiEdit({
+              eventId: edit.id,
+              targetId,
+              currentDocumentId: currentDocumentIdRef.current,
+              lastHandledEventId: previousHandledEventId,
+              contentChange: edit.contentChange ?? null,
+              contentChangeOmitted: edit.contentChangeOmitted === true,
+              currentMarkdown: contentRef.current,
+              fetchedMarkdown,
+              fetchedRevision: fresh.revision,
+              remoteTransitions: remoteContentTransitionsRef.current,
+              roomStatus,
+              currentRevision: Math.max(
+                documentRevisionRef.current,
+                collaborationRevisionRef.current,
+              ),
+              connectionWaitElapsed: Date.now() - startedAt >= connectionGraceMs,
+              roomWaitElapsed: Date.now() - startedAt >= roomWaitMs,
+            });
+
+            if (resolution.action === 'wait') {
+              aiEditPollTimerRef.current = window.setTimeout(attemptResolution, 50);
+              return;
+            }
+            if (resolution.action === 'skip') return;
+
+            // The event's after body is authoritative. A room connection never
+            // replaces room content here; only the no-room path applies it.
+            if (resolution.replace) {
+              applyPersistedContentRef.current(resolution.markdown);
+            }
+            setSelectedDocument({ ...fresh, content: resolution.markdown });
+            setTitle(fresh.title);
+            setTags(fresh.tags || []);
+            setGlobalUnsavedChanges(false);
+
+            const aiEditValue: EditorAiEdit = {
+              id: edit.id,
+              targetId,
+              previousMarkdown: resolution.previousMarkdown,
+              markdown: resolution.markdown,
+              replace: resolution.replace,
+              sections: (edit.changed.sections ?? []).map((section) => ({
+                ...(section.heading ? { heading: section.heading } : {}),
+                ...(section.path ? { path: section.path } : {}),
+                ...(section.from !== undefined ? { from: section.from } : {}),
+                ...(section.to !== undefined ? { to: section.to } : {}),
+              })),
+            };
+            setAiEdit(aiEditValue);
           };
 
-          // A live room owns content. Its broadcast (including the AI write
-          // adopted by the server) is the single source of truth; applying the
-          // fetched body here would duplicate the edit as a local Yjs change.
-          // Once the room has delivered that body, still pass the diff to the
-          // editors for the visual flash. If concurrent local text means the
-          // bodies differ, skip the animation rather than replacing the room.
-          // The chat event can outrun the room broadcast on a slow link; keep
-          // the flash eligible while the AI-editing state is still active.
-          if (liveSession) {
-            const startedAt = Date.now();
-            const showWhenSynced = () => {
-              aiEditPollTimerRef.current = null;
-              if (!isCurrentRequest()) return;
-              if (normalizeMarkdown(contentRef.current) === nextContent) {
-                setAiEdit(aiEditValue);
-                return;
-              }
-              if (Date.now() - startedAt < 2500) {
-                aiEditPollTimerRef.current = window.setTimeout(showWhenSynced, 50);
-              }
-            };
-            showWhenSynced();
-            return;
-          }
-
-          applyPersistedContentRef.current(nextContent);
-          setAiEdit(aiEditValue);
+          attemptResolution();
         })
         .catch((error: unknown) => {
           if (!isCurrentRequest()) return;
