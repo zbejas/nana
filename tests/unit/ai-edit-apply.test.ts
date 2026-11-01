@@ -7,7 +7,11 @@ import {
   planAiMarkdownApply,
   planWysiwygAiMarkdown,
 } from '../../src/components/editor/milkdown/aiEdits';
-import { aiDiffFallbackRanges, proseTextMap } from '../../src/components/editor/milkdown/createEditor';
+import {
+  aiDiffFallbackRanges,
+  prosePositionAt,
+  proseTextMap,
+} from '../../src/components/editor/milkdown/createEditor';
 
 const schema = new Schema({
   nodes: {
@@ -292,5 +296,43 @@ describe('planAiMarkdownApply', () => {
       matchesNext: false,
       matchesPrevious: false,
     })).toBe('skip');
+  });
+});
+
+describe('prose text position mapping', () => {
+  test('anchors a deletion at the start of the following paragraph, not after its first character', () => {
+    const before = docOf(
+      paragraph('KEEP-ALPHA'),
+      paragraph('REMOVE-ONE'),
+      paragraph('KEEP-BRAVO'),
+      paragraph('REMOVE-TWO'),
+      paragraph('Tail.'),
+    );
+    const after = docOf(paragraph('KEEP-ALPHA'), paragraph('KEEP-BRAVO'), paragraph('Tail.'));
+    const afterMap = proseTextMap(after);
+    const changes = diffText(proseTextMap(before).text, afterMap.text);
+
+    expect(changes.map((change) => change.text)).toEqual(['REMOVE-ONE', 'REMOVE-TWO']);
+
+    // The second deletion sits on the block separator in the new body, the
+    // first on the next paragraph's first text offset. Both must resolve to
+    // the paragraph start so the widget renders before its first letter.
+    const first = prosePositionAt(afterMap, changes[0]!.start);
+    const second = prosePositionAt(afterMap, changes[1]!.start);
+    expect(after.resolve(first).parent.textContent).toBe('KEEP-BRAVO');
+    expect(after.resolve(first).parentOffset).toBe(0);
+    expect(after.resolve(second).parent.textContent).toBe('Tail.');
+    expect(after.resolve(second).parentOffset).toBe(0);
+  });
+
+  test('keeps inline text offsets on their original characters', () => {
+    const doc = docOf(paragraph('alpha beta'), paragraph('gamma'));
+    const map = proseTextMap(doc);
+
+    expect(map.text).toBe('alpha beta\ngamma');
+    expect(prosePositionAt(map, 0)).toBe(1);
+    expect(prosePositionAt(map, 5)).toBe(6);
+    expect(prosePositionAt(map, 10)).toBe(13);
+    expect(doc.resolve(prosePositionAt(map, 5)).parentOffset).toBe(5);
   });
 });

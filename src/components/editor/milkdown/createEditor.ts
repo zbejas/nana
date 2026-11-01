@@ -283,9 +283,16 @@ export function proseTextMap(doc: ProseNode): ProseTextMap {
       return;
     }
 
+    // `pos` is the position before this node, so its content starts one
+    // position later. The document root has no opening token: its first child
+    // starts at 0. Using the opening-token formula for the root advanced every
+    // text segment by one position, which put an AI delete widget after the
+    // first character of the following block. Separators stay at the following
+    // block's content start, a valid textblock caret position.
+    const contentStart = node === doc ? pos : pos + 1;
     node.forEach((child, offset) => {
-      const childPos = pos + 1 + offset;
-      if (child.isBlock && offset > 0) addSeparator(childPos);
+      const childPos = contentStart + offset;
+      if (child.isBlock && offset > 0) addSeparator(childPos + 1);
       walk(child, childPos);
     });
   };
@@ -294,7 +301,8 @@ export function proseTextMap(doc: ProseNode): ProseTextMap {
   return { text, segments, textSegments };
 }
 
-function positionAt(map: ProseTextMap, offset: number): number {
+/** Map a plain-text offset from `proseTextMap` back to a ProseMirror position. */
+export function prosePositionAt(map: ProseTextMap, offset: number): number {
   if (map.segments.length === 0) return 0;
   for (let index = 0; index < map.segments.length; index += 1) {
     const segment = map.segments[index]!;
@@ -340,8 +348,8 @@ function collaboratorDecorations(
     const anchorText = markdownOffsetToTextOffset(segments, collaborator.anchor);
     const headText = markdownOffsetToTextOffset(segments, collaborator.head);
     if (anchorText === null || headText === null) continue;
-    const anchor = positionAt(map, anchorText);
-    const head = positionAt(map, headText);
+    const anchor = prosePositionAt(map, anchorText);
+    const head = prosePositionAt(map, headText);
     const from = Math.min(anchor, head);
     const to = Math.max(anchor, head);
 
@@ -429,8 +437,8 @@ function textHunkRects(
 
   for (const hunk of hunks) {
     try {
-      const start = positionAt(map, hunk.start);
-      const end = hunk.end > hunk.start ? positionAt(map, hunk.end) : start;
+      const start = prosePositionAt(map, hunk.start);
+      const end = hunk.end > hunk.start ? prosePositionAt(map, hunk.end) : start;
       const startCoords = view.coordsAtPos(start, 1);
       const endCoords = end > start ? view.coordsAtPos(end, -1) : startCoords;
       rects.push({
@@ -533,7 +541,7 @@ export function setAiDiffHighlights(
     span.textContent = formatAiDiffDeleteText(change.text).display;
     span.setAttribute('aria-hidden', 'true');
     decorations.push(Decoration.widget(
-      positionAt(map, change.start),
+      prosePositionAt(map, change.start),
       span,
       { side: -1 },
     ));
@@ -610,8 +618,8 @@ export function aiDiffFallbackRanges(
   const ranges = new Map<string, AiHighlightRange>();
   const limit = Math.max(1, maxRanges);
   outer: for (const span of spans) {
-    const startPosition = positionAt(map, span.start);
-    const endPosition = span.end > span.start ? positionAt(map, span.end) : startPosition;
+    const startPosition = prosePositionAt(map, span.start);
+    const endPosition = span.end > span.start ? prosePositionAt(map, span.end) : startPosition;
     const startIndex = blockIndexAt(startPosition);
     const endIndex = blockIndexAt(endPosition);
 
@@ -1064,7 +1072,7 @@ function prosePositionForMarkdownOffset(doc: ProseNode, markdown: string, offset
   const segments = alignMarkdownToText(markdown, map.text);
   const textOffset = markdownOffsetToTextOffset(segments, offset);
   if (textOffset === null) return null;
-  return positionAt(map, textOffset);
+  return prosePositionAt(map, textOffset);
 }
 
 /**
@@ -1487,8 +1495,8 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
       : markdownOffsetToTextOffset(segments, change.to);
 
     if (fromText !== null && toText !== null) {
-      const from = positionAt(textMap, fromText);
-      const to = positionAt(textMap, toText);
+      const from = prosePositionAt(textMap, fromText);
+      const to = prosePositionAt(textMap, toText);
       const $from = view.state.doc.resolve(from);
       const $to = view.state.doc.resolve(to);
       const sameTextblock = $from.parent.inlineContent
