@@ -52,7 +52,7 @@ import { useSidebarHandlers } from "./sidebar/useSidebarHandlers";
 import { useInlineInputState } from "./sidebar/useInlineInputState";
 import { useDialogState } from "./sidebar/useDialogState";
 import { useMobileState } from "./sidebar/useMobileState";
-import { useSwipeToClose } from "./sidebar/useSwipeToClose";
+import { useSwipeToClose } from "../lib/useSwipeToClose";
 import { CompactSidebar } from "./sidebar/CompactSidebar";
 import { useContextMenuState, useContextMenuHandlers } from "./file-folder-handling";
 import { SharePanel, useSharePanel } from "./sharing";
@@ -124,8 +124,13 @@ export function Sidebar({ isOverlay = false }: SidebarProps) {
   const { isMobile, prepareForNavigation } = useMobileState(isOpen, toggle);
   const swipe = useSwipeToClose({
     enabled: isOverlay && isOpen,
-    drawerRef: sidebarRef,
-    onClose: toggle,
+    panelRef: sidebarRef,
+    onClose: () => toggle(),
+    progressVariable: '--nana-sidebar-swipe-progress',
+    ignoreTarget: (target) => (
+      target instanceof Element
+      && Boolean(target.closest('[data-sidebar-resize-handle]'))
+    ),
   });
 
   const handlers = useSidebarHandlers({
@@ -297,7 +302,7 @@ export function Sidebar({ isOverlay = false }: SidebarProps) {
         role={isMobile && isOpen ? 'dialog' : undefined}
         aria-modal={isMobile && isOpen ? 'true' : undefined}
         tabIndex={isMobile ? -1 : undefined}
-        className={`nana-sidebar-drawer fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden border-r border-line bg-canvas-deep ${isMobile ? 'shadow-float' : ''}`}
+        className={`nana-sidebar-drawer nana-swipe-panel fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden border-r border-line bg-canvas-deep ${isMobile ? 'shadow-float' : ''}`}
         style={{
           width: isMobile ? 'calc(100% - 3rem)' : `${sidebarWidth}px`,
           transform: isOpen ? 'translateX(0)' : (isMobile ? 'translateX(-100%)' : `translateX(-${sidebarWidth}px)`),
