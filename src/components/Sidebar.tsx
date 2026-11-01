@@ -52,6 +52,7 @@ import { useSidebarHandlers } from "./sidebar/useSidebarHandlers";
 import { useInlineInputState } from "./sidebar/useInlineInputState";
 import { useDialogState } from "./sidebar/useDialogState";
 import { useMobileState } from "./sidebar/useMobileState";
+import { useSwipeToClose } from "./sidebar/useSwipeToClose";
 import { CompactSidebar } from "./sidebar/CompactSidebar";
 import { useContextMenuState, useContextMenuHandlers } from "./file-folder-handling";
 import { SharePanel, useSharePanel } from "./sharing";
@@ -78,7 +79,12 @@ function isNavActive(pathname: string, path: string): boolean {
   return pathname === path || pathname.startsWith(`${path}/`);
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  /** True below the docked breakpoint, where the full sidebar is an overlay. */
+  isOverlay?: boolean;
+}
+
+export function Sidebar({ isOverlay = false }: SidebarProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -115,7 +121,12 @@ export function Sidebar() {
   const setChatDockOpen = useSetAtom(chatDockOpenAtom);
   const chatRoute = location.pathname.startsWith('/chat');
 
-  const { isMobile, swipeStartX, setSwipeStartX, swipeCurrentX, setSwipeCurrentX, prepareForNavigation } = useMobileState(isOpen, toggle);
+  const { isMobile, prepareForNavigation } = useMobileState(isOpen, toggle);
+  const swipe = useSwipeToClose({
+    enabled: isOverlay && isOpen,
+    drawerRef: sidebarRef,
+    onClose: toggle,
+  });
 
   const handlers = useSidebarHandlers({
     editorActions: { select, startNew, saveCallback, reset },
@@ -286,42 +297,24 @@ export function Sidebar() {
         role={isMobile && isOpen ? 'dialog' : undefined}
         aria-modal={isMobile && isOpen ? 'true' : undefined}
         tabIndex={isMobile ? -1 : undefined}
-        className={`fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden border-r border-line bg-canvas-deep ${isMobile ? 'shadow-float' : ''}`}
+        className={`nana-sidebar-drawer fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden border-r border-line bg-canvas-deep ${isMobile ? 'shadow-float' : ''}`}
         style={{
           width: isMobile ? 'calc(100% - 3rem)' : `${sidebarWidth}px`,
           transform: isOpen ? 'translateX(0)' : (isMobile ? 'translateX(-100%)' : `translateX(-${sidebarWidth}px)`),
-          transition: swipeCurrentX !== null || isResizing ? 'none' : 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          transition: isResizing
+            ? 'none'
+            : `transform ${isOpen ? '260ms' : '200ms'} cubic-bezier(0.22, 1, 0.36, 1)`,
+          touchAction: isOverlay ? 'pan-y pinch-zoom' : undefined,
         }}
         aria-label="Workspace"
         aria-hidden={!isOpen}
         inert={!isOpen}
         onContextMenu={(event) => handleContextMenu(event, 'empty')}
-        onTouchStart={(event) => {
-          if (!isMobile || !isOpen) return;
-          const touch = event.touches[0];
-          if (touch) {
-            setSwipeStartX(touch.clientX);
-            setSwipeCurrentX(touch.clientX);
-          }
-        }}
-        onTouchMove={(event) => {
-          if (!isMobile || !isOpen || swipeStartX === null) return;
-          const touch = event.touches[0];
-          if (touch) {
-            setSwipeCurrentX(touch.clientX);
-            if (touch.clientX - swipeStartX < -50) event.preventDefault();
-          }
-        }}
-        onTouchEnd={() => {
-          if (!isMobile || !isOpen || swipeStartX === null || swipeCurrentX === null) {
-            setSwipeStartX(null);
-            setSwipeCurrentX(null);
-            return;
-          }
-          if (swipeCurrentX - swipeStartX < -100) toggle();
-          setSwipeStartX(null);
-          setSwipeCurrentX(null);
-        }}
+        onPointerDown={swipe.onPointerDown}
+        onPointerMove={swipe.onPointerMove}
+        onPointerUp={swipe.onPointerUp}
+        onPointerCancel={swipe.onPointerCancel}
+        onClickCapture={swipe.onClickCapture}
       >
         <div className="flex min-h-0 flex-1 flex-col" style={{ width: isMobile ? '100%' : `${sidebarWidth}px` }}>
           <div className="px-3 pb-2 pt-3">

@@ -2,8 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 export function useMobileState(isOpen: boolean, toggle: () => void) {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-    const [swipeStartX, setSwipeStartX] = useState<number | null>(null);
-    const [swipeCurrentX, setSwipeCurrentX] = useState<number | null>(null);
     const hasSidebarHistoryEntryRef = useRef(false);
     const isProgrammaticHistoryBackRef = useRef(false);
     const skipHistoryBackOnCloseRef = useRef(false);
@@ -68,10 +66,6 @@ export function useMobileState(isOpen: boolean, toggle: () => void) {
 
     return {
         isMobile,
-        swipeStartX,
-        setSwipeStartX,
-        swipeCurrentX,
-        setSwipeCurrentX,
         prepareForNavigation,
     };
 }
