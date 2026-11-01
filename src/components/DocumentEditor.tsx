@@ -19,7 +19,7 @@ import type { ChatUiEdit } from '../lib/chat/types';
 import { subscribeWorkspaceChanged } from '../lib/workspace-events';
 import { exportDocument } from '../lib/export';
 import { useToasts } from '../state/hooks';
-import { chatDockOpenAtom, editorFullscreenAtom, refreshTriggerAtom } from '../state/atoms';
+import { editorFullscreenAtom, refreshTriggerAtom } from '../state/atoms';
 
 export function DocumentEditor() {
   const {
@@ -85,7 +85,6 @@ export function DocumentEditor() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const setRefreshTrigger = useSetAtom(refreshTriggerAtom);
-  const setChatDockOpen = useSetAtom(chatDockOpenAtom);
   const [fullscreen, setFullscreen] = useAtom(editorFullscreenAtom);
   const { showToast } = useToasts();
   const sharePanel = useSharePanel();
@@ -425,8 +424,6 @@ export function DocumentEditor() {
             onShare={handleShare}
             onExport={handleExport}
             onDelete={handleDelete}
-            onAskNana={() => setChatDockOpen(true)}
-            askNanaDisabled={urlDocumentId === 'new' || Boolean(isReadOnly)}
             fullscreen={fullscreen}
             onToggleFullscreen={() => setFullscreen((value) => !value)}
           />

@@ -115,9 +115,10 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     if (visible) setFocusSignal((value) => value + 1);
   }, [visible]);
 
-  // The dock is a side panel on desktop but a full-screen surface on mobile.
-  // Persisting it across a route change on a phone hides the new page, so a
-  // real pathname change closes it. Mounting on an open route keeps it open.
+  // The dock is a right-side drawer on both desktop and mobile. On a phone it
+  // keeps the route context visible in the 3rem strip beside it. A real
+  // pathname change closes it so it cannot cover the newly opened route;
+  // mounting on an open route keeps it open.
   useEffect(() => {
     if (previousPathRef.current === location.pathname) return;
     previousPathRef.current = location.pathname;
@@ -127,8 +128,8 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     setHistorySheetOpen(false);
   }, [isMobile, location.pathname, setHistoryOpen, setOpen]);
 
-  // A full-width mobile dock and the sidebar overlay cannot both own the
-  // screen. Opening the dock dismisses the navigation drawer.
+  // The mobile chat drawer and the sidebar drawer cannot both own the screen.
+  // Opening the dock dismisses the navigation drawer.
   useEffect(() => {
     if (isMobile && visible && sidebarOpen) setSidebarOpen(false);
   }, [isMobile, visible, sidebarOpen, setSidebarOpen]);
@@ -220,8 +221,9 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [visible, setOpen]);
 
-  // On phones the dock covers the page. Keep Tab inside it; nested sheets,
-  // dialogs, and menus own their own focus while they are on top.
+  // On phones the dock is a modal drawer over the page. Keep Tab inside it;
+  // nested sheets, dialogs, and menus own their own focus while they are on
+  // top.
   useEffect(() => {
     if (!isMobile || !visible) return;
 
@@ -326,6 +328,13 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
 
   return (
     <>
+      {isMobile && visible && (
+        <div
+          className="fixed inset-0 z-[45] bg-scrim"
+          onClick={close}
+          aria-hidden="true"
+        />
+      )}
       <aside
         id="nana-chat-dock"
         ref={panelRef}
@@ -335,17 +344,14 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
         aria-hidden={!visible}
         inert={!visible}
         className={cn(
-          'fixed bottom-0 right-0 top-0 z-[46] flex max-w-full flex-col border-line bg-surface text-ink transition-[transform,width] duration-200 ease-out',
-          isMobile ? 'w-full' : 'border-l shadow-float',
+          'fixed bottom-0 right-0 top-0 z-[46] flex max-w-full flex-col border-l border-line bg-surface text-ink shadow-float transition-[transform,width] duration-200 ease-out',
           visible ? 'translate-x-0' : 'pointer-events-none invisible translate-x-full',
         )}
         data-state={visible ? 'open' : 'closed'}
         style={isMobile
           ? {
-            width: '100%',
-            ...(viewportHeight ? { height: `${viewportHeight}px`, bottom: 0 } : {
-              bottom: 'var(--mobile-navbar-height, calc(4.5rem + env(safe-area-inset-bottom)))',
-            }),
+            width: 'calc(100% - 3rem)',
+            ...(viewportHeight ? { height: `${viewportHeight}px`, bottom: 0 } : {}),
           }
           : { width: `${width}px`, ...(resizing ? { transition: 'none' } : {}) }}
       >
@@ -423,7 +429,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
               </div>
 
               <div className="px-3 pb-2.5 pt-2">
-                <div className="flex min-w-0 items-center gap-1.5">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1.5">
                   {noteId && (
                     <>
                       <ChatScopeTabs
@@ -436,7 +442,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
                         noteError={noteChatError}
                         className="shrink-0"
                       />
-                      <span className="h-5 w-px shrink-0 bg-line" aria-hidden="true" />
+                      <span className="hidden h-5 w-px shrink-0 bg-line sm:block" aria-hidden="true" />
                     </>
                   )}
                   {askOnly ? (
@@ -450,7 +456,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
                     <SegmentedControl
                       label="Chat mode"
                       size="sm"
-                      className="chat-mode-control"
+                      className="chat-mode-control max-w-full"
                       value={mode}
                       onChange={setChatMode}
                       options={[
@@ -493,6 +499,23 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
           </div>
         </div>
       </aside>
+
+      {isMobile && !visible && !isChatRoute && !sidebarOpen && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Chat"
+          aria-controls="nana-chat-dock"
+          aria-expanded={open}
+          className="fixed z-40 flex h-11 w-11 items-center justify-center rounded-full bg-signal-bright text-on-signal shadow-float transition-transform hover:bg-signal-bright-strong active:scale-95"
+          style={{
+            bottom: 'calc(var(--mobile-navbar-height, 4.5rem) + 0.75rem)',
+            right: '0.75rem',
+          }}
+        >
+          <ChatBubbleLeftRightIcon className="h-5 w-5" aria-hidden="true" />
+        </button>
+      )}
 
       {isMobile && (
         <Sheet
