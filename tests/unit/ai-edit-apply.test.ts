@@ -10,17 +10,17 @@ describe('planAiMarkdownApply', () => {
     })).toBe('decorate');
   });
 
-  test('never replaces a live room that moved away from the fetched body', () => {
+  test('waits for a live room that has not delivered the fetched body yet', () => {
     expect(planAiMarkdownApply({
       liveSession: true,
       matchesNext: false,
       matchesPrevious: true,
-    })).toBe('skip');
+    })).toBe('wait');
     expect(planAiMarkdownApply({
       liveSession: true,
       matchesNext: false,
       matchesPrevious: false,
-    })).toBe('skip');
+    })).toBe('wait');
   });
 
   test('honors an explicit decoration-only edit outside a room', () => {
@@ -30,6 +30,18 @@ describe('planAiMarkdownApply', () => {
       matchesNext: true,
       matchesPrevious: true,
     })).toBe('decorate');
+    expect(planAiMarkdownApply({
+      liveSession: false,
+      replace: false,
+      matchesNext: false,
+      matchesPrevious: false,
+    })).toBe('wait');
+    expect(planAiMarkdownApply({
+      liveSession: false,
+      replace: false,
+      matchesNext: false,
+      matchesPrevious: true,
+    })).toBe('wait');
   });
 
   test('replaces an unchanged note that still holds the event body', () => {

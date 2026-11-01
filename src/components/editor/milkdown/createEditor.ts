@@ -415,7 +415,7 @@ export function setAiDiffHighlights(
   view: EditorView,
   changes: readonly AiTextChange[],
   map: ProseTextMap,
-  duration = 450,
+  duration = 750,
 ): boolean {
   if (view.isDestroyed || changes.length === 0) return false;
 

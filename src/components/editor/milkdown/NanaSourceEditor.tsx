@@ -181,7 +181,7 @@ function applySourceDiff(view: EditorView, diff: SourceAiDiff): void {
     sourceAiTimers.delete(view);
     if (!view.dom.isConnected) return;
     view.dispatch({ effects: setSourceAiDiff.of(Decoration.none) });
-  }, 450);
+  }, 750);
   sourceAiTimers.set(view, timer);
 }
 
@@ -421,11 +421,35 @@ export function NanaSourceEditor({
     const view = viewRef.current;
     if (!view || !aiDiff || aiDiff.changes.length === 0) return;
     if (lastAiDiffRef.current === aiDiff.id) return;
-    // A live room can move the source after the flash was queued. Paint only
-    // when the pane still holds the body the offsets were computed for.
-    if (!isSameMarkdown(view.state.doc.toString(), aiDiff.markdown)) return;
-    lastAiDiffRef.current = aiDiff.id;
-    applySourceDiff(view, aiDiff);
+
+    const matches = () => isSameMarkdown(view.state.doc.toString(), aiDiff.markdown);
+    if (matches()) {
+      lastAiDiffRef.current = aiDiff.id;
+      applySourceDiff(view, aiDiff);
+      return;
+    }
+
+    // The room or the React content commit can still be delivering the AI
+    // body when the diff arrives. Wait briefly for this pane to reach it
+    // instead of dropping the flash; the interval only observes and never
+    // edits the document. A body that stays different (concurrent local text)
+    // paints nothing.
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      if (viewRef.current !== view) {
+        window.clearInterval(timer);
+        return;
+      }
+      if (matches()) {
+        window.clearInterval(timer);
+        lastAiDiffRef.current = aiDiff.id;
+        applySourceDiff(view, aiDiff);
+        return;
+      }
+      if (Date.now() - startedAt >= 1000) window.clearInterval(timer);
+    }, 80);
+
+    return () => window.clearInterval(timer);
   }, [aiDiff]);
 
   useEffect(() => {

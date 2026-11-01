@@ -387,8 +387,8 @@ export function useMilkdownEditor({
   // canonical observer applied it here. This path must never replace the
   // document: the room owns content, and a stale replacement would desync
   // ProseMirror from Yjs so the next local edit could delete newer text. When
-  // the room body still matches the fetched body, paint only; when concurrent
-  // text made it differ, skip the flash entirely.
+  // the room body already matches the fetched body, paint only; otherwise wait
+  // for the room/content commit to reach this editor, then paint against it.
   useEffect(() => {
     if (!ready || !aiEdit) return;
     if (lastAiEditRef.current === aiEdit.id) return;
@@ -407,20 +407,43 @@ export function useMilkdownEditor({
       matchesPrevious,
     });
 
-    // Mark the event handled even when it is skipped: the effect only re-runs
-    // for a different edit id, and a retry against newer local text would be
-    // wrong.
-    lastAiEditRef.current = aiEdit.id;
-
-    if (plan === 'skip') return;
+    if (plan === 'skip') {
+      lastAiEditRef.current = aiEdit.id;
+      return;
+    }
 
     if (plan === 'decorate') {
+      lastAiEditRef.current = aiEdit.id;
       applyAiMarkdown(editor, aiEdit.markdown, aiEdit.previousMarkdown, aiEdit.sections, {
         replace: false,
       });
       return;
     }
 
+    if (plan === 'wait') {
+      // The room or the React content commit can still be delivering the AI
+      // body when this effect runs. Observe without dispatching; paint only
+      // once this editor holds the exact fetched body.
+      const startedAt = Date.now();
+      const timer = window.setInterval(() => {
+        if (editorRef.current !== editor) {
+          window.clearInterval(timer);
+          return;
+        }
+        if (editorMatchesMarkdown(editor, aiEdit.markdown)) {
+          window.clearInterval(timer);
+          lastAiEditRef.current = aiEdit.id;
+          applyAiMarkdown(editor, aiEdit.markdown, aiEdit.previousMarkdown, aiEdit.sections, {
+            replace: false,
+          });
+          return;
+        }
+        if (Date.now() - startedAt >= 1000) window.clearInterval(timer);
+      }, 80);
+      return () => window.clearInterval(timer);
+    }
+
+    lastAiEditRef.current = aiEdit.id;
     const incoming = normalizeMarkdown(aiEdit.markdown);
     lastAppliedRef.current = incoming;
     lastEmittedRef.current = incoming;

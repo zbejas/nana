@@ -129,16 +129,25 @@ export interface ApplyAiMarkdownOptions {
   replace?: boolean;
 }
 
-/** How the rendered editor should treat one queued AI edit. */
-export type AiMarkdownApplyPlan = 'replace' | 'decorate' | 'skip';
+/**
+ * How the rendered editor should treat one queued AI edit.
+ *
+ * `wait` means paint when the room/content commit reaches the rendered editor,
+ * never replace the live body. It is safe to wait even when the editor
+ * currently matches neither body: the final paint still requires an exact
+ * `matchesNext`.
+ */
+export type AiMarkdownApplyPlan = 'replace' | 'decorate' | 'wait' | 'skip';
 
 /**
  * Decide whether an AI edit may touch the rendered editor.
  *
- * A live session is decoration-only: the room body must already match the
- * fetched body. Without a session the editor may still hold the event-time
- * body (normal path) or already show the fetched body (realtime applied it);
- * anything else is local typing that must win.
+ * A live session (or an explicit decoration-only edit) is decoration-only: the
+ * room or content commit may still be in flight, so an editor that does not
+ * match the fetched body yet waits for it instead of dropping the flash.
+ * Without a session the editor may still hold the event-time body (normal
+ * path) or already show the fetched body (realtime applied it); anything else
+ * is local typing that must win.
  */
 export function planAiMarkdownApply(input: {
   liveSession: boolean;
@@ -147,7 +156,7 @@ export function planAiMarkdownApply(input: {
   matchesPrevious: boolean;
 }): AiMarkdownApplyPlan {
   if (input.liveSession || input.replace === false) {
-    return input.matchesNext ? 'decorate' : 'skip';
+    return input.matchesNext ? 'decorate' : 'wait';
   }
   if (input.matchesNext) return 'decorate';
   if (input.matchesPrevious) return 'replace';
