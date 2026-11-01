@@ -185,7 +185,12 @@ function AppContent() {
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
   const COMPACT_SIDEBAR_WIDTH = 64;
   const MOBILE_NAVBAR_HEIGHT = 'var(--mobile-navbar-height, calc(64px + env(safe-area-inset-bottom)))';
-  const previousMobilePathRef = useRef(location.pathname);
+  const previousRoutePathRef = useRef(location.pathname);
+  const previousIsMobileRef = useRef(isMobile);
+  const [mobileRouteMotion, setMobileRouteMotion] = useState<{
+    direction: 'left' | 'right';
+    version: number;
+  } | null>(null);
   const previousUserIdRef = useRef<string | null>(user?.id ?? null);
 
   // Returning to a suspended tab must not reload the document. The live room
@@ -283,32 +288,47 @@ function AppContent() {
   const chatDockWidth = !isMobile && chatDockVisible
     ? chatDockRenderWidth
     : 0;
-  const routeDirection = isMobile
-    ? getMobileRouteDirection(previousMobilePathRef.current, location.pathname)
-    : 'none';
 
-  useEffect(() => {
-    if (!isMobile || previousMobilePathRef.current === location.pathname) {
+  // A mobile route animation belongs to a navigation, never to a resize. Keep
+  // the last path in sync in both viewports so returning to mobile cannot
+  // replay a transition for a route that changed while the desktop tree was
+  // showing. The layout effect commits the motion before the new route paints.
+  useLayoutEffect(() => {
+    const previousPath = previousRoutePathRef.current;
+    const wasMobile = previousIsMobileRef.current;
+    previousRoutePathRef.current = location.pathname;
+    previousIsMobileRef.current = isMobile;
+
+    if (!isMobile || !wasMobile) {
+      // Entering mobile by resize is not a navigation. Drop any motion from
+      // an earlier mobile session so the fresh keyed tree cannot replay it.
+      if (isMobile) setMobileRouteMotion(null);
       return;
     }
 
-    previousMobilePathRef.current = location.pathname;
+    if (previousPath === location.pathname) return;
+
+    const direction = getMobileRouteDirection(previousPath, location.pathname);
+    if (direction === 'none') return;
+
+    setMobileRouteMotion((current) => ({
+      direction,
+      version: (current?.version ?? 0) + 1,
+    }));
   }, [isMobile, location.pathname]);
 
   // The editor footer is portalled to <body> and pins itself to the viewport
   // edge. A CSS hook lets the dock shift it without editing the footer.
   useEffect(() => {
     document.body.style.setProperty('--nana-chat-dock-width', `${chatDockWidth}px`);
-    document.body.dataset.chatDockOpen = chatDockWidth > 0 ? 'true' : 'false';
     return () => {
-      delete document.body.dataset.chatDockOpen;
       document.body.style.removeProperty('--nana-chat-dock-width');
     };
   }, [chatDockWidth]);
 
-  const mobileAnimationName = routeDirection === 'left'
+  const mobileAnimationName = mobileRouteMotion?.direction === 'left'
     ? 'mobile-route-enter-from-right'
-    : routeDirection === 'right'
+    : mobileRouteMotion?.direction === 'right'
       ? 'mobile-route-enter-from-left'
       : null;
 

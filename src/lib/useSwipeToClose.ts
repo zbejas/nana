@@ -8,6 +8,7 @@ import {
 } from 'react';
 import {
   clampSwipeOffset,
+  isSingleTouchGesture,
   resolveSwipeIntent,
   shouldCloseSwipe,
   swipeProgress,
@@ -212,7 +213,9 @@ export function useSwipeToClose({
       const intent = resolveSwipeIntent(deltaX, deltaY, configRef.current.direction);
       if (intent === 'pending') return false;
       if (intent === 'vertical') {
-        dragRef.current = null;
+        // Yield to native scrolling without forgetting the gesture. A touch
+        // that led downward can still turn horizontal before release; the
+        // next sample reclassifies it and follows the finger from there.
         return false;
       }
       if (intent === 'wrong-direction') {
@@ -344,7 +347,7 @@ export function useSwipeToClose({
 
     const handleTouchStart = (event: TouchEvent) => {
       if (!enabledRef.current) return;
-      if (event.touches.length !== 1) {
+      if (!isSingleTouchGesture(event.touches.length)) {
         if (dragRef.current?.source === 'touch') {
           dragRef.current = null;
           suppressClickRef.current = false;
@@ -365,7 +368,7 @@ export function useSwipeToClose({
       if (!enabledRef.current) return;
       const drag = dragRef.current;
       if (!drag || drag.source !== 'touch') return;
-      if (event.touches.length !== 1) {
+      if (!isSingleTouchGesture(event.touches.length)) {
         dragRef.current = null;
         resetDragVisuals();
         return;

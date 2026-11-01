@@ -585,8 +585,10 @@ body.public-route-active {
     animation: desktop-route-enter 220ms ease-out both;
   }
 
-  .desktop-page-content-enter {
-    animation: desktop-route-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  @media (min-width: 768px) {
+    .desktop-page-content-enter {
+      animation: desktop-route-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
   }
 
   @media (min-width: 768px) {
@@ -672,6 +674,19 @@ body.public-route-active {
     user-select: none;
   }
 
+  /*
+   * The editor footer is portalled to <body> and pinned to the viewport edge.
+   * It follows the sidebar inset and the desktop chat dock edge together; the
+   * durations are per-property so a sidebar toggle inside an open dock still
+   * moves both edges on the house timing.
+   */
+  .nana-footer-motion {
+    transition-property: left, right;
+    transition-timing-function:
+      cubic-bezier(0.22, 1, 0.36, 1),
+      cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
   .nana-chat-dock {
     --nana-chat-closed-x: 100%;
     transform: translateX(var(--nana-chat-closed-x));
@@ -680,6 +695,18 @@ body.public-route-active {
       transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
       visibility 0s linear 200ms,
       width 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /*
+   * The dock claims horizontal pulls for swipe-to-close with pan-y. Code
+   * blocks and tables are their own horizontal scrollers, so they opt back
+   * into native panning on both axes without touching the dock's vertical
+   * thread scroll or taps.
+   */
+  .nana-chat-dock .wmde-markdown pre,
+  .nana-chat-dock .wmde-markdown pre > code,
+  .nana-chat-dock .wmde-markdown table {
+    touch-action: pan-x pan-y pinch-zoom;
   }
 
   .nana-chat-dock[data-state='open'] {
@@ -1034,21 +1061,7 @@ body.public-route-active {
 /* Chat dock                                                           */
 /* ------------------------------------------------------------------ */
 
-/*
- * The editor footer is portalled to <body> and pinned to the viewport edge.
- * When the desktop dock reserves space, the footer should stop at the dock.
- */
-body[data-chat-dock-open="true"] > footer {
-  right: var(--nana-chat-dock-width, 0px) !important;
-  transition: right 200ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@media (max-width: 767px) {
-  body[data-chat-dock-open="true"] > footer {
-    right: 0 !important;
-  }
-
-  /*
+@media (max-width: 767px) {  /*
    * Touch pass: keep the desktop density, but give the primary mobile
    * controls a practical 44px hit area.
    */

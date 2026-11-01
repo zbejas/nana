@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAtom, useAtomValue } from 'jotai';
 import {
@@ -48,10 +48,6 @@ interface ChatDockProps {
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
-// Let the 200ms exit finish and the visibility delay hide the surface before
-// the left-swipe exit transform is reset for the next right-side entrance.
-const CHAT_CLOSE_RESET_MS = 320;
-
 function isHorizontallyScrollable(target: EventTarget | null, panel: HTMLElement): boolean {
   let element = target instanceof Element ? target : null;
   while (element && element !== panel) {
@@ -97,8 +93,9 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const [focusSignal, setFocusSignal] = useState(0);
   const [resetSignal, setResetSignal] = useState(0);
   const panelRef = useRef<HTMLElement>(null);
+  const visibleRef = useRef(false);
+  const previousVisibleRef = useRef<boolean | null>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
-  const closeTimerRef = useRef<number | null>(null);
   const mounted = useRef(false);
   const lastConversationAtom = useRef<string | null>(null);
   const previousPathRef = useRef(location.pathname);
@@ -113,6 +110,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
 
   const isChatRoute = location.pathname.startsWith('/chat');
   const visible = open && !isChatRoute;
+  visibleRef.current = visible;
   const viewportHeight = useChatViewportHeight(isMobile && visible);
   const historyVisible = historyOpen && !isMobile;
   const historyWidth = historyVisible ? CHAT_HISTORY_WIDTH : 0;
@@ -327,23 +325,13 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const closeFromSwipe = useCallback((offset: number) => {
     const panel = panelRef.current;
     if (panel) {
-      if (closeTimerRef.current !== null) {
-        window.clearTimeout(closeTimerRef.current);
-        closeTimerRef.current = null;
-      }
-      panel.style.removeProperty('--nana-chat-closed-x');
       if (offset < 0) {
+        // Exit in the pull direction. The closed-state transform reads this
+        // variable while the surface is hidden; the transition-end handler
+        // parks it on the right for the next entrance.
         panel.style.setProperty('--nana-chat-closed-x', '-100%');
-        closeTimerRef.current = window.setTimeout(() => {
-          const current = panelRef.current;
-          if (current) {
-            current.style.transition = 'none';
-            current.style.removeProperty('--nana-chat-closed-x');
-            void current.offsetWidth;
-            current.style.removeProperty('transition');
-          }
-          closeTimerRef.current = null;
-        }, CHAT_CLOSE_RESET_MS);
+      } else {
+        panel.style.removeProperty('--nana-chat-closed-x');
       }
     }
     close();
@@ -357,20 +345,88 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     ignoreTarget: isHorizontallyScrollable,
   });
 
-  useEffect(() => {
-    if (!visible) return;
-    if (closeTimerRef.current !== null) {
-      window.clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const wasVisible = previousVisibleRef.current;
+    previousVisibleRef.current = visible;
+    if (!panel || !visible) return;
+
+    // The next entrance always starts on the right. Clearing the exit side
+    // while open has no visual effect; it only changes the closed-state
+    // target. A close that is still visibly in progress is allowed to reverse
+    // from its current position instead.
+    panel.style.removeProperty('--nana-chat-closed-x');
+    if (wasVisible !== false) return;
+
+    const width = panel.getBoundingClientRect().width;
+    if (width <= 0) return;
+    const matrix = window.getComputedStyle(panel).transform;
+    let currentX = 0;
+    if (matrix && matrix !== 'none') {
+      try {
+        currentX = new DOMMatrixReadOnly(matrix).m41;
+      } catch {
+        currentX = 0;
+      }
     }
-    panelRef.current?.style.removeProperty('--nana-chat-closed-x');
+
+    if (currentX <= -1 && currentX > -width + 1) {
+      // Mid-exit: keep the reverse from where the surface is now.
+      return;
+    }
+
+    // Closed at rest, hidden on the left after an interrupted transition, or
+    // closed and reopened in the same frame. Pin the closed side on the right
+    // for one style flush so the opening transition cannot start on the left.
+    panel.style.transition = 'none';
+    panel.style.transform = 'translateX(100%)';
+    void panel.offsetWidth;
+    panel.style.removeProperty('transform');
+    panel.style.removeProperty('transition');
   }, [visible]);
 
-  useEffect(() => () => {
-    if (closeTimerRef.current !== null) {
-      window.clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+
+    const parkClosedOnRight = () => {
+      // The surface is hidden at this point; move it to the right without a
+      // transition so the next open always enters from the right. This is
+      // driven by the real transition end, not by a close timer.
+      panel.style.transition = 'none';
+      panel.style.removeProperty('--nana-chat-closed-x');
+      void panel.offsetWidth;
+      panel.style.removeProperty('transition');
+    };
+
+    const handleTransitionEnd = (event: TransitionEvent) => {
+      if (event.target !== panel) return;
+      if (event.propertyName === 'transform') {
+        if (visibleRef.current) {
+          panel.style.removeProperty('--nana-chat-closed-x');
+          return;
+        }
+        if (window.getComputedStyle(panel).visibility === 'hidden') {
+          parkClosedOnRight();
+        }
+        return;
+      }
+      if (event.propertyName === 'visibility' && !visibleRef.current) {
+        parkClosedOnRight();
+      }
+    };
+
+    const handleTransitionCancel = (event: TransitionEvent) => {
+      if (event.target !== panel || event.propertyName !== 'transform') return;
+      if (visibleRef.current) panel.style.removeProperty('--nana-chat-closed-x');
+    };
+
+    panel.addEventListener('transitionend', handleTransitionEnd);
+    panel.addEventListener('transitioncancel', handleTransitionCancel);
+    return () => {
+      panel.removeEventListener('transitionend', handleTransitionEnd);
+      panel.removeEventListener('transitioncancel', handleTransitionCancel);
+    };
   }, []);
 
   const newChat = () => {
@@ -437,6 +493,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
         style={isMobile
           ? {
             width: '100%',
+            touchAction: 'pan-y pinch-zoom',
             ...(viewportHeight ? { height: `${viewportHeight}px`, bottom: 0 } : {}),
           }
           : { width: `${width}px`, ...(resizing ? { transition: 'none' } : {}) }}

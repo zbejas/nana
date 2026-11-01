@@ -3,6 +3,7 @@ import {
   SWIPE_CLOSE_MAX_PX,
   SWIPE_CLOSE_RATIO,
   clampSwipeOffset,
+  isSingleTouchGesture,
   resolveSwipeIntent,
   shouldCloseSwipe,
   swipeProgress,
@@ -13,13 +14,24 @@ describe('swipe gesture intent', () => {
     expect(resolveSwipeIntent(4, 4)).toBe('pending');
     expect(resolveSwipeIntent(8, 8)).toBe('pending');
     expect(resolveSwipeIntent(12, 14)).toBe('pending');
+    expect(resolveSwipeIntent(30, 30)).toBe('pending');
     expect(resolveSwipeIntent(-14, -12)).toBe('horizontal');
     expect(resolveSwipeIntent(-14, 12)).toBe('horizontal');
   });
 
+  test('does not let a downward-leading sample kill a later horizontal pull', () => {
+    expect(resolveSwipeIntent(-5, 20)).toBe('pending');
+    expect(resolveSwipeIntent(-5, 20, 'both')).toBe('pending');
+    expect(resolveSwipeIntent(-8, 22)).toBe('pending');
+    expect(resolveSwipeIntent(-20, 30)).toBe('vertical');
+    expect(resolveSwipeIntent(-40, 32)).toBe('horizontal');
+    expect(resolveSwipeIntent(-40, 32, 'both')).toBe('horizontal');
+  });
+
   test('yields to a clearly vertical scroll', () => {
     expect(resolveSwipeIntent(5, 26)).toBe('vertical');
-    expect(resolveSwipeIntent(-5, 20)).toBe('vertical');
+    expect(resolveSwipeIntent(-6, 40)).toBe('vertical');
+    expect(resolveSwipeIntent(0, 60)).toBe('vertical');
     expect(resolveSwipeIntent(-10, 14)).toBe('pending');
   });
 
@@ -28,6 +40,13 @@ describe('swipe gesture intent', () => {
     expect(resolveSwipeIntent(20, 5, 'left')).toBe('wrong-direction');
     expect(resolveSwipeIntent(20, 5, 'both')).toBe('horizontal');
     expect(resolveSwipeIntent(-20, 5, 'both')).toBe('horizontal');
+    expect(resolveSwipeIntent(24, 20, 'left')).toBe('wrong-direction');
+  });
+
+  test('cancels the gesture when a second finger lands', () => {
+    expect(isSingleTouchGesture(1)).toBe(true);
+    expect(isSingleTouchGesture(0)).toBe(false);
+    expect(isSingleTouchGesture(2)).toBe(false);
   });
 });
 
