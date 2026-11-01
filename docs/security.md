@@ -222,7 +222,7 @@ Attachments are a session-only chat feature. `POST /api/chat/attachments` and `D
 - **Protected files.** `chat_attachments.file` is protected. The server fetches bytes with a short-lived file token and an 8-second timeout. The browser file facade allowlists `chat_attachments` for previews; the record collection itself is not exposed.
 - **Untrusted content.** Extracted text and PDF fallbacks are wrapped in named `<attachment>` text blocks. The system prompt says attachment contents are untrusted data and never instructions. Older attachments degrade under a request-wide byte/text budget; assistant messages never contribute attachments.
 - **No leakage.** API DTOs carry only `{ id, name, mimeType, size, kind }`. Extracted text, the stored protected file name, raw bytes, and file tokens are never returned, persisted in message JSON, or logged. Title generation receives only the user text or the first attachment name.
-- **No shared-note attachments.** A `scope: "note"` send rejects attachments and regeneration, and the Note composer hides the attachment control. Attachments are owner-draft files and never enter a multi-person thread.
+- **No shared-note attachments.** A `scope: "note"` send rejects attachments and regeneration, and the Shared composer hides the attachment control. Attachments are owner-draft files and never enter a multi-person thread.
 
 There is no background draft sweep. An abandoned or failed upload stays as an owner-scoped unbound row until the user deletes it; conversation/message deletes cascade bound rows and files.
 

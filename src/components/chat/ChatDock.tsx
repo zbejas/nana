@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAtom, useAtomValue } from 'jotai';
 import {
   ChatBubbleLeftRightIcon,
+  LockClosedIcon,
   PlusIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -17,7 +18,7 @@ import { CHAT_HISTORY_WIDTH, MIN_CHAT_DOCK_WIDTH } from '../../lib/settings';
 import { ChatDockResizeHandle } from './ChatDockResizeHandle';
 import { NanaMark } from './NanaMark';
 import { ChatHistory } from './ChatHistory';
-import { ChatScopeTabs } from './ChatScopeTabs';
+import { ChatScopeTabs, noteChatUnavailableMessage } from './ChatScopeTabs';
 import { ChatThread } from './ChatThread';
 import { getAiEditing, setAiEditing } from '../../lib/chat/presence';
 import {
@@ -95,6 +96,13 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const baseWidth = Math.max(MIN_CHAT_DOCK_WIDTH, width - historyWidth);
   const maxBaseWidth = Math.max(MIN_CHAT_DOCK_WIDTH, maxWidth - historyWidth);
   const askOnly = scope === 'note' && noteChatStatus?.canEdit === false;
+  const noteDisabledReason = noteId
+    && scope === 'personal'
+    && !noteChatLoading
+    && !noteChatStatus?.enabled
+    && (noteChatStatus || noteChatError)
+    ? noteChatUnavailableMessage(noteChatStatus?.reason ?? null, false, noteChatError)
+    : null;
 
   const handleResizeStart = useCallback(() => setResizing(true), [setResizing]);
   const handleResizeEnd = useCallback(() => setResizing(false), [setResizing]);
@@ -365,7 +373,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
             <header className="shrink-0 border-b border-line">
               <div className="flex items-center gap-2 px-3 pt-[max(0.625rem,env(safe-area-inset-top))]">
                 <NanaMark size={32} />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <h2
                     className="truncate text-[14px] font-semibold leading-none tracking-[-0.015em] text-ink"
                     title={conversation?.title || 'Chat'}
@@ -377,45 +385,13 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
                     <span className="truncate">{statusText}</span>
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={close}
-                  aria-label="Close chat"
-                  title="Close chat"
-                  className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink sm:h-8 sm:w-8"
-                >
-                  <XMarkIcon className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1 px-3 pb-2.5 pt-2">
-                {askOnly ? (
-                  <span
-                    className="inline-flex h-[30px] items-center rounded-control border border-line bg-surface-sunken px-2.5 text-[12px] font-medium text-ink-muted"
-                    title="Shared chats on this note are read-only"
-                  >
-                    Ask only
-                  </span>
-                ) : (
-                  <SegmentedControl
-                    label="Chat mode"
-                    size="sm"
-                    className="chat-mode-control"
-                    value={mode}
-                    onChange={setChatMode}
-                    options={[
-                      { value: 'edit', label: 'Work', title: 'Work — Nana can read and change folders, notes, boards, and tasks' },
-                      { value: 'ask', label: 'Ask', title: 'Ask — Nana only reads notes and boards' },
-                    ]}
-                  />
-                )}
-                <div className="ml-auto flex items-center gap-0.5">
+                <div className="ml-auto flex shrink-0 items-center gap-0.5">
                   <button
                     type="button"
                     onClick={newChat}
                     aria-label="New chat"
                     title={scope === 'note' ? 'Start a new personal chat' : 'New chat'}
-                    className="flex h-11 w-11 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink sm:h-7 sm:w-7"
+                    className="flex h-11 w-11 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink sm:h-8 sm:w-8"
                   >
                     <PlusIcon className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -426,7 +402,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
                     title="Chat history"
                     aria-pressed={isMobile ? historySheetOpen : historyOpen}
                     className={cn(
-                      'flex h-11 w-11 items-center justify-center rounded-control transition-colors sm:h-7 sm:w-7',
+                      'flex h-11 w-11 items-center justify-center rounded-control transition-colors sm:h-8 sm:w-8',
                       (isMobile ? historySheetOpen : historyOpen)
                         ? 'bg-signal-soft text-signal'
                         : 'text-ink-muted hover:bg-surface-sunken hover:text-ink',
@@ -434,23 +410,75 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
                   >
                     <ChatBubbleLeftRightIcon className="h-4 w-4" aria-hidden="true" />
                   </button>
+                  <button
+                    type="button"
+                    onClick={close}
+                    aria-label="Close chat"
+                    title="Close chat"
+                    className="flex h-11 w-11 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink sm:h-8 sm:w-8"
+                  >
+                    <XMarkIcon className="h-4 w-4" aria-hidden="true" />
+                  </button>
                 </div>
               </div>
 
-              {noteId && (
-                <div className="flex min-w-0 items-center px-3 pb-2.5">
-                  <ChatScopeTabs
-                    scope={scope}
-                    onChange={selectScope}
-                    noteReady={Boolean(noteChatStatus)}
-                    noteEnabled={noteChatStatus?.enabled === true}
-                    noteLoading={noteChatLoading}
-                    noteReason={noteChatStatus?.reason ?? null}
-                    noteError={noteChatError}
-                    className="max-w-full"
-                  />
+              <div className="px-3 pb-2.5 pt-2">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  {noteId && (
+                    <>
+                      <ChatScopeTabs
+                        scope={scope}
+                        onChange={selectScope}
+                        noteReady={Boolean(noteChatStatus)}
+                        noteEnabled={noteChatStatus?.enabled === true}
+                        noteLoading={noteChatLoading}
+                        noteReason={noteChatStatus?.reason ?? null}
+                        noteError={noteChatError}
+                        className="shrink-0"
+                      />
+                      <span className="h-5 w-px shrink-0 bg-line" aria-hidden="true" />
+                    </>
+                  )}
+                  {askOnly ? (
+                    <span
+                      className="inline-flex h-[30px] items-center rounded-control border border-line bg-surface-sunken px-2.5 text-[12px] font-medium text-ink-muted"
+                      title="Shared chats on this note are read-only"
+                    >
+                      Ask only
+                    </span>
+                  ) : (
+                    <SegmentedControl
+                      label="Chat mode"
+                      size="sm"
+                      className="chat-mode-control"
+                      value={mode}
+                      onChange={setChatMode}
+                      options={[
+                        {
+                          value: 'edit',
+                          label: 'Work',
+                          title: scope === 'note'
+                            ? 'Work — Nana can read and change this note'
+                            : 'Work — Nana can read and change folders, notes, boards, and tasks',
+                        },
+                        {
+                          value: 'ask',
+                          label: 'Ask',
+                          title: scope === 'note'
+                            ? 'Ask — Nana only reads this note'
+                            : 'Ask — Nana only reads notes and boards',
+                        },
+                      ]}
+                    />
+                  )}
                 </div>
-              )}
+                {noteDisabledReason && (
+                  <p className="mt-1.5 flex items-start gap-1.5 text-[10.5px] leading-snug text-ink-muted">
+                    <LockClosedIcon className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0">{noteDisabledReason}</span>
+                  </p>
+                )}
+              </div>
             </header>
 
             <ChatThread

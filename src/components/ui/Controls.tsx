@@ -86,6 +86,7 @@ interface SegmentedOption<T extends string> {
   label: string;
   icon?: ReactNode;
   title?: string;
+  disabled?: boolean;
 }
 
 interface SegmentedControlProps<T extends string> {
@@ -121,6 +122,8 @@ export function SegmentedControl<T extends string>({
             key={option.value}
             type="button"
             aria-pressed={active}
+            aria-disabled={option.disabled || undefined}
+            disabled={option.disabled}
             title={option.title ?? option.label}
             onClick={() => onChange(option.value)}
             className={cn(
@@ -128,7 +131,10 @@ export function SegmentedControl<T extends string>({
               size === 'sm' ? 'h-[26px] px-2.5 text-[12px]' : 'h-7 px-3 text-[12.5px]',
               active
                 ? 'border-line bg-surface text-ink'
-                : 'border-transparent text-ink-muted hover:text-ink-secondary'
+                : 'border-transparent text-ink-muted',
+              !option.disabled && !active && 'hover:text-ink-secondary',
+              option.disabled && !active && 'cursor-not-allowed opacity-50',
+              option.disabled && active && 'cursor-not-allowed'
             )}
           >
             {option.icon}

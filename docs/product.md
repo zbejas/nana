@@ -26,7 +26,7 @@ The scene: a desk at night, a low lamp, a browser window that should feel like p
 | Board trash | Restore a trashed board, or delete it permanently and remove its tasks while keeping the source notes. |
 | Folders | Browse and reorganise notes, boards, and folders. |
 | Document editor | Write Markdown, attach files, save version history, share. |
-| Chat | Work is the default: ask about notes and boards, or ask Nana to create, rename, and move folders, notes, and boards, manage tasks, and trash/restore boards. Ask is the read-only lock. Deletes need an explicit confirmation card; sharing and privacy changes stay out of chat, and there is no document picker. On a note route, Personal keeps the reader's own chat while Note opens the one shared conversation for people with access; view and comment participants can only ask. |
+| Chat | Work is the default: ask about notes and boards, or ask Nana to create, rename, and move folders, notes, and boards, manage tasks, and trash/restore boards. Ask is the read-only lock. Deletes need an explicit confirmation card; sharing and privacy changes stay out of chat, and there is no document picker. On a note route, Personal keeps the reader's own chat while Shared opens the one shared conversation for people with access; view and comment participants can only ask. |
 | API and MCP | Reach the same workspace from an external tool: the owner's JSON API and a stateless MCP endpoint for AI clients. Private records stay hidden from AI. |
 | Public note / folder | Read-only shared writing with no app chrome. |
 | Settings | Account, preferences, workspace administration, about. |
