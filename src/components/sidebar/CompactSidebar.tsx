@@ -68,7 +68,7 @@ export function CompactSidebar({
     isPathActive(location.pathname, item.path);
   // Shared, Chat, Settings, and the document reader live behind the drawer.
   // Mark Menu active there instead of leaving the bottom bar with no selection.
-  const menuActive = !viewItems.some((item) => viewIsActive(item)) && !chatActive;
+  const menuActive = !viewItems.some((item) => viewIsActive(item));
 
   useEffect(() => {
     const updateMobileNavHeight = () => {
@@ -193,7 +193,7 @@ export function CompactSidebar({
         }`}
         aria-label="Primary"
       >
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-3 gap-1">
           <button
             onClick={onToggleExpanded}
             className={`${itemClass(menuActive)} h-14`}
@@ -221,16 +221,6 @@ export function CompactSidebar({
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={toggleChat}
-            className={`${itemClass(chatActive)} h-14`}
-            aria-label="Chat"
-            aria-pressed={chatActive}
-          >
-            <ChatBubbleLeftRightIcon className={`h-5 w-5 ${chatActive ? 'text-signal' : ''}`} />
-            <span className="leading-none">Chat</span>
-          </button>
         </div>
       </nav>
     </>
