@@ -286,9 +286,9 @@ export function Sidebar() {
         role={isMobile && isOpen ? 'dialog' : undefined}
         aria-modal={isMobile && isOpen ? 'true' : undefined}
         tabIndex={isMobile ? -1 : undefined}
-        className="fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden border-r border-line bg-canvas-deep"
+        className={`fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden border-r border-line bg-canvas-deep ${isMobile ? 'shadow-float' : ''}`}
         style={{
-          width: isMobile ? '100%' : `${sidebarWidth}px`,
+          width: isMobile ? 'calc(100% - 3rem)' : `${sidebarWidth}px`,
           transform: isOpen ? 'translateX(0)' : (isMobile ? 'translateX(-100%)' : `translateX(-${sidebarWidth}px)`),
           transition: swipeCurrentX !== null || isResizing ? 'none' : 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         }}

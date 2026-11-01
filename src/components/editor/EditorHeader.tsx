@@ -1,4 +1,4 @@
-import { ArrowsPointingInIcon, ArrowsPointingOutIcon, CodeBracketIcon, PencilSquareIcon, SparklesIcon, XMarkIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
+import { ArrowsPointingInIcon, ArrowsPointingOutIcon, CodeBracketIcon, PencilSquareIcon, XMarkIcon, ViewColumnsIcon } from '@heroicons/react/24/outline';
 import { EditorContextMenu } from './EditorContextMenu';
 import { IconButton, SegmentedControl } from '../ui';
 import { EditorPresence } from './EditorPresence';
@@ -30,8 +30,6 @@ interface EditorHeaderProps {
   onShare?: () => void;
   onExport?: () => void;
   onDelete?: () => void;
-  onAskNana?: () => void;
-  askNanaDisabled?: boolean;
   fullscreen?: boolean;
   onToggleFullscreen?: () => void;
 }
@@ -56,8 +54,6 @@ export function EditorHeader({
   onShare,
   onExport,
   onDelete,
-  onAskNana,
-  askNanaDisabled = false,
   fullscreen = false,
   onToggleFullscreen,
 }: EditorHeaderProps) {
@@ -156,22 +152,6 @@ export function EditorHeader({
               options={[editorOption, sourceOption, splitOption]}
             />
           </span>
-
-          {isMobile && onAskNana && (
-            <>
-              <span className="mx-0.5 hidden h-5 w-px bg-line sm:block" aria-hidden="true" />
-
-              <IconButton
-                label={askNanaDisabled ? 'Save the note before asking Nana' : 'Ask Nana about this note'}
-                size="md"
-                className="h-11 w-11 text-signal sm:h-8 sm:w-8"
-                onClick={onAskNana}
-                disabled={askNanaDisabled}
-              >
-                <SparklesIcon />
-              </IconButton>
-            </>
-          )}
 
           {onToggleFullscreen && (
             <IconButton
