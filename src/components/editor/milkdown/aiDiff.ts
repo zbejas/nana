@@ -61,7 +61,7 @@ function appendChange(changes: AiTextChange[], change: AiTextChange): void {
 }
 
 interface TokenOp {
-  type: 'insert' | 'delete';
+  type: 'equal' | 'insert' | 'delete';
   token: Token;
 }
 
@@ -96,6 +96,10 @@ function middleOps(left: Token[], right: Token[]): TokenOp[] {
   let j = 0;
   while (i < n || j < m) {
     if (i < n && j < m && left[i]!.text === right[j]!.text) {
+      // Equal tokens must stay in the stream: their right-side offsets move
+      // every later hunk forward. Dropping them made every deletion after the
+      // first reuse the first hunk's new-text anchor.
+      ops.push({ type: 'equal', token: right[j]! });
       i += 1;
       j += 1;
       continue;
@@ -151,11 +155,35 @@ export function diffText(previous: string, next: string): AiTextChange[] {
     : next.length;
   const changes: AiTextChange[] = [];
 
-  for (const op of ops) {
+  let index = 0;
+  while (index < ops.length) {
+    const op = ops[index]!;
+
+    if (op.type === 'equal') {
+      // Unchanged text still occupies the new body. Advance to its end so the
+      // next hunk is anchored after it, not back at the start of the gap.
+      newOffset = op.token.start + op.token.text.length;
+      index += 1;
+      continue;
+    }
+
     if (op.type === 'insert') {
-      const trimmed = trimVisibleText(op.token.text);
+      // Tokens inside one run are contiguous in the new body. Concatenate
+      // before trimming so spaces/newlines between inserted words survive;
+      // only the run's outer edges are dropped.
+      const runStart = op.token.start;
+      let raw = '';
+      let runEnd = runStart;
+      while (index < ops.length && ops[index]!.type === 'insert') {
+        const token = ops[index]!.token;
+        raw += token.text;
+        runEnd = token.start + token.text.length;
+        index += 1;
+      }
+
+      const trimmed = trimVisibleText(raw);
       if (trimmed.text) {
-        const start = newOffset + trimmed.leading;
+        const start = runStart + trimmed.leading;
         appendChange(changes, {
           type: 'insert',
           start,
@@ -163,16 +191,26 @@ export function diffText(previous: string, next: string): AiTextChange[] {
           text: trimmed.text,
         });
       }
-      newOffset += op.token.text.length;
+      newOffset = runEnd;
       continue;
     }
 
-    const trimmed = trimVisibleText(op.token.text);
+    // Deletes are zero-width anchors in the new text. Group the whole run
+    // first: a deleted paragraph is several whitespace/word tokens, and
+    // trimming each token individually loses the spaces between words.
+    const anchor = newOffset;
+    let raw = '';
+    while (index < ops.length && ops[index]!.type === 'delete') {
+      raw += ops[index]!.token.text;
+      index += 1;
+    }
+
+    const trimmed = trimVisibleText(raw);
     if (trimmed.text) {
       appendChange(changes, {
         type: 'delete',
-        start: newOffset,
-        end: newOffset,
+        start: anchor,
+        end: anchor,
         text: trimmed.text,
       });
     }
