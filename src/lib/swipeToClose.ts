@@ -5,8 +5,13 @@ export type SwipeIntent = 'pending' | 'horizontal' | 'vertical' | 'wrong-directi
 /** A horizontal drag has to clear this many pixels before it owns the gesture. */
 export const SWIPE_START_PX = 10;
 
-/** A clearly vertical drag has to clear this many pixels before it becomes a scroll. */
-export const SWIPE_VERTICAL_CANCEL_PX = 18;
+/**
+ * A clearly vertical drag has to clear this many pixels before it can yield to
+ * native scrolling. Keep this above the first diagonal samples: a downward
+ * wobble must not decide the gesture before the user has had a chance to turn
+ * horizontal.
+ */
+export const SWIPE_VERTICAL_CANCEL_PX = 24;
 
 /** How much more vertical than horizontal a movement must be to become a scroll. */
 export const SWIPE_VERTICAL_RATIO = 1.4;
@@ -21,9 +26,11 @@ export const SWIPE_CLOSE_MAX_PX = 96;
 export const SWIPE_CLOSE_VELOCITY = 0.45;
 
 /**
- * Real fingers rarely move in a perfect horizontal line. Keep waiting through
- * the first diagonal pixels instead of cancelling the gesture on the first
- * vertical sample; only a clearly vertical pull becomes a scroll.
+ * Real fingers rarely move in a perfect horizontal line. Horizontal movement
+ * that dominates the gesture always wins, even if the touch began with a
+ * downward wobble; an early vertical sample is not allowed to kill the swipe.
+ * Only a clearly vertical pull yields to native scrolling, and the hook keeps
+ * the gesture alive so a later horizontal turn can still engage.
  */
 export function resolveSwipeIntent(
   deltaX: number,
@@ -34,12 +41,26 @@ export function resolveSwipeIntent(
   const absY = Math.abs(deltaY);
 
   if (absX < SWIPE_START_PX && absY < SWIPE_START_PX) return 'pending';
-  if (absY >= SWIPE_VERTICAL_CANCEL_PX && absY > absX * SWIPE_VERTICAL_RATIO) {
+
+  if (absX >= SWIPE_START_PX && absX > absY) {
+    if (direction === 'left' && deltaX >= 0) return 'wrong-direction';
+    return 'horizontal';
+  }
+
+  if (absY >= SWIPE_VERTICAL_CANCEL_PX && absY >= absX * SWIPE_VERTICAL_RATIO) {
     return 'vertical';
   }
-  if (absX <= absY) return 'pending';
-  if (direction === 'left' && deltaX >= 0) return 'wrong-direction';
-  return 'horizontal';
+
+  return 'pending';
+}
+
+/**
+ * A swipe owns the gesture only while exactly one finger is down. A second
+ * finger always cancels the drag instead of letting one of them steer the
+ * panel.
+ */
+export function isSingleTouchGesture(touchCount: number): boolean {
+  return touchCount === 1;
 }
 
 export function clampSwipeOffset(
