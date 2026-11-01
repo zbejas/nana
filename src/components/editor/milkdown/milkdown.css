@@ -623,7 +623,7 @@
     background: var(--success-soft);
     box-shadow: inset 0 -1px 0 var(--success);
     color: var(--success);
-    animation: nana-ai-diff-insert 420ms ease-out both;
+    animation: nana-ai-diff-insert 700ms ease-out both;
   }
 
   .nana-milkdown .ProseMirror .nana-ai-diff-delete,
@@ -635,7 +635,7 @@
     text-decoration-thickness: 1px;
     user-select: none;
     white-space: pre-wrap;
-    animation: nana-ai-diff-delete 420ms ease-out both;
+    animation: nana-ai-diff-delete 700ms ease-out both;
   }
 
   @keyframes nana-ai-diff-insert {

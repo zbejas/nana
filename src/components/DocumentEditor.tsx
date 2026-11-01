@@ -202,6 +202,8 @@ export function DocumentEditor() {
           // Once the room has delivered that body, still pass the diff to the
           // editors for the visual flash. If concurrent local text means the
           // bodies differ, skip the animation rather than replacing the room.
+          // The chat event can outrun the room broadcast on a slow link; keep
+          // the flash eligible while the AI-editing state is still active.
           if (liveSession) {
             const startedAt = Date.now();
             const showWhenSynced = () => {
@@ -211,7 +213,7 @@ export function DocumentEditor() {
                 setAiEdit(aiEditValue);
                 return;
               }
-              if (Date.now() - startedAt < 800) {
+              if (Date.now() - startedAt < 2500) {
                 aiEditPollTimerRef.current = window.setTimeout(showWhenSynced, 50);
               }
             };
