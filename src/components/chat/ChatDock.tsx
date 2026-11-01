@@ -35,6 +35,7 @@ import { deriveChatContext } from '../../lib/chat/context';
 import { useChatViewportHeight, useIsMobileChat } from '../../lib/chat/viewport';
 import { findChatModel } from '../../lib/chat/models';
 import { useBackToClose } from '../../lib/useBackToClose';
+import { useSwipeToClose } from '../../lib/useSwipeToClose';
 import { sharingRealtimeTickAtom } from '../../state/sharing';
 
 interface ChatDockProps {
@@ -46,6 +47,27 @@ interface ChatDockProps {
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+// Let the 200ms exit finish and the visibility delay hide the surface before
+// the left-swipe exit transform is reset for the next right-side entrance.
+const CHAT_CLOSE_RESET_MS = 320;
+
+function isHorizontallyScrollable(target: EventTarget | null, panel: HTMLElement): boolean {
+  let element = target instanceof Element ? target : null;
+  while (element && element !== panel) {
+    if (element instanceof HTMLElement) {
+      const overflowX = window.getComputedStyle(element).overflowX;
+      if (
+        (overflowX === 'auto' || overflowX === 'scroll' || overflowX === 'overlay')
+        && element.scrollWidth > element.clientWidth + 1
+      ) {
+        return true;
+      }
+    }
+    element = element.parentElement;
+  }
+  return false;
+}
 
 /**
  * The one persistent chat surface. Mounted in AppContent outside the keyed
@@ -76,6 +98,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const [resetSignal, setResetSignal] = useState(0);
   const panelRef = useRef<HTMLElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
   const mounted = useRef(false);
   const lastConversationAtom = useRef<string | null>(null);
   const previousPathRef = useRef(location.pathname);
@@ -295,11 +318,60 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     });
   }, [editing, conversationIdAtom]);
 
-  const close = () => {
+  const close = useCallback(() => {
     setOpen(false);
     setHistoryOpen(false);
     setHistorySheetOpen(false);
-  };
+  }, [setHistoryOpen, setOpen]);
+
+  const closeFromSwipe = useCallback((offset: number) => {
+    const panel = panelRef.current;
+    if (panel) {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+      panel.style.removeProperty('--nana-chat-closed-x');
+      if (offset < 0) {
+        panel.style.setProperty('--nana-chat-closed-x', '-100%');
+        closeTimerRef.current = window.setTimeout(() => {
+          const current = panelRef.current;
+          if (current) {
+            current.style.transition = 'none';
+            current.style.removeProperty('--nana-chat-closed-x');
+            void current.offsetWidth;
+            current.style.removeProperty('transition');
+          }
+          closeTimerRef.current = null;
+        }, CHAT_CLOSE_RESET_MS);
+      }
+    }
+    close();
+  }, [close]);
+
+  const swipe = useSwipeToClose({
+    enabled: isMobile && visible,
+    panelRef,
+    onClose: closeFromSwipe,
+    direction: 'both',
+    ignoreTarget: isHorizontallyScrollable,
+  });
+
+  useEffect(() => {
+    if (!visible) return;
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    panelRef.current?.style.removeProperty('--nana-chat-closed-x');
+  }, [visible]);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
 
   const newChat = () => {
     if (noteId) noteChoice.current.delete(noteId);
@@ -358,8 +430,8 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
         aria-hidden={!visible}
         inert={!visible}
         className={cn(
-          'fixed bottom-0 right-0 top-0 z-[46] flex max-w-full flex-col border-line bg-surface text-ink shadow-float transition-[transform,width] duration-200 ease-out md:border-l',
-          visible ? 'translate-x-0' : 'pointer-events-none invisible translate-x-full',
+          'nana-chat-dock nana-swipe-panel fixed bottom-0 right-0 top-0 z-[46] flex max-w-full flex-col overflow-hidden border-line bg-surface text-ink shadow-float md:border-l',
+          visible ? 'pointer-events-auto' : 'pointer-events-none',
         )}
         data-state={visible ? 'open' : 'closed'}
         style={isMobile
@@ -368,6 +440,11 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
             ...(viewportHeight ? { height: `${viewportHeight}px`, bottom: 0 } : {}),
           }
           : { width: `${width}px`, ...(resizing ? { transition: 'none' } : {}) }}
+        onPointerDown={swipe.onPointerDown}
+        onPointerMove={swipe.onPointerMove}
+        onPointerUp={swipe.onPointerUp}
+        onPointerCancel={swipe.onPointerCancel}
+        onClickCapture={swipe.onClickCapture}
       >
         {!isMobile && visible && (
           <ChatDockResizeHandle

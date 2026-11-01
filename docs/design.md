@@ -154,6 +154,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 `/chat` uses the shared `PageHeader` and an 800px reading column, with a collapsible history panel.
 
 - Header: shared masthead, title `Chat` or the conversation title, a model/status meta line, Work/Ask, New chat, and History. The dock also has a left-edge resize handle and persists its width.
+- On mobile the dock is full-screen with no scrim strip. It enters from the right over 260ms and leaves over 200ms. A horizontal swipe in either direction moves it with the finger; release past 28% of the width (capped at 96px) or with an outward flick dismisses it in the pull direction, while a shorter pull settles back. Vertical scrolling and horizontally scrollable code or table content stay native.
 - Empty state: 26/30px “Ask, or change something.” in Work, one supporting sentence, and four prompt cards in a 2×2 grid. Prompt cards have a neutral icon tile, 13px medium text, and an arrow that darkens on hover.
 - Composer: a 10px-radius `surface` shell with a 1px border, a textarea, an 11px hint, a compact model pill, a context-usage donut, an attach control, and a `signal-bright` send button (44px on touch, 36px on desktop). Focus is an ember border plus a soft 4px ring. The donut opens a details card; it is signal, warning at 75%, and danger at 90%, and never invents a percentage when the model window is unknown.
 - Assistant answers are document text at 14.5px / 1.75, max 68ch, preceded by a 28px rabbit tile and “Nana”; the dock header mark is 32px. User messages are right-aligned `surface-raised` blocks with a 10px radius and 3px bottom-right corner. Titles are plain text; no emoji.
@@ -239,6 +240,7 @@ Rules:
 - Menus: 140ms pop from 0.97 with a 2px lift.
 - Desktop route content: 260ms, 4px rise. Mobile route change: 240ms, 14px lateral slide in the route order.
 - Sidebar drawer: 260ms in, 200ms out, with a 220ms scrim fade on the house curve. A swipe is direct manipulation: the drawer tracks the finger and the scrim tracks the pull; release either completes the dismissal or settles back. The docked sidebar and content inset share the 260/200ms timing.
+- Chat dock: 260ms in, 200ms out from the right. On mobile a horizontal swipe follows the finger in either direction and exits in the pull direction; there is no scrim on the full-screen surface.
 - Hover changes colour, border, and tone. It does not change size. Dragging a task uses 40% opacity and a 2px signal insertion line.
 - Respect `prefers-reduced-motion`; `src/index.css` reduces all animation and transition durations to `0.01ms`.
 
