@@ -357,6 +357,17 @@ export function DocumentEditor() {
     setDeleteConfirm(true);
   };
 
+  // On mobile, tapping into the writing surface yields the screen to the text:
+  // the header, tags, and footer collapse and Show header brings them back.
+  // Desktop keeps the sticky header. Capture catches clicks on controls inside
+  // the editor that stop propagation; it is scoped to the editor body, so the
+  // header and Show header button never trigger it.
+  const handleEditorBodyClick = useCallback(() => {
+    if (!isDesktop && headerVisible) {
+      setHeaderVisible(false);
+    }
+  }, [headerVisible, isDesktop, setHeaderVisible]);
+
   const confirmDelete = async () => {
     if (!document?.id) return;
     try {
@@ -458,6 +469,7 @@ export function DocumentEditor() {
         <div
           className="md:flex-1 flex-1 min-h-0 overflow-hidden"
           style={isDesktop ? { paddingBottom: 'calc(var(--nana-footer-height, 3rem) + 0.75rem)' } : undefined}
+          onClickCapture={handleEditorBodyClick}
         >
           <EditorContent
             key={editorSurfaceKey}
