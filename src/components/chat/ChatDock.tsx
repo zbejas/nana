@@ -111,6 +111,8 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const exitStateRef = useRef<ChatDockExitState>(closedChatDockExitState());
   const exitFallbackRef = useRef<number | null>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
+  const releaseDragFrameRef = useRef<number | null>(null);
+  const cancelSwipeDragRef = useRef<() => void>(() => {});
   const mounted = useRef(false);
   const lastConversationAtom = useRef<string | null>(null);
   const previousPathRef = useRef(location.pathname);
@@ -350,6 +352,18 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
       }
     }
     close();
+    // A reopen delivered in the same task can batch the close away entirely,
+    // leaving `enabled` true so the hook never clears the drag pin. Re-check
+    // after the commit settles; a real close has hidden the panel by then and
+    // keeps its pinned exit, while a batched reopen is still visible and gets
+    // released back to the open transform.
+    if (releaseDragFrameRef.current !== null) {
+      window.cancelAnimationFrame(releaseDragFrameRef.current);
+    }
+    releaseDragFrameRef.current = window.requestAnimationFrame(() => {
+      releaseDragFrameRef.current = null;
+      if (visibleRef.current) cancelSwipeDragRef.current();
+    });
   }, [close]);
 
   const swipe = useSwipeToClose({
@@ -359,6 +373,10 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     direction: 'both',
     ignoreTarget: isHorizontallyScrollable,
   });
+  const cancelSwipeDrag = swipe.cancelDrag;
+  useLayoutEffect(() => {
+    cancelSwipeDragRef.current = cancelSwipeDrag;
+  }, [cancelSwipeDrag]);
 
   const clearExitFallback = useCallback(() => {
     if (exitFallbackRef.current === null) return;
@@ -416,6 +434,15 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
       return;
     }
 
+    if (wasVisible === false) {
+      // A close and reopen delivered in one task can coalesce the intermediate
+      // closed render. The hook then never sees enabled=false, so its drag pin
+      // and attributes survive into the open state and freeze the surface at
+      // the release point. Release them first so the open transition can run
+      // from wherever the panel currently is.
+      cancelSwipeDrag();
+    }
+
     const entrance = wasVisible === false
       ? resolveChatDockEntrance(exitStateRef.current)
       : 'from-right';
@@ -432,7 +459,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     void panel.offsetWidth;
     panel.style.removeProperty('transform');
     panel.style.removeProperty('transition');
-  }, [scheduleExitFallback, settleOpenState, visible]);
+  }, [cancelSwipeDrag, scheduleExitFallback, settleOpenState, visible]);
 
   useEffect(() => {
     const panel = panelRef.current;
@@ -485,7 +512,13 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     };
   }, [clearExitFallback, parkClosedOnRight, settleOpenState]);
 
-  useEffect(() => () => clearExitFallback(), [clearExitFallback]);
+  useEffect(() => () => {
+    clearExitFallback();
+    if (releaseDragFrameRef.current !== null) {
+      window.cancelAnimationFrame(releaseDragFrameRef.current);
+      releaseDragFrameRef.current = null;
+    }
+  }, [clearExitFallback]);
 
   const newChat = () => {
     if (noteId) noteChoice.current.delete(noteId);

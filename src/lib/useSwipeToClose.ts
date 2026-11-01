@@ -107,6 +107,18 @@ export function useSwipeToClose({
     }
   }, [panelRef]);
 
+  /**
+   * Drop any drag ownership and the visuals it left behind without settling
+   * the gesture. Callers use this when something outside the gesture replaces
+   * the panel state, so a stale pin cannot outlive the interaction.
+   */
+  const cancelDrag = useCallback(() => {
+    dragRef.current = null;
+    suppressClickRef.current = false;
+    clearClickReset();
+    resetDragVisuals();
+  }, [clearClickReset, resetDragVisuals]);
+
   const setDragOffset = useCallback((panel: HTMLElement, drag: PanelDrag, offset: number) => {
     drag.offset = offset;
     panel.style.setProperty('--nana-swipe-drag-x', `${offset}px`);
@@ -495,5 +507,6 @@ export function useSwipeToClose({
     onPointerUp,
     onPointerCancel,
     onClickCapture,
+    cancelDrag,
   };
 }
