@@ -376,7 +376,7 @@ export function ChatThread({
         <main
           ref={messagesContainerRef}
           onScroll={handleScroll}
-          className={`absolute inset-0 overflow-y-auto scrollbar-autohide px-3 py-3 sm:px-4 ${
+          className={`absolute inset-0 overflow-x-hidden overflow-y-auto scrollbar-autohide px-3 py-3 sm:px-4 ${
             variant === 'page' ? 'sm:px-2' : ''
           }`}
         >

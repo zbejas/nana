@@ -666,10 +666,36 @@ body.public-route-active {
     transition: none !important;
   }
 
-  .nana-sidebar-drawer[data-drawer-dragging='true'] {
-    transform: translateX(var(--nana-sidebar-drag-x, 0px)) !important;
+  .nana-swipe-panel[data-swipe-dragging='true'] {
+    transform: translateX(var(--nana-swipe-drag-x, 0px)) !important;
     transition: none !important;
     user-select: none;
+  }
+
+  .nana-chat-dock {
+    --nana-chat-closed-x: 100%;
+    transform: translateX(var(--nana-chat-closed-x));
+    visibility: hidden;
+    transition:
+      transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s linear 200ms,
+      width 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .nana-chat-dock[data-state='open'] {
+    transform: translateX(0);
+    visibility: visible;
+    transition:
+      transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s,
+      width 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* A swipe close changes state while the drag transition is still disabled;
+     keep the surface painted until the drag attribute is released, then let
+     the closed-state visibility delay run alongside the exit slide. */
+  .nana-chat-dock[data-swipe-dragging='true'] {
+    visibility: visible;
   }
 
   @supports not selector(::-webkit-scrollbar) {

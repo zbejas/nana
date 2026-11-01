@@ -276,8 +276,12 @@ function AppContent() {
   );
   const requestedChatDockWidth = chatDockBaseWidth
     + (chatDockHistoryOpen ? CHAT_HISTORY_WIDTH : 0);
+  const chatDockRenderWidth = Math.min(requestedChatDockWidth, chatDockMaxWidth);
+  // The layout inset is zero while the dock is closed; the dock itself keeps
+  // its width so its transform can slide it fully offscreen instead of
+  // collapsing to a zero-width sliver.
   const chatDockWidth = !isMobile && chatDockVisible
-    ? Math.min(requestedChatDockWidth, chatDockMaxWidth)
+    ? chatDockRenderWidth
     : 0;
   const routeDirection = isMobile
     ? getMobileRouteDirection(previousMobilePathRef.current, location.pathname)
@@ -387,7 +391,7 @@ function AppContent() {
       <ToastHost />
       <AddToBoardHost />
       {shouldShowSidebar && (
-        <ChatDock width={chatDockWidth} maxWidth={chatDockMaxWidth} />
+        <ChatDock width={chatDockRenderWidth} maxWidth={chatDockMaxWidth} />
       )}
     </div>
   );
