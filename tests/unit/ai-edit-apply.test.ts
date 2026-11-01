@@ -11,7 +11,13 @@ import {
   aiDiffFallbackRanges,
   prosePositionAt,
   proseTextMap,
+  proseTextOffsetAt,
 } from '../../src/components/editor/milkdown/createEditor';
+import {
+  alignMarkdownToText,
+  markdownOffsetToTextOffset,
+  textOffsetToMarkdownOffset,
+} from '../../src/lib/collaboration/text';
 
 const schema = new Schema({
   nodes: {
@@ -27,6 +33,15 @@ function paragraph(text = ''): ProseNode {
 
 function docOf(...nodes: ProseNode[]): ProseNode {
   return schema.nodes.doc!.create(null, nodes);
+}
+
+/** Position of the first content character inside a top-level block. */
+function contentStart(doc: ProseNode, index: number): number {
+  let position = 0;
+  for (let child = 0; child < index; child += 1) {
+    position += doc.child(child).nodeSize;
+  }
+  return position + 1;
 }
 
 describe('canonical editor Markdown', () => {
@@ -317,12 +332,69 @@ describe('prose text position mapping', () => {
     // The second deletion sits on the block separator in the new body, the
     // first on the next paragraph's first text offset. Both must resolve to
     // the paragraph start so the widget renders before its first letter.
-    const first = prosePositionAt(afterMap, changes[0]!.start);
-    const second = prosePositionAt(afterMap, changes[1]!.start);
+    const first = prosePositionAt(afterMap, changes[0]!.start, 'next-block');
+    const second = prosePositionAt(afterMap, changes[1]!.start, 'next-block');
     expect(after.resolve(first).parent.textContent).toBe('KEEP-BRAVO');
     expect(after.resolve(first).parentOffset).toBe(0);
     expect(after.resolve(second).parent.textContent).toBe('Tail.');
     expect(after.resolve(second).parentOffset).toBe(0);
+  });
+
+  test('keeps the end of a paragraph and the start of the next one distinct', () => {
+    const doc = docOf(
+      paragraph('KEEP-ALPHA'),
+      paragraph('BRAVO'),
+      paragraph('CHARLIE'),
+      paragraph('Tail.'),
+    );
+    const map = proseTextMap(doc);
+    const bravoEnd = contentStart(doc, 1) + doc.child(1).content.size;
+    const charlieStart = contentStart(doc, 2);
+    const endText = proseTextOffsetAt(map, bravoEnd);
+    const startText = proseTextOffsetAt(map, charlieStart);
+
+    expect(endText).not.toBe(startText);
+
+    const previousEnd = prosePositionAt(map, endText, 'previous-text');
+    const nextStart = prosePositionAt(map, startText, 'previous-text');
+    expect(doc.resolve(previousEnd).parent.textContent).toBe('BRAVO');
+    expect(doc.resolve(previousEnd).parentOffset).toBe(5);
+    expect(doc.resolve(nextStart).parent.textContent).toBe('CHARLIE');
+    expect(doc.resolve(nextStart).parentOffset).toBe(0);
+
+    // Both offsets round-trip back to the same paragraph edge.
+    expect(proseTextOffsetAt(map, previousEnd)).toBe(endText);
+    expect(proseTextOffsetAt(map, nextStart)).toBe(startText);
+
+    // An AI deletion at either side of the separator belongs before CHARLIE.
+    expect(prosePositionAt(map, endText, 'next-block')).toBe(charlieStart);
+    expect(prosePositionAt(map, startText, 'next-block')).toBe(charlieStart);
+  });
+
+  test('round-trips boundary carets through Markdown presence without collapsing them', () => {
+    const doc = docOf(
+      paragraph('KEEP-ALPHA'),
+      paragraph('BRAVO'),
+      paragraph('CHARLIE'),
+      paragraph('Tail.'),
+    );
+    const markdown = 'KEEP-ALPHA\n\nBRAVO\n\nCHARLIE\n\nTail.';
+    const map = proseTextMap(doc);
+    const segments = alignMarkdownToText(markdown, map.text);
+    const projectPresence = (position: number): number | null => {
+      const textOffset = proseTextOffsetAt(map, position);
+      const markdownOffset = textOffsetToMarkdownOffset(segments, textOffset);
+      const received = markdownOffset === null
+        ? null
+        : markdownOffsetToTextOffset(segments, markdownOffset);
+      return received === null ? null : prosePositionAt(map, received, 'previous-text');
+    };
+
+    const bravoEnd = contentStart(doc, 1) + doc.child(1).content.size;
+    const charlieStart = contentStart(doc, 2);
+
+    expect(projectPresence(bravoEnd)).toBe(bravoEnd);
+    expect(projectPresence(charlieStart)).toBe(charlieStart);
   });
 
   test('keeps inline text offsets on their original characters', () => {
@@ -334,5 +406,12 @@ describe('prose text position mapping', () => {
     expect(prosePositionAt(map, 5)).toBe(6);
     expect(prosePositionAt(map, 10)).toBe(13);
     expect(doc.resolve(prosePositionAt(map, 5)).parentOffset).toBe(5);
+
+    const start = doc.resolve(prosePositionAt(map, 0, 'next-block'));
+    const end = doc.resolve(prosePositionAt(map, map.text.length, 'next-block'));
+    expect(start.parent.textContent).toBe('alpha beta');
+    expect(start.parentOffset).toBe(0);
+    expect(end.parent.textContent).toBe('gamma');
+    expect(end.parentOffset).toBe(5);
   });
 });

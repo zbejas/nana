@@ -301,15 +301,37 @@ export function proseTextMap(doc: ProseNode): ProseTextMap {
   return { text, segments, textSegments };
 }
 
+/**
+ * Block separators occupy one newline in the plain-text projection but stand
+ * for two editor carets: the end of the previous textblock and the start of
+ * the next one. `next-block` resolves that newline to the following block's
+ * content start, where an AI deletion widget belongs. `previous-text` resolves
+ * it to the previous textblock's end, so a remote caret at the end of a
+ * non-final paragraph stays there. The two non-empty carets have distinct
+ * plain-text offsets (see `proseTextOffsetAt`), so the correct bias at a call
+ * site does not collapse a caret at the start of the next paragraph.
+ */
+export type ProseBoundaryBias = 'next-block' | 'previous-text';
+
 /** Map a plain-text offset from `proseTextMap` back to a ProseMirror position. */
-export function prosePositionAt(map: ProseTextMap, offset: number): number {
+export function prosePositionAt(
+  map: ProseTextMap,
+  offset: number,
+  bias: ProseBoundaryBias = 'next-block',
+): number {
   if (map.segments.length === 0) return 0;
   for (let index = 0; index < map.segments.length; index += 1) {
     const segment = map.segments[index]!;
     if (offset < segment.textStart) return segment.from;
     if (offset <= segment.textEnd) {
       const next = map.segments[index + 1];
-      if (offset === segment.textEnd && next?.textStart === offset) continue;
+      if (offset === segment.textEnd && next?.textStart === offset) {
+        // The start of a separator is the previous textblock's end. The
+        // next-block bias skips it and lands on the following block's content
+        // start; the previous-text bias keeps the caret on the text end.
+        if (bias === 'previous-text') return segment.to;
+        continue;
+      }
       return segment.from + Math.max(0, Math.min(offset - segment.textStart, segment.to - segment.from));
     }
   }
@@ -348,8 +370,8 @@ function collaboratorDecorations(
     const anchorText = markdownOffsetToTextOffset(segments, collaborator.anchor);
     const headText = markdownOffsetToTextOffset(segments, collaborator.head);
     if (anchorText === null || headText === null) continue;
-    const anchor = prosePositionAt(map, anchorText);
-    const head = prosePositionAt(map, headText);
+    const anchor = prosePositionAt(map, anchorText, 'previous-text');
+    const head = prosePositionAt(map, headText, 'previous-text');
     const from = Math.min(anchor, head);
     const to = Math.max(anchor, head);
 
@@ -541,7 +563,7 @@ export function setAiDiffHighlights(
     span.textContent = formatAiDiffDeleteText(change.text).display;
     span.setAttribute('aria-hidden', 'true');
     decorations.push(Decoration.widget(
-      prosePositionAt(map, change.start),
+      prosePositionAt(map, change.start, 'next-block'),
       span,
       { side: -1 },
     ));
@@ -1039,11 +1061,24 @@ export function getEditorMarkdown(ctx: Ctx): string {
   return normalizeMarkdown(ctx.get(serializerCtx)(ctx.get(editorStateCtx).doc));
 }
 
-function textOffsetForProsePosition(map: ProseTextMap, position: number): number {
+/**
+ * Project a ProseMirror caret into the plain-text projection.
+ *
+ * A separator is zero-width in ProseMirror but one newline in plain text. Its
+ * document position is the following block's content start, so map that caret
+ * to the separator's `textEnd` (the next textblock's start) instead of its
+ * `textStart` (the previous textblock's end). End-of-textblock carets never
+ * share that document position, which keeps the two boundary affinities
+ * distinct through Markdown presence.
+ */
+export function proseTextOffsetAt(map: ProseTextMap, position: number): number {
   let fallback = 0;
   for (const segment of map.segments) {
     if (position < segment.from) return segment.textStart;
     if (position <= segment.to) {
+      if (segment.from === segment.to && position === segment.from) {
+        return segment.textEnd;
+      }
       return segment.textStart + Math.max(0, Math.min(position - segment.from, segment.textEnd - segment.textStart));
     }
     fallback = segment.textEnd;
@@ -1058,8 +1093,8 @@ export function getMarkdownSelection(ctx: Ctx): { anchor: number; head: number }
   const markdown = getEditorMarkdown(ctx);
   const map = proseTextMap(view.state.doc);
   const segments = alignMarkdownToText(markdown, map.text);
-  const anchorText = textOffsetForProsePosition(map, view.state.selection.anchor);
-  const headText = textOffsetForProsePosition(map, view.state.selection.head);
+  const anchorText = proseTextOffsetAt(map, view.state.selection.anchor);
+  const headText = proseTextOffsetAt(map, view.state.selection.head);
   const anchor = textOffsetToMarkdownOffset(segments, anchorText);
   const head = textOffsetToMarkdownOffset(segments, headText);
   if (anchor === null || head === null) return null;
@@ -1072,7 +1107,9 @@ function prosePositionForMarkdownOffset(doc: ProseNode, markdown: string, offset
   const segments = alignMarkdownToText(markdown, map.text);
   const textOffset = markdownOffsetToTextOffset(segments, offset);
   if (textOffset === null) return null;
-  return prosePositionAt(map, textOffset);
+  // Selection restoration is caret-like: an offset at a paragraph end stays
+  // on that paragraph instead of jumping into the following block.
+  return prosePositionAt(map, textOffset, 'previous-text');
 }
 
 /**
