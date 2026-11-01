@@ -43,6 +43,20 @@ describe('canonical editor Markdown', () => {
       'Keep this.\n\nTail.\n\nLocal merge that re-added a sentence.',
     )).toBe(false);
   });
+
+  test('keeps blank lines inside fenced code significant', () => {
+    const tight = 'Prose.\n\n```ts\none\n\ntwo\n```\n\nTail.';
+    const loose = 'Prose.\n\n```ts\none\n\n\ntwo\n```\n\nTail.';
+
+    expect(canonicalEditorMarkdown(loose)).toBe(loose);
+    expect(isSameEditorMarkdown(loose, tight)).toBe(false);
+    expect(isSameEditorMarkdown(
+      'Prose.\n\n\n\n```ts\none\n\ntwo\n```\n\n\n\nTail.',
+      tight,
+    )).toBe(true);
+    expect(canonicalEditorMarkdown('````md\n```\none\n\n\ntwo\n```\n````'))
+      .toBe('````md\n```\none\n\n\ntwo\n```\n````');
+  });
 });
 
 describe('planWysiwygAiMarkdown', () => {
