@@ -581,8 +581,12 @@ body.public-route-active {
     transition: transform 180ms ease;
   }
 
-  .settings-tab-content-enter {
-    animation: desktop-route-enter 220ms ease-out both;
+  /* Settings tab content only animates on desktop. On mobile the keyed route
+     wrapper already owns the single navigation motion. */
+  @media (min-width: 768px) {
+    .settings-tab-content-enter {
+      animation: desktop-route-enter 220ms ease-out both;
+    }
   }
 
   @media (min-width: 768px) {

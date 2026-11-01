@@ -36,6 +36,15 @@ import { useChatViewportHeight, useIsMobileChat } from '../../lib/chat/viewport'
 import { findChatModel } from '../../lib/chat/models';
 import { useBackToClose } from '../../lib/useBackToClose';
 import { useSwipeToClose } from '../../lib/useSwipeToClose';
+import {
+  CHAT_DOCK_EXIT_FALLBACK_MS,
+  beginChatDockExitState,
+  closedChatDockExitState,
+  completedChatDockExitState,
+  openChatDockExitState,
+  resolveChatDockEntrance,
+  type ChatDockExitState,
+} from '../../lib/chatDockMotion';
 import { sharingRealtimeTickAtom } from '../../state/sharing';
 
 interface ChatDockProps {
@@ -63,6 +72,10 @@ function isHorizontallyScrollable(target: EventTarget | null, panel: HTMLElement
     element = element.parentElement;
   }
   return false;
+}
+
+function isChatDockHidden(panel: HTMLElement): boolean {
+  return window.getComputedStyle(panel).visibility === 'hidden';
 }
 
 /**
@@ -95,6 +108,8 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
   const panelRef = useRef<HTMLElement>(null);
   const visibleRef = useRef(false);
   const previousVisibleRef = useRef<boolean | null>(null);
+  const exitStateRef = useRef<ChatDockExitState>(closedChatDockExitState());
+  const exitFallbackRef = useRef<number | null>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const mounted = useRef(false);
   const lastConversationAtom = useRef<string | null>(null);
@@ -327,8 +342,8 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     if (panel) {
       if (offset < 0) {
         // Exit in the pull direction. The closed-state transform reads this
-        // variable while the surface is hidden; the transition-end handler
-        // parks it on the right for the next entrance.
+        // variable until the exit-end handler parks the hidden surface on the
+        // right for the next entrance.
         panel.style.setProperty('--nana-chat-closed-x', '-100%');
       } else {
         panel.style.removeProperty('--nana-chat-closed-x');
@@ -345,80 +360,121 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     ignoreTarget: isHorizontallyScrollable,
   });
 
+  const clearExitFallback = useCallback(() => {
+    if (exitFallbackRef.current === null) return;
+    window.clearTimeout(exitFallbackRef.current);
+    exitFallbackRef.current = null;
+  }, []);
+
+  const parkClosedOnRight = useCallback(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    // The surface is hidden here; move it to the right with transitions off so
+    // the next open cannot start on the edge the close left behind.
+    panel.style.transition = 'none';
+    panel.style.removeProperty('--nana-chat-closed-x');
+    void panel.offsetWidth;
+    panel.style.removeProperty('transition');
+  }, []);
+
+  const scheduleExitFallback = useCallback(() => {
+    clearExitFallback();
+    exitFallbackRef.current = window.setTimeout(() => {
+      exitFallbackRef.current = null;
+      // A normal open clears this timer. If it still fires while the dock is
+      // visible, the surface is not exiting and the state must not move.
+      if (visibleRef.current) return;
+      const panel = panelRef.current;
+      exitStateRef.current = completedChatDockExitState();
+      if (panel && isChatDockHidden(panel)) parkClosedOnRight();
+    }, CHAT_DOCK_EXIT_FALLBACK_MS);
+  }, [clearExitFallback, parkClosedOnRight]);
+
+  const settleOpenState = useCallback(() => {
+    const panel = panelRef.current;
+    panel?.style.removeProperty('--nana-chat-closed-x');
+    exitStateRef.current = openChatDockExitState(exitStateRef.current);
+    clearExitFallback();
+  }, [clearExitFallback]);
+
   useLayoutEffect(() => {
     const panel = panelRef.current;
     const wasVisible = previousVisibleRef.current;
     previousVisibleRef.current = visible;
-    if (!panel || !visible) return;
+    if (!panel) return;
 
-    // The next entrance always starts on the right. Clearing the exit side
-    // while open has no visual effect; it only changes the closed-state
-    // target. A close that is still visibly in progress is allowed to reverse
-    // from its current position instead.
-    panel.style.removeProperty('--nana-chat-closed-x');
-    if (wasVisible !== false) return;
-
-    const width = panel.getBoundingClientRect().width;
-    if (width <= 0) return;
-    const matrix = window.getComputedStyle(panel).transform;
-    let currentX = 0;
-    if (matrix && matrix !== 'none') {
-      try {
-        currentX = new DOMMatrixReadOnly(matrix).m41;
-      } catch {
-        currentX = 0;
+    if (!visible) {
+      if (wasVisible === true) {
+        // The close commit is the only place that decides the exit side. It is
+        // recorded before the transform runs, so a reopen never has to infer
+        // progress from a pixel threshold.
+        exitStateRef.current = beginChatDockExitState(
+          panel.style.getPropertyValue('--nana-chat-closed-x'),
+        );
+        scheduleExitFallback();
       }
-    }
-
-    if (currentX <= -1 && currentX > -width + 1) {
-      // Mid-exit: keep the reverse from where the surface is now.
       return;
     }
 
-    // Closed at rest, hidden on the left after an interrupted transition, or
-    // closed and reopened in the same frame. Pin the closed side on the right
-    // for one style flush so the opening transition cannot start on the left.
+    const entrance = wasVisible === false
+      ? resolveChatDockEntrance(exitStateRef.current)
+      : 'from-right';
+    // Clearing the exit side has no visual effect while open; it only changes
+    // the closed-state target so an in-flight reversal heads to zero.
+    settleOpenState();
+    if (wasVisible !== false || entrance === 'reverse') return;
+
+    // The previous exit finished (or its state expired), so the next entrance
+    // starts on the right. Pin for one style flush so it cannot begin on the
+    // side the last close used.
     panel.style.transition = 'none';
     panel.style.transform = 'translateX(100%)';
     void panel.offsetWidth;
     panel.style.removeProperty('transform');
     panel.style.removeProperty('transition');
-  }, [visible]);
+  }, [scheduleExitFallback, settleOpenState, visible]);
 
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
 
-    const parkClosedOnRight = () => {
-      // The surface is hidden at this point; move it to the right without a
-      // transition so the next open always enters from the right. This is
-      // driven by the real transition end, not by a close timer.
-      panel.style.transition = 'none';
-      panel.style.removeProperty('--nana-chat-closed-x');
-      void panel.offsetWidth;
-      panel.style.removeProperty('transition');
+    const completeExit = () => {
+      exitStateRef.current = completedChatDockExitState();
+      clearExitFallback();
+      if (!visibleRef.current) parkClosedOnRight();
     };
 
     const handleTransitionEnd = (event: TransitionEvent) => {
       if (event.target !== panel) return;
       if (event.propertyName === 'transform') {
         if (visibleRef.current) {
-          panel.style.removeProperty('--nana-chat-closed-x');
+          // The open transition (including a mid-exit reversal) owns motion.
+          settleOpenState();
           return;
         }
-        if (window.getComputedStyle(panel).visibility === 'hidden') {
-          parkClosedOnRight();
-        }
+        // The exit slide is done. The visibility delay may land a frame later,
+        // but this surface has left; the next open starts from the right.
+        exitStateRef.current = completedChatDockExitState();
+        clearExitFallback();
+        if (isChatDockHidden(panel)) parkClosedOnRight();
         return;
       }
       if (event.propertyName === 'visibility' && !visibleRef.current) {
-        parkClosedOnRight();
+        completeExit();
       }
     };
 
     const handleTransitionCancel = (event: TransitionEvent) => {
       if (event.target !== panel || event.propertyName !== 'transform') return;
-      if (visibleRef.current) panel.style.removeProperty('--nana-chat-closed-x');
+      if (!visibleRef.current) {
+        // A transition can cancel while the dock is still closed. If it is
+        // already hidden, settle immediately; otherwise the bounded fallback
+        // owns the dropped exit.
+        if (isChatDockHidden(panel)) completeExit();
+        return;
+      }
+      // A reopen interrupted the exit transition; it is no longer closing.
+      settleOpenState();
     };
 
     panel.addEventListener('transitionend', handleTransitionEnd);
@@ -427,7 +483,9 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
       panel.removeEventListener('transitionend', handleTransitionEnd);
       panel.removeEventListener('transitioncancel', handleTransitionCancel);
     };
-  }, []);
+  }, [clearExitFallback, parkClosedOnRight, settleOpenState]);
+
+  useEffect(() => () => clearExitFallback(), [clearExitFallback]);
 
   const newChat = () => {
     if (noteId) noteChoice.current.delete(noteId);
