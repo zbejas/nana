@@ -1,15 +1,25 @@
-import type { ChatEditDto, ChatSource } from "../types";
+import type { ChatEditContentChange, ChatEditDto, ChatSource } from "../types";
+
+/**
+ * One applied write plus the event-only body pair for document body edits.
+ * The pair is deliberately kept out of the persisted `ChatEditDto`.
+ */
+export interface RecordedChatEdit {
+    edit: ChatEditDto;
+    contentChange?: ChatEditContentChange;
+}
 
 /**
  * Per-request collection of evidence:
  *
  * - `sources` are records a read tool actually returned, so the UI never has
  *   to trust model-invented links.
- * - `edits` are applied writes, drained by the SSE pump to emit `edit` cards.
+ * - `edits` are applied writes, drained by the SSE pump to emit `edit` cards
+ *   and, for document body writes, the bounded before/after flash payload.
  */
 export class ChatRunRecorder {
     private readonly sources = new Map<string, ChatSource>();
-    private readonly pendingEdits: ChatEditDto[] = [];
+    private readonly pendingEdits: RecordedChatEdit[] = [];
     private readonly appliedEditIds: string[] = [];
 
     addSource(source: ChatSource): void {
@@ -26,13 +36,16 @@ export class ChatRunRecorder {
         });
     }
 
-    addEdit(edit: ChatEditDto): void {
-        this.pendingEdits.push(edit);
+    addEdit(edit: ChatEditDto, contentChange?: ChatEditContentChange): void {
+        this.pendingEdits.push({
+            edit,
+            ...(contentChange ? { contentChange } : {}),
+        });
         this.appliedEditIds.push(edit.id);
     }
 
     /** Drains edits since the last call, in application order. */
-    drainEdits(): ChatEditDto[] {
+    drainEdits(): RecordedChatEdit[] {
         return this.pendingEdits.splice(0, this.pendingEdits.length);
     }
 

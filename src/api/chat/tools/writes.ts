@@ -23,6 +23,7 @@ import { createToolSignal, isValidRecordId, truncate } from "./text";
 import { noteVersionToken, revisionMatches } from "./version";
 import type {
     ChatEditChanges,
+    ChatEditContentChange,
     ChatEditSection,
     ChatEditTarget,
     ChatEditUndoKind,
@@ -321,6 +322,8 @@ async function persistEdit(
         undoKind: ChatEditUndoKind;
         status?: "pending" | "applied";
         kind?: "create" | "edit" | "delete";
+        /** Event-only pre/post body for a document body write; never persisted. */
+        contentChange?: ChatEditContentChange;
     },
 ): Promise<string | null> {
     if (!write.conversationId) return null;
@@ -342,7 +345,7 @@ async function persistEdit(
             status: input.status,
             kind: input.kind,
         });
-        write.recorder.addEdit(edit);
+        write.recorder.addEdit(edit, input.contentChange);
         return edit.id;
     } catch (error) {
         // The workspace write succeeded. Losing the card is preferable to
@@ -738,6 +741,12 @@ export async function appendNoteTool(
                 ? { afterUpdated: result.note.updated }
                 : {}),
             undoKind: "restore",
+            contentChange: {
+                before: before.content,
+                after: result.note.content,
+                beforeRevision: note.revision,
+                afterRevision: finalRevision,
+            },
         });
         write.recorder.addSource({ type: "document", id: note.id, title: result.note.title });
 
@@ -841,6 +850,12 @@ export async function editNoteTool(
                 ? { afterUpdated: result.note.updated }
                 : {}),
             undoKind: "restore",
+            contentChange: {
+                before: before.content,
+                after: result.note.content,
+                beforeRevision: note.revision,
+                afterRevision: finalRevision,
+            },
         });
         write.recorder.addSource({ type: "document", id: note.id, title: result.note.title });
 

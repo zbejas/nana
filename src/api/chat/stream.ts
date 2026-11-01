@@ -1,6 +1,7 @@
 import {
     sanitizeChatUsage,
     sanitizeToolError,
+    type ChatEditContentChange,
     type ChatEditDto,
     type ChatPart,
     type ChatSource,
@@ -8,6 +9,7 @@ import {
     type ChatToolStatus,
     type ChatUsage,
 } from "./types";
+import { boundEditContentChange } from "./edit-content";
 
 /**
  * SSE encoding for the chat stream.
@@ -114,8 +116,19 @@ export function stepUsage(usage: StepUsageLike | null | undefined): ChatUsage | 
     });
 }
 
-export function editEvent(edit: ChatEditDto): string {
-    return sseEvent("edit", { edit });
+/**
+ * One applied edit card. Document body writes may also carry an event-only
+ * before/after pair for the editor flash; the bounded pair is intentionally
+ * outside `edit` so list/get DTOs can never acquire it.
+ */
+export function editEvent(
+    edit: ChatEditDto,
+    contentChange?: ChatEditContentChange | null,
+): string {
+    return sseEvent("edit", {
+        edit,
+        ...boundEditContentChange(contentChange),
+    });
 }
 
 export function doneEvent(payload: {

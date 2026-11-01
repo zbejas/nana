@@ -1,8 +1,10 @@
 import { useMemo, type DragEvent } from 'react';
+import { SparklesIcon } from '@heroicons/react/24/outline';
 import { NanaMarkdownEditor } from './milkdown/NanaMarkdownEditor';
 import { NanaSourceEditor } from './milkdown/NanaSourceEditor';
 import { NanaSplitMarkdownEditor } from './milkdown/NanaSplitMarkdownEditor';
 import { diffText } from './milkdown/aiDiff';
+import { aiDiffSummaryLabel, summarizeAiDiff } from './milkdown/aiDiffView';
 import type { AiChangedSection } from './milkdown/aiEdits';
 import { normalizeMarkdown } from './milkdown/helpers';
 import type { ViewMode } from './EditorHeader';
@@ -64,6 +66,10 @@ export function EditorContent({
     );
     return changes.length > 0 ? { id: aiEdit.id, markdown: normalizeMarkdown(aiEdit.markdown), changes } : null;
   }, [aiEdit]);
+  const aiDiffSummary = useMemo(
+    () => (sourceAiDiff ? summarizeAiDiff(sourceAiDiff.changes) : null),
+    [sourceAiDiff],
+  );
 
   return (
     <div
@@ -86,6 +92,20 @@ export function EditorContent({
             : `mx-auto rounded-panel border border-line ${isSplitMode ? 'max-w-[1240px]' : 'max-w-[920px]'}`
         }`}
       >
+        {aiDiffSummary && aiDiffSummary.hunkCount > 1 && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex shrink-0 items-center gap-2 border-b border-signal/20 bg-signal-soft px-4 py-1.5 text-[11px] font-medium text-signal"
+          >
+            <SparklesIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{aiDiffSummaryLabel(aiDiffSummary.hunkCount)}</span>
+            <span className="hidden font-normal text-ink-secondary sm:inline">
+              Later changes stay highlighted in place.
+            </span>
+          </div>
+        )}
+
         {viewMode === 'text' && (
           <div className="scrollbar-autohide relative h-full min-h-0 flex-1 overflow-hidden">
             <NanaSourceEditor

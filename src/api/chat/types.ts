@@ -350,6 +350,20 @@ export interface ChatEditUndoInfo {
     available: boolean;
 }
 
+/**
+ * Event-only body pair for the AI diff flash on document body writes.
+ *
+ * This shape is attached to the live `edit` SSE frame only. It is never stored
+ * in `chat_edits.operations`, included in `ChatEditDto`, persisted in message
+ * parts, or written to logs. The server also bounds each body and the pair.
+ */
+export interface ChatEditContentChange {
+    before: string;
+    after: string;
+    beforeRevision?: number;
+    afterRevision?: number;
+}
+
 /** One applied write, as persisted in `chat_edits` and rendered as a card. */
 export interface ChatEditDto {
     id: string;

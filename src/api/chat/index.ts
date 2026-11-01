@@ -594,9 +594,9 @@ function createChatStream(options: ChatStreamOptions): ReadableStream<Uint8Array
             };
 
             const drainEdits = () => {
-                for (const edit of options.recorder.drainEdits()) {
-                    state.addEdit(edit);
-                    enqueue(editEvent(edit));
+                for (const recorded of options.recorder.drainEdits()) {
+                    state.addEdit(recorded.edit);
+                    enqueue(editEvent(recorded.edit, recorded.contentChange));
                 }
             };
 

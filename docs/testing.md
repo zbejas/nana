@@ -37,7 +37,10 @@ tests/
     settings.ts
   unit/
     ai-diff.test.ts
+    ai-diff-fallback.test.ts
+    ai-diff-view.test.ts
     ai-edit-apply.test.ts
+    ai-edit-lifecycle.test.ts
     ai-visibility.test.ts
     api-key-scope.test.ts
     board-dates.test.ts
@@ -45,6 +48,7 @@ tests/
     chat-attachments.test.ts
     chat-context.test.ts
     chat-dock-motion.test.ts
+    chat-edit-event.test.ts
     chat-input-schemas.test.ts
     chat-stream.test.ts
     chat-tool-errors.test.ts
@@ -259,7 +263,11 @@ Rules:
 | Change | Add or update |
 | --- | --- |
 | Pure parser, formatter, bounds, schema, sanitizer, swipe intent/geometry, AI diff offsets | `tests/unit/` |
-| AI inline diff separated hunks, replacements, monotonic offsets, whitespace preservation | `tests/unit/ai-diff.test.ts` |
+| AI inline diff separated hunks, replacements, monotonic offsets, whitespace preservation, long-note scaling | `tests/unit/ai-diff.test.ts` |
+| AI diff hunk grouping, multi-hunk count/scroll, deletion truncation, flash duration and remount claims | `tests/unit/ai-diff-view.test.ts` |
+| AI diff block-wash fallback for empty section metadata or oversized inline changes | `tests/unit/ai-diff-fallback.test.ts` |
+| AI edit event-body resolution, latest-wins, connected-room wait, stale/diverged skip, remote-transition ring | `tests/unit/ai-edit-lifecycle.test.ts` |
+| Chat `edit` SSE `contentChange` lifting, over-cap omission, and list/get separation | `tests/unit/chat-edit-event.test.ts` + `tests/unit/chat-stream.test.ts` + `tests/api/chat-write-tools.test.ts` |
 | Chat dock close side, in-flight reverse, settled from-right entrance, fallback bound | `tests/unit/chat-dock-motion.test.ts` |
 | New Bun application route | `tests/api/` |
 | New typed `/api/v1` route or DTO | `tests/api/rest-api.test.ts` |
@@ -321,13 +329,13 @@ Rules:
 | --- | --- |
 | Registry | Ask mode omits every write tool and keeps `list_tasks`; Work mode registers the full write allowlist, including folder/note/board move, rename, and trash tools. |
 | Context | Server-resolved titles; foreign, private, and private-folder contexts return `404`; a shared document with a person grant is allowed and becomes a strict note scope; wrong type is `400`. |
-| Notes | `create_note` stamps `last_edit_source: "ai"`/`last_edited_by: "Nana"`; `append_note` and `edit_note` carry untouched content through and store the pre-edit snapshot in `chat_edits.operations.before`; stale revisions return `conflict`; missing/ambiguous anchors abort; private notes and private-folder notes return `not_found`; `move_note` changes the folder and refuses a private destination. |
+| Notes | `create_note` stamps `last_edit_source: "ai"`/`last_edited_by: "Nana"`; `append_note` and `edit_note` carry untouched content through, store the pre-edit snapshot in `chat_edits.operations.before`, and emit one event-only `contentChange` pair with ordered revisions while leaving it out of the edit DTO and persisted operations; metadata/board/task writes emit no pair; stale revisions return `conflict`; missing/ambiguous anchors abort; private notes and private-folder notes return `not_found`; `move_note` changes the folder and refuses a private destination. |
 | Folders | Create, rename, and move a folder; the parent relation is persisted. |
 | Boards/tasks | Board creation, board rename/move, folder creation, task create/update/move, trashed-board conflict, invalid status, foreign task `not_found`, and `actor_type: "ai"` task activity. |
 | Delete approval | A delete tool creates `pending` and leaves the target untouched; confirm trashes the target; cancel leaves it untouched; another user cannot confirm. |
 | Cards/undo | Edit rows list oldest first; undo/confirm/cancel are conversation-owner only; created-note undo trashes and repeated undo is a no-op; note-edit undo restores the snapshot and repeated undo does not bump the revision again. |
 
-The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), named/legacy SSE encoding (`tests/unit/chat-stream.test.ts`), route context derivation (`tests/unit/chat-context.test.ts`), revision tokens (`tests/unit/chat-version-token.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), API key token/scope helpers (`tests/unit/api-key-scope.test.ts`), AI diff offsets and whitespace (`tests/unit/ai-diff.test.ts`), chat dock exit state (`tests/unit/chat-dock-motion.test.ts`), swipe intent/geometry (`tests/unit/swipe-to-close.test.ts`), and the git version store (`tests/unit/versioning-store.test.ts`).
+The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), named/legacy SSE encoding and the event-only edit bodies (`tests/unit/chat-stream.test.ts`, `tests/unit/chat-edit-event.test.ts`), route context derivation (`tests/unit/chat-context.test.ts`), revision tokens (`tests/unit/chat-version-token.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), API key token/scope helpers (`tests/unit/api-key-scope.test.ts`), AI diff offsets and whitespace (`tests/unit/ai-diff.test.ts`), multi-hunk presentation, scroll, truncation, and bounded flash claims (`tests/unit/ai-diff-view.test.ts`), rendered-pane fallback ranges (`tests/unit/ai-diff-fallback.test.ts`), AI edit body resolution and the remote-transition ring (`tests/unit/ai-edit-lifecycle.test.ts`), chat dock exit state (`tests/unit/chat-dock-motion.test.ts`), swipe intent/geometry (`tests/unit/swipe-to-close.test.ts`), and the git version store (`tests/unit/versioning-store.test.ts`).
 
 The missing-anchor error returns up to three closest source lines for the failing operation's anchor only as a structured `candidates` array; its `message` stays generic. `tests/unit/markdown-sections.test.ts` asserts that the error carries the failing anchor and operation index; the `closestTextLines` fallback itself has no direct test assertion. `tests/api/chat-write-tools.test.ts` asserts the generic `invalid_input` message and candidate presence.
 
@@ -351,7 +359,7 @@ Shared-note chat has a dedicated integration file, `tests/api/chat-group.test.ts
 | Unauthorized read flush | A caller without access to a live note cannot make `read_note` flush that room; the tool returns `not_found` before the flush. |
 | Bounded flush signal | A caller abort during the room PATCH/lookup path returns an `unavailable`/conflict-style tool failure instead of a stale read; the scheduled no-signal flush is unchanged. |
 | Non-clean explicit flush | The Save version flush route returns `409` for `dirty`/`saving` as well as `conflict`/`error`; only a `clean` snapshot is accepted. |
-| AI write adoption | A chat/tool write against a note with a live room merges concurrent local text, applies one server-origin diff, and returns the external/final revision; the editor does not re-apply the fetched body. |
+| AI write adoption | A chat/tool write against a note with a live room merges concurrent local text, applies one server-origin diff, and returns the external/final revision; the editor does not re-apply the fetched body. The event body pair and connected-room resolver are unit-covered (`ai-edit-lifecycle.test.ts`); the end-to-end editor path still needs a manual/live-room check. |
 | Tab resume | `CollabSession` reconnects after 30 seconds hidden, keeps shorter hides connected, uses the `pagehide`/`pageshow` path, and `App.tsx` has no inactivity `window.location.reload()`. |
 
 ### REST and MCP coverage

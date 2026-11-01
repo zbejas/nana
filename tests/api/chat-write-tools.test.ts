@@ -364,6 +364,11 @@ describe("shared note scope", () => {
         const stored = await pbGetRecord<TestRecord>(other.token, "documents", note.id);
         expect(String(stored.content)).toContain("Edited by the grantee.");
         expect(String(stored.content)).not.toContain("Original grantee body.");
+        const sharedEvent = granteeWrite.recorder.drainEdits()[0];
+        expect(sharedEvent?.contentChange?.before).toContain("Original grantee body.");
+        expect(sharedEvent?.contentChange?.after).toContain("Edited by the grantee.");
+        expect(sharedEvent?.contentChange?.beforeRevision).toBe(read.revision);
+        expect(sharedEvent?.contentChange?.afterRevision).toBe(Number(stored.revision));
 
         const viewWrite = {
             ...granteeWrite,
@@ -432,13 +437,15 @@ describe("create_note", () => {
         expect(edit.actorType).toBe("ai");
         expect(edit.actorLabel).toBe("Nana");
         expect(edit.target.title).toBe("Chat created note");
+        expect(recorder.drainEdits()[0]?.contentChange).toBeUndefined();
     });
 });
 
 describe("append_note", () => {
     test("appends without changing untouched content and records the before snapshot", async () => {
         const before = await readEditorNote(notes.editable.id);
-        const result = await appendNoteTool(writeContext(), {
+        const recorder = new ChatRunRecorder();
+        const result = await appendNoteTool(writeContext({ recorder }), {
             noteId: notes.editable.id,
             markdown: "## Follow-up\n\nAdded by Nana.",
             expectedRevision: before.versionToken,
@@ -468,9 +475,30 @@ describe("append_note", () => {
             : rawOperations) as {
                 before?: { content?: string };
                 versionId?: string;
+                contentChange?: unknown;
             };
         expect(operations.before?.content).toBe(before.content);
         expect(operations.versionId).toBeUndefined();
+
+        // The before/after body pair rides the live event only. It is not part
+        // of the DTO returned by get/list, nor the persisted operations row.
+        const events = recorder.drainEdits();
+        expect(events).toHaveLength(1);
+        expect(events[0]?.edit.id).toBe(result.undo.editId);
+        expect(events[0]?.contentChange).toEqual({
+            before: before.content,
+            after: content,
+            beforeRevision: before.revision,
+            afterRevision: Number(record.revision),
+        });
+        expect((events[0]?.edit as { contentChange?: unknown }).contentChange).toBeUndefined();
+        expect(operations.contentChange).toBeUndefined();
+
+        const dto = await getChatEdit(owner.token, result.undo.editId);
+        expect((dto as { contentChange?: unknown }).contentChange).toBeUndefined();
+        const listed = (await listChatEdits(owner.token, conversation.id))
+            .find((edit) => edit.id === result.undo.editId);
+        expect((listed as { contentChange?: unknown } | undefined)?.contentChange).toBeUndefined();
     });
 });
 
@@ -496,6 +524,44 @@ describe("edit_note", () => {
         expect(content).toContain("Intro line.");
         expect(content).not.toContain("- One");
         expect(content).not.toContain("- Two");
+    });
+
+    test("two sequential edits emit distinct, ordered before/after bodies", async () => {
+        const note = await createNote(owner, {
+            title: "Sequential flash",
+            content: "# One\n\nFirst body.",
+        });
+        const recorder = new ChatRunRecorder();
+        const firstRead = await readEditorNote(note.id);
+        const first = await editNoteTool(writeContext({ recorder }), {
+            noteId: note.id,
+            expectedRevision: firstRead.revision,
+            operations: [{ op: "replace_section", heading: "One", markdown: "Second body." }],
+            summary: "First edit",
+        });
+        expect(first.ok).toBe(true);
+        if (!first.ok) return;
+        const firstEvent = recorder.drainEdits()[0];
+        expect(firstEvent?.contentChange?.before).toBe(firstRead.content);
+        expect(firstEvent?.contentChange?.after).toContain("Second body.");
+
+        const secondRead = await readEditorNote(note.id);
+        const second = await editNoteTool(writeContext({ recorder }), {
+            noteId: note.id,
+            expectedRevision: secondRead.revision,
+            operations: [{ op: "replace_section", heading: "One", markdown: "Third body." }],
+            summary: "Second edit",
+        });
+        expect(second.ok).toBe(true);
+        if (!second.ok) return;
+        const secondEvent = recorder.drainEdits()[0];
+        expect(secondEvent?.contentChange?.before).toBe(secondRead.content);
+        expect(secondEvent?.contentChange?.before).toBe(firstEvent?.contentChange?.after);
+        expect(secondEvent?.contentChange?.after).toContain("Third body.");
+        expect(secondEvent?.contentChange?.after).not.toBe(firstEvent?.contentChange?.after);
+        expect(secondEvent?.contentChange?.beforeRevision).toBeGreaterThan(
+            firstEvent?.contentChange?.beforeRevision ?? 0,
+        );
     });
 
     test("rejects stale revisions without writing", async () => {
@@ -560,7 +626,8 @@ describe("edit_note", () => {
     });
 
     test("hides private notes and private-folder notes from edits", async () => {
-        const privateResult = await appendNoteTool(writeContext(), {
+        const recorder = new ChatRunRecorder();
+        const privateResult = await appendNoteTool(writeContext({ recorder }), {
             noteId: notes.privateNote.id,
             markdown: "hidden",
             expectedRevision: 1,
@@ -569,7 +636,7 @@ describe("edit_note", () => {
         if (privateResult.ok) return;
         expect(privateResult.code).toBe("not_found");
 
-        const folderResult = await updateNoteTool(writeContext(), {
+        const folderResult = await updateNoteTool(writeContext({ recorder }), {
             noteId: notes.folderNote.id,
             expectedRevision: 1,
             title: "Nope",
@@ -577,13 +644,15 @@ describe("edit_note", () => {
         expect(folderResult.ok).toBe(false);
         if (folderResult.ok) return;
         expect(folderResult.code).toBe("not_found");
+        expect(recorder.drainEdits()).toEqual([]);
     });
 });
 
 describe("update_note", () => {
     test("changes title and tags only", async () => {
         const before = await readEditorNote(notes.second.id);
-        const result = await updateNoteTool(writeContext(), {
+        const recorder = new ChatRunRecorder();
+        const result = await updateNoteTool(writeContext({ recorder }), {
             noteId: notes.second.id,
             expectedRevision: before.revision,
             title: "Second note renamed",
@@ -598,12 +667,14 @@ describe("update_note", () => {
         expect(record.tags).toEqual(["renamed"]);
         expect(record.content).toBe(before.content);
         expect(record.last_edit_source).toBe("ai");
+        expect(recorder.drainEdits()[0]?.contentChange).toBeUndefined();
     });
 });
 
 describe("board and task writes", () => {
     test("creates a board with Nana as the actor", async () => {
-        const result = await createBoardTool(writeContext(), {
+        const recorder = new ChatRunRecorder();
+        const result = await createBoardTool(writeContext({ recorder }), {
             name: "Chat board",
             description: "Made by Nana",
         });
@@ -612,10 +683,12 @@ describe("board and task writes", () => {
         const record = await pbGetRecord<TestRecord>(owner.token, "boards", result.target.id);
         expect(record.name).toBe("Chat board");
         expect(record.author).toBe(owner.id);
+        expect(recorder.drainEdits()[0]?.contentChange).toBeUndefined();
     });
 
     test("creates, updates, and moves a task with AI activity", async () => {
-        const created = await createTaskTool(writeContext(), {
+        const recorder = new ChatRunRecorder();
+        const created = await createTaskTool(writeContext({ recorder }), {
             boardId: boards.work.id,
             title: "Nana task",
             description: "Do the thing",
@@ -626,6 +699,7 @@ describe("board and task writes", () => {
         });
         expect(created.ok).toBe(true);
         if (!created.ok) return;
+        expect(recorder.drainEdits()[0]?.contentChange).toBeUndefined();
         const taskId = created.target.id;
         expect(created.target.type).toBe("task");
         expect(created.target.url).toBe(`/board/${boards.work.id}?task=${taskId}`);
