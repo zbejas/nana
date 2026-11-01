@@ -45,7 +45,7 @@ There is no embeddings pipeline and no vector store. Chat accepts per-message at
 | `src/lib/ai/types.ts` | `AIConfig`, v1/v2 provider and model shapes, provider defaults, attachment defaults, and `DEFAULT_TITLE_PROMPT`. |
 | `src/components/settings/admin/AISettings.tsx` | Admin UI for provider connections, the enabled model catalog, per-model capabilities, attachment limits, and prompts; models.dev search fills metadata. |
 | `src/pages/ChatPage.tsx` | Full-page chat surface; shares the chat store with the dock. |
-| `src/components/chat/ChatDock.tsx` | Persistent right-side chat dock outside the route tree. |
+| `src/components/chat/ChatDock.tsx` | Persistent chat dock outside the route tree: right-side panel on desktop, full-screen surface on mobile. |
 | `pocketbase/pb_migrations/0000019_remove_embedding_settings.js` | Deletes the obsolete `embedding_config` setting. |
 | `pocketbase/pb_migrations/0000020_boards_in_folders.js` | Adds `boards.folder` and `boards.is_private`, used by the AI visibility lock. |
 | `pocketbase/pb_migrations/0000022_relational_remodel.js` | Adds the `messages` collection and removes the inline conversation JSON field. |
@@ -462,7 +462,7 @@ An assistant message may contain:
 
 ### Chat surface
 
-The chat surface has two entry points that share one store: the full page at `/chat` and `/chat/:conversationId`, and the persistent right-side dock mounted at the app root. The dock is hidden while the full page is open. In Personal scope, the dock sends the open page's `{ type, id }` context automatically at send time; there is no visible chip or dismissal state. In the Shared tab, the conversation's bound note is forced and client context is ignored. The server resolves the record, applies ownership, trash, sharing, and private checks, and the prompt receives only the id. Opening a private note, board, or folder, or a page whose privacy lookup is still loading, does not attach context.
+The chat surface has two entry points that share one store: the full page at `/chat` and `/chat/:conversationId`, and the persistent dock mounted at the app root (right-side panel on desktop, full-screen on mobile). The dock is hidden while the full page is open. In Personal scope, the dock sends the open page's `{ type, id }` context automatically at send time; there is no visible chip or dismissal state. In the Shared tab, the conversation's bound note is forced and client context is ignored. The server resolves the record, applies ownership, trash, sharing, and private checks, and the prompt receives only the id. Opening a private note, board, or folder, or a page whose privacy lookup is still loading, does not attach context.
 
 On a note route, the dock shows a **Personal | Shared** scope switch. Shared is always present; it is disabled with a reason when the note is unshared, private, trashed, or inaccessible. The tab keeps an already-open thread visible when its note is paused, with the composer disabled and the history readable. Group turns are labeled with the sender's display name (or **You**), and the thread refreshes on realtime message events.
 
