@@ -24,8 +24,9 @@ import {
 import {
   applyAiMarkdown,
   editorMatchesMarkdown,
-  planAiMarkdownApply,
+  planWysiwygAiMarkdown,
   type AiChangedSection,
+  type WysiwygAiMarkdownPlan,
 } from './aiEdits';
 import type { EditorActionId } from './helpers';
 import { normalizeMarkdown } from './helpers';
@@ -81,6 +82,13 @@ export interface UseMilkdownEditorResult {
   getSelection: () => { from: number; to: number } | null;
   setSelection: (from: number, to: number) => void;
   getView: () => EditorView | null;
+}
+
+function readEditorMarkdown(editor: Editor): string | null {
+  return editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx);
+    return view.isDestroyed ? null : getEditorMarkdown(ctx);
+  });
 }
 
 function sameToolbarState(left: EditorToolbarState, right: EditorToolbarState): boolean {
@@ -403,65 +411,76 @@ export function useMilkdownEditor({
       clearAiHighlights(editor.action((ctx) => ctx.get(editorViewCtx)));
     }
 
-    const matchesNext = editorMatchesMarkdown(editor, aiEdit.markdown);
-    const matchesPrevious = matchesNext
-      ? false
-      : editorMatchesMarkdown(editor, aiEdit.previousMarkdown);
-    const plan = planAiMarkdownApply({
-      liveSession: Boolean(session),
-      ...(aiEdit.replace === undefined ? {} : { replace: aiEdit.replace }),
-      matchesNext,
-      matchesPrevious,
-    });
+    const planNow = (waitElapsed: boolean): WysiwygAiMarkdownPlan => {
+      const editorMarkdown = readEditorMarkdown(editor);
+      const matchesNext = editorMatchesMarkdown(editor, aiEdit.markdown);
+      const matchesPrevious = matchesNext
+        ? false
+        : editorMatchesMarkdown(editor, aiEdit.previousMarkdown);
+      return planWysiwygAiMarkdown({
+        editorMarkdown,
+        nextMarkdown: aiEdit.markdown,
+        previousMarkdown: aiEdit.previousMarkdown,
+        liveSession: Boolean(session),
+        ...(aiEdit.replace === undefined ? {} : { replace: aiEdit.replace }),
+        matchesNext,
+        matchesPrevious,
+        waitElapsed,
+      });
+    };
 
-    if (plan === 'skip') {
+    const applyPlan = (plan: WysiwygAiMarkdownPlan) => {
+      if (plan.action === 'wait') return;
       lastAiEditRef.current = aiEdit.id;
-      return;
-    }
+      if (plan.action === 'skip') return;
 
-    if (plan === 'decorate') {
-      lastAiEditRef.current = aiEdit.id;
-      applyAiMarkdown(editor, aiEdit.markdown, aiEdit.previousMarkdown, aiEdit.sections, {
+      if (plan.action === 'replace') {
+        const incoming = normalizeMarkdown(plan.targetMarkdown);
+        lastAppliedRef.current = incoming;
+        lastEmittedRef.current = incoming;
+        runExternalApply(() => {
+          applyAiMarkdown(editor, plan.targetMarkdown, plan.previousMarkdown, aiEdit.sections, {
+            replace: true,
+            editId: aiEdit.id,
+            targetMarkdown: plan.targetMarkdown,
+          });
+        });
+        refreshToolbar();
+        return;
+      }
+
+      // `paint` diffs the event-time previous body against the editor's own
+      // serialization, so blank-line runs in the event `after` cannot shift
+      // the decoration anchors. A fallback flags the bounded-wait wash.
+      applyAiMarkdown(editor, plan.targetMarkdown, plan.previousMarkdown, aiEdit.sections, {
         replace: false,
         editId: aiEdit.id,
+        targetMarkdown: plan.targetMarkdown,
       });
+    };
+
+    const initial = planNow(false);
+    if (initial.action !== 'wait') {
+      applyPlan(initial);
       return;
     }
 
-    if (plan === 'wait') {
-      // The room or the React content commit can still be delivering the AI
-      // body when this effect runs. Observe without dispatching; paint only
-      // once this editor holds the exact fetched body.
-      const startedAt = Date.now();
-      const timer = window.setInterval(() => {
-        if (editorRef.current !== editor) {
-          window.clearInterval(timer);
-          return;
-        }
-        if (editorMatchesMarkdown(editor, aiEdit.markdown)) {
-          window.clearInterval(timer);
-          lastAiEditRef.current = aiEdit.id;
-          applyAiMarkdown(editor, aiEdit.markdown, aiEdit.previousMarkdown, aiEdit.sections, {
-            replace: false,
-            editId: aiEdit.id,
-          });
-          return;
-        }
-        if (Date.now() - startedAt >= 1000) window.clearInterval(timer);
-      }, 80);
-      return () => window.clearInterval(timer);
-    }
-
-    lastAiEditRef.current = aiEdit.id;
-    const incoming = normalizeMarkdown(aiEdit.markdown);
-    lastAppliedRef.current = incoming;
-    lastEmittedRef.current = incoming;
-    runExternalApply(() => {
-      applyAiMarkdown(editor, aiEdit.markdown, aiEdit.previousMarkdown, aiEdit.sections, {
-        editId: aiEdit.id,
-      });
-    });
-    refreshToolbar();
+    // The room or the React content commit can still be delivering the AI
+    // body when this effect runs. Observe without dispatching; paint once this
+    // editor holds a canonically equivalent body, then fall back to a visible
+    // wash while it still holds the related event-time body.
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      if (editorRef.current !== editor) {
+        window.clearInterval(timer);
+        return;
+      }
+      const plan = planNow(Date.now() - startedAt >= 1000);
+      if (plan.action === 'wait') return;
+      window.clearInterval(timer);
+      applyPlan(plan);
+    }, 80);
+    return () => window.clearInterval(timer);
   }, [aiEdit, ready, session, refreshToolbar, runExternalApply]);
 
   // A pane that was focused while an external value arrived catches up on blur.
