@@ -44,11 +44,28 @@ export interface ApplySectionEditsResult {
 
 export class MarkdownSectionError extends Error {
   code: 'not_found' | 'ambiguous' | 'invalid';
+  /** Anchor text from the operation that failed, when the operation had one. */
+  anchor?: string;
+  /** Zero-based index of the failing operation in the supplied list. */
+  operationIndex?: number;
+  /** Kind of the failing operation. */
+  operation?: MarkdownEditOperation['op'];
 
-  constructor(code: 'not_found' | 'ambiguous' | 'invalid', message: string) {
+  constructor(
+    code: 'not_found' | 'ambiguous' | 'invalid',
+    message: string,
+    details: {
+      anchor?: string;
+      operationIndex?: number;
+      operation?: MarkdownEditOperation['op'];
+    } = {}
+  ) {
     super(message);
     this.name = 'MarkdownSectionError';
     this.code = code;
+    this.anchor = details.anchor;
+    this.operationIndex = details.operationIndex;
+    this.operation = details.operation;
   }
 }
 
@@ -330,9 +347,18 @@ function replaceUniqueText(markdown: string, find: string, value: string): {
   };
 }
 
+function operationAnchor(operation: MarkdownEditOperation): string | undefined {
+  if (operation.op === 'replace_text') return operation.find;
+  if (operation.op === 'replace_section' || operation.op === 'insert_after') {
+    return operation.heading;
+  }
+  return undefined;
+}
+
 /**
  * Applies operations in order. Any failed anchor aborts the whole edit; the
- * caller receives the original markdown untouched.
+ * caller receives the original markdown untouched and an error that names the
+ * failing operation and its anchor.
  */
 export function applySectionEdits(
   markdown: string,
@@ -341,34 +367,105 @@ export function applySectionEdits(
   let current = markdown.replace(/\r\n/g, '\n');
   const changed: AppliedSectionEdit[] = [];
 
-  for (const operation of operations) {
+  for (let index = 0; index < operations.length; index += 1) {
+    const operation = operations[index]!;
     let result: { markdown: string; applied: AppliedSectionEdit };
 
-    if (operation.op === 'append') {
-      result = appendToDocument(current, operation.markdown);
-    } else if (operation.op === 'replace_text') {
-      result = replaceUniqueText(current, operation.find, operation.markdown);
-    } else {
-      if (!operation.heading) {
-        throw new MarkdownSectionError('invalid', 'A heading is required for this edit.');
+    try {
+      if (operation.op === 'append') {
+        result = appendToDocument(current, operation.markdown);
+      } else if (operation.op === 'replace_text') {
+        result = replaceUniqueText(current, operation.find, operation.markdown);
+      } else {
+        if (!operation.heading) {
+          throw new MarkdownSectionError('invalid', 'A heading is required for this edit.');
+        }
+        const section = findSection(current, operation.heading);
+        result =
+          operation.op === 'replace_section'
+            ? replaceSectionBody(current, section, operation.markdown)
+            : insertAfterSection(current, section, operation.markdown);
       }
-      const section = findSection(current, operation.heading);
-      result =
-        operation.op === 'replace_section'
-          ? replaceSectionBody(current, section, operation.markdown)
-          : insertAfterSection(current, section, operation.markdown);
+    } catch (error) {
+      if (!(error instanceof MarkdownSectionError)) throw error;
+      throw new MarkdownSectionError(error.code, error.message, {
+        anchor: error.anchor ?? operationAnchor(operation),
+        operationIndex: error.operationIndex ?? index,
+        operation: error.operation ?? operation.op,
+      });
     }
 
     const delta = result.markdown.length - current.length;
     const at = result.applied.from;
-    for (let index = 0; index < changed.length; index += 1) {
-      changed[index] = shiftRange(changed[index], at, delta);
+    for (let changedIndex = 0; changedIndex < changed.length; changedIndex += 1) {
+      changed[changedIndex] = shiftRange(changed[changedIndex]!, at, delta);
     }
     changed.push(result.applied);
     current = result.markdown;
   }
 
   return { markdown: current, changed };
+}
+
+export interface ClosestLine {
+  /** 1-based line number in the note. */
+  line: number;
+  text: string;
+}
+
+/** Keep the fallback cheap even when the note is near the body byte cap. */
+const MAX_CLOSEST_ANCHOR_CHARS = 2_000;
+const MAX_CLOSEST_TOKENS = 12;
+const MAX_CLOSEST_SCAN_LINES = 50_000;
+const CLOSEST_BONUS_PREFIX_CHARS = 24;
+
+/**
+ * Find the lines most likely to contain a failed `replace_text` anchor.
+ *
+ * Models occasionally retype a line from a read result and change whitespace,
+ * punctuation, or a repeated character. When the exact anchor misses, returning
+ * a few near-matching source lines lets the model retry with an exact copy
+ * without dumping the whole note back into the error. The scan is bounded in
+ * anchor size, token count, and line count so a large note cannot block the
+ * server event loop.
+ */
+export function closestTextLines(
+  markdown: string,
+  find: string,
+  limit = 3,
+): ClosestLine[] {
+  const normalizedFind = find.slice(0, MAX_CLOSEST_ANCHOR_CHARS).toLowerCase();
+  const tokens = Array.from(new Set(
+    normalizedFind
+      .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+      .split(/\s+/)
+      .filter((token) => token.length >= 3),
+  )).slice(0, MAX_CLOSEST_TOKENS);
+  if (tokens.length === 0) return [];
+
+  const bonusPrefix = normalizedFind.slice(0, CLOSEST_BONUS_PREFIX_CHARS);
+  const candidates: Array<{ line: number; text: string; score: number }> = [];
+  const lines = markdown.split(/\r?\n/, MAX_CLOSEST_SCAN_LINES);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const text = lines[index]!;
+    const normalized = text.toLowerCase();
+    let score = 0;
+    for (const token of tokens) {
+      if (normalized.includes(token)) score += token.length;
+    }
+    if (bonusPrefix && normalized.includes(bonusPrefix)) score += 200;
+    if (score > 0) candidates.push({ line: index + 1, text, score });
+  }
+
+  candidates.sort((left, right) => right.score - left.score);
+
+  return candidates.slice(0, Math.max(1, limit)).map((candidate) => ({
+    line: candidate.line,
+    text: candidate.text.length > 240
+      ? `${candidate.text.slice(0, 240)}…`
+      : candidate.text,
+  }));
 }
 
 export function sectionLabel(section: Pick<MarkdownSection, 'heading' | 'path'>): string {

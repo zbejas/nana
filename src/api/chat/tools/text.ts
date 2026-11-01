@@ -7,10 +7,13 @@
 /** Maximum time a single read tool may spend talking to PocketBase. */
 export const TOOL_TIMEOUT_MS = 8_000;
 
-/** A note body larger than this is not loaded into a tool result. */
+/** A note body is read up to this many bytes; a longer tail is unavailable to tools. */
 export const MAX_NOTE_BYTES = 2_000_000;
 
-/** Longest single line returned by read_note. */
+/**
+ * Longest single line returned by an explicit `read_note` line window. A
+ * whole-note read may use the full character budget on one line instead.
+ */
 export const MAX_LINE_CHARS = 2_000;
 
 /**

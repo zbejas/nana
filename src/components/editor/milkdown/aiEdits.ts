@@ -3,6 +3,7 @@ import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model';
 import { changedCharacterCount, diffText } from './aiDiff';
 import { normalizeMarkdown } from './helpers';
 import {
+  getEditorMarkdown,
   proseTextMap,
   replaceEditorMarkdown,
   setAiDiffHighlights,
@@ -104,25 +105,86 @@ function rangesFor(doc: ProseMirrorNode, sections: AiChangedSection[]): AiHighli
 }
 
 /**
- * Replaces the editor document with the AI-applied Markdown and highlights the
- * changed sections through ProseMirror decorations. Scrolling and the fade are
- * owned by `setAiHighlights`.
+ * True when the editor already holds the body. Accepts either the serialized
+ * Markdown or the parsed document so serializer-only differences (marker or
+ * whitespace normalization) do not hide an unchanged note.
+ */
+export function editorMatchesMarkdown(editor: Editor, markdown: string): boolean {
+  const expectedMarkdown = normalizeMarkdown(markdown);
+  return editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx);
+    if (view.isDestroyed) return false;
+    if (normalizeMarkdown(getEditorMarkdown(ctx)) === expectedMarkdown) return true;
+    const expected = ctx.get(parserCtx)(expectedMarkdown);
+    return Boolean(expected && view.state.doc.eq(expected));
+  });
+}
+
+export interface ApplyAiMarkdownOptions {
+  /**
+   * Default true: apply the AI body before painting. A live room owns content,
+   * so that path passes false and only paints against the document the room
+   * already delivered. No document transaction is dispatched in that mode.
+   */
+  replace?: boolean;
+}
+
+/** How the rendered editor should treat one queued AI edit. */
+export type AiMarkdownApplyPlan = 'replace' | 'decorate' | 'skip';
+
+/**
+ * Decide whether an AI edit may touch the rendered editor.
+ *
+ * A live session is decoration-only: the room body must already match the
+ * fetched body. Without a session the editor may still hold the event-time
+ * body (normal path) or already show the fetched body (realtime applied it);
+ * anything else is local typing that must win.
+ */
+export function planAiMarkdownApply(input: {
+  liveSession: boolean;
+  replace?: boolean;
+  matchesNext: boolean;
+  matchesPrevious: boolean;
+}): AiMarkdownApplyPlan {
+  if (input.liveSession || input.replace === false) {
+    return input.matchesNext ? 'decorate' : 'skip';
+  }
+  if (input.matchesNext) return 'decorate';
+  if (input.matchesPrevious) return 'replace';
+  return 'skip';
+}
+
+/**
+ * Applies the AI-applied Markdown when allowed, then highlights the changed
+ * sections through ProseMirror decorations. `replace: false` never dispatches
+ * a document transaction; it paints the diff against the current document and
+ * returns without a flash when a peer or local edit moved the body away from
+ * the fetched Markdown first. Scrolling and the fade are owned by
+ * `setAiHighlights`.
  */
 export function applyAiMarkdown(
   editor: Editor,
   markdown: string,
   previousMarkdown: string,
   sections: AiChangedSection[],
+  options: ApplyAiMarkdownOptions = {},
 ): void {
+  const replace = options.replace ?? true;
   const view = editor.action((ctx) => ctx.get(editorViewCtx));
+  if (view.isDestroyed) return;
+  if (!replace && !editorMatchesMarkdown(editor, markdown)) return;
+
   const beforeDoc = editor.action((ctx) =>
     ctx.get(parserCtx)(normalizeMarkdown(previousMarkdown)),
   );
   const before = beforeDoc ? proseTextMap(beforeDoc) : null;
-  editor.action((ctx) => replaceEditorMarkdown(ctx, markdown));
+  if (replace) editor.action((ctx) => replaceEditorMarkdown(ctx, markdown));
 
   window.requestAnimationFrame(() => {
     if (view.isDestroyed) return;
+    // A live room can receive a peer keystroke between the effect and this
+    // frame. Do not paint offsets over a body that no longer matches.
+    if (!replace && !editorMatchesMarkdown(editor, markdown)) return;
     const after = proseTextMap(view.state.doc);
     const changes = before ? diffText(before.text, after.text) : [];
     const changedChars = changedCharacterCount(changes);

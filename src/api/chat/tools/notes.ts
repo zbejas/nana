@@ -35,8 +35,12 @@ export type ListNotesInput = z.input<typeof listNotesInputSchema>;
 
 export const readNoteInputSchema = z.object({
     noteId: recordId.describe("The note id from a list_notes result."),
-    offset: z.number().int().min(1).max(100_000).default(1).describe("1-based starting line, default 1."),
-    limit: z.number().int().min(1).max(600).default(300).describe("Maximum lines to return, default 300, maximum 600."),
+    offset: z.number().int().min(1).default(1).describe(
+        "1-based starting line, default 1. The total line count is checked after the note is read.",
+    ),
+    limit: z.number().int().min(1).max(2_000).optional().describe(
+        "Optional line cap. Omit it to read the whole note (up to the tool character budget).",
+    ),
 });
 
 export type ReadNoteInput = z.input<typeof readNoteInputSchema>;
@@ -72,6 +76,10 @@ interface PBNoteSummary {
 
 const NOTE_LIST_FIELDS = "id,title,tags,updated,created,word_count,reading_time,folder,is_private,revision,author";
 const NOTE_READ_FIELDS = `${NOTE_LIST_FIELDS},content`;
+/** An omitted limit reads the whole note up to this budget. */
+const FULL_READ_CHARS = 24_000;
+/** Explicit windows keep a smaller floor so one requested line is useful. */
+const MIN_WINDOW_CHARS = 12_000;
 
 function invalidInput(message: string): ToolFailure {
     return { ok: false, code: "invalid_input", message };
@@ -178,11 +186,32 @@ export async function listNotes(
 
 export interface ReadNoteResult extends PBNoteSummary {
     content: string;
+    /** Lines in the readable body. A byte-capped body may have a larger unknown tail. */
     totalLines: number;
+    /** Lines included in this result, starting at `offset`. */
+    returnedLines: number;
+    /**
+     * True only when this single result contains the whole note from line 1:
+     * `offset === 1`, every line returned, no clipped line, and no byte-cap loss.
+     * A tail-only or later window is never complete.
+     */
+    complete: boolean;
+    /** True when more lines remain after the returned window in the readable body. */
     hasMore: boolean;
+    /** Lines before the returned window that were not returned in this call. */
+    omittedBefore: number;
+    /** Lines after the returned window in the readable body that were not returned in this call. */
+    omittedAfter: number;
+    /** Total lines not returned in this call: `omittedBefore + omittedAfter`. */
+    omittedLines: number;
     nextOffset: number | null;
+    /** True only when the returned window itself is lossy (byte cap or clipped lines). */
     truncated: boolean;
+    /** True when the note exceeded the byte read cap, so its tail cannot be read at all. */
+    tailUnavailable: boolean;
     clippedLines: number;
+    /** Present whenever the result is incomplete; explains what is missing or what to read next. */
+    notice: string | null;
     /** Optimistic-concurrency revision; pass it back to edit_note/append_note. */
     revision: number;
     /** Opaque token derived from title/content/tags/updated. */
@@ -190,9 +219,11 @@ export interface ReadNoteResult extends PBNoteSummary {
 }
 
 /**
- * Read a line window from one owned note, or from the one note bound to a
- * shared-note chat scope. Output is bounded by both a line limit and a
- * character budget, and individual lines are clipped.
+ * Read one owned note, or the one note bound to a shared-note chat scope.
+ * Omitting `limit` returns the whole note up to the character budget. When the
+ * note is too large, the result is explicitly marked incomplete and carries
+ * the omitted-line count and next offset. Individual long lines are clipped
+ * and reported so the model never treats a clipped line as a safe edit anchor.
  */
 export async function readNote(
     context: ToolContext,
@@ -205,7 +236,7 @@ export async function readNote(
         return invalidInput("The note read parameters were not valid.");
     }
 
-    const { noteId, offset, limit } = parsed.data;
+    const { noteId, offset, limit: requestedLimit } = parsed.data;
     if (!isValidRecordId(noteId)) {
         return invalidInput("That note id is not valid.");
     }
@@ -248,9 +279,10 @@ export async function readNote(
 
     // A live room owns the freshest body. Flush after authorization so the
     // model never gets content that is about to be replaced, and return the
-    // normal conflict failure when the room could not persist.
+    // normal conflict failure when the room could not persist. Give the flush
+    // its own bounded signal so the later body read still has a full window.
     try {
-        await flushLiveNoteBeforeExternalWrite(noteId);
+        await flushLiveNoteBeforeExternalWrite(noteId, createToolSignal(abortSignal));
     } catch (error) {
         if (error instanceof ApiError) {
             return {
@@ -288,16 +320,39 @@ export async function readNote(
         : rawContent;
     const lines = content.split(/\r?\n/);
 
-    const maxChars = clampInt(Math.round((limit / 300) * 6_000), 6_000, 12_000, 6_000);
+    // The schema cannot know the note length, so validate the offset against
+    // the actual readable body after loading it.
+    if (offset > lines.length) {
+        const bodyLabel = contentCapped ? "readable body" : "note";
+        return invalidInput(
+            `The ${bodyLabel} has ${lines.length} ${lines.length === 1 ? "line" : "lines"}; `
+            + `offset ${offset} is past the end. Use an offset between 1 and ${lines.length}, `
+            + "usually 1 to read the whole note.",
+        );
+    }
+
+    const fullRead = requestedLimit === undefined;
+    const limit = requestedLimit ?? Number.MAX_SAFE_INTEGER;
+    const maxChars = fullRead
+        ? FULL_READ_CHARS
+        : clampInt(
+            Math.round((limit / 300) * MIN_WINDOW_CHARS),
+            MIN_WINDOW_CHARS,
+            FULL_READ_CHARS,
+            MIN_WINDOW_CHARS,
+        );
     const startIndex = offset - 1;
     const output: string[] = [];
     let usedChars = 0;
     let clippedLines = 0;
+    // A whole-note read may use the full character budget on one long line.
+    // Explicit windows keep the smaller per-line safety cap.
+    const lineCap = fullRead ? maxChars : MAX_LINE_CHARS;
 
     for (let index = startIndex; index < lines.length && output.length < limit; index++) {
         const originalLine = lines[index] ?? "";
-        const clipped = originalLine.length > MAX_LINE_CHARS
-            ? originalLine.slice(0, MAX_LINE_CHARS)
+        const clipped = originalLine.length > lineCap
+            ? originalLine.slice(0, lineCap)
             : originalLine;
         if (clipped.length !== originalLine.length) clippedLines += 1;
 
@@ -311,7 +366,48 @@ export async function readNote(
     }
 
     const consumed = output.length;
-    const hasMore = startIndex + consumed < lines.length;
+    const lastReturnedLine = startIndex + consumed;
+    const hasMore = lastReturnedLine < lines.length;
+    const omittedBefore = Math.max(0, Math.min(offset - 1, lines.length));
+    const omittedAfter = Math.max(0, lines.length - lastReturnedLine);
+    const omittedLines = omittedBefore + omittedAfter;
+    const nextOffset = hasMore ? lastReturnedLine + 1 : null;
+    // `complete` is whole-note truth for this single result: a later window,
+    // clipped text, or an unavailable byte-cap tail all make it false.
+    const complete = offset === 1
+        && !hasMore
+        && !contentCapped
+        && clippedLines === 0;
+    const notices: string[] = [];
+    if (offset > 1) {
+        notices.push(
+            `Earlier lines were not returned: this window starts at line ${offset}, so `
+            + `${omittedBefore} ${omittedBefore === 1 ? "line" : "lines"} before it `
+            + `${omittedBefore === 1 ? "is" : "are"} omitted. `
+            + "If you need the whole note, start again with offset=1.",
+        );
+    }
+    if (hasMore) {
+        notices.push(
+            `Returned lines ${offset}-${lastReturnedLine} of ${lines.length}; `
+            + `${omittedAfter} ${omittedAfter === 1 ? "line remains" : "lines remain"}. `
+            + `Call read_note with offset=${nextOffset} to continue.`,
+        );
+    }
+    if (contentCapped) {
+        notices.push(
+            `The note exceeds the ${MAX_NOTE_BYTES.toLocaleString("en-US")}-byte read cap; `
+            + `the tail after line ${lines.length} is unavailable in this result and in every later window. `
+            + "Do not claim the note is complete or edit from text that was not returned.",
+        );
+    }
+    if (clippedLines > 0) {
+        notices.push(
+            `${clippedLines} ${clippedLines === 1 ? "line was" : "lines were"} clipped at `
+            + `${lineCap.toLocaleString("en-US")} characters; the clipped remainder is not available `
+            + "in a later window, and a clipped line is not a safe exact edit anchor.",
+        );
+    }
 
     const summary = summarizeNote(record);
     return {
@@ -319,10 +415,17 @@ export async function readNote(
         ...summary,
         content: output.join("\n"),
         totalLines: lines.length,
+        returnedLines: consumed,
+        complete,
         hasMore,
-        nextOffset: hasMore ? startIndex + consumed + 1 : null,
+        omittedBefore,
+        omittedAfter,
+        omittedLines,
+        nextOffset,
         truncated: contentCapped || clippedLines > 0,
+        tailUnavailable: contentCapped,
         clippedLines,
+        notice: notices.length > 0 ? notices.join(" ") : null,
         revision: typeof record.revision === "number" && Number.isFinite(record.revision)
             ? record.revision
             : 0,

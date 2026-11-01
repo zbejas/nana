@@ -395,7 +395,10 @@ export function registerNoteTools(server: McpServer, context: ToolContext): void
         {
             title: "Read note",
             description:
-                "Read a bounded Markdown line window from one note id returned by list_notes. Use offset and nextOffset to page through long notes. Private notes and notes in private folder subtrees look missing. Never guess note ids.",
+                "Read one note id returned by list_notes. Omitting limit returns the whole note when it fits. " +
+                "`complete` is true only when this single result contains the whole note from line 1 with no omitted, clipped, or byte-capped text; " +
+                "otherwise use omittedBefore, omittedAfter, omittedLines, hasMore, and nextOffset to tell what this call did not return. " +
+                "A clipped line or a note over the byte cap cannot be fully read. Private notes and notes in private folder subtrees look missing. Never guess note ids.",
             inputSchema: readNoteInputSchema,
             annotations: { readOnlyHint: true, openWorldHint: false },
         },

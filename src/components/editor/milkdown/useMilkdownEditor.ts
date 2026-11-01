@@ -20,7 +20,12 @@ import {
   runEditorAction,
   type EditorToolbarState,
 } from './editorActions';
-import { applyAiMarkdown, type AiChangedSection } from './aiEdits';
+import {
+  applyAiMarkdown,
+  editorMatchesMarkdown,
+  planAiMarkdownApply,
+  type AiChangedSection,
+} from './aiEdits';
 import type { EditorActionId } from './helpers';
 import { normalizeMarkdown } from './helpers';
 import {
@@ -46,6 +51,8 @@ export interface UseMilkdownEditorOptions {
     previousMarkdown: string;
     markdown: string;
     sections: AiChangedSection[];
+    /** false when a live room already owns the body; paint only. */
+    replace?: boolean;
   } | null;
   collaborators?: Collaborator[];
   /**
@@ -376,12 +383,12 @@ export function useMilkdownEditor({
   // Markdown is parsed independently; the current doc is never reused as the
   // "before" snapshot.
   //
-  // In session mode the AI body already reached Yjs through
-  // `applyPersistedContent()` and the canonical observer applied it here. This
-  // effect still runs for the AI highlights and replaces the document again
-  // inside the suppression path, but never publishes, so it cannot double-write
-  // the shared text. Keep the ordinary full replacement: it preserves the
-  // existing diff/scroll behavior and the AI edit is an intentional replace.
+  // In session mode the AI body already reached Yjs through the room and the
+  // canonical observer applied it here. This path must never replace the
+  // document: the room owns content, and a stale replacement would desync
+  // ProseMirror from Yjs so the next local edit could delete newer text. When
+  // the room body still matches the fetched body, paint only; when concurrent
+  // text made it differ, skip the flash entirely.
   useEffect(() => {
     if (!ready || !aiEdit) return;
     if (lastAiEditRef.current === aiEdit.id) return;
@@ -389,15 +396,39 @@ export function useMilkdownEditor({
     const editor = editorRef.current;
     if (!editor) return;
 
-    const incoming = normalizeMarkdown(aiEdit.markdown);
+    const matchesNext = editorMatchesMarkdown(editor, aiEdit.markdown);
+    const matchesPrevious = matchesNext
+      ? false
+      : editorMatchesMarkdown(editor, aiEdit.previousMarkdown);
+    const plan = planAiMarkdownApply({
+      liveSession: Boolean(session),
+      ...(aiEdit.replace === undefined ? {} : { replace: aiEdit.replace }),
+      matchesNext,
+      matchesPrevious,
+    });
+
+    // Mark the event handled even when it is skipped: the effect only re-runs
+    // for a different edit id, and a retry against newer local text would be
+    // wrong.
     lastAiEditRef.current = aiEdit.id;
+
+    if (plan === 'skip') return;
+
+    if (plan === 'decorate') {
+      applyAiMarkdown(editor, aiEdit.markdown, aiEdit.previousMarkdown, aiEdit.sections, {
+        replace: false,
+      });
+      return;
+    }
+
+    const incoming = normalizeMarkdown(aiEdit.markdown);
     lastAppliedRef.current = incoming;
     lastEmittedRef.current = incoming;
     runExternalApply(() => {
-      applyAiMarkdown(editor, incoming, aiEdit.previousMarkdown, aiEdit.sections);
+      applyAiMarkdown(editor, aiEdit.markdown, aiEdit.previousMarkdown, aiEdit.sections);
     });
     refreshToolbar();
-  }, [aiEdit, ready, refreshToolbar, runExternalApply]);
+  }, [aiEdit, ready, session, refreshToolbar, runExternalApply]);
 
   // A pane that was focused while an external value arrived catches up on blur.
   // Session mode has no deferred apply: the canonical observer always reaches
