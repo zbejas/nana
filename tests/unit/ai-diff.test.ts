@@ -62,6 +62,33 @@ describe('AI text diff', () => {
     expect(changedCharacterCount(diffText('a', 'b'))).toBe(2);
   });
 
+  test('marks a blank-line-only insertion as a zero-width block change', () => {
+    expect(diffText('A\n\nB', 'A\n\n\nB')).toEqual([
+      { type: 'insert', start: 1, end: 1, text: '', block: true },
+    ]);
+    expect(diffText('A\n\nB', 'A\n\n\n\nB')).toEqual([
+      { type: 'insert', start: 1, end: 1, text: '', block: true },
+    ]);
+    expect(changedCharacterCount(diffText('A\n\nB', 'A\n\n\nB'))).toBe(0);
+  });
+
+  test('keeps spaces-only insert runs empty while a newline gap stays visible', () => {
+    expect(diffText('A B', 'A  B')).toEqual([]);
+    expect(diffText('A\n\nB', 'A\n\n \nB')).toEqual([
+      { type: 'insert', start: 1, end: 1, text: '', block: true },
+    ]);
+  });
+
+  test('pairs a paragraph deletion with the structural gap it leaves behind', () => {
+    expect(diffText('A\n\nREMOVE\n\nB', 'A\n\n\n\nB')).toEqual([
+      { type: 'delete', start: 1, end: 1, text: 'REMOVE' },
+      { type: 'insert', start: 1, end: 1, text: '', block: true },
+    ]);
+    expect(diffText('A\n\nB', 'A\n\nADD\n\nB')).toEqual([
+      { type: 'insert', start: 3, end: 6, text: 'ADD' },
+    ]);
+  });
+
   test('handles a whole rewrite as bounded delete and insert changes', () => {
     const changes = diffText('alpha', 'beta');
     expect(changes.map((change) => change.type)).toEqual(['delete', 'insert']);

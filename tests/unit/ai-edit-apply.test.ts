@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Schema, type Node as ProseNode } from '@milkdown/kit/prose/model';
-import { diffText } from '../../src/components/editor/milkdown/aiDiff';
+import { diffText, recomputeSourceAiDiff } from '../../src/components/editor/milkdown/aiDiff';
 import {
   canonicalEditorMarkdown,
   isSameEditorMarkdown,
@@ -75,6 +75,22 @@ describe('canonical editor Markdown', () => {
     )).toBe(true);
     expect(canonicalEditorMarkdown('````md\n```\none\n\n\ntwo\n```\n````'))
       .toBe('````md\n```\none\n\n\ntwo\n```\n````');
+  });
+
+  test('recomputes source changes against the body the source pane holds', () => {
+    // The event target and the source body are canonically equal but serialize
+    // the blank run differently. Anchors must still land on the source string.
+    expect(isSameEditorMarkdown('A\n\n\nB', 'A\n\nB')).toBe(true);
+    expect(recomputeSourceAiDiff('A\n\nB', 'A\n\n\nB')).toEqual([
+      { type: 'insert', start: 1, end: 1, text: '', block: true },
+    ]);
+    expect(recomputeSourceAiDiff('A\r\n\r\nB\r\n', 'A\r\n\r\n\r\nB')).toEqual([
+      { type: 'insert', start: 1, end: 1, text: '', block: true },
+    ]);
+    expect(recomputeSourceAiDiff(
+      'Keep this.\n\nRemove me.\n\nTail.',
+      'Keep this.\n\nLocal merge.\n\nTail.',
+    ).length).toBeGreaterThan(0);
   });
 });
 

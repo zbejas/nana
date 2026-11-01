@@ -4,6 +4,8 @@
  * the actual inserted/deleted text to paint a GitHub-style in-place diff.
  */
 
+import { normalizeMarkdown } from './helpers';
+
 export interface AiTextChange {
   type: 'insert' | 'delete';
   /** Offset in the new text. Deletions are anchored at the insertion point. */
@@ -11,6 +13,11 @@ export interface AiTextChange {
   /** End offset in the new text for inserts; equal to `start` for deletes. */
   end: number;
   text: string;
+  /**
+   * A zero-width insertion standing for a newline/blank-line/empty-paragraph
+   * gap. It has no visible text, so `start === end` and `text` is empty.
+   */
+  block?: boolean;
 }
 
 interface Token {
@@ -51,11 +58,15 @@ function trimVisibleText(text: string): { text: string; leading: number; trailin
 }
 
 function appendChange(changes: AiTextChange[], change: AiTextChange): void {
-  if (!change.text) return;
+  if (!change.text && !change.block) return;
   const previous = changes[changes.length - 1];
   if (
     previous
     && previous.type === change.type
+    // A structural gap stays a separate zero-width change; merging it into a
+    // visible run would hide the newline behind that run's text offsets.
+    && !previous.block
+    && !change.block
     && (
       (change.type === 'insert' && previous.end === change.start)
       || (change.type === 'delete' && previous.start === change.start)
@@ -298,6 +309,17 @@ export function diffText(previous: string, next: string): AiTextChange[] {
           end: start + trimmed.text.length,
           text: trimmed.text,
         });
+      } else if (raw.includes('\n')) {
+        // A run of only whitespace can still carry a real structural edit: a
+        // new blank line or empty paragraph. Spaces alone are serialization
+        // noise, but a newline is a zero-width green gap at the run boundary.
+        appendChange(changes, {
+          type: 'insert',
+          start: runStart,
+          end: runStart,
+          text: '',
+          block: true,
+        });
       }
       newOffset = runEnd;
       continue;
@@ -330,4 +352,16 @@ export function diffText(previous: string, next: string): AiTextChange[] {
 /** Total visible characters changed; used to avoid painting a whole rewrite. */
 export function changedCharacterCount(changes: readonly AiTextChange[]): number {
   return changes.reduce((total, change) => total + change.text.length, 0);
+}
+
+/**
+ * Recompute the source pane's change stream against the body it actually
+ * holds. Source text can serialize a blank run differently from the event body
+ * (`\n\n\n\n` vs `\n\n`); recomputing keeps every anchor on the local string.
+ */
+export function recomputeSourceAiDiff(
+  previousMarkdown: string,
+  sourceMarkdown: string,
+): AiTextChange[] {
+  return diffText(normalizeMarkdown(previousMarkdown), normalizeMarkdown(sourceMarkdown));
 }

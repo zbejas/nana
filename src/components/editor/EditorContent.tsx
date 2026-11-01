@@ -64,7 +64,12 @@ export function EditorContent({
       normalizeMarkdown(aiEdit.previousMarkdown),
       normalizeMarkdown(aiEdit.markdown),
     );
-    return changes.length > 0 ? { id: aiEdit.id, markdown: normalizeMarkdown(aiEdit.markdown), changes } : null;
+    return changes.length > 0 ? {
+      id: aiEdit.id,
+      markdown: normalizeMarkdown(aiEdit.markdown),
+      previousMarkdown: normalizeMarkdown(aiEdit.previousMarkdown),
+      changes,
+    } : null;
   }, [aiEdit]);
   const aiDiffSummary = useMemo(
     () => (sourceAiDiff ? summarizeAiDiff(sourceAiDiff.changes) : null),
