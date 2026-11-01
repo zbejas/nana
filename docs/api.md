@@ -568,9 +568,11 @@ The dock reads named SSE events. Every `data:` payload also carries `type`:
 | `reasoning` | `{ type: "reasoning", delta }`. |
 | `tool` | `{ type: "tool", id, name, status, error? }`; `status` is `running`, `success`, or `error`. `error` is bounded, flattened failure text and never raw arguments or tool output. |
 | `sources` | `{ type: "sources", sources }`; each source is a document or board with `{ id, title }`. |
-| `edit` | `{ type: "edit", edit }`; one applied write, emitted before the model's next token where possible. |
+| `edit` | `{ type: "edit", edit, contentChange?, contentChangeOmitted? }`; one applied write, emitted before the model's next token where possible. A document body write may also carry `contentChange { before, after, beforeRevision?, afterRevision? }` for the editor flash. |
 | `done` | `{ type: "done", conversationId, messageId, stopped, model, sources, usage? }`; `messageId` is `null` if persistence failed, and `usage` is the final model step's token accounting when the provider reported it. |
 | `error` | `{ type: "error", message, errorText }`. |
+
+`contentChange` is present only on a document body write (`append_note` or `edit_note`) and only on this caller's live frame. Each body is capped at 64 KiB and the pair at 128 KiB; exceeding either cap drops both bodies and sets `contentChangeOmitted: true` instead of truncating. The pair is never written to `chat_edits.operations`, included in `GET /api/chat/conversations/:id` or `/api/chat/conversations/:id/edits`, stored in `messages.parts`, summarized, or logged. Edit list/get DTOs remain unchanged.
 
 A request that omits `mode` also receives legacy AI-SDK UI chunks for text, reasoning, tools, completion, and errors: `text-delta`, `reasoning-delta`, `tool-input-start`, `tool-output-available`/`tool-output-error`, `finish`, `[DONE]`, and `error`. A request that sends `mode` (the dock) receives only the named events. There is no `X-RAG-Sources` header; sources travel as the `sources` event and the persisted `sources` field. There are no embeddings or retrieval metadata.
 
@@ -612,7 +614,7 @@ Bun creates a personal conversation with the author derived from the token, then
 | `/api/chat/edits/:id/confirm` | POST | `{ edit }`; executes a pending delete with the caller's token; conversation owner only. |
 | `/api/chat/edits/:id/cancel` | POST | `{ edit }`; cancels a pending delete without a write; conversation owner only. |
 
-An edit card carries `id`, `conversationId`, `messageId`, `target { type, id, title, url }`, `tool`, `summary`, `status`, `actorType: "ai"`, `actorLabel`, `changed { sections?, fields? }`, `undo { kind, available }`, and timestamps. Target types are `document`, `board`, `task`, and `folder`. `status` is `pending`, `applied`, `undone`, `cancelled`, or `failed`; `undo.kind` is `trash`, `restore`, or `none`.
+An edit card carries `id`, `conversationId`, `messageId`, `target { type, id, title, url }`, `tool`, `summary`, `status`, `actorType: "ai"`, `actorLabel`, `changed { sections?, fields? }`, `undo { kind, available }`, and timestamps. Target types are `document`, `board`, `task`, and `folder`. `status` is `pending`, `applied`, `undone`, `cancelled`, or `failed`; `undo.kind` is `trash`, `restore`, or `none`. List and get responses never include the event-only `contentChange` bodies.
 
 - The list requires the personal conversation owner or a current shared-note participant. Undo, confirm, and cancel require the conversation owner; a shared-note grantee can read the cards but cannot manage them. Another user's conversation or edit returns `404`, matching a missing record.
 - `create_note` undo moves the created note to trash. `append_note`, `edit_note`, and `update_note` undo restore the pre-edit snapshot.

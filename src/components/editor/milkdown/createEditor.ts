@@ -23,6 +23,16 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { prism } from '@milkdown/plugin-prism';
 import { rewriteLegacyFileUrl } from '../../../lib/legacy-urls';
 import type { AiTextChange } from './aiDiff';
+import {
+  AI_DIFF_CLEAR_MS,
+  AI_DIFF_FLASH_MS,
+  aiDiffFallbackSpans,
+  formatAiDiffDeleteText,
+  groupAiDiffHunks,
+  pickAiDiffScrollTarget,
+  prefersReducedMotion,
+  type AiDiffScrollHunk,
+} from './aiDiffView';
 import { normalizeMarkdown } from './helpers';
 import { alignMarkdownToText, mapSelectionThroughChange, markdownOffsetToTextOffset, minimalTextChange, textOffsetToMarkdownOffset } from '../../../lib/collaboration/text';
 import type { Collaborator } from '../../../lib/collaboration/types';
@@ -183,7 +193,12 @@ function aiHighlightPlugin() {
           apply(tr, previous) {
             const next = tr.getMeta(AI_HIGHLIGHT_KEY) as DecorationSet | undefined;
             if (next) return next;
-            return previous.map(tr.mapping, tr.doc);
+            // Diff widgets are anchored to the body that was diffed. Mapping
+            // them through an unrelated transaction can leave a deletion
+            // widget inside different text, so drop them deterministically on
+            // any document change. The flash timer only clears an empty set.
+            if (tr.docChanged) return DecorationSet.empty;
+            return previous;
           },
         },
         props: {
@@ -268,9 +283,16 @@ export function proseTextMap(doc: ProseNode): ProseTextMap {
       return;
     }
 
+    // `pos` is the position before this node, so its content starts one
+    // position later. The document root has no opening token: its first child
+    // starts at 0. Using the opening-token formula for the root advanced every
+    // text segment by one position, which put an AI delete widget after the
+    // first character of the following block. Separators stay at the following
+    // block's content start, a valid textblock caret position.
+    const contentStart = node === doc ? pos : pos + 1;
     node.forEach((child, offset) => {
-      const childPos = pos + 1 + offset;
-      if (child.isBlock && offset > 0) addSeparator(childPos);
+      const childPos = contentStart + offset;
+      if (child.isBlock && offset > 0) addSeparator(childPos + 1);
       walk(child, childPos);
     });
   };
@@ -279,14 +301,37 @@ export function proseTextMap(doc: ProseNode): ProseTextMap {
   return { text, segments, textSegments };
 }
 
-function positionAt(map: ProseTextMap, offset: number): number {
+/**
+ * Block separators occupy one newline in the plain-text projection but stand
+ * for two editor carets: the end of the previous textblock and the start of
+ * the next one. `next-block` resolves that newline to the following block's
+ * content start, where an AI deletion widget belongs. `previous-text` resolves
+ * it to the previous textblock's end, so a remote caret at the end of a
+ * non-final paragraph stays there. The two non-empty carets have distinct
+ * plain-text offsets (see `proseTextOffsetAt`), so the correct bias at a call
+ * site does not collapse a caret at the start of the next paragraph.
+ */
+export type ProseBoundaryBias = 'next-block' | 'previous-text';
+
+/** Map a plain-text offset from `proseTextMap` back to a ProseMirror position. */
+export function prosePositionAt(
+  map: ProseTextMap,
+  offset: number,
+  bias: ProseBoundaryBias = 'next-block',
+): number {
   if (map.segments.length === 0) return 0;
   for (let index = 0; index < map.segments.length; index += 1) {
     const segment = map.segments[index]!;
     if (offset < segment.textStart) return segment.from;
     if (offset <= segment.textEnd) {
       const next = map.segments[index + 1];
-      if (offset === segment.textEnd && next?.textStart === offset) continue;
+      if (offset === segment.textEnd && next?.textStart === offset) {
+        // The start of a separator is the previous textblock's end. The
+        // next-block bias skips it and lands on the following block's content
+        // start; the previous-text bias keeps the caret on the text end.
+        if (bias === 'previous-text') return segment.to;
+        continue;
+      }
       return segment.from + Math.max(0, Math.min(offset - segment.textStart, segment.to - segment.from));
     }
   }
@@ -325,8 +370,8 @@ function collaboratorDecorations(
     const anchorText = markdownOffsetToTextOffset(segments, collaborator.anchor);
     const headText = markdownOffsetToTextOffset(segments, collaborator.head);
     if (anchorText === null || headText === null) continue;
-    const anchor = positionAt(map, anchorText);
-    const head = positionAt(map, headText);
+    const anchor = prosePositionAt(map, anchorText, 'previous-text');
+    const head = prosePositionAt(map, headText, 'previous-text');
     const from = Math.min(anchor, head);
     const to = Math.max(anchor, head);
 
@@ -383,14 +428,70 @@ function collaboratorPresencePlugin() {
   );
 }
 
-function scrollToTextPosition(view: EditorView, pos: number): void {
+function scrollEditorTo(view: EditorView, top: number): void {
   if (view.isDestroyed) return;
-  const resolved = view.state.doc.resolve(Math.max(0, Math.min(pos, view.state.doc.content.size)));
-  const blockPos = resolved.depth > 0 ? resolved.before(1) : resolved.pos;
-  const node = view.nodeDOM(blockPos);
-  if (node instanceof HTMLElement) {
-    node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const target = Math.max(0, Math.min(top, view.dom.scrollHeight - view.dom.clientHeight));
+  if (prefersReducedMotion()) {
+    view.dom.scrollTop = target;
+    return;
   }
+  view.dom.scrollTo({ top: target, behavior: 'smooth' });
+}
+
+function scrollToAiDiffTarget(view: EditorView, hunks: readonly AiDiffScrollHunk[]): void {
+  if (view.isDestroyed) return;
+  const top = pickAiDiffScrollTarget({
+    hunks,
+    viewportHeight: view.dom.clientHeight,
+    maxScrollTop: view.dom.scrollHeight - view.dom.clientHeight,
+  });
+  scrollEditorTo(view, top);
+}
+
+function textHunkRects(
+  view: EditorView,
+  hunks: ReturnType<typeof groupAiDiffHunks>,
+  map: ProseTextMap,
+): AiDiffScrollHunk[] {
+  const domTop = view.dom.getBoundingClientRect().top;
+  const scrollTop = view.dom.scrollTop;
+  const rects: AiDiffScrollHunk[] = [];
+
+  for (const hunk of hunks) {
+    try {
+      const start = prosePositionAt(map, hunk.start);
+      const end = hunk.end > hunk.start ? prosePositionAt(map, hunk.end) : start;
+      const startCoords = view.coordsAtPos(start, 1);
+      const endCoords = end > start ? view.coordsAtPos(end, -1) : startCoords;
+      rects.push({
+        top: startCoords.top - domTop + scrollTop,
+        bottom: Math.max(startCoords.top, endCoords.bottom) - domTop + scrollTop,
+      });
+    } catch {
+      // A position that cannot be measured simply does not participate in
+      // the scroll decision; the flash decorations still paint.
+    }
+  }
+
+  return rects;
+}
+
+function rangeHunkRects(view: EditorView, ranges: readonly AiHighlightRange[]): AiDiffScrollHunk[] {
+  const domTop = view.dom.getBoundingClientRect().top;
+  const scrollTop = view.dom.scrollTop;
+  const rects: AiDiffScrollHunk[] = [];
+
+  for (const range of ranges) {
+    const node = view.nodeDOM(range.from);
+    if (!(node instanceof HTMLElement)) continue;
+    const rect = node.getBoundingClientRect();
+    rects.push({
+      top: rect.top - domTop + scrollTop,
+      bottom: rect.bottom - domTop + scrollTop,
+    });
+  }
+
+  return rects;
 }
 
 /** Set the shared AI decoration timer and clear the visual after `duration`. */
@@ -406,6 +507,24 @@ function scheduleAiDecorationClear(view: EditorView, duration: number): void {
   aiHighlightTimers.set(view, timer);
 }
 
+/** End the current flash immediately, e.g. when a newer edit supersedes it. */
+export function clearAiHighlights(view: EditorView): void {
+  if (view.isDestroyed) return;
+  const timer = aiHighlightTimers.get(view);
+  if (timer !== undefined) {
+    window.clearTimeout(timer);
+    aiHighlightTimers.delete(view);
+  }
+  view.dispatch(view.state.tr.setMeta(AI_HIGHLIGHT_KEY, DecorationSet.empty));
+}
+
+export interface AiHighlightOptions {
+  /** Remaining lifespan for this pane, usually from `claimAiDiffFlash`. */
+  duration?: number;
+  /** False when a pane remounts mid-flash and must not replay the animation. */
+  animate?: boolean;
+}
+
 /**
  * Apply a short inline diff. Inserted text gets a green wash; deleted text is
  * shown as a red strike-through widget at the new insertion point. The source
@@ -415,11 +534,15 @@ export function setAiDiffHighlights(
   view: EditorView,
   changes: readonly AiTextChange[],
   map: ProseTextMap,
-  duration = 750,
+  options: AiHighlightOptions = {},
 ): boolean {
   if (view.isDestroyed || changes.length === 0) return false;
 
+  const animate = options.animate ?? true;
+  const insertClass = animate ? 'nana-ai-diff-insert' : 'nana-ai-diff-insert nana-ai-diff-static';
+  const deleteClass = animate ? 'nana-ai-diff-delete' : 'nana-ai-diff-delete nana-ai-diff-static';
   const decorations: Decoration[] = [];
+
   for (const change of changes) {
     if (change.type === 'insert') {
       for (const segment of map.textSegments) {
@@ -429,20 +552,18 @@ export function setAiDiffHighlights(
         decorations.push(Decoration.inline(
           segment.from + (from - segment.textStart),
           segment.from + (to - segment.textStart),
-          { class: 'nana-ai-diff-insert' },
+          { class: insertClass },
         ));
       }
       continue;
     }
 
     const span = document.createElement('span');
-    span.className = 'nana-ai-diff-delete';
-    span.textContent = change.text.length > 600
-      ? `${change.text.slice(0, 600)}…`
-      : change.text;
+    span.className = deleteClass;
+    span.textContent = formatAiDiffDeleteText(change.text).display;
     span.setAttribute('aria-hidden', 'true');
     decorations.push(Decoration.widget(
-      positionAt(map, change.start),
+      prosePositionAt(map, change.start, 'next-block'),
       span,
       { side: -1 },
     ));
@@ -450,11 +571,12 @@ export function setAiDiffHighlights(
 
   if (decorations.length === 0) return false;
 
+  view.dom.style.setProperty('--nana-ai-flash-duration', `${AI_DIFF_FLASH_MS}ms`);
   view.dispatch(
     view.state.tr.setMeta(AI_HIGHLIGHT_KEY, DecorationSet.create(view.state.doc, decorations)),
   );
-  scrollToTextPosition(view, positionAt(map, changes[0]!.start));
-  scheduleAiDecorationClear(view, duration);
+  scrollToAiDiffTarget(view, textHunkRects(view, groupAiDiffHunks(changes), map));
+  scheduleAiDecorationClear(view, options.duration ?? AI_DIFF_CLEAR_MS);
   return true;
 }
 
@@ -463,29 +585,81 @@ export function setAiDiffHighlights(
  * classes. Milkdown re-renders node DOM after transactions; a class added
  * directly to the DOM can disappear before the user sees it.
  */
-export function setAiHighlights(view: EditorView, ranges: AiHighlightRange[], duration = 700): void {
+export function setAiHighlights(
+  view: EditorView,
+  ranges: AiHighlightRange[],
+  options: AiHighlightOptions = {},
+): void {
   if (view.isDestroyed || ranges.length === 0) return;
 
+  const animate = options.animate ?? true;
+  const className = animate ? 'nana-ai-edited' : 'nana-ai-edited nana-ai-edited-static';
   const decorations = ranges.map((range) =>
     Decoration.node(range.from, range.to, {
-      class: 'nana-ai-edited',
+      class: className,
       ...(range.heading ? { 'data-nana-ai-heading': 'true' } : {}),
     }),
   );
 
+  view.dom.style.setProperty('--nana-ai-flash-duration', `${AI_DIFF_FLASH_MS}ms`);
   view.dispatch(
     view.state.tr.setMeta(AI_HIGHLIGHT_KEY, DecorationSet.create(view.state.doc, decorations)),
   );
+  scrollToAiDiffTarget(view, rangeHunkRects(view, ranges));
+  scheduleAiDecorationClear(view, options.duration ?? AI_DIFF_CLEAR_MS);
+}
 
-  const first = ranges[0];
-  if (first) {
-    const node = view.nodeDOM(first.from);
-    if (node instanceof HTMLElement) {
-      node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+/**
+ * Map a diff-derived text span set onto the top-level blocks it touched. This
+ * is the rendered-pane fallback when server section metadata is empty or the
+ * change set is too large for inline widgets. It is intentionally bounded: a
+ * pathological note gets the first N changed blocks rather than thousands of
+ * node decorations.
+ */
+export function aiDiffFallbackRanges(
+  doc: ProseNode,
+  map: ProseTextMap,
+  changes: readonly AiTextChange[],
+  maxRanges = 160,
+): AiHighlightRange[] {
+  const spans = aiDiffFallbackSpans(changes, map.text.length, maxRanges);
+  const blocks: Array<{ from: number; to: number }> = [];
+  doc.forEach((node, offset) => {
+    blocks.push({ from: offset, to: offset + node.nodeSize });
+  });
+  if (blocks.length === 0) return [];
+
+  const blockIndexAt = (position: number): number => {
+    const clamped = Math.max(0, Math.min(position, doc.content.size));
+    for (let index = 0; index < blocks.length; index += 1) {
+      if (clamped < blocks[index]!.to) return index;
+    }
+    return blocks.length - 1;
+  };
+
+  const ranges = new Map<string, AiHighlightRange>();
+  const limit = Math.max(1, maxRanges);
+  outer: for (const span of spans) {
+    const startPosition = prosePositionAt(map, span.start);
+    const endPosition = span.end > span.start ? prosePositionAt(map, span.end) : startPosition;
+    const startIndex = blockIndexAt(startPosition);
+    const endIndex = blockIndexAt(endPosition);
+
+    for (let index = startIndex; index <= endIndex; index += 1) {
+      const block = blocks[index]!;
+      ranges.set(`${block.from}:${block.to}`, { from: block.from, to: block.to });
+      if (ranges.size >= limit) break outer;
     }
   }
 
-  scheduleAiDecorationClear(view, duration);
+  if (ranges.size === 0) {
+    // The body exists but the text projection could not address it (for
+    // example a node-only block). A single wash is still better than blank.
+    const first = blocks[0]!;
+    ranges.set(`${first.from}:${first.to}`, { from: first.from, to: first.to });
+  }
+
+  return [...ranges.values()].sort((left, right) => left.from - right.from);
 }
 
 function taskListClickPlugin() {
@@ -887,11 +1061,24 @@ export function getEditorMarkdown(ctx: Ctx): string {
   return normalizeMarkdown(ctx.get(serializerCtx)(ctx.get(editorStateCtx).doc));
 }
 
-function textOffsetForProsePosition(map: ProseTextMap, position: number): number {
+/**
+ * Project a ProseMirror caret into the plain-text projection.
+ *
+ * A separator is zero-width in ProseMirror but one newline in plain text. Its
+ * document position is the following block's content start, so map that caret
+ * to the separator's `textEnd` (the next textblock's start) instead of its
+ * `textStart` (the previous textblock's end). End-of-textblock carets never
+ * share that document position, which keeps the two boundary affinities
+ * distinct through Markdown presence.
+ */
+export function proseTextOffsetAt(map: ProseTextMap, position: number): number {
   let fallback = 0;
   for (const segment of map.segments) {
     if (position < segment.from) return segment.textStart;
     if (position <= segment.to) {
+      if (segment.from === segment.to && position === segment.from) {
+        return segment.textEnd;
+      }
       return segment.textStart + Math.max(0, Math.min(position - segment.from, segment.textEnd - segment.textStart));
     }
     fallback = segment.textEnd;
@@ -906,8 +1093,8 @@ export function getMarkdownSelection(ctx: Ctx): { anchor: number; head: number }
   const markdown = getEditorMarkdown(ctx);
   const map = proseTextMap(view.state.doc);
   const segments = alignMarkdownToText(markdown, map.text);
-  const anchorText = textOffsetForProsePosition(map, view.state.selection.anchor);
-  const headText = textOffsetForProsePosition(map, view.state.selection.head);
+  const anchorText = proseTextOffsetAt(map, view.state.selection.anchor);
+  const headText = proseTextOffsetAt(map, view.state.selection.head);
   const anchor = textOffsetToMarkdownOffset(segments, anchorText);
   const head = textOffsetToMarkdownOffset(segments, headText);
   if (anchor === null || head === null) return null;
@@ -920,7 +1107,9 @@ function prosePositionForMarkdownOffset(doc: ProseNode, markdown: string, offset
   const segments = alignMarkdownToText(markdown, map.text);
   const textOffset = markdownOffsetToTextOffset(segments, offset);
   if (textOffset === null) return null;
-  return positionAt(map, textOffset);
+  // Selection restoration is caret-like: an offset at a paragraph end stays
+  // on that paragraph instead of jumping into the following block.
+  return prosePositionAt(map, textOffset, 'previous-text');
 }
 
 /**
@@ -1343,8 +1532,8 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
       : markdownOffsetToTextOffset(segments, change.to);
 
     if (fromText !== null && toText !== null) {
-      const from = positionAt(textMap, fromText);
-      const to = positionAt(textMap, toText);
+      const from = prosePositionAt(textMap, fromText);
+      const to = prosePositionAt(textMap, toText);
       const $from = view.state.doc.resolve(from);
       const $to = view.state.doc.resolve(to);
       const sameTextblock = $from.parent.inlineContent

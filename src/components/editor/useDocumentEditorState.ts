@@ -23,6 +23,10 @@ import { useDocumentActions } from './useDocumentActions';
 import { useDocumentCollaboration } from '../../lib/collaboration/useDocumentCollaboration';
 import { setRoomContentAuthority } from '../../lib/documents/save';
 import { adoptEditorDocument } from '../../lib/documents/drafts';
+import {
+    appendRemoteTransition,
+    type AiEditRemoteTransition,
+} from './aiEditLifecycle';
 
 export function useDocumentEditorState() {
     const navigate = useNavigate();
@@ -78,7 +82,18 @@ export function useDocumentEditorState() {
     const contentRef = useRef(content);
     const tagsRef = useRef(tags);
     const prevDocumentIdRef = useRef(document?.id);
-    const remoteContentChangeRef = useRef<{ from: string; to: string } | null>(null);
+    // Recent remote body transitions for the AI-flash fallback. The chat event
+    // and the room broadcast are independent streams, so one slot could be
+    // overwritten before the event resolves. This ring stays newest-last and
+    // bounded in count and characters.
+    const remoteContentTransitionsRef = useRef<AiEditRemoteTransition[]>([]);
+    const rememberRemoteTransition = useCallback((previous: string, next: string) => {
+        remoteContentTransitionsRef.current = appendRemoteTransition(
+            remoteContentTransitionsRef.current,
+            previous,
+            next,
+        );
+    }, []);
     // Set by the first save of the current /document/new session. The next
     // document id is a promotion, not a switch to another note.
     const promotedDocumentIdRef = useRef<string | null>(null);
@@ -96,15 +111,16 @@ export function useDocumentEditorState() {
     const handleRemoteContent = useCallback((next: string) => {
         const normalized = normalizeMarkdown(next);
         if (normalized === normalizeMarkdown(contentRef.current)) return;
-        // Keep the pre-live draft so a later AI edit event can still diff
-        // against what was actually on screen.
-        remoteContentChangeRef.current = { from: contentRef.current, to: normalized };
+        // Keep the pre-live draft in a bounded history so a later AI edit event
+        // can still diff against what was actually on screen, even when several
+        // room updates arrive before the event.
+        rememberRemoteTransition(contentRef.current, normalized);
         contentRef.current = normalized;
         // Apply the merged Yjs value before returning from the SSE handler.
         // Otherwise the next keystroke can diff against a newer Y.Doc and
         // delete the update that has not reached the editor yet.
         flushSync(() => setContent(normalized));
-    }, [setContent]);
+    }, [rememberRemoteTransition, setContent]);
 
     const {
         session: collaborationSession,
@@ -424,7 +440,7 @@ export function useDocumentEditorState() {
         setLastSyncedDocId(document?.id);
         setLastSyncedSession(creationSessionId);
         setSyncedDocument(document);
-        remoteContentChangeRef.current = null;
+        remoteContentTransitionsRef.current = [];
         setTitle(adoption.title);
         setContent(adoption.content);
         setTags(adoption.tags);
@@ -493,16 +509,17 @@ export function useDocumentEditorState() {
 
         const nextContent = normalizeMarkdown(document.content);
         if (nextContent !== normalizeMarkdown(contentRef.current)) {
-            // Keep the pre-realtime draft so an AI-edit event that arrives after
-            // the PocketBase broadcast can still diff against what was on screen.
-            remoteContentChangeRef.current = { from: contentRef.current, to: nextContent };
+            // Keep the pre-realtime draft in the same bounded history so an
+            // AI-edit event that arrives after the PocketBase broadcast can
+            // still diff against what was on screen.
+            rememberRemoteTransition(contentRef.current, nextContent);
         }
         setTitle(document.title || '');
         // A broadcast is not this client's save. Apply its body without
         // touching local dirty state, and never replay it as a local edit.
         applyExternalContent(nextContent);
         setTags(document.tags || []);
-    }, [document, urlDocumentId, globalHasUnsavedChanges, pendingContentChanges, collaborationStatus, applyExternalContent]);
+    }, [document, urlDocumentId, globalHasUnsavedChanges, pendingContentChanges, collaborationStatus, applyExternalContent, rememberRemoteTransition]);
 
     useEffect(() => {
         // The atom can change one render before the realtime effect adopts it.
@@ -611,7 +628,7 @@ export function useDocumentEditorState() {
         urlDocumentId,
         document,
         setSelectedDocument,
-        remoteContentChangeRef,
+        remoteContentTransitionsRef,
         sidebarOpen,
         sidebarWidth,
         titleInputRef,
@@ -664,6 +681,7 @@ export function useDocumentEditorState() {
         collaborationSession,
         collaborators,
         collaborationStatus,
+        collaborationRevision,
         collaborationPersistence,
         handleEditorSelection,
         handleContentChange,

@@ -3,6 +3,7 @@ import type {
   ChatContextInput,
   ChatContextType,
   ChatEditChanges,
+  ChatEditContentChange,
   ChatEditDto,
   ChatEditSection,
   ChatEditStatus,
@@ -22,6 +23,7 @@ export type {
   ChatContextInput,
   ChatContextType,
   ChatEditChanges,
+  ChatEditContentChange,
   ChatEditDto,
   ChatEditSection,
   ChatEditStatus,
@@ -62,6 +64,13 @@ export type ChatEditUiStatus = ChatEditStatus | 'applying' | 'conflict';
 /** One edit as rendered in a message card. */
 export interface ChatUiEdit extends Omit<ChatEditDto, 'status'> {
   status: ChatEditUiStatus;
+  /**
+   * Event-only body pair from a document body write. Never present on list/get
+   * responses or persisted message parts; used only for the editor flash.
+   */
+  contentChange?: ChatEditContentChange;
+  /** True when the body pair was too large to send; the editor falls back. */
+  contentChangeOmitted?: boolean;
   /** Local undo request in flight. */
   undoing?: boolean;
   /** Local failure detail when undo fails. */

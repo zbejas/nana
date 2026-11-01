@@ -278,6 +278,28 @@ function normalizeEditStatus(value: unknown): ChatUiEdit['status'] {
   return 'applied';
 }
 
+/** Read the event-only body pair without inventing one for list/get cards. */
+function normalizeEditContentChange(
+  value: unknown,
+): { contentChange?: ChatUiEdit['contentChange']; contentChangeOmitted?: boolean } {
+  const record = asRecord(value);
+  if (record.contentChangeOmitted === true) {
+    return { contentChangeOmitted: true };
+  }
+  const change = asRecord(record.contentChange);
+  if (typeof change.before !== 'string' || typeof change.after !== 'string') return {};
+  const beforeRevision = numberValue(change.beforeRevision);
+  const afterRevision = numberValue(change.afterRevision);
+  return {
+    contentChange: {
+      before: change.before,
+      after: change.after,
+      ...(beforeRevision !== undefined ? { beforeRevision } : {}),
+      ...(afterRevision !== undefined ? { afterRevision } : {}),
+    },
+  };
+}
+
 /** Normalize a live or persisted edit event into the card shape. */
 export function normalizeEdit(value: unknown): ChatUiEdit | null {
   const record = asRecord(value);
@@ -337,6 +359,21 @@ export function normalizeEdit(value: unknown): ChatUiEdit | null {
     },
     created,
     updated,
+  };
+}
+
+/**
+ * Normalize one SSE `edit` payload. The optional body pair sits on the event
+ * envelope, outside the persisted edit record, so lift it into the UI edit
+ * without teaching list/get responses about it.
+ */
+export function normalizeEditEvent(value: unknown): ChatUiEdit | null {
+  const record = asRecord(value);
+  const edit = normalizeEdit(record.edit ?? record);
+  if (!edit) return null;
+  return {
+    ...edit,
+    ...normalizeEditContentChange(record),
   };
 }
 
@@ -517,7 +554,7 @@ function dispatchStreamEvent(
   }
 
   if (type === 'edit' || type === 'edit-update' || type === 'edit_update' || type === 'edit-started' || type === 'edit-applied') {
-    const edit = normalizeEdit(record.edit ?? record);
+    const edit = normalizeEditEvent(record);
     if (edit) handlers.onEdit?.(edit);
     return;
   }

@@ -5,6 +5,24 @@ import {
   type AiTextChange,
 } from '../../src/components/editor/milkdown/aiDiff';
 
+const SYNTHETIC_PARAGRAPH = (index: number) =>
+  `Section ${index}: Nana keeps a calm workspace where notes, folders, and boards stay close at hand. `
+  + 'Each paragraph carries enough words to make the token diff realistic without hiding the edit. '
+  + 'The second sentence adds detail, and the third gives the body a natural reading rhythm.';
+
+function syntheticLongNote(paragraphCount = 24): string {
+  const blocks = [
+    '# Project notes',
+    '',
+    'A short introduction before the changed material.',
+    '',
+  ];
+  for (let index = 0; index < paragraphCount; index += 1) {
+    blocks.push(SYNTHETIC_PARAGRAPH(index), '');
+  }
+  return blocks.join('\n');
+}
+
 /** Hunks must stay in new-text order and never overlap. */
 function expectOrderedHunks(changes: readonly AiTextChange[], next: string): void {
   let previousEnd = -1;
@@ -161,6 +179,63 @@ describe('AI text diff', () => {
     expect(diffText('a z', next)).toEqual([
       { type: 'insert', start: 2, end: 19, text: 'hello brave world' },
     ]);
+  });
+
+  test('finds both separated deletions in a 6k-character note without the replacement fallback', () => {
+    const opening = 'Delete this opening paragraph because it is no longer true.';
+    const closing = 'Delete this closing paragraph after the later section.';
+    const previous = syntheticLongNote();
+    const withBoth = previous
+      .replace(
+        '\n\nA short introduction',
+        `\n\n${opening}\n\nA short introduction`,
+      )
+      .replace('\n\nSection 17:', `\n\n${closing}\n\nSection 17:`);
+    const next = withBoth
+      .replace(`${opening}\n\n`, '')
+      .replace(`${closing}\n\n`, '');
+
+    expect(previous.length).toBeGreaterThan(5_000);
+    expect(next.length).toBeGreaterThan(5_000);
+
+    const startedAt = performance.now();
+    const changes = diffText(withBoth, next);
+    const elapsed = performance.now() - startedAt;
+
+    expect(elapsed).toBeLessThan(1_000);
+    expect(changes.map((change) => change.type)).toEqual(['delete', 'delete']);
+    expect(changes.map((change) => change.text)).toEqual([opening, closing]);
+    expect(changes).not.toEqual([
+      { type: 'delete', start: 0, end: 0, text: withBoth },
+      { type: 'insert', start: 0, end: next.length, text: next },
+    ]);
+    expectOrderedHunks(changes, next);
+  });
+
+  test('anchors several long-note replacements independently', () => {
+    const previous = syntheticLongNote();
+    const next = previous
+      .replace('Section 3:', 'Updated section 3:')
+      .replace('Section 9:', 'Revised section 9:')
+      .replace('Section 17:', 'Changed section 17:');
+    const changes = diffText(previous, next);
+
+    expect(previous.length).toBeGreaterThan(6_000);
+    expect(changedCharacterCount(changes)).toBeLessThan(200);
+    expect(changes.length).toBeGreaterThanOrEqual(6);
+    expectOrderedHunks(changes, next);
+
+    const deletionStarts = changes
+      .filter((change) => change.type === 'delete')
+      .map((change) => change.start);
+    expect(deletionStarts).toHaveLength(3);
+    expect(deletionStarts[0]).toBeLessThan(deletionStarts[1]!);
+    expect(deletionStarts[1]).toBeLessThan(deletionStarts[2]!);
+  });
+
+  test('keeps the character guard for bodies that cannot be diffed', () => {
+    const tooLong = 'a'.repeat(120_001);
+    expect(diffText(tooLong, `${tooLong}b`)).toEqual([]);
   });
 
   test('keeps the large-token fallback bounded to one delete and one insert', () => {

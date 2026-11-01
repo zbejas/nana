@@ -20,6 +20,14 @@ interface Token {
 
 const MAX_DIFF_CHARS = 120_000;
 const MAX_DP_CELLS = 250_000;
+/**
+ * Myers is linear in the number of edits rather than the product of the token
+ * counts. These bounds keep a genuinely pathological rewrite (an all-new body)
+ * on the one-replacement fallback instead of spending seconds and megabytes on
+ * a trace that the flash cannot show meaningfully anyway.
+ */
+const MAX_MYERS_EDIT_DISTANCE = 1_024;
+const MAX_MYERS_TRACE_CELLS = 6_000_000;
 
 function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
@@ -65,16 +73,116 @@ interface TokenOp {
   token: Token;
 }
 
+/**
+ * Backtrack a Myers trace into token operations. Every snapshot is the full
+ * furthest-reaching diagonal array after edit depth `d`; diagonals with the
+ * opposite parity still hold their `d - 1` value, which is what the predecessor
+ * choice reads.
+ */
+function opsFromMyersTrace(
+  snapshots: readonly Int32Array[],
+  left: readonly Token[],
+  right: readonly Token[],
+  offset: number,
+): TokenOp[] {
+  const ops: TokenOp[] = [];
+  let x = left.length;
+  let y = right.length;
+
+  for (let depth = snapshots.length - 1; depth >= 0; depth -= 1) {
+    const furthest = snapshots[depth]!;
+    const diagonal = x - y;
+    let previousDiagonal = 0;
+
+    if (depth > 0) {
+      const down = furthest[offset + diagonal + 1] ?? 0;
+      const rightward = furthest[offset + diagonal - 1] ?? 0;
+      previousDiagonal = diagonal === -depth || (diagonal !== depth && rightward < down)
+        ? diagonal + 1
+        : diagonal - 1;
+    }
+
+    const previousX = depth === 0 ? 0 : (furthest[offset + previousDiagonal] ?? 0);
+    const previousY = depth === 0 ? 0 : previousX - previousDiagonal;
+
+    while (x > previousX && y > previousY) {
+      x -= 1;
+      y -= 1;
+      ops.push({ type: 'equal', token: right[y]! });
+    }
+    if (depth === 0) break;
+
+    if (x === previousX) {
+      y -= 1;
+      ops.push({ type: 'insert', token: right[y]! });
+    } else {
+      x -= 1;
+      ops.push({ type: 'delete', token: left[x]! });
+    }
+  }
+
+  ops.reverse();
+  return ops;
+}
+
+/**
+ * Myers O((N + M)D) shortest edit script. Prefix/suffix trimming usually leaves
+ * only the changed span, so a 5–10k-character note with a handful of edits
+ * needs a few hundred diagonals, not millions of LCS cells. Returns null when
+ * the edit distance or the trace budget is exceeded; the caller then uses the
+ * last-resort whole-replacement pair.
+ */
+function myersOps(left: Token[], right: Token[]): TokenOp[] | null {
+  const n = left.length;
+  const m = right.length;
+  const maximum = n + m;
+  // Each snapshot is the full furthest-reaching array (2 * maximum + 1 ints).
+  const traceBudget = Math.floor(MAX_MYERS_TRACE_CELLS / (maximum * 2 + 1)) - 1;
+  const limit = Math.min(maximum, MAX_MYERS_EDIT_DISTANCE, traceBudget);
+  if (limit < 1) return null;
+
+  const offset = maximum;
+  const furthest = new Int32Array(maximum * 2 + 1);
+  const snapshots: Int32Array[] = [];
+
+  for (let depth = 0; depth <= limit; depth += 1) {
+    for (let diagonal = -depth; diagonal <= depth; diagonal += 2) {
+      const down = furthest[offset + diagonal + 1] ?? 0;
+      const rightward = (furthest[offset + diagonal - 1] ?? 0) + 1;
+      let x = diagonal === -depth || (diagonal !== depth && (furthest[offset + diagonal - 1] ?? 0) < down)
+        ? down
+        : rightward;
+      let y = x - diagonal;
+
+      while (x < n && y < m && left[x]!.text === right[y]!.text) {
+        x += 1;
+        y += 1;
+      }
+      furthest[offset + diagonal] = x;
+
+      if (x >= n && y >= m) {
+        snapshots.push(furthest.slice());
+        return opsFromMyersTrace(snapshots, left, right, offset);
+      }
+    }
+    snapshots.push(furthest.slice());
+  }
+
+  return null;
+}
+
 function middleOps(left: Token[], right: Token[]): TokenOp[] {
   const n = left.length;
   const m = right.length;
   if (n === 0) return right.map((token) => ({ type: 'insert', token }));
   if (m === 0) return left.map((token) => ({ type: 'delete', token }));
 
-  // A full LCS is cheap after common prefixes/suffixes are removed. If a
-  // rewrite is enormous, one red/green replacement block is clearer than a
-  // stalled editor and is still bounded by the caller's inline threshold.
+  // A full LCS is cheap after common prefixes/suffixes are removed and keeps
+  // the small-edit tie-breaking stable. Longer middles use Myers; only a
+  // rewrite beyond both bounds becomes one red/green replacement block.
   if (n * m > MAX_DP_CELLS) {
+    const ops = myersOps(left, right);
+    if (ops) return ops;
     return [
       ...left.map((token): TokenOp => ({ type: 'delete', token })),
       ...right.map((token): TokenOp => ({ type: 'insert', token })),
