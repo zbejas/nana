@@ -32,7 +32,13 @@ export function useMobileState(isOpen: boolean, toggle: () => void) {
         };
 
         if (isOpen && !hasSidebarHistoryEntryRef.current) {
-            window.history.pushState(null, '', window.location.href);
+            // Mark the entry so an overlay opened from the drawer (the chat
+            // dock) can take it over instead of pushing a second guard.
+            window.history.pushState(
+                { ...(window.history.state ?? {}), nanaBackToClose: true },
+                '',
+                window.location.href,
+            );
             hasSidebarHistoryEntryRef.current = true;
         } else if (!isOpen && hasSidebarHistoryEntryRef.current) {
             if (skipHistoryBackOnCloseRef.current) {

@@ -115,10 +115,9 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     if (visible) setFocusSignal((value) => value + 1);
   }, [visible]);
 
-  // The dock is a right-side drawer on both desktop and mobile. On a phone it
-  // keeps the route context visible in the 3rem strip beside it. A real
-  // pathname change closes it so it cannot cover the newly opened route;
-  // mounting on an open route keeps it open.
+  // The dock is a right-side panel on desktop and a full-screen surface on a
+  // phone. A real pathname change closes it so it cannot cover the newly
+  // opened route; mounting on an open route keeps it open.
   useEffect(() => {
     if (previousPathRef.current === location.pathname) return;
     previousPathRef.current = location.pathname;
@@ -128,14 +127,31 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     setHistorySheetOpen(false);
   }, [isMobile, location.pathname, setHistoryOpen, setOpen]);
 
-  // The mobile chat drawer and the sidebar drawer cannot both own the screen.
+  // The mobile chat surface and the sidebar drawer cannot both own the screen.
   // Opening the dock dismisses the navigation drawer.
   useEffect(() => {
     if (isMobile && visible && sidebarOpen) setSidebarOpen(false);
   }, [isMobile, visible, sidebarOpen, setSidebarOpen]);
 
-  // Back should dismiss the history sheet before it leaves the page.
-  useBackToClose(isMobile && historySheetOpen, () => setHistorySheetOpen(false));
+  // Back dismisses the history sheet first, then closes the full-screen dock.
+  // Returning true keeps the synthetic entry armed for the next Back; closing
+  // the dock leaves normal history navigation in place. The dock adopts the
+  // mobile menu drawer's guard when chat opens from that drawer.
+  useBackToClose(
+    isMobile && visible,
+    () => {
+      if (historySheetOpen) {
+        setHistorySheetOpen(false);
+        return true;
+      }
+      setOpen(false);
+      setHistoryOpen(false);
+      setHistorySheetOpen(false);
+      return false;
+    },
+    true,
+    { reuseExisting: true },
+  );
 
   useEffect(() => {
     if (open) {
@@ -199,13 +215,18 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     const handleKeyDown = (event: KeyboardEvent) => {
       const modifier = event.metaKey || event.ctrlKey;
       if (!modifier || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'j') return;
+      // The mobile menu drawer owns the screen; its Chat action is the entry.
+      if (isMobile && sidebarOpen) {
+        event.preventDefault();
+        return;
+      }
       if (document.querySelector('[data-dialog-layer]')) return;
       event.preventDefault();
       setOpen((value) => !value);
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [setOpen]);
+  }, [isMobile, setOpen, sidebarOpen]);
 
   useEffect(() => {
     if (!visible) return;
@@ -221,7 +242,7 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [visible, setOpen]);
 
-  // On phones the dock is a modal drawer over the page. Keep Tab inside it;
+  // On phones the dock is a full-screen modal surface. Keep Tab inside it;
   // nested sheets, dialogs, and menus own their own focus while they are on
   // top.
   useEffect(() => {
@@ -328,13 +349,6 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
 
   return (
     <>
-      {isMobile && visible && (
-        <div
-          className="fixed inset-0 z-[45] bg-scrim"
-          onClick={close}
-          aria-hidden="true"
-        />
-      )}
       <aside
         id="nana-chat-dock"
         ref={panelRef}
@@ -344,13 +358,13 @@ export function ChatDock({ width, maxWidth }: ChatDockProps) {
         aria-hidden={!visible}
         inert={!visible}
         className={cn(
-          'fixed bottom-0 right-0 top-0 z-[46] flex max-w-full flex-col border-l border-line bg-surface text-ink shadow-float transition-[transform,width] duration-200 ease-out',
+          'fixed bottom-0 right-0 top-0 z-[46] flex max-w-full flex-col border-line bg-surface text-ink shadow-float transition-[transform,width] duration-200 ease-out md:border-l',
           visible ? 'translate-x-0' : 'pointer-events-none invisible translate-x-full',
         )}
         data-state={visible ? 'open' : 'closed'}
         style={isMobile
           ? {
-            width: 'calc(100% - 3rem)',
+            width: '100%',
             ...(viewportHeight ? { height: `${viewportHeight}px`, bottom: 0 } : {}),
           }
           : { width: `${width}px`, ...(resizing ? { transition: 'none' } : {}) }}
