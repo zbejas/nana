@@ -16,12 +16,18 @@ const UNSAVED_LIVE_CHANGES =
  * the live text or create a stale undo snapshot. The caller receives a normal
  * workspace conflict so the AI/tool can ask the user to retry.
  */
-export async function flushLiveNoteBeforeExternalWrite(documentId: string): Promise<void> {
+export async function flushLiveNoteBeforeExternalWrite(
+    documentId: string,
+    signal?: AbortSignal,
+): Promise<void> {
     const room = getRoom(documentId);
     if (!room) return;
 
-    const result = await room.flushDocument();
-    if (result.persistence === "conflict" || result.persistence === "error") {
+    const result = await room.flushDocument(signal);
+    // Only a clean room proves the durable body is current. A pending, saving,
+    // conflict, or error room would give the caller stale text or a stale
+    // revision, so fail the external read/write instead.
+    if (result.persistence !== "clean") {
         throw conflict(UNSAVED_LIVE_CHANGES);
     }
 }
@@ -29,18 +35,21 @@ export async function flushLiveNoteBeforeExternalWrite(documentId: string): Prom
 /**
  * Adopt an external content write into the open room, if any. The room merges
  * concurrent local text and may persist once more; the returned revision is
- * the room's final revision. With no room, the write revision is unchanged.
+ * the room's final revision. An aborted adoption leaves the room dirty for its
+ * scheduled flush without failing the already-completed external write. With
+ * no room, the write revision is unchanged.
  */
 export async function adoptLiveNoteContent(
     documentId: string,
     content: string,
     revision: number,
+    signal?: AbortSignal,
 ): Promise<number> {
     const room = getRoom(documentId);
     if (!room) return revision;
 
     try {
-        return await room.applyExternalEdit(content, revision);
+        return await room.applyExternalEdit(content, revision, signal);
     } catch (error) {
         // The workspace write already succeeded. A room that cannot adopt it
         // must not turn that success into a model-visible failure; the next

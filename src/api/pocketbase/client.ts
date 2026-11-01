@@ -35,7 +35,13 @@ export type ToolErrorCode =
 export interface ToolFailure {
     ok: false;
     code: ToolErrorCode;
+    /** Generic, model-safe failure text. This is the only field persisted as tool activity. */
     message: string;
+    /**
+     * Optional bounded retry suggestions for the model. Never persisted or
+     * streamed as tool activity; only `message` is.
+     */
+    candidates?: Array<{ line: number; text: string }>;
 }
 
 export type ToolResult<T> = ({ ok: true } & T) | ToolFailure;

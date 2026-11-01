@@ -113,8 +113,8 @@ Production compose exposes only `:3000`. PocketBase binds to `127.0.0.1:8090`, a
 - Loads the AI visibility set and excludes private records and private-folder subtrees from workspace lists and reads; a strict note scope instead requires a live, non-private note with person access. Write tools re-check the loaded note, folder, board, or task before mutating.
 - Refuses trashed boards and hidden boards in `read_board`, `list_tasks`, and `read_task`; `list_boards` can list trashed boards only when `includeArchived: true`.
 - Can create, rename, move, and update folders, notes, boards, and tasks; can trash/restore boards. Cannot publish, share, change privacy, manage columns/labels, or move a task to another board. Delete tools only create a pending action; confirmation re-checks ownership and visibility and runs the workspace delete with the caller's token.
-- Is bounded: `perPage` ≤ 50, note windows ≤ 600 lines, note bodies capped at 2,000,000 bytes, lines clipped at 2,000 characters, excerpts at 400 characters.
-- Note and board reads abort PocketBase after 8 seconds or when the model aborts; task reads and writes use the workspace client's 30-second default.
+- Is bounded: `perPage` ≤ 50, `read_note` defaults to the whole note under a 24,000-character budget, explicit windows use a 12,000–24,000-character budget and are capped at 2,000 lines, note bodies are capped at 2,000,000 bytes, explicit-window lines are clipped at 2,000 characters, and excerpts at 400 characters. `complete` is true only when this single result contains the note from line 1 with no omitted lines before or after the window, no clipped line, and no byte-cap loss; a later or tail-only window is never complete. `omittedBefore`, `omittedAfter`, and `omittedLines` expose both sides, `truncated` means loss inside the returned window, an offset past the last line is `invalid_input`, and every incomplete result carries a `notice`. A byte-capped tail is permanently unavailable (`tailUnavailable`), and clipped lines are never safe exact anchors.
+- Note and board reads abort PocketBase after 8 seconds or when the model aborts. The chat note read/write flush passes its own bounded tool signal into the room, combined with the room's 15-second PATCH and 8-second lookup timeouts; a flush that is not clean fails the call instead of returning stale content. Task reads and writes use the workspace client's 30-second default.
 - Escapes filter values and accepts ids only when they match `[A-Za-z0-9]{1,64}`.
 - Note and board read tools map PocketBase `403` and `404` to the same generic `not_found` so another user's ids are not disclosed.
 
@@ -167,8 +167,8 @@ Paused and history behavior:
 
 Live-note interaction:
 
-- `read_note` authorizes the caller and note scope before flushing a live room, so guessing an id cannot flush someone else's pending keystrokes. It flushes, then reads the fresh PocketBase body/revision; a room in conflict/error returns a tool `conflict`/`unavailable` instead of stale content.
-- A chat note write flushes the room first, then adopts the stored body into the room as a server-origin diff. The group registry cannot choose another note, and `editNoteRecord()`/`restoreNoteSnapshot()` re-check `noteScope` and edit level.
+- `read_note` authorizes the caller and note scope before flushing a live room, so guessing an id cannot flush someone else's pending keystrokes. It flushes with a bounded signal, then reads the fresh PocketBase body/revision; a room that is not clean after the flush returns a tool `conflict` instead of stale content. A partial result carries `complete: false`, `omittedBefore`, `omittedAfter`, `omittedLines`, `nextOffset`, and a `notice`. The prompt requires `complete: true` only for a whole-note summary, claim, or whole-note edit; a section edit needs the target section and an exact anchor. A clipped or byte-capped tail is permanently unavailable and must not be edited from.
+- A chat note write flushes the room first, then adopts the stored body into the room as a server-origin diff with the tool's abort signal. If adoption is aborted, the room stays dirty for its scheduled flush but the completed workspace write still returns success. The group registry cannot choose another note, and `editNoteRecord()`/`restoreNoteSnapshot()` re-check `noteScope` and edit level.
 
 ### MCP authorization design
 
@@ -391,8 +391,9 @@ Never commit or expose:
 - AI provider API keys (`settings.ai_config`).
 - SMTP/OAuth credentials.
 - `.env` files.
+- Real note text, personal details, private screenshots, or exported workspace data in tests, fixtures, logs, commits, issues, or PR descriptions. Use synthetic fixtures and redact screenshots before sharing them.
 
-Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKETBASE_URL`, etc.) or the app's Workspace settings. PocketBase's own admin UI is not exposed. `createLogger()` must not log tokens, API keys, credentials, tool inputs, or tool outputs.
+Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKETBASE_URL`, etc.) or the app's Workspace settings. PocketBase's own admin UI is not exposed. `createLogger()` must not log tokens, API keys, credentials, private user content, tool inputs, or tool outputs.
 
 ### Security review checklist
 
@@ -434,12 +435,12 @@ Use environment variables (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`, `POCKE
 - **Private means hidden from AI, not from the owner.** Chat and MCP apply `loadAiVisibility()`; `/api/v1` and the browser client deliberately do not.
 - **A private folder hides its descendants.** The lock walks `parent`; a child does not need its own `is_private` flag.
 - **MCP has no CORS and no session.** That is deliberate. Cross-origin browser use is unsupported, and every request re-authenticates.
-- **Workspace requests are time-bounded.** REST and MCP requests get a 60-second Bun ceiling; the shared PocketBase client defaults to 30 seconds. Chat's note and board read tools pass their tighter 8-second signal; task reads and chat writes use the 30-second default.
+- **Workspace requests are time-bounded.** REST and MCP requests get a 60-second Bun ceiling; the shared PocketBase client defaults to 30 seconds. Chat's note and board read tools pass their tighter 8-second signal; the note read/write live-room flush passes a separate bounded signal into the room's PATCH/lookup path; task reads and chat writes use the 30-second default.
 - **`/docs` is public.** It describes schemas and routes; it must never contain secrets or live credentials.
 - **Tool text can be hostile.** A note can say “ignore previous instructions”. Ask mode can only produce a bad answer; Work mode can create or change visible workspace records, but deletes need the user's confirmation and sharing/privacy remain unavailable. MCP can also delete directly, so its private lock and author checks are part of the boundary.
 - **Chat attachments are session-only.** API keys and MCP cannot upload, resolve, or read them. The collection is owner-scoped, absent from the generic record facade, and its file bytes are fetched server-side with a short-lived file token.
 - **Attachment text is server-only.** `chat_attachments.text` and the protected file name never appear in message JSON, SSE, API DTOs, title generation, or logs. Only `{ id, name, mimeType, size, kind }` is client-visible.
-- **Persisted chat tool activity is content, not diagnostics.** Only allowlisted read/write names, statuses, and bounded failure text survive; never add args, queries, note text, raw provider errors, or edit details to `tools`.
+- **Persisted chat tool activity is content, not diagnostics.** Only allowlisted read/write names, statuses, and bounded generic failure text survive; never add args, queries, note text, raw provider errors, or edit details to `tools`. Missing-anchor source-line suggestions are model-only `candidates` on the tool result, never part of `message` or persisted activity.
 - **`chat_edits` is server-owned.** No public create/update/delete rule exists. The superuser write happens only after the caller's token proves access to the conversation (personal owner or shared-note participant); undo/confirm/cancel still require the owner. Never expose it as a client-writable collection.
 - **Undo is not a general restore.** Only a created note (trash) and note edits (snapshot restore) are undoable. Board/task cards have `undo.kind: "none"`, and a second undo is a no-op. A note-edit undo returns `409` when the note has newer work.
 - **Trashed boards are not readable through `read_board`, `list_tasks`, or `read_task`.** `list_boards` can return trashed metadata, but task reads refuse a trashed board.

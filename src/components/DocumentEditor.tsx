@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAtom, useSetAtom } from 'jotai';
 import { EditorHeader } from './editor/EditorHeader';
@@ -93,12 +93,34 @@ export function DocumentEditor() {
   const [aiEdit, setAiEdit] = useState<EditorAiEdit | null>(null);
   const contentRef = useRef(content);
   const lastAiEditIdRef = useRef<string | null>(null);
+  const currentDocumentIdRef = useRef(document?.id);
+  const collaborationSessionRef = useRef(collaborationSession);
+  const aiEditPollTimerRef = useRef<number | null>(null);
+  const aiEditRequestRef = useRef(0);
+  const aiEditTargetIdRef = useRef<string | null>(null);
+  const showToastRef = useRef(showToast);
+  const applyPersistedContentRef = useRef(applyPersistedContent);
   contentRef.current = content;
+  currentDocumentIdRef.current = document?.id;
+  collaborationSessionRef.current = collaborationSession;
+  showToastRef.current = showToast;
+  applyPersistedContentRef.current = applyPersistedContent;
 
-  useEffect(() => {
-    setAiEdit(null);
+  const clearAiEditPoll = useCallback(() => {
+    if (aiEditPollTimerRef.current === null) return;
+    window.clearTimeout(aiEditPollTimerRef.current);
+    aiEditPollTimerRef.current = null;
+  }, []);
+
+  // A flash belongs to one note. Clear it before the next note paints and
+  // invalidate any fetch or poll still running for the previous note.
+  useLayoutEffect(() => {
+    aiEditRequestRef.current += 1;
+    aiEditTargetIdRef.current = null;
+    clearAiEditPoll();
     lastAiEditIdRef.current = null;
-  }, [document?.id]);
+    setAiEdit(null);
+  }, [document?.id, clearAiEditPoll]);
 
   useEffect(() => {
     if (!aiEdit) return;
@@ -107,16 +129,23 @@ export function DocumentEditor() {
   }, [aiEdit]);
 
   useEffect(() => {
-    const currentId = document?.id;
-    if (!currentId) return;
-
     const handleAiEdit = (event: Event) => {
       const edit = (event as CustomEvent<{ edit?: ChatUiEdit }>).detail?.edit;
-      if (!edit || edit.target.type !== 'document' || edit.target.id !== currentId) return;
+      if (!edit || edit.target.type !== 'document') return;
+      const targetId = edit.target.id;
+      // Compare against the current ref, not a closure: a fetch for a note the
+      // user has just closed must not paint on the newly opened note.
+      if (currentDocumentIdRef.current !== targetId) return;
       if (lastAiEditIdRef.current === edit.id) return;
       lastAiEditIdRef.current = edit.id;
 
-      const targetId = edit.target.id;
+      // A newer edit supersedes the previous edit's pending poll and flash.
+      aiEditRequestRef.current += 1;
+      const requestId = aiEditRequestRef.current;
+      aiEditTargetIdRef.current = targetId;
+      clearAiEditPoll();
+      setAiEdit(null);
+
       const currentMarkdown = contentRef.current;
       const remoteChange = remoteContentChangeRef.current;
       const previousMarkdown = remoteChange
@@ -124,41 +153,79 @@ export function DocumentEditor() {
         ? remoteChange.from
         : currentMarkdown;
       remoteContentChangeRef.current = null;
+
+      const isCurrentRequest = () => (
+        aiEditRequestRef.current === requestId
+        && aiEditTargetIdRef.current === targetId
+        && currentDocumentIdRef.current === targetId
+      );
+
       void getDocument(targetId)
         .then((fresh) => {
-          if (document?.id !== targetId) return;
+          if (!isCurrentRequest()) return;
           // The editor serializes normalized Markdown. Normalize the fetched
           // copy before putting it into state so the header and the editor do
           // not alternate between the raw and serialized byte counts.
           const nextContent = normalizeMarkdown(fresh.content);
+          const liveContent = normalizeMarkdown(contentRef.current);
+          const eventBodyUnchanged = liveContent === normalizeMarkdown(previousMarkdown);
+          const bodyAlreadyApplied = liveContent === nextContent;
+          const liveSession = Boolean(collaborationSessionRef.current);
+
+          // Guard at fetch time for a note without a room: if a local
+          // keystroke landed while the request was in flight, keep it. The
+          // editor repeats this check against its own document before any
+          // replacement, so an older body cannot overwrite newer typing.
+          if (!liveSession && !eventBodyUnchanged && !bodyAlreadyApplied) return;
+
           setSelectedDocument({ ...fresh, content: nextContent });
           setTitle(fresh.title);
           setTags(fresh.tags || []);
           setGlobalUnsavedChanges(false);
 
-          // A live room owns content. Its broadcast (including the AI write
-          // adopted by the server) is the single source of truth; applying the
-          // fetched body here would duplicate the edit as a local Yjs change.
-          if (collaborationSession) {
-            setAiEdit(null);
-            return;
-          }
-
-          applyPersistedContent(nextContent);
-          setAiEdit({
+          const aiEditValue: EditorAiEdit = {
             id: edit.id,
+            targetId,
             previousMarkdown,
             markdown: nextContent,
+            replace: !liveSession,
             sections: (edit.changed.sections ?? []).map((section) => ({
               ...(section.heading ? { heading: section.heading } : {}),
               ...(section.path ? { path: section.path } : {}),
               ...(section.from !== undefined ? { from: section.from } : {}),
               ...(section.to !== undefined ? { to: section.to } : {}),
             })),
-          });
+          };
+
+          // A live room owns content. Its broadcast (including the AI write
+          // adopted by the server) is the single source of truth; applying the
+          // fetched body here would duplicate the edit as a local Yjs change.
+          // Once the room has delivered that body, still pass the diff to the
+          // editors for the visual flash. If concurrent local text means the
+          // bodies differ, skip the animation rather than replacing the room.
+          if (liveSession) {
+            const startedAt = Date.now();
+            const showWhenSynced = () => {
+              aiEditPollTimerRef.current = null;
+              if (!isCurrentRequest()) return;
+              if (normalizeMarkdown(contentRef.current) === nextContent) {
+                setAiEdit(aiEditValue);
+                return;
+              }
+              if (Date.now() - startedAt < 800) {
+                aiEditPollTimerRef.current = window.setTimeout(showWhenSynced, 50);
+              }
+            };
+            showWhenSynced();
+            return;
+          }
+
+          applyPersistedContentRef.current(nextContent);
+          setAiEdit(aiEditValue);
         })
         .catch((error: unknown) => {
-          showToast(
+          if (!isCurrentRequest()) return;
+          showToastRef.current(
             error instanceof Error
               ? `Nana changed this note, but the editor could not refresh: ${error.message}`
               : 'Nana changed this note, but the editor could not refresh.',
@@ -168,16 +235,19 @@ export function DocumentEditor() {
     };
 
     window.addEventListener('nana:ai-edit', handleAiEdit);
-    return () => window.removeEventListener('nana:ai-edit', handleAiEdit);
+    return () => {
+      window.removeEventListener('nana:ai-edit', handleAiEdit);
+      // Unmount and a dependency change both cancel outstanding work.
+      aiEditRequestRef.current += 1;
+      aiEditTargetIdRef.current = null;
+      clearAiEditPoll();
+    };
   }, [
-    document?.id,
-    applyPersistedContent,
-    collaborationSession,
+    clearAiEditPoll,
     setGlobalUnsavedChanges,
     setSelectedDocument,
     setTags,
     setTitle,
-    showToast,
   ]);
 
   // Chat folder deletion can trash this note without naming it in the event.
@@ -258,6 +328,10 @@ export function DocumentEditor() {
       if (finishTimer) window.clearTimeout(finishTimer);
     };
   }, [searchParams, setSearchParams, loading, isLoadingDocument, document?.id, viewMode]);
+
+  // Render-time filter, independent of effect timing: a flash captured for an
+  // old note is never handed to the editor for the newly opened note.
+  const visibleAiEdit = aiEdit && aiEdit.targetId === document?.id ? aiEdit : null;
 
   const handleShare = () => {
     if (!document?.id) return;
@@ -395,7 +469,7 @@ export function DocumentEditor() {
             readOnly={isReadOnly}
             viewMode={effectiveViewMode}
             onDropFiles={handleDrop}
-            aiEdit={aiEdit}
+            aiEdit={visibleAiEdit}
             collaborators={collaborators}
             session={collaborationSession}
             onSelectionChange={handleEditorSelection}

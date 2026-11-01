@@ -278,19 +278,65 @@ describe("list_notes", () => {
 });
 
 describe("read_note", () => {
-    test("pages by line and reports continuation", async () => {
+    test("reads the whole note by default", async () => {
+        const result = await readNote(ownerContext, { noteId: notes.alpha.id });
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        expect(result.content).toBe(noteContent);
+        expect(result.totalLines).toBe(5);
+        expect(result.returnedLines).toBe(5);
+        expect(result.hasMore).toBe(false);
+        expect(result.omittedBefore).toBe(0);
+        expect(result.omittedAfter).toBe(0);
+        expect(result.omittedLines).toBe(0);
+        expect(result.nextOffset).toBeNull();
+        expect(result.complete).toBe(true);
+        expect(result.clippedLines).toBe(0);
+        expect(result.tailUnavailable).toBe(false);
+        expect(result.notice).toBeNull();
+        expect(result.revision).toBeGreaterThanOrEqual(1);
+        expect(result.versionToken).toMatch(/^[a-f0-9]{32}$/);
+        expect(result.updated).toBeTruthy();
+    });
+
+    test("reports omitted lines instead of silently returning a partial note", async () => {
+        const longNote = await createNote(owner, {
+            title: "Long Note",
+            content: Array.from({ length: 2_000 }, (_, index) => `Line ${index + 1} with enough text to fill the budget.`).join("\n"),
+        });
+        const result = await readNote(ownerContext, { noteId: longNote.id });
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        expect(result.complete).toBe(false);
+        expect(result.hasMore).toBe(true);
+        expect(result.omittedBefore).toBe(0);
+        expect(result.omittedAfter).toBeGreaterThan(0);
+        expect(result.omittedLines).toBe(result.omittedAfter);
+        expect(result.nextOffset).not.toBeNull();
+        expect(result.notice).toContain("Returned lines");
+        expect(result.notice).toContain(`offset=${result.nextOffset}`);
+    });
+
+    test("pages by line and reports before and after omissions", async () => {
         const result = await readNote(ownerContext, { noteId: notes.alpha.id, offset: 2, limit: 2 });
         expect(result.ok).toBe(true);
         if (!result.ok) return;
 
         expect(result.content).toBe("Line two\nLine three");
         expect(result.totalLines).toBe(5);
+        expect(result.returnedLines).toBe(2);
         expect(result.hasMore).toBe(true);
+        expect(result.omittedBefore).toBe(1);
+        expect(result.omittedAfter).toBe(2);
+        expect(result.omittedLines).toBe(3);
         expect(result.nextOffset).toBe(4);
+        expect(result.complete).toBe(false);
+        expect(result.notice).toContain("Earlier lines were not returned");
+        expect(result.notice).toContain("Returned lines 2-3 of 5");
+        expect(result.notice).toContain("offset=4");
         expect(result.truncated).toBe(false);
-        expect(result.revision).toBeGreaterThanOrEqual(1);
-        expect(result.versionToken).toMatch(/^[a-f0-9]{32}$/);
-        expect(result.updated).toBeTruthy();
     });
 
     test("clips long lines and reports truncation", async () => {
@@ -301,11 +347,17 @@ describe("read_note", () => {
         expect(result.content.length).toBe(2000);
         expect(result.clippedLines).toBe(1);
         expect(result.truncated).toBe(true);
+        expect(result.complete).toBe(false);
         expect(result.hasMore).toBe(true);
+        expect(result.omittedBefore).toBe(3);
+        expect(result.omittedAfter).toBe(1);
+        expect(result.omittedLines).toBe(4);
         expect(result.nextOffset).toBe(5);
+        expect(result.notice).toContain("clipped at 2,000 characters");
+        expect(result.notice).toContain("not available in a later window");
     });
 
-    test("returns the tail without claiming more", async () => {
+    test("a tail-only read is incomplete and says earlier lines were not returned", async () => {
         const result = await readNote(ownerContext, { noteId: notes.alpha.id, offset: 5, limit: 10 });
         expect(result.ok).toBe(true);
         if (!result.ok) return;
@@ -313,6 +365,40 @@ describe("read_note", () => {
         expect(result.content).toBe("Line five");
         expect(result.hasMore).toBe(false);
         expect(result.nextOffset).toBeNull();
+        expect(result.omittedBefore).toBe(4);
+        expect(result.omittedAfter).toBe(0);
+        expect(result.omittedLines).toBe(4);
+        expect(result.complete).toBe(false);
+        expect(result.notice).toContain("Earlier lines were not returned");
+        expect(result.notice).toContain("start again with offset=1");
+    });
+
+    test("rejects an offset past the last line with the actual line count", async () => {
+        const result = await readNote(ownerContext, { noteId: notes.alpha.id, offset: 6 });
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.code).toBe("invalid_input");
+        expect(result.message).toContain("5 lines");
+        expect(result.message).toContain("offset 6");
+        expect(result.message).toContain("between 1 and 5");
+    });
+
+    test("reports a byte-capped tail and clipped line as unavailable", async () => {
+        const hugeNote = await createNote(owner, {
+            title: "Cap Note",
+            content: "x".repeat(2_000_001),
+        });
+        const result = await readNote(ownerContext, { noteId: hugeNote.id });
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        expect(result.complete).toBe(false);
+        expect(result.tailUnavailable).toBe(true);
+        expect(result.truncated).toBe(true);
+        expect(result.clippedLines).toBe(1);
+        expect(result.notice).toContain("byte read cap");
+        expect(result.notice).toContain("tail after line");
+        expect(result.notice).toContain("not available in a later window");
     });
 
     test("hides another user's note behind a generic not_found", async () => {
@@ -337,7 +423,7 @@ describe("read_note", () => {
         if (malformed.ok) return;
         expect(malformed.code).toBe("invalid_input");
 
-        const oversized = await readNote(ownerContext, { noteId: notes.alpha.id, limit: 601 });
+        const oversized = await readNote(ownerContext, { noteId: notes.alpha.id, limit: 2_001 });
         expect(oversized.ok).toBe(false);
         if (oversized.ok) return;
         expect(oversized.code).toBe("invalid_input");

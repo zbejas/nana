@@ -157,18 +157,20 @@ export function EditorHeader({
             />
           </span>
 
-          <span className="mx-0.5 hidden h-5 w-px bg-line sm:block" aria-hidden="true" />
+          {isMobile && onAskNana && (
+            <>
+              <span className="mx-0.5 hidden h-5 w-px bg-line sm:block" aria-hidden="true" />
 
-          {onAskNana && (
-            <IconButton
-              label={askNanaDisabled ? 'Save the note before asking Nana' : 'Ask Nana about this note'}
-              size="md"
-              className="h-11 w-11 text-signal sm:h-8 sm:w-8"
-              onClick={onAskNana}
-              disabled={askNanaDisabled}
-            >
-              <SparklesIcon />
-            </IconButton>
+              <IconButton
+                label={askNanaDisabled ? 'Save the note before asking Nana' : 'Ask Nana about this note'}
+                size="md"
+                className="h-11 w-11 text-signal sm:h-8 sm:w-8"
+                onClick={onAskNana}
+                disabled={askNanaDisabled}
+              >
+                <SparklesIcon />
+              </IconButton>
+            </>
           )}
 
           {onToggleFullscreen && (

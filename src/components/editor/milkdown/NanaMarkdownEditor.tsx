@@ -30,6 +30,8 @@ export interface NanaMarkdownEditorProps {
     previousMarkdown: string;
     markdown: string;
     sections: AiChangedSection[];
+    /** false when a live room already owns the body; paint only. */
+    replace?: boolean;
   } | null;
   collaborators?: Collaborator[];
   /**

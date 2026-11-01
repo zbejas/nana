@@ -31,6 +31,8 @@ import type { Collaborator } from '../../../lib/collaboration/types';
 
 export interface SourceAiDiff {
   id: string;
+  /** Body the decorations were computed against. */
+  markdown: string;
   changes: AiTextChange[];
 }
 
@@ -419,6 +421,9 @@ export function NanaSourceEditor({
     const view = viewRef.current;
     if (!view || !aiDiff || aiDiff.changes.length === 0) return;
     if (lastAiDiffRef.current === aiDiff.id) return;
+    // A live room can move the source after the flash was queued. Paint only
+    // when the pane still holds the body the offsets were computed for.
+    if (!isSameMarkdown(view.state.doc.toString(), aiDiff.markdown)) return;
     lastAiDiffRef.current = aiDiff.id;
     applySourceDiff(view, aiDiff);
   }, [aiDiff]);
