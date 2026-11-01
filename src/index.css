@@ -653,6 +653,25 @@ body.public-route-active {
     background: var(--line-strong);
   }
 
+  /*
+   * The drawer is the one overlay that also answers a direct horizontal pull.
+   * The scrim follows the drag progress; removing the attribute hands the
+   * release back to the normal transform transition.
+   */
+  .sidebar-scrim {
+    transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  html[data-sidebar-dragging] .sidebar-scrim {
+    transition: none !important;
+  }
+
+  .nana-sidebar-drawer[data-drawer-dragging='true'] {
+    transform: translateX(var(--nana-sidebar-drag-x, 0px)) !important;
+    transition: none !important;
+    user-select: none;
+  }
+
   @supports not selector(::-webkit-scrollbar) {
     .sidebar-scroll {
       scrollbar-width: thin;

@@ -311,7 +311,7 @@ function AppContent() {
   return (
     <div className={`${isMobile ? 'h-[100dvh]' : 'h-screen'} flex w-full flex-col bg-canvas`}>
       {/* <NavigationProgress /> */}
-      {shouldShowSidebar && <Sidebar />}
+      {shouldShowSidebar && <Sidebar isOverlay={!shouldDockSidebar} />}
       <div 
         className={`flex w-full min-w-0 flex-1 flex-col overflow-x-hidden ${isMobile && (isDocumentRoute || isChatRoute) ? 'overflow-y-hidden' : isPublicRoute ? 'overflow-y-auto' : 'overflow-y-auto md:overflow-hidden'}`}
         style={{
@@ -320,7 +320,7 @@ function AppContent() {
           paddingBottom: shouldShowSidebar && isMobile && !isDocumentRoute ? MOBILE_NAVBAR_HEIGHT : '0px',
           transition: sidebarResizing || chatDockResizing
             ? 'none'
-            : 'padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding-right 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            : `padding-left ${sidebarOpen ? '260ms' : '200ms'} cubic-bezier(0.22, 1, 0.36, 1), padding-right 200ms cubic-bezier(0.22, 1, 0.36, 1)`,
         }}
       >
         <div
@@ -373,9 +373,12 @@ function AppContent() {
       </div>
       {shouldShowSidebar && !shouldDockSidebar && (
         <div
-          className={`lg:hidden fixed inset-0 z-[45] bg-scrim transition-opacity duration-200 ease-in-out ${
-            sidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+          className={`sidebar-scrim fixed inset-0 z-[45] bg-scrim lg:hidden ${
+            sidebarOpen ? 'pointer-events-auto' : 'pointer-events-none'
           }`}
+          style={{
+            opacity: sidebarOpen ? 'calc(1 - var(--nana-sidebar-swipe-progress, 0))' : 0,
+          }}
           onClick={toggleSidebar}
           aria-hidden="true"
         />

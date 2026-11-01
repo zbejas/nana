@@ -57,6 +57,7 @@ tests/
     markdown-sections.test.ts
     public-board.test.ts
     sanitize.test.ts
+    sidebar-swipe.test.ts
     tasks-text.test.ts
     timeline-items.test.ts
     versioning-store.test.ts
@@ -255,7 +256,7 @@ Rules:
 
 | Change | Add or update |
 | --- | --- |
-| Pure parser, formatter, bounds, schema, sanitizer | `tests/unit/` |
+| Pure parser, formatter, bounds, schema, sanitizer, swipe geometry | `tests/unit/` |
 | New Bun application route | `tests/api/` |
 | New typed `/api/v1` route or DTO | `tests/api/rest-api.test.ts` |
 | REST auth, validation, status mapping | `tests/api/rest-api.test.ts` |
