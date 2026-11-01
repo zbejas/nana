@@ -97,7 +97,7 @@ export function ChatThread({
         ? 'Opening the shared chat…'
         : notePaused
           ? 'This shared chat is paused.'
-          : noteChatError || 'Note chat is unavailable.'
+          : noteChatError || 'Shared chat is unavailable.'
     : null;
 
   const [input, setInput] = useState('');
@@ -385,7 +385,7 @@ export function ChatThread({
               <div className="mb-3 rounded-control border border-warning/25 bg-warning-soft px-3.5 py-2.5 text-[12.5px] leading-relaxed text-ink-secondary" role="status">
                 <p className="flex items-center gap-2 font-medium text-warning">
                   <LockClosedIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  {notePaused ? 'Note chat paused' : 'Note chat unavailable'}
+                  {notePaused ? 'Shared chat paused' : 'Shared chat unavailable'}
                 </p>
                 <p className="mt-1">{noteDisabledCopy}</p>
                 {notePaused && messages.length > 0 && (
