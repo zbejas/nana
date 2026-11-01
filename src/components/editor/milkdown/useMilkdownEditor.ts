@@ -4,6 +4,7 @@ import { editorStateCtx, editorViewCtx } from '@milkdown/kit/core';
 import { TextSelection } from '@milkdown/kit/prose/state';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import {
+  clearAiHighlights,
   createMilkdownEditor,
   getEditorMarkdown,
   getMarkdownSelection,
@@ -396,6 +397,12 @@ export function useMilkdownEditor({
     const editor = editorRef.current;
     if (!editor) return;
 
+    // A newer edit supersedes the previous flash even before this pane has
+    // received the new body and can paint its own decorations.
+    if (lastAiEditRef.current !== null && lastAiEditRef.current !== aiEdit.id) {
+      clearAiHighlights(editor.action((ctx) => ctx.get(editorViewCtx)));
+    }
+
     const matchesNext = editorMatchesMarkdown(editor, aiEdit.markdown);
     const matchesPrevious = matchesNext
       ? false
@@ -416,6 +423,7 @@ export function useMilkdownEditor({
       lastAiEditRef.current = aiEdit.id;
       applyAiMarkdown(editor, aiEdit.markdown, aiEdit.previousMarkdown, aiEdit.sections, {
         replace: false,
+        editId: aiEdit.id,
       });
       return;
     }
@@ -435,6 +443,7 @@ export function useMilkdownEditor({
           lastAiEditRef.current = aiEdit.id;
           applyAiMarkdown(editor, aiEdit.markdown, aiEdit.previousMarkdown, aiEdit.sections, {
             replace: false,
+            editId: aiEdit.id,
           });
           return;
         }
@@ -448,7 +457,9 @@ export function useMilkdownEditor({
     lastAppliedRef.current = incoming;
     lastEmittedRef.current = incoming;
     runExternalApply(() => {
-      applyAiMarkdown(editor, aiEdit.markdown, aiEdit.previousMarkdown, aiEdit.sections);
+      applyAiMarkdown(editor, aiEdit.markdown, aiEdit.previousMarkdown, aiEdit.sections, {
+        editId: aiEdit.id,
+      });
     });
     refreshToolbar();
   }, [aiEdit, ready, session, refreshToolbar, runExternalApply]);

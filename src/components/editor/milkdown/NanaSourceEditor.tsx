@@ -22,6 +22,15 @@ import type { DecorationSet } from '@codemirror/view';
 import { cn } from '../../ui';
 import { useSpellcheck } from '../../../lib/settings';
 import type { AiTextChange } from './aiDiff';
+import {
+  AI_DIFF_FLASH_MS,
+  claimAiDiffFlash,
+  formatAiDiffDeleteText,
+  groupAiDiffHunks,
+  pickAiDiffScrollTarget,
+  prefersReducedMotion,
+  type AiDiffScrollHunk,
+} from './aiDiffView';
 import { isSameMarkdown, normalizeMarkdown } from './helpers';
 import { withSuppressedDocumentChange } from './createEditor';
 import { isRemoteSourceTransaction, SourceBinding } from './sourceBinding';
@@ -43,7 +52,10 @@ const sourceAiDiffField = StateField.define<DecorationSet>({
     for (const effect of transaction.effects) {
       if (effect.is(setSourceAiDiff)) return effect.value;
     }
-    return value.map(transaction.changes);
+    // Deletion widgets are anchored to the body that was diffed. Mapping them
+    // through a local or remote edit can leave them in unrelated text, so any
+    // document change ends the flash deterministically.
+    return transaction.docChanged ? Decoration.none : value;
   },
   provide: (field) => EditorView.decorations.from(field),
 });
@@ -123,18 +135,23 @@ function sourceCollaboratorDecorations(
 }
 
 class DeletedTextWidget extends WidgetType {
-  constructor(readonly text: string) {
+  constructor(
+    readonly text: string,
+    readonly animate: boolean,
+  ) {
     super();
   }
 
   eq(other: DeletedTextWidget): boolean {
-    return other.text === this.text;
+    return other.text === this.text && other.animate === this.animate;
   }
 
   toDOM(): HTMLElement {
     const span = document.createElement('span');
-    span.className = 'nana-ai-diff-delete';
-    span.textContent = this.text.length > 600 ? `${this.text.slice(0, 600)}…` : this.text;
+    span.className = this.animate
+      ? 'nana-ai-diff-delete'
+      : 'nana-ai-diff-delete nana-ai-diff-static';
+    span.textContent = formatAiDiffDeleteText(this.text).display;
     span.setAttribute('aria-hidden', 'true');
     return span;
   }
@@ -144,19 +161,24 @@ class DeletedTextWidget extends WidgetType {
   }
 }
 
-function sourceDiffDecorations(length: number, changes: readonly AiTextChange[]): DecorationSet {
+function sourceDiffDecorations(
+  length: number,
+  changes: readonly AiTextChange[],
+  animate: boolean,
+): DecorationSet {
   const ranges: Range<Decoration>[] = [];
+  const insertClass = animate ? 'nana-ai-diff-insert' : 'nana-ai-diff-insert nana-ai-diff-static';
   for (const change of changes) {
     if (change.type === 'insert') {
       const from = Math.max(0, Math.min(change.start, length));
       const to = Math.max(from, Math.min(change.end, length));
       if (from < to) {
-        ranges.push(Decoration.mark({ class: 'nana-ai-diff-insert' }).range(from, to));
+        ranges.push(Decoration.mark({ class: insertClass }).range(from, to));
       }
     } else {
       const pos = Math.max(0, Math.min(change.start, length));
       ranges.push(Decoration.widget({
-        widget: new DeletedTextWidget(change.text),
+        widget: new DeletedTextWidget(change.text, animate),
         side: -1,
       }).range(pos));
     }
@@ -164,16 +186,57 @@ function sourceDiffDecorations(length: number, changes: readonly AiTextChange[])
   return Decoration.set(ranges, true);
 }
 
-function applySourceDiff(view: EditorView, diff: SourceAiDiff): void {
-  const decorations = sourceDiffDecorations(view.state.doc.length, diff.changes);
-  view.dispatch({
-    effects: [
-      setSourceAiDiff.of(decorations),
-      EditorView.scrollIntoView(Math.max(0, Math.min(diff.changes[0]?.start ?? 0, view.state.doc.length)), {
-        y: 'center',
-      }),
-    ],
+function sourceDiffHunks(view: EditorView, changes: readonly AiTextChange[]): AiDiffScrollHunk[] {
+  const padding = view.documentPadding.top;
+  const length = view.state.doc.length;
+  const rects: AiDiffScrollHunk[] = [];
+
+  for (const hunk of groupAiDiffHunks(changes)) {
+    const start = Math.max(0, Math.min(hunk.start, length));
+    const end = Math.max(start, Math.min(hunk.end, length));
+    const first = view.lineBlockAt(start);
+    // A widget anchored at a line end belongs to that line, not the next one.
+    const last = view.lineBlockAt(end > start ? end - 1 : start);
+    rects.push({
+      top: first.top + padding,
+      bottom: last.top + last.height + padding,
+    });
+  }
+
+  return rects;
+}
+
+function scrollSourceToDiff(view: EditorView, changes: readonly AiTextChange[]): void {
+  if (!view.dom.isConnected) return;
+  const target = pickAiDiffScrollTarget({
+    hunks: sourceDiffHunks(view, changes),
+    viewportHeight: view.scrollDOM.clientHeight,
+    maxScrollTop: view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight,
   });
+  if (prefersReducedMotion()) {
+    view.scrollDOM.scrollTop = target;
+    return;
+  }
+  view.scrollDOM.scrollTo({ top: target, behavior: 'smooth' });
+}
+
+function clearSourceDiff(view: EditorView): void {
+  const timer = sourceAiTimers.get(view);
+  if (timer !== undefined) {
+    window.clearTimeout(timer);
+    sourceAiTimers.delete(view);
+  }
+  view.dispatch({ effects: setSourceAiDiff.of(Decoration.none) });
+}
+
+function applySourceDiff(view: EditorView, diff: SourceAiDiff): void {
+  const flash = claimAiDiffFlash('source', diff.id);
+  if (!flash) return;
+
+  const decorations = sourceDiffDecorations(view.state.doc.length, diff.changes, flash.animate);
+  view.dom.style.setProperty('--nana-ai-flash-duration', `${AI_DIFF_FLASH_MS}ms`);
+  view.dispatch({ effects: setSourceAiDiff.of(decorations) });
+  scrollSourceToDiff(view, diff.changes);
 
   const previous = sourceAiTimers.get(view);
   if (previous !== undefined) window.clearTimeout(previous);
@@ -181,7 +244,7 @@ function applySourceDiff(view: EditorView, diff: SourceAiDiff): void {
     sourceAiTimers.delete(view);
     if (!view.dom.isConnected) return;
     view.dispatch({ effects: setSourceAiDiff.of(Decoration.none) });
-  }, 750);
+  }, flash.duration);
   sourceAiTimers.set(view, timer);
 }
 
@@ -421,6 +484,8 @@ export function NanaSourceEditor({
     const view = viewRef.current;
     if (!view || !aiDiff || aiDiff.changes.length === 0) return;
     if (lastAiDiffRef.current === aiDiff.id) return;
+
+    if (lastAiDiffRef.current !== null) clearSourceDiff(view);
 
     const matches = () => isSameMarkdown(view.state.doc.toString(), aiDiff.markdown);
     if (matches()) {

@@ -1,8 +1,10 @@
 import { editorViewCtx, parserCtx, type Editor } from '@milkdown/kit/core';
 import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model';
 import { changedCharacterCount, diffText } from './aiDiff';
+import { claimAiDiffFlash } from './aiDiffView';
 import { normalizeMarkdown } from './helpers';
 import {
+  aiDiffFallbackRanges,
   getEditorMarkdown,
   proseTextMap,
   replaceEditorMarkdown,
@@ -66,12 +68,18 @@ function blocksOf(doc: ProseMirrorNode): Block[] {
 }
 
 function rangesFor(doc: ProseMirrorNode, sections: AiChangedSection[]): AiHighlightRange[] {
-  if (sections.length === 0) return [];
+  // A section entry with no heading and no path (the server sends this shape
+  // for append-only or whole-body edits) carries no location. Treat it as
+  // empty so the caller can derive a bounded wash from the actual diff.
+  const usable = sections.filter(
+    (section) => Boolean(section.heading?.trim()) || (section.path?.some((part) => part.trim()) ?? false),
+  );
+  if (usable.length === 0) return [];
 
   const blocks = blocksOf(doc);
   const ranges = new Map<string, AiHighlightRange>();
 
-  for (const section of sections) {
+  for (const section of usable) {
     const wanted = section.heading ? normalize(section.heading) : '';
     const path = (section.path?.join(' > ') ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
     if (!wanted && !path) continue;
@@ -127,6 +135,8 @@ export interface ApplyAiMarkdownOptions {
    * already delivered. No document transaction is dispatched in that mode.
    */
   replace?: boolean;
+  /** Edit id shared by both panes so a remount does not replay the flash. */
+  editId?: string;
 }
 
 /**
@@ -187,6 +197,8 @@ export function applyAiMarkdown(
     ctx.get(parserCtx)(normalizeMarkdown(previousMarkdown)),
   );
   const before = beforeDoc ? proseTextMap(beforeDoc) : null;
+  const flash = claimAiDiffFlash('wysiwyg', options.editId ?? '');
+  if (!flash) return;
   if (replace) editor.action((ctx) => replaceEditorMarkdown(ctx, markdown));
 
   window.requestAnimationFrame(() => {
@@ -200,8 +212,17 @@ export function applyAiMarkdown(
     const applied = changes.length > 0
       && changes.length <= 240
       && changedChars <= 6_000
-      && setAiDiffHighlights(view, changes, after);
+      && setAiDiffHighlights(view, changes, after, flash);
 
-    if (!applied) setAiHighlights(view, rangesFor(view.state.doc, sections), 700);
+    if (applied) return;
+
+    // Section metadata is authoritative when it has a usable heading/path.
+    // Empty metadata (and the long-change path) derives a bounded wash from
+    // the diff itself, so the rendered pane can never silently show nothing.
+    const sectionRanges = rangesFor(view.state.doc, sections);
+    const ranges = sectionRanges.length > 0
+      ? sectionRanges
+      : aiDiffFallbackRanges(view.state.doc, after, changes);
+    setAiHighlights(view, ranges, flash);
   });
 }
