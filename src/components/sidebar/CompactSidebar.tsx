@@ -110,7 +110,7 @@ export function CompactSidebar({
   return (
     <>
       <aside
-        className={`fixed left-0 top-0 z-40 hidden h-full w-16 flex-col items-center border-r border-line bg-canvas-deep px-2 py-3 transition-opacity duration-300 md:flex ${
+        className={`fixed left-0 top-0 z-40 hidden h-full w-16 flex-col items-center border-r border-line bg-canvas-deep px-2 py-3 transition-opacity duration-200 ease-out md:flex ${
           isExpanded ? 'pointer-events-none opacity-0' : 'opacity-100'
         }`}
         aria-label="Workspace rail"

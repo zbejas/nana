@@ -108,7 +108,7 @@ Do not set interface labels in mono, uppercase, or wide tracking. Mono exists fo
 - The Library tree lists root notes and root boards, then folders; an expanded folder lists its notes and boards with the same 20px row rhythm. Notes use the document glyph, boards the four-column glyph, private boards keep the warning lock, public records take the success share glyph, and records shared directly with people take the signal-tinted two-person glyph. The Library header carries New folder, New note, New board, and Trashed boards actions.
 - The profile bar stays at the bottom with avatar, name, email, and settings.
 - The collapsed rail uses 40px targets. The active icon sits on a `surface` tile with a hairline and takes the ember colour.
-- On mobile the menu is a left drawer at `calc(100% - 3rem)`, leaving a 3rem scrim strip of the page on the right; tapping that strip closes the drawer. The mobile chat is full-screen with no scrim strip. The menu drawer carries `shadow-float` on mobile only; the desktop rail and docked sidebar stay flat.
+- On mobile the menu is a left drawer at `calc(100% - 3rem)`, leaving a 3rem scrim strip of the page on the right; tapping that strip closes the drawer. The mobile chat is full-screen with no scrim strip. The menu drawer carries `shadow-float` on mobile only; the desktop rail and docked sidebar stay flat. Overlay drawers (mobile and the 768–1023px sidebar overlay) enter on the 260ms house curve and leave in 200ms; the scrim fades over 220ms. A horizontal left pull moves the drawer with the finger and fades the scrim with it. Releasing past 28% of the drawer width (capped at 96px) or with a left flick dismisses it; a shorter pull settles back, and vertical scrolling stays native. The docked sidebar uses the same 260/200ms slide and content-inset timing but does not swipe.
 
 ### Content pages
 
@@ -238,6 +238,7 @@ Rules:
 - Dialogs: 220ms fade + 10px rise + scale from 0.985; exit 160ms. Sheets: 260ms rise; exit 180ms. Side panels: 220ms fade + 18px slide from the right. Inline forms: 200ms fade + 8px drop. Install banner: 220ms fade + 12px rise.
 - Menus: 140ms pop from 0.97 with a 2px lift.
 - Desktop route content: 260ms, 4px rise. Mobile route change: 240ms, 14px lateral slide in the route order.
+- Sidebar drawer: 260ms in, 200ms out, with a 220ms scrim fade on the house curve. A swipe is direct manipulation: the drawer tracks the finger and the scrim tracks the pull; release either completes the dismissal or settles back. The docked sidebar and content inset share the 260/200ms timing.
 - Hover changes colour, border, and tone. It does not change size. Dragging a task uses 40% opacity and a 2px signal insertion line.
 - Respect `prefers-reduced-motion`; `src/index.css` reduces all animation and transition durations to `0.01ms`.
 

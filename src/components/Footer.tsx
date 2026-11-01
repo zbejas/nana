@@ -291,7 +291,7 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
   const footerClasses = [
     'relative z-20 md:z-40 border-t bg-canvas-deep border-line',
     isDesktop
-      ? 'md:fixed md:bottom-0 md:transition-[left] md:duration-300 md:ease-in-out motion-reduce:transition-none'
+      ? 'md:fixed md:bottom-0 md:transition-[left] motion-reduce:transition-none'
       : ''
   ].join(' ');
 
@@ -313,6 +313,8 @@ export function Footer({ sidebarOpen, sidebarWidth = 0, isDesktop = true, docume
       style={{
         left: isDesktop ? `${leftOffset}px` : undefined,
         right: isDesktop ? 0 : undefined,
+        transitionDuration: isDesktop ? (sidebarOpen ? '260ms' : '200ms') : undefined,
+        transitionTimingFunction: isDesktop ? 'cubic-bezier(0.22, 1, 0.36, 1)' : undefined,
       }}
     >
       <div className={`px-4 py-3 flex flex-wrap items-center justify-evenly md:justify-start gap-3 md:gap-6 text-xs ${surfaceTextClass}`}>
