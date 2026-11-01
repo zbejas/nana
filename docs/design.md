@@ -238,9 +238,10 @@ Rules:
 - App durations: 140–260ms. Standard easing is `ease-out` or the house `cubic-bezier(0.22, 1, 0.36, 1)`.
 - Dialogs: 220ms fade + 10px rise + scale from 0.985; exit 160ms. Sheets: 260ms rise; exit 180ms. Side panels: 220ms fade + 18px slide from the right. Inline forms: 200ms fade + 8px drop. Install banner: 220ms fade + 12px rise.
 - Menus: 140ms pop from 0.97 with a 2px lift.
-- Desktop route content: 260ms, 4px rise. Mobile route change: 240ms, 14px lateral slide in the route order.
+- Desktop route content: 260ms, 4px rise. Mobile route change: 240ms, 14px lateral slide in the route order. Run one route motion per navigation; a viewport resize never replays it.
 - Sidebar drawer: 260ms in, 200ms out, with a 220ms scrim fade on the house curve. A swipe is direct manipulation: the drawer tracks the finger and the scrim tracks the pull; release either completes the dismissal or settles back. The docked sidebar and content inset share the 260/200ms timing.
 - Chat dock: 260ms in, 200ms out from the right. On mobile a horizontal swipe follows the finger in either direction and exits in the pull direction; there is no scrim on the full-screen surface.
+- Editor footer: both edges use the house curve. The sidebar edge takes 260ms while the sidebar is open and 200ms otherwise; the chat-dock edge takes 200ms. A sidebar toggle under an open dock moves the footer with the docked route inset.
 - Hover changes colour, border, and tone. It does not change size. Dragging a task uses 40% opacity and a 2px signal insertion line.
 - Respect `prefers-reduced-motion`; `src/index.css` reduces all animation and transition durations to `0.01ms`.
 

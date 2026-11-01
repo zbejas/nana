@@ -36,6 +36,7 @@ tests/
     factories.ts
     settings.ts
   unit/
+    ai-diff.test.ts
     ai-edit-apply.test.ts
     ai-visibility.test.ts
     api-key-scope.test.ts
@@ -256,7 +257,8 @@ Rules:
 
 | Change | Add or update |
 | --- | --- |
-| Pure parser, formatter, bounds, schema, sanitizer, swipe intent/geometry | `tests/unit/` |
+| Pure parser, formatter, bounds, schema, sanitizer, swipe intent/geometry, AI diff offsets | `tests/unit/` |
+| AI inline diff separated hunks, replacements, monotonic offsets, whitespace preservation | `tests/unit/ai-diff.test.ts` |
 | New Bun application route | `tests/api/` |
 | New typed `/api/v1` route or DTO | `tests/api/rest-api.test.ts` |
 | REST auth, validation, status mapping | `tests/api/rest-api.test.ts` |
@@ -323,7 +325,7 @@ Rules:
 | Delete approval | A delete tool creates `pending` and leaves the target untouched; confirm trashes the target; cancel leaves it untouched; another user cannot confirm. |
 | Cards/undo | Edit rows list oldest first; undo/confirm/cancel are conversation-owner only; created-note undo trashes and repeated undo is a no-op; note-edit undo restores the snapshot and repeated undo does not bump the revision again. |
 
-The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), named/legacy SSE encoding (`tests/unit/chat-stream.test.ts`), route context derivation (`tests/unit/chat-context.test.ts`), revision tokens (`tests/unit/chat-version-token.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), API key token/scope helpers (`tests/unit/api-key-scope.test.ts`), and the git version store (`tests/unit/versioning-store.test.ts`).
+The unit suite also covers the pure tool helpers (`tests/unit/chat-tools-text.test.ts`), the input schemas (`tests/unit/chat-input-schemas.test.ts`), tool-activity summarization (`tests/unit/chat-activity.test.ts`), named/legacy SSE encoding (`tests/unit/chat-stream.test.ts`), route context derivation (`tests/unit/chat-context.test.ts`), revision tokens (`tests/unit/chat-version-token.test.ts`), the private-lock tree/filters (`tests/unit/ai-visibility.test.ts`), API key token/scope helpers (`tests/unit/api-key-scope.test.ts`), AI diff offsets and whitespace (`tests/unit/ai-diff.test.ts`), swipe intent/geometry (`tests/unit/swipe-to-close.test.ts`), and the git version store (`tests/unit/versioning-store.test.ts`).
 
 The missing-anchor error returns up to three closest source lines for the failing operation's anchor only as a structured `candidates` array; its `message` stays generic. `tests/unit/markdown-sections.test.ts` asserts that the error carries the failing anchor and operation index; the `closestTextLines` fallback itself has no direct test assertion. `tests/api/chat-write-tools.test.ts` asserts the generic `invalid_input` message and candidate presence.
 

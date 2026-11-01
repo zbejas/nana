@@ -309,7 +309,13 @@ function AppContent() {
     if (previousPath === location.pathname) return;
 
     const direction = getMobileRouteDirection(previousPath, location.pathname);
-    if (direction === 'none') return;
+    if (direction === 'none') {
+      // A route outside the ordered sequence (a document, shared page, or
+      // trash detail) starts flat. Keeping the previous motion would replay
+      // the last slide on a navigation that has no direction of its own.
+      setMobileRouteMotion(null);
+      return;
+    }
 
     setMobileRouteMotion((current) => ({
       direction,
