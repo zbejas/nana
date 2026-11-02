@@ -229,6 +229,22 @@ describe('WysiwygSessionBinding', () => {
     ]);
   });
 
+  test('keeps the latch when a recovery retry still diverges', async () => {
+    const session = new FakeSession();
+    session.markdown = 'Start';
+    const host = new FakeHost('Start');
+    const binding = new WysiwygSessionBinding(session, host);
+    binding.attach();
+
+    host.ignoreApply = true;
+    session.emit(change('Remote text', REMOTE_ORIGIN));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(binding.publishLocal('Remote text plus stale local')).toBe(false);
+    expect(session.localOps).toEqual([]);
+    binding.dispose();
+  });
+
   test('does not write normalization-only markers back on a local edit', () => {
     const session = new FakeSession();
     session.markdown = '- a';
@@ -242,6 +258,22 @@ describe('WysiwygSessionBinding', () => {
     expect(session.markdown).toBe('- ab');
     expect(session.localOps.at(-1)?.ops).toEqual([
       { type: 'insert', index: 3, text: 'b' },
+    ]);
+  });
+
+  test('rebases a local edit over a length-changing normalization', () => {
+    const session = new FakeSession();
+    session.markdown = 'A\n\n\n\nB';
+    const host = new FakeHost('A\n\nB');
+    host.normalizeTo = 'A\n\nB';
+    host.resultOverride = { applied: true, normalizationOnly: true };
+    const binding = new WysiwygSessionBinding(session, host);
+    binding.attach();
+
+    expect(binding.publishLocal('A\n\nBQ')).toBe(true);
+    expect(session.markdown).toBe('A\n\n\n\nBQ');
+    expect(session.localOps.at(-1)?.ops).toEqual([
+      { type: 'insert', index: 6, text: 'Q' },
     ]);
   });
 

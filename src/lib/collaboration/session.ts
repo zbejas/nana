@@ -28,6 +28,7 @@ export const COLLAB_LOCAL_ORIGIN = "nana-collab-local";
 export const COLLAB_REMOTE_ORIGIN = "nana-collab-remote";
 export const COLLAB_RESET_ORIGIN = "nana-collab-reset";
 const UPDATE_FLUSH_MS = 70;
+const UPDATE_RETRY_MS = 250;
 const PRESENCE_FLUSH_MS = 120;
 const PRESENCE_DEFER_MS = 40;
 const HEARTBEAT_MS = 15_000;
@@ -597,6 +598,26 @@ export class CollabSession {
         }, UPDATE_FLUSH_MS);
     }
 
+    /**
+     * A non-ok update POST requeues the diff but leaves no timer. Re-arm a
+     * bounded retry so presence (and content) cannot stall forever.
+     */
+    private scheduleUpdateRetry(): void {
+        if (
+            this.destroyed
+            || !this.canEdit
+            || this.queuedUpdates.length === 0
+            || this.inflightUpdates > 0
+            || this.updateTimer
+        ) {
+            return;
+        }
+        this.updateTimer = setTimeout(() => {
+            this.updateTimer = null;
+            void this.flushUpdates();
+        }, UPDATE_RETRY_MS);
+    }
+
     private async flushUpdates(): Promise<void> {
         if (this.destroyed || !this.clientId || this.queuedUpdates.length === 0) return;
         const merged = Y.mergeUpdates(this.queuedUpdates);
@@ -624,9 +645,11 @@ export class CollabSession {
                 return;
             }
             if (!response.ok) {
-                // Keep the work locally; a later sync resends the state diff.
+                // Keep the work locally and retry; the next local edit or the
+                // scheduled attempt resends the diff.
                 this.pendingAck = null;
                 this.queuedUpdates.unshift(merged);
+                this.scheduleUpdateRetry();
                 return;
             }
             try {
@@ -742,9 +765,12 @@ export class CollabSession {
             return;
         }
         if (!canSendPresence(this.queuedUpdates.length, this.inflightUpdates)) {
-            // The peer cannot resolve a struct it has not received yet. Retry
-            // shortly while an update POST is in flight or its flush timer is
-            // pending; the latest selection always wins over this stale one.
+            // A non-ok POST can leave queued content with no timer. Re-arm the
+            // update retry first so presence can follow once the room applies
+            // those structs. The latest selection always wins over this one.
+            if (this.queuedUpdates.length > 0 && this.inflightUpdates === 0) {
+                this.scheduleUpdateRetry();
+            }
             if (this.inflightUpdates > 0 || this.updateTimer) {
                 this.schedulePresenceFlush(PRESENCE_DEFER_MS);
             }

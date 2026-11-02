@@ -4,6 +4,7 @@ import {
     applyTextChange,
     caretAssocForMarkdown,
     mapOffsetThroughChange,
+    mapOffsetThroughChanges,
     mapSelectionThroughChange,
     markdownOffsetToTextOffset,
     minimalTextChange,
@@ -318,8 +319,34 @@ describe("caretAssocForMarkdown", () => {
         expect(caretAssocForMarkdown("alpha\r\nbeta", 5)).toBe(-1);
         expect(caretAssocForMarkdown("alpha\nbeta", 6)).toBe(1);
         expect(caretAssocForMarkdown("alpha", 5)).toBe(-1);
+        expect(caretAssocForMarkdown("A\n\n<br />", 3)).toBe(-1);
+        expect(caretAssocForMarkdown("A\n\n<BR />", 3)).toBe(-1);
         expect(caretAssocForMarkdown("", 0)).toBe(-1);
         expect(caretAssocForMarkdown("alpha", null)).toBe(-1);
+    });
+});
+
+describe("mapOffsetThroughChanges", () => {
+    test("maps through a normalization insertion with right association", () => {
+        const changes = multiTextChanges("A\n\nB", "A\n\n\n\nB");
+        expect(mapOffsetThroughChanges(4, changes, 1)).toBe(6);
+        expect(mapOffsetThroughChanges(3, changes, -1)).toBe(3);
+        expect(mapOffsetThroughChanges(3, changes, 1)).toBe(5);
+    });
+
+    test("rebases a local insertion onto a length-changing canonical body", () => {
+        const editorBase = "A\n\nB";
+        const canonicalBase = "A\n\n\n\nB";
+        const localNext = "A\n\nBQ";
+        const localChange = minimalTextChange(editorBase, localNext)!;
+        const normalization = multiTextChanges(editorBase, canonicalBase);
+        const rebased = applyTextChange(canonicalBase, {
+            from: mapOffsetThroughChanges(localChange.from, normalization, 1),
+            to: mapOffsetThroughChanges(localChange.to, normalization, 1),
+            insert: localChange.insert,
+        });
+
+        expect(rebased).toBe("A\n\n\n\nBQ");
     });
 });
 
@@ -356,6 +383,20 @@ describe("multiTextChanges", () => {
         const current = lines.join("");
         lines[100] = "line 100A\n";
         lines[900] = "line 900B\n";
+        const next = lines.join("");
+        const changes = multiTextChanges(current, next);
+
+        expect(changes).toHaveLength(2);
+        for (let index = 1; index < changes.length; index += 1) {
+            expect(changes[index]!.from).toBeGreaterThanOrEqual(changes[index - 1]!.to);
+        }
+    });
+
+    test("chunks a very large interior instead of one splice", () => {
+        const lines = Array.from({ length: 3_000 }, (_value, index) => `line ${index}\n`);
+        const current = lines.join("");
+        lines[100] = "line 100A\n";
+        lines[2_900] = "line 2900B\n";
         const next = lines.join("");
         const changes = multiTextChanges(current, next);
 

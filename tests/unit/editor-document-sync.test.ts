@@ -2,14 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { Schema, type Node as ProseNode } from "@milkdown/kit/prose/model";
 import { EditorState, TextSelection } from "@milkdown/kit/prose/state";
 import { Transform } from "@milkdown/kit/prose/transform";
+import { Decoration, DecorationSet } from "@milkdown/kit/prose/view";
 import {
     applyDocumentSyncSteps,
     caretAssocForMarkdown,
+    contentEmptyParagraphIndices,
     editorPositionForPresenceOffset,
+    emptyParagraphMarkers,
     hasTrailingEmptyParagraph,
+    isTrailingTypingParagraph,
     mapSelectionThroughDocuments,
     planDocumentSync,
     presenceMarkdownOffsetForEditorPosition,
+    presenceWidgetSide,
     reconcileEditorTarget,
     trailingTypingParagraphPosition,
     withSuppressedDocumentChange,
@@ -360,7 +365,7 @@ describe("typing area reconciliation", () => {
     test("keeps a local trailing empty paragraph across remote content", () => {
         const current = docOf(paragraph("A"), paragraph(""));
         const parsed = docOf(paragraph("A"), paragraph("B"));
-        const target = reconcileEditorTarget(current, parsed, "A\n\nB");
+        const target = reconcileEditorTarget(current, parsed, "A\n\nB", "A");
 
         expect(target.childCount).toBe(3);
         expect(target.child(2).type.name).toBe("paragraph");
@@ -371,7 +376,7 @@ describe("typing area reconciliation", () => {
     test("adds a typing paragraph after a target that ends empty", () => {
         const current = docOf(paragraph("A"));
         const parsed = docOf(paragraph("A"), paragraph(""));
-        const target = reconcileEditorTarget(current, parsed, "A\n\n<br />");
+        const target = reconcileEditorTarget(current, parsed, "A\n\n<br />", "A");
 
         expect(target.childCount).toBe(3);
         expect(target.child(1).content.size).toBe(0);
@@ -381,20 +386,30 @@ describe("typing area reconciliation", () => {
     test("keeps a local typing area when a remote target ends empty", () => {
         const current = docOf(paragraph("A"), paragraph(""));
         const parsed = docOf(paragraph("A"), paragraph(""));
-        const target = reconcileEditorTarget(current, parsed, "A\n\n<br />");
+        const target = reconcileEditorTarget(current, parsed, "A\n\n<br />", "A");
 
         expect(target.childCount).toBe(3);
         expect(target.child(1).content.size).toBe(0);
         expect(target.child(2).content.size).toBe(0);
-        expect(trailingTypingParagraphPosition(target)).toBe(
+        expect(trailingTypingParagraphPosition(target, "A\n\n<br />")).toBe(
             positionIn(target, 2, 0),
         );
+    });
+
+    test("keeps a canonical <br /> empty document representable", () => {
+        const current = docOf(paragraph("A"));
+        const parsed = docOf(paragraph(""));
+        const target = reconcileEditorTarget(current, parsed, "<br />", "A");
+
+        expect(target.childCount).toBe(2);
+        expect(target.child(0).content.size).toBe(0);
+        expect(target.child(1).content.size).toBe(0);
     });
 
     test("keeps an actually empty document at one paragraph", () => {
         const current = docOf(paragraph("A"), paragraph(""));
         const parsed = docOf(paragraph(""));
-        const target = reconcileEditorTarget(current, parsed, "");
+        const target = reconcileEditorTarget(current, parsed, "", "A");
 
         expect(target.childCount).toBe(1);
         expect(target.child(0).content.size).toBe(0);
@@ -403,7 +418,7 @@ describe("typing area reconciliation", () => {
     test("gives an empty local document a typing area after remote content", () => {
         const current = docOf(paragraph(""));
         const parsed = docOf(paragraph("A"));
-        const target = reconcileEditorTarget(current, parsed, "A");
+        const target = reconcileEditorTarget(current, parsed, "A", "");
 
         expect(target.childCount).toBe(2);
         expect(target.child(0).textContent).toBe("A");
@@ -413,26 +428,38 @@ describe("typing area reconciliation", () => {
     test("preserves multiple local trailing empties when the target has content", () => {
         const current = docOf(paragraph("A"), paragraph(""), paragraph(""));
         const parsed = docOf(paragraph("A"), paragraph(""));
-        const target = reconcileEditorTarget(current, parsed, "A\n\n<br />");
+        const target = reconcileEditorTarget(current, parsed, "A\n\n<br />", "A\n\n<br />");
 
         expect(target.childCount).toBe(3);
         expect(target.child(1).content.size).toBe(0);
         expect(target.child(2).content.size).toBe(0);
     });
 
+    test("classifies a canonical <br /> empty paragraph as content", () => {
+        const contentEmpty = docOf(paragraph("A"), paragraph(""));
+        expect(hasTrailingEmptyParagraph(contentEmpty)).toBe(true);
+        expect(isTrailingTypingParagraph(contentEmpty, "A\n\n<br />")).toBe(false);
+        expect(isTrailingTypingParagraph(contentEmpty, "A")).toBe(true);
+
+        const withTyping = docOf(paragraph("A"), paragraph(""), paragraph(""));
+        expect(isTrailingTypingParagraph(withTyping, "A\n\n<br />")).toBe(true);
+        expect(contentEmptyParagraphIndices(withTyping, "A\n\n<br />")).toEqual([1]);
+    });
+
     test("locates the caret inside the trailing typing paragraph", () => {
         const withTyping = docOf(paragraph("A"), paragraph(""));
-        expect(trailingTypingParagraphPosition(withTyping)).toBe(
+        expect(trailingTypingParagraphPosition(withTyping, "A")).toBe(
             positionIn(withTyping, 1, 0),
         );
-        expect(trailingTypingParagraphPosition(docOf(paragraph("A")))).toBeNull();
+        expect(trailingTypingParagraphPosition(withTyping, "A\n\n<br />")).toBeNull();
+        expect(trailingTypingParagraphPosition(docOf(paragraph("A")), "A")).toBeNull();
     });
 });
 
 describe("presence Markdown mapping", () => {
     test("keeps a canonical end caret out of the local trailing typing paragraph", () => {
         const doc = docOf(paragraph("X"), paragraph(""));
-        const typing = trailingTypingParagraphPosition(doc)!;
+        const typing = trailingTypingParagraphPosition(doc, "X")!;
 
         expect(presenceMarkdownOffsetForEditorPosition(doc, "X", typing)).toBe(1);
         expect(editorPositionForPresenceOffset(doc, "X", 1)).toBe(
@@ -457,10 +484,70 @@ describe("presence Markdown mapping", () => {
             .toBe(contentEmpty);
     });
 
+    test("maps a last content-empty paragraph to its <br /> marker", () => {
+        const doc = docOf(paragraph("A"), paragraph(""));
+        const markdown = "A\n\n<br />";
+        const contentEmpty = positionIn(doc, 1, 0);
+        const markerStart = markdown.indexOf("<br />");
+
+        expect(isTrailingTypingParagraph(doc, markdown)).toBe(false);
+        expect(presenceMarkdownOffsetForEditorPosition(doc, markdown, contentEmpty))
+            .toBe(markerStart);
+        expect(editorPositionForPresenceOffset(doc, markdown, markerStart))
+            .toBe(contentEmpty);
+    });
+
+    test("finds markers outside fenced and indented code, case-insensitively", () => {
+        const markdown = [
+            "```",
+            "<br />",
+            "```",
+            "    <br />",
+            "<BR />",
+        ].join("\n");
+        const markers = emptyParagraphMarkers(markdown);
+
+        expect(markers).toHaveLength(1);
+        expect(markdown.slice(markers[0]!.start, markers[0]!.end)).toBe("<BR />");
+    });
+
     test("maps an empty document caret to its only paragraph", () => {
         const doc = docOf(paragraph(""));
         expect(presenceMarkdownOffsetForEditorPosition(doc, "", 1)).toBe(0);
         expect(editorPositionForPresenceOffset(doc, "", 0)).toBe(1);
+    });
+});
+
+describe("peer caret widget affinity", () => {
+    test("uses left affinity at end, newline, and <br /> boundaries", () => {
+        expect(presenceWidgetSide("X", 1)).toBe(-1);
+        expect(presenceWidgetSide("X\nY", 1)).toBe(-1);
+        expect(presenceWidgetSide("A\n\n<br />", 3)).toBe(-1);
+        expect(presenceWidgetSide("XY", 1)).toBe(1);
+    });
+
+    test("keeps a left-affine widget at the preceding line end through Enter", () => {
+        const doc = docOf(paragraph("X"), paragraph(""));
+        const state = EditorState.create({ doc });
+        const position = positionIn(doc, 0, 1);
+        const widget = Decoration.widget(position, () => {
+            throw new Error("widget DOM is not rendered in this test");
+        }, { side: presenceWidgetSide("X", 1) });
+        const transaction = state.tr.split(position, 1);
+        const mapped = DecorationSet.create(doc, [widget]).map(
+            transaction.mapping,
+            transaction.doc,
+        );
+
+        expect(mapped.find()[0]?.from).toBe(position);
+    });
+
+    test("keeps a content-empty peer widget in the content block with typing present", () => {
+        const doc = docOf(paragraph("A"), paragraph(""), paragraph(""));
+        const markdown = "A\n\n<br />";
+        const position = editorPositionForPresenceOffset(doc, markdown, markdown.length);
+        expect(position).toBe(positionIn(doc, 1, 0));
+        expect(presenceWidgetSide(markdown, markdown.length)).toBe(-1);
     });
 });
 
@@ -611,12 +698,24 @@ describe("mapSelectionThroughDocuments", () => {
     test("maps an empty paragraph to the corresponding empty typing block", () => {
         const current = docOf(paragraph("A"), paragraph(""));
         const next = docOf(paragraph("A"), paragraph(""), paragraph(""));
-        const caret = trailingTypingParagraphPosition(current)!;
+        const caret = trailingTypingParagraphPosition(current, "A")!;
         const mapped = mappedSelection(current, next, caret, caret);
         const $caret = next.resolve(mapped.anchor);
 
         expect($caret.parent.textContent).toBe("");
         expect($caret.parent.isTextblock).toBe(true);
+    });
+
+    test("falls back to monotonic pairing for very large changed batches", () => {
+        const current = docOf(...Array.from({ length: 1_000 }, (_value, index) =>
+            paragraph(`old${index}`)));
+        const next = docOf(...Array.from({ length: 1_000 }, (_value, index) =>
+            paragraph(`new${index}`)));
+        const caret = positionIn(current, 500, 1);
+        const mapped = mappedSelection(current, next, caret, caret);
+        const $caret = next.resolve(mapped.anchor);
+
+        expect($caret.parent.textContent).toBe("new500");
     });
 
     test("maps a caret out of a deleted block into the empty document paragraph", () => {
@@ -656,6 +755,24 @@ describe("mapSelectionThroughDocuments", () => {
 
         expect(mapped.anchor).toBe(mapped.head);
         expect(next.resolve(mapped.anchor).parent.textContent).toBe("goodbye");
+    });
+
+    test("preserves a whole-block selection across a replacement", () => {
+        const current = docOf(paragraph("hello"));
+        const next = docOf(paragraph("goodbye"));
+        const mapped = mappedSelection(
+            current,
+            next,
+            positionIn(current, 0, 0),
+            positionIn(current, 0, 5),
+        );
+        const $anchor = next.resolve(mapped.anchor);
+        const $head = next.resolve(mapped.head);
+
+        expect(mapped.anchor).toBeLessThan(mapped.head);
+        expect($anchor.parent.textContent).toBe("goodbye");
+        expect($anchor.parentOffset).toBe(0);
+        expect($head.parentOffset).toBe("goodbye".length);
     });
 });
 

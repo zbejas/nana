@@ -117,6 +117,8 @@ export function minimalTextChange(current: string, next: string): TextChange | n
  */
 export function caretAssocForMarkdown(markdown: string, offset: number | null): -1 | 1 {
     if (offset === null || offset < 0 || offset >= markdown.length) return -1;
+    const rest = markdown.slice(offset);
+    if (/^<br\s*\/?>/i.test(rest)) return -1;
     const next = markdown.charAt(offset);
     return next === '\n' || next === '\r' ? -1 : 1;
 }
@@ -133,11 +135,63 @@ interface LineDiffHunk {
     lines: string[];
 }
 
-/** Line-level LCS diff; over the cell cap the caller falls back to one splice. */
-function diffLineHunks(current: string[], next: string[]): LineDiffHunk[] | null {
+const LINE_DIFF_CELL_LIMIT = 2_000_000;
+
+/** Find a shared interior line so a large middle can be diffed in halves. */
+function splitLineDiffAnchor(
+    current: string[],
+    next: string[],
+): { currentIndex: number; nextIndex: number } | null {
     const n = current.length;
     const m = next.length;
-    if (n * m > 2_000_000) return null;
+    const middle = Math.floor(Math.min(n, m) / 2);
+    const reach = Math.floor(Math.min(n, m) / 2);
+    for (let offset = 0; offset <= reach; offset += 1) {
+        for (const currentIndex of [middle + offset, middle - offset]) {
+            if (currentIndex <= 0 || currentIndex >= n - 1) continue;
+            const nextIndex = next.indexOf(current[currentIndex]!);
+            if (nextIndex > 0 && nextIndex < m - 1) {
+                return { currentIndex, nextIndex };
+            }
+        }
+    }
+    return null;
+}
+
+/** Line-level LCS diff. Large interiors split at a shared line or fall back. */
+function diffLineHunks(
+    current: string[],
+    next: string[],
+    depth = 0,
+): LineDiffHunk[] | null {
+    const n = current.length;
+    const m = next.length;
+    if (n === 0) return m === 0 ? [] : [{ start: 0, end: 0, lines: next }];
+    if (m === 0) return [{ start: 0, end: n, lines: [] }];
+    if (n * m > LINE_DIFF_CELL_LIMIT) {
+        if (depth >= 24) return null;
+        const anchor = splitLineDiffAnchor(current, next);
+        if (!anchor) return null;
+        const left = diffLineHunks(
+            current.slice(0, anchor.currentIndex),
+            next.slice(0, anchor.nextIndex),
+            depth + 1,
+        );
+        const right = diffLineHunks(
+            current.slice(anchor.currentIndex + 1),
+            next.slice(anchor.nextIndex + 1),
+            depth + 1,
+        );
+        if (!left || !right) return null;
+        return [
+            ...left,
+            ...right.map((hunk) => ({
+                start: hunk.start + anchor.currentIndex + 1,
+                end: hunk.end + anchor.currentIndex + 1,
+                lines: hunk.lines,
+            })),
+        ];
+    }
 
     const width = m + 1;
     const dp = new Uint32Array((n + 1) * width);
@@ -314,6 +368,34 @@ export function mapOffsetThroughChange(
     if (base < from) return Math.max(0, base);
     if (base > to) return Math.max(0, base + delta);
     return assoc < 0 ? from : from + insert.length;
+}
+
+/**
+ * Move an offset through an ordered change list. Used to rebase a local edit
+ * from the editor's serialized body onto the canonical body when the two
+ * differ only by Markdown normalization.
+ *
+ * Offsets at a change boundary use `assoc`: right (default) places insertions
+ * after a normalization insertion, left keeps them before it.
+ */
+export function mapOffsetThroughChanges(
+    offset: number,
+    changes: readonly TextChange[],
+    assoc: -1 | 1 = 1,
+): number {
+    let base = Number.isFinite(offset) ? Math.max(0, Math.trunc(offset)) : 0;
+    let delta = 0;
+    for (const change of changes) {
+        const from = clampIndex(change.from, Number.MAX_SAFE_INTEGER);
+        const to = Math.max(from, clampIndex(change.to, Number.MAX_SAFE_INTEGER));
+        const insert = typeof change.insert === 'string' ? change.insert : '';
+        if (base < from) return Math.max(0, base + delta);
+        if (base <= to) {
+            return Math.max(0, from + delta + (assoc > 0 ? insert.length : 0));
+        }
+        delta += insert.length - (to - from);
+    }
+    return Math.max(0, base + delta);
 }
 
 /** A pasted/typed block of new lines moves a collapsed caret to its far side. */

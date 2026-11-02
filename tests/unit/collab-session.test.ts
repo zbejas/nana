@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import { caretAssocForMarkdown } from '../../src/lib/collaboration/text';
 import {
     canSendPresence,
+    CollabSession,
     isCollabPersistencePhase,
     reduceCollabAck,
     reduceCollabConflict,
@@ -168,6 +169,51 @@ describe('presence ordering', () => {
         expect(canSendPresence(1, 0)).toBe(false);
         expect(canSendPresence(0, 1)).toBe(false);
         expect(canSendPresence(2, 1)).toBe(false);
+    });
+
+    test('a queued update with no timer re-arms retry before presence', async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: string[] = [];
+        globalThis.fetch = (async (input: string | URL | Request) => {
+            calls.push(String(input));
+            return new Response('{}', { status: 500 });
+        }) as typeof fetch;
+
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: '',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            (session as unknown as { clientId: string }).clientId = 'client';
+            (session as unknown as { status: string }).status = 'connected';
+            (session as unknown as { canEdit: boolean }).canEdit = true;
+            (session as unknown as { lastSelection: unknown }).lastSelection = {
+                anchor: 0,
+                head: 0,
+                focused: true,
+            };
+            (session as unknown as { queuedUpdates: Uint8Array[] }).queuedUpdates = [
+                new Uint8Array([1]),
+            ];
+
+            await (session as unknown as { flushPresence: () => Promise<void> })
+                .flushPresence();
+
+            expect(calls).toEqual([]);
+            expect((session as unknown as { updateTimer: unknown }).updateTimer)
+                .not.toBeNull();
+            expect((session as unknown as { presenceTimer: unknown }).presenceTimer)
+                .not.toBeNull();
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+        }
     });
 });
 

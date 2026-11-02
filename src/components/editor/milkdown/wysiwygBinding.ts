@@ -20,12 +20,19 @@
  */
 
 import type { CanonicalOp } from '../../../lib/collaboration/ops';
-import { applyOps, opsFromMinimalTextChange } from '../../../lib/collaboration/ops';
+import { opsFromMinimalTextChange } from '../../../lib/collaboration/ops';
 import type { CollabContentChange } from '../../../lib/collaboration/session';
 import { createLogger } from '../../../lib/logger';
+import {
+  applyTextChange,
+  mapOffsetThroughChanges,
+  minimalTextChange,
+  multiTextChanges,
+} from '../../../lib/collaboration/text';
 import { normalizeMarkdown } from './helpers';
 
 const logger = createLogger('WysiwygBinding');
+const RECOVERY_DELAYS_MS = [0, 250, 1_000] as const;
 
 /** Raw Yjs origin used only by the WYSIWYG pane's own ProseMirror edits. */
 export const WYSIWYG_BINDING_ORIGIN = 'nana-collab-wysiwyg';
@@ -112,6 +119,7 @@ export class WysiwygSessionBinding {
   private applyFailed = false;
   private normalizationOnly = false;
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  private recoveryAttempts = 0;
 
   constructor(
     private readonly session: WysiwygSessionPort,
@@ -177,16 +185,22 @@ export class WysiwygSessionBinding {
 
     let nextCanonical = normalized;
     let ops: CanonicalOp[];
-    if (
-      this.normalizationOnly
-      && this.lastEditorMarkdown.length === previous.length
-    ) {
+    if (this.normalizationOnly) {
       // The editor serializes the same structure with a different marker or
       // blank-line spelling. Diff the local edit against the editor's own
-      // previous body, then apply that same edit to the canonical body so the
-      // normalization is not written into Yjs.
-      ops = opsFromMinimalTextChange(this.lastEditorMarkdown, normalized);
-      nextCanonical = applyOps(previous, ops) as string;
+      // previous body, map that offset through the normalization diff, then
+      // apply it to the canonical body. This avoids writing normalization
+      // back into Yjs even when the canonical body has a different length.
+      const localChange = minimalTextChange(this.lastEditorMarkdown, normalized);
+      if (!localChange) return false;
+      const normalization = multiTextChanges(this.lastEditorMarkdown, previous);
+      const from = mapOffsetThroughChanges(localChange.from, normalization, 1);
+      const to = mapOffsetThroughChanges(localChange.to, normalization, 1);
+      nextCanonical = applyTextChange(
+        previous,
+        { from: Math.min(from, to), to: Math.max(from, to), insert: localChange.insert },
+      );
+      ops = opsFromMinimalTextChange(previous, nextCanonical);
     } else {
       ops = wysiwygLocalOps(previous, normalized);
     }
@@ -222,6 +236,7 @@ export class WysiwygSessionBinding {
       this.lastEditorMarkdown = normalized;
       this.applyFailed = false;
       this.normalizationOnly = false;
+      this.recoveryAttempts = 0;
       this.clearRecovery();
       return;
     }
@@ -247,18 +262,27 @@ export class WysiwygSessionBinding {
         targetLength: normalized.length,
         editorLength: this.lastEditorMarkdown.length,
       });
+      this.recoveryAttempts = 0;
       this.scheduleRecovery();
     } else {
+      this.recoveryAttempts = 0;
       this.clearRecovery();
     }
   }
 
-  /** One bounded repair attempt; never leaves a permanent publish latch. */
+  /**
+   * Bounded verified repair attempts. The publish latch is only cleared when
+   * the editor becomes the canonical target (exactly, or via a verified
+   * normalization-only structural apply). Remaining divergence keeps the
+   * latch so local text can never overwrite remote content from a stale base.
+   */
   private scheduleRecovery(): void {
-    if (this.recoveryTimer) return;
+    if (this.recoveryTimer || this.recoveryAttempts >= RECOVERY_DELAYS_MS.length) return;
+    const delay = RECOVERY_DELAYS_MS[this.recoveryAttempts] ?? 1_000;
     this.recoveryTimer = setTimeout(() => {
       this.recoveryTimer = null;
       if (!this.applyFailed) return;
+      this.recoveryAttempts += 1;
       const result = this.host.applyMarkdown(this.lastCanonicalMarkdown);
       const editor = normalizeMarkdown(this.host.getMarkdown());
       const applied = typeof result === 'boolean'
@@ -266,17 +290,28 @@ export class WysiwygSessionBinding {
         : result && typeof result === 'object'
           ? result.applied
           : editor === this.lastCanonicalMarkdown;
-      if (applied || editor === this.lastCanonicalMarkdown) {
+      const normalizationOnly = result && typeof result === 'object'
+        ? result.normalizationOnly === true
+        : false;
+      const verified = editor === this.lastCanonicalMarkdown
+        || (applied === true && normalizationOnly);
+      if (verified) {
         this.lastEditorMarkdown = editor;
         this.applyFailed = false;
         this.normalizationOnly = editor !== this.lastCanonicalMarkdown;
+        this.recoveryAttempts = 0;
+        this.clearRecovery();
         return;
       }
-      // The conservative apply already ran inside the editor. Do not turn a
-      // normalization edge into permanently dropped keystrokes.
-      this.applyFailed = false;
-      logger.debug('Cleared a remote-apply divergence latch after one retry');
-    }, 0);
+      if (this.recoveryAttempts < RECOVERY_DELAYS_MS.length) {
+        this.scheduleRecovery();
+        return;
+      }
+      logger.debug('Keeping divergence publish latch after bounded retries', {
+        canonicalLength: this.lastCanonicalMarkdown.length,
+        editorLength: editor.length,
+      });
+    }, delay);
   }
 
   private clearRecovery(): void {

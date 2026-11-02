@@ -366,6 +366,20 @@ function collaboratorCaret(name: string, color: string): HTMLElement {
   return caret;
 }
 
+/**
+ * ProseMirror widget side for a peer caret. A left-affine caret stays before
+ * text inserted at that boundary, so an Enter at the peer's line end cannot
+ * drag the widget into a new paragraph.
+ */
+export function presenceWidgetSide(markdown: string, offset: number): -1 | 1 {
+  if (emptyParagraphMarkers(markdown).some(
+    (marker) => offset >= marker.start && offset <= marker.end,
+  )) {
+    return -1;
+  }
+  return caretAssocForMarkdown(markdown, offset) < 0 ? -1 : 1;
+}
+
 function collaboratorDecorations(
   doc: ProseNode,
   collaborators: readonly Collaborator[],
@@ -392,7 +406,7 @@ function collaboratorDecorations(
     decorations.push(Decoration.widget(head, collaboratorCaret(
       collaborator.name,
       collaborator.color,
-    ), { side: 1 }));
+    ), { side: presenceWidgetSide(markdown, collaborator.head) }));
   }
 
   return DecorationSet.create(doc, decorations);
@@ -1112,22 +1126,20 @@ export function proseTextOffsetAt(map: ProseTextMap, position: number): number {
 }
 
 /** Drop the local-only trailing typing paragraph from a doc projection. */
-export function withoutTrailingTypingParagraph(doc: ProseNode): ProseNode {
-  if (doc.childCount <= 1 || !hasTrailingEmptyParagraph(doc)) return doc;
+export function withoutTrailingTypingParagraph(doc: ProseNode, markdown: string): ProseNode {
+  if (doc.childCount <= 1 || !isTrailingTypingParagraph(doc, markdown)) return doc;
   const last = doc.child(doc.childCount - 1);
   return doc.copy(doc.content.cut(0, doc.content.size - last.nodeSize));
 }
 
 /** Top-level empty paragraphs that serialize as a canonical `<br />` line. */
-export function contentEmptyParagraphIndices(doc: ProseNode): number[] {
+export function contentEmptyParagraphIndices(doc: ProseNode, markdown: string): number[] {
   const indices: number[] = [];
-  const trailingTyping = doc.childCount > 1 && hasTrailingEmptyParagraph(doc);
   doc.forEach((node, _offset, index) => {
-    if (node.type.name !== 'paragraph' || node.content.size !== 0) return;
-    if (trailingTyping && index === doc.childCount - 1) return;
-    indices.push(index);
+    if (node.type.name === 'paragraph' && node.content.size === 0) indices.push(index);
   });
-  return indices;
+  const contentCount = Math.min(indices.length, emptyParagraphMarkers(markdown).length);
+  return indices.slice(0, contentCount);
 }
 
 interface EmptyParagraphMarker {
@@ -1145,16 +1157,22 @@ export function emptyParagraphMarkers(markdown: string): EmptyParagraphMarker[] 
     const text = line.replace(/\r?\n$/, '');
     const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(text);
     if (fence) {
-      if (fenceMatch && fenceMatch[1]![0] === fence[0] && fenceMatch[1]!.length >= fence.length) {
+      const afterRun = fenceMatch ? text.slice(fenceMatch[0].length) : '';
+      if (
+        fenceMatch
+        && fenceMatch[1]![0] === fence[0]
+        && fenceMatch[1]!.length >= fence.length
+        && !afterRun.trim()
+      ) {
         fence = null;
       }
     } else if (fenceMatch) {
       fence = fenceMatch[1]!;
-    } else {
-      const trimmed = text.trim();
-      const marker = /^<br\s*\/?>$/i.exec(trimmed);
-      if (marker) {
-        const start = offset + text.indexOf('<br');
+    } else if (!/^( {4}|\t)/.test(text)) {
+      // Indented code is verbatim content, not an empty-line placeholder.
+      const marker = /<br\s*\/?>/i.exec(text);
+      if (marker && /^\s*<br\s*\/?>\s*$/i.test(text)) {
+        const start = offset + marker.index;
         markers.push({ start, end: start + marker[0].length });
       }
     }
@@ -1181,7 +1199,7 @@ export function editorPositionForPresenceOffset(
   const offset = Math.max(0, Math.min(rawOffset, canonical.length));
   const starts = topLevelStarts(doc);
 
-  const emptyIndices = contentEmptyParagraphIndices(doc);
+  const emptyIndices = contentEmptyParagraphIndices(doc, canonical);
   const markers = emptyParagraphMarkers(canonical);
   for (let index = 0; index < Math.min(emptyIndices.length, markers.length); index += 1) {
     const marker = markers[index]!;
@@ -1194,7 +1212,7 @@ export function editorPositionForPresenceOffset(
     return starts[0]! + 1;
   }
 
-  const presenceDoc = withoutTrailingTypingParagraph(doc);
+  const presenceDoc = withoutTrailingTypingParagraph(doc, canonical);
   if (presenceDoc.childCount === 0) return null;
   const map = proseTextMap(presenceDoc);
   const segments = alignMarkdownToText(canonical, map.text);
@@ -1219,15 +1237,15 @@ export function presenceMarkdownOffsetForEditorPosition(
   if (index < 0) return null;
   const node = doc.child(index);
   if (node.type.name === 'paragraph' && node.content.size === 0) {
-    if (hasTrailingEmptyParagraph(doc) && (doc.childCount === 1 || index === doc.childCount - 1)) {
+    if (isTrailingTypingParagraph(doc, canonical) && index === doc.childCount - 1) {
       return canonical.length;
     }
-    const emptyIndex = contentEmptyParagraphIndices(doc).indexOf(index);
+    const emptyIndex = contentEmptyParagraphIndices(doc, canonical).indexOf(index);
     const marker = emptyIndex >= 0 ? emptyParagraphMarkers(canonical)[emptyIndex] : null;
     if (marker) return marker.start;
   }
 
-  const presenceDoc = withoutTrailingTypingParagraph(doc);
+  const presenceDoc = withoutTrailingTypingParagraph(doc, canonical);
   const map = proseTextMap(presenceDoc);
   const segments = alignMarkdownToText(canonical, map.text);
   const textOffset = proseTextOffsetAt(map, position);
@@ -1384,11 +1402,26 @@ function contentOffsetToTextOffset(node: ProseNode, contentOffset: number): numb
   return text;
 }
 
-/** True when the document ends with the serializer-skipped typing paragraph. */
+/** True when the last top-level block is an empty paragraph. */
 export function hasTrailingEmptyParagraph(doc: ProseNode): boolean {
   if (doc.childCount === 0) return false;
   const last = doc.child(doc.childCount - 1);
   return last.type.name === 'paragraph' && last.content.size === 0;
+}
+
+/**
+ * True only when the last empty paragraph is local-only. A canonical `<br />`
+ * marker makes that paragraph content; the serializer skips only an extra
+ * empty paragraph beyond the canonical markers.
+ */
+export function isTrailingTypingParagraph(doc: ProseNode, markdown: string): boolean {
+  if (!hasTrailingEmptyParagraph(doc)) return false;
+  if (doc.childCount === 1) return true;
+  let emptyCount = 0;
+  doc.forEach((node) => {
+    if (node.type.name === 'paragraph' && node.content.size === 0) emptyCount += 1;
+  });
+  return emptyCount > emptyParagraphMarkers(markdown).length;
 }
 
 /** Append one empty paragraph as the local-only typing area. */
@@ -1411,18 +1444,27 @@ export function reconcileEditorTarget(
   currentDoc: ProseNode,
   targetDoc: ProseNode,
   targetMarkdown: string,
+  currentMarkdown?: string,
 ): ProseNode {
   const canonical = normalizeMarkdown(targetMarkdown);
   if (canonical.length === 0) return targetDoc;
-  if (!hasTrailingEmptyParagraph(targetDoc) && !hasTrailingEmptyParagraph(currentDoc)) {
-    return targetDoc;
-  }
+  const targetEndsEmpty = hasTrailingEmptyParagraph(targetDoc);
+  const targetHasTyping = targetDoc.childCount > 1
+    && targetEndsEmpty
+    && isTrailingTypingParagraph(targetDoc, canonical);
+  if (targetHasTyping) return targetDoc;
+  const targetLastIsContent = targetEndsEmpty;
+  const currentLastIsTyping = isTrailingTypingParagraph(
+    currentDoc,
+    normalizeMarkdown(currentMarkdown ?? ''),
+  );
+  if (!targetLastIsContent && !currentLastIsTyping) return targetDoc;
   return appendTrailingTypingParagraph(targetDoc);
 }
 
 /** Caret position inside the trailing typing paragraph, or null. */
-export function trailingTypingParagraphPosition(doc: ProseNode): number | null {
-  if (!hasTrailingEmptyParagraph(doc)) return null;
+export function trailingTypingParagraphPosition(doc: ProseNode, markdown: string): number | null {
+  if (!isTrailingTypingParagraph(doc, markdown)) return null;
   const starts = topLevelStarts(doc);
   return starts[doc.childCount - 1]! + 1;
 }
@@ -1525,6 +1567,21 @@ function topLevelBlockText(doc: ProseNode, index: number, entries?: readonly Tex
     .join('');
 }
 
+function topLevelTexts(
+  doc: ProseNode,
+  start: number,
+  count: number,
+  entries?: readonly TextblockEntry[],
+): string[] {
+  const blocks = entries ?? collectTextblockEntries(doc);
+  const texts = Array.from({ length: count }, () => '');
+  for (const entry of blocks) {
+    const index = entry.topIndex - start;
+    if (index >= 0 && index < count) texts[index] += entry.text;
+  }
+  return texts;
+}
+
 /** Text similarity used to align changed blocks without positional guessing. */
 function blockSimilarity(oldText: string, newText: string): number {
   if (oldText === newText) return oldText.length > 0 ? 4 : 2;
@@ -1569,12 +1626,19 @@ function alignChangedBlocks(
   newCount: number,
 ): BlockPair[] {
   if (oldCount <= 0 || newCount <= 0) return [];
+  const pairCount = Math.min(oldCount, newCount);
+  if (oldCount * newCount > 150_000) {
+    // Monotonic index pairing for very large changed ranges. Content-aware
+    // alignment is not worth an unbounded allocation on a pathological diff.
+    return Array.from({ length: pairCount }, (_value, index) => ({
+      oldIndex: index,
+      newIndex: index,
+    }));
+  }
   const oldEntries = collectTextblockEntries(doc);
   const newEntries = collectTextblockEntries(nextDoc);
-  const oldTexts = Array.from({ length: oldCount }, (_value, index) =>
-    topLevelBlockText(doc, oldStart + index, oldEntries));
-  const newTexts = Array.from({ length: newCount }, (_value, index) =>
-    topLevelBlockText(nextDoc, newStart + index, newEntries));
+  const oldTexts = topLevelTexts(doc, oldStart, oldCount, oldEntries);
+  const newTexts = topLevelTexts(nextDoc, newStart, newCount, newEntries);
   const scores = oldTexts.map((oldText) =>
     newTexts.map((newText) => blockSimilarity(oldText, newText)));
 
@@ -1640,8 +1704,7 @@ function buildSyncGroups(doc: ProseNode, nextDoc: ProseNode): SyncGroup[] {
       const oldEntries = collectTextblockEntries(doc);
       const newEntries = collectTextblockEntries(nextDoc);
       const oldText = topLevelBlockText(doc, prefix, oldEntries);
-      const newTexts = Array.from({ length: newChanged }, (_value, index) =>
-        topLevelBlockText(nextDoc, prefix + index, newEntries));
+      const newTexts = topLevelTexts(nextDoc, prefix, newChanged, newEntries);
       const newText = newTexts.join('');
       let bestIndex = 0;
       let bestScore = Number.NEGATIVE_INFINITY;
@@ -1818,6 +1881,7 @@ export function mapSelectionThroughDocuments(
   if (oldEntries.length === 0 || newEntries.length === 0) return null;
   const groups = buildSyncGroups(oldDoc, newDoc);
   const collapsed = selection.anchor === selection.head;
+  const anchorFound = entryForPosition(oldDoc, oldEntries, selection.anchor);
 
   const mapEndpoint = (position: number, assoc: -1 | 1): number | null => {
     const found = entryForPosition(oldDoc, oldEntries, position);
@@ -1869,7 +1933,21 @@ export function mapSelectionThroughDocuments(
     }
     const oldText = oldGroupEntries.map((entry) => entry.text).join('');
     const newText = newGroupEntries.map((entry) => entry.text).join('');
-    const newOffset = mapAffixOffset(oldText, newText, oldOffset, !collapsed);
+    // Keep a whole-block selection: only a head whose anchor sits inside the
+    // same replaced middle should be clamped away from the replacement end.
+    const startsAtBlockStart = !collapsed
+      && position === selection.head
+      && anchorFound !== null
+      && (
+        anchorFound.entry.topIndex < found.entry.topIndex
+        || (anchorFound.entry === found.entry && anchorFound.offset === 0)
+      );
+    const newOffset = mapAffixOffset(
+      oldText,
+      newText,
+      oldOffset,
+      !collapsed && !startsAtBlockStart,
+    );
     const splitBoundary = oldGroupEntries.length === 1
       && newGroupEntries.length > 1
       && isGenuineTextblockSplit(oldText, newText);
@@ -2296,16 +2374,21 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
   const parsed = parser(next);
   if (!parsed) return { applied: false, normalizationOnly: false };
   const oldDoc = view.state.doc;
-  const targetDoc = reconcileEditorTarget(oldDoc, parsed, next);
-  if (oldDoc.eq(targetDoc)) return { applied: true, normalizationOnly: false };
+  const targetDoc = reconcileEditorTarget(oldDoc, parsed, next, current);
+  if (oldDoc.eq(targetDoc)) {
+    return {
+      applied: true,
+      normalizationOnly: normalizeMarkdown(serializer(oldDoc)) !== next,
+    };
+  }
 
   const oldSelection = view.state.selection;
   const oldMarkdownSelection = getMarkdownSelection(ctx);
   const collapsedAssoc = oldMarkdownSelection
     ? caretAssocForMarkdown(current, oldMarkdownSelection.head)
     : -1;
-  const oldTyping = trailingTypingParagraphPosition(oldDoc);
-  const newTyping = trailingTypingParagraphPosition(targetDoc);
+  const oldTyping = trailingTypingParagraphPosition(oldDoc, current);
+  const newTyping = trailingTypingParagraphPosition(targetDoc, next);
   const selectionInTyping = oldTyping !== null
     && oldSelection.empty
     && oldSelection.from === oldTyping;
