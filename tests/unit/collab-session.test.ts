@@ -171,6 +171,129 @@ describe('presence ordering', () => {
         expect(canSendPresence(2, 1)).toBe(false);
     });
 
+    test('a non-ok update POST re-arms retry after inflight settles', async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: string[] = [];
+        globalThis.fetch = (async (input: string | URL | Request) => {
+            calls.push(String(input));
+            return new Response('{}', { status: 500 });
+        }) as typeof fetch;
+
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: '',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            (session as unknown as { clientId: string }).clientId = 'client';
+            (session as unknown as { status: string }).status = 'connected';
+            (session as unknown as { canEdit: boolean }).canEdit = true;
+            (session as unknown as { queuedUpdates: Uint8Array[] }).queuedUpdates = [
+                Y.encodeStateAsUpdate(new Y.Doc()),
+            ];
+
+            await (session as unknown as { flushUpdates: () => Promise<void> })
+                .flushUpdates();
+
+            expect(calls).toHaveLength(1);
+            expect((session as unknown as { inflightUpdates: number }).inflightUpdates)
+                .toBe(0);
+            expect((session as unknown as { updateTimer: unknown }).updateTimer)
+                .not.toBeNull();
+
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            expect(calls.length).toBeGreaterThanOrEqual(2);
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('presence POSTs serialize and the latest selection wins', async () => {
+        const originalFetch = globalThis.fetch;
+        const bodies: Array<{ presence: { anchor: unknown } }> = [];
+        let releaseFirst: (() => void) | null = null;
+        globalThis.fetch = (async (
+            input: string | URL | Request,
+            init?: RequestInit,
+        ) => {
+            if (String(input).includes('/presence')) {
+                bodies.push(JSON.parse(String(init?.body ?? '{}')));
+                if (bodies.length === 1) {
+                    return new Promise<Response>((resolve) => {
+                        releaseFirst = () => resolve(new Response('{}', { status: 200 }));
+                    });
+                }
+            }
+            return new Response('{}', { status: 200 });
+        }) as typeof fetch;
+
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: 'abc',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            const internals = session as unknown as {
+                clientId: string;
+                status: string;
+                synced: boolean;
+                canEdit: boolean;
+                updateTimer: ReturnType<typeof setTimeout> | null;
+                presenceTimer: ReturnType<typeof setTimeout> | null;
+                presenceInflight: boolean;
+                queuedUpdates: Uint8Array[];
+                flushPresence: () => Promise<void>;
+            };
+            internals.clientId = 'client';
+            internals.status = 'connected';
+            internals.synced = true;
+            internals.canEdit = true;
+            session.applyLocalMarkdown('abc');
+            internals.queuedUpdates = [];
+            if (internals.updateTimer) clearTimeout(internals.updateTimer);
+            internals.updateTimer = null;
+
+            session.sendSelection({ anchor: 0, head: 0, focused: true });
+            if (internals.presenceTimer) clearTimeout(internals.presenceTimer);
+            internals.presenceTimer = null;
+
+            const first = internals.flushPresence();
+            expect(bodies).toHaveLength(1);
+            expect(internals.presenceInflight).toBe(true);
+
+            session.sendSelection({ anchor: 2, head: 2, focused: true });
+            releaseFirst!();
+            await first;
+            await new Promise((resolve) => setTimeout(resolve, 5));
+
+            expect(bodies).toHaveLength(2);
+            const firstPosition = Y.createAbsolutePositionFromRelativePosition(
+                bodies[0]!.presence.anchor as Y.RelativePosition,
+                session.doc,
+            );
+            const secondPosition = Y.createAbsolutePositionFromRelativePosition(
+                bodies[1]!.presence.anchor as Y.RelativePosition,
+                session.doc,
+            );
+            expect(firstPosition?.index).toBe(0);
+            expect(secondPosition?.index).toBe(2);
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
     test('a queued update with no timer re-arms retry before presence', async () => {
         const originalFetch = globalThis.fetch;
         const calls: string[] = [];

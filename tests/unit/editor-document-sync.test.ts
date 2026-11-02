@@ -1,10 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import type { Ctx } from "@milkdown/kit/ctx";
+import {
+    editorStateCtx,
+    editorViewCtx,
+    parserCtx,
+    serializerCtx,
+} from "@milkdown/kit/core";
 import { Schema, type Node as ProseNode } from "@milkdown/kit/prose/model";
 import { EditorState, TextSelection } from "@milkdown/kit/prose/state";
 import { Transform } from "@milkdown/kit/prose/transform";
 import { Decoration, DecorationSet } from "@milkdown/kit/prose/view";
 import {
     applyDocumentSyncSteps,
+    replaceEditorMarkdownPreservingSelection,
     caretAssocForMarkdown,
     contentEmptyParagraphIndices,
     editorPositionForPresenceOffset,
@@ -81,6 +89,57 @@ function mappedSelection(
     const mapped = mapSelectionThroughDocuments(oldDoc, newDoc, { anchor, head }, assoc);
     expect(mapped).not.toBeNull();
     return mapped!;
+}
+
+function serializeSimpleDoc(doc: ProseNode): string {
+    const blocks: string[] = [];
+    doc.forEach((node) => {
+        blocks.push(node.content.size === 0 ? "<br />" : node.textContent);
+    });
+    return blocks.join("\n\n");
+}
+
+function parseSimpleMarkdown(markdown: string): ProseNode {
+    const trimmed = markdown.trim();
+    if (!trimmed) return docOf(paragraph(""));
+    return docOf(...trimmed.split(/\n{2,}/).map((block) =>
+        paragraph(block === "<br />" ? "" : block)));
+}
+
+function createEditorHarness(
+    initial: ProseNode,
+    anchor: number,
+    head: number,
+    onParse?: () => void,
+) {
+    let state = EditorState.create({
+        doc: initial,
+        selection: TextSelection.create(initial, anchor, head),
+    });
+    const view = {
+        get state() {
+            return state;
+        },
+        isDestroyed: false,
+        dispatch(transaction: any) {
+            state = state.apply(transaction);
+        },
+    };
+    const ctx = {
+        get(key: unknown) {
+            if (key === editorViewCtx) return view;
+            if (key === editorStateCtx) return state;
+            if (key === parserCtx) {
+                return (markdown: string) => {
+                    onParse?.();
+                    return parseSimpleMarkdown(markdown);
+                };
+            }
+            if (key === serializerCtx) return serializeSimpleDoc;
+            throw new Error("Unexpected editor context");
+        },
+    } as unknown as Ctx;
+    return { ctx, state: () => state };
 }
 
 function applyPlan(doc: ProseNode, next: ProseNode): { plan: DocumentSyncPlan; doc: ProseNode } {
@@ -799,6 +858,47 @@ describe("caretAssocForMarkdown", () => {
         expect(caretAssocForMarkdown("alpha\nbeta", 6)).toBe(1);
         expect(caretAssocForMarkdown("alpha", 5)).toBe(-1);
         expect(caretAssocForMarkdown("alpha", null)).toBe(-1);
+    });
+});
+
+describe("replaceEditorMarkdownPreservingSelection", () => {
+    test("preserves a whole-block selection through an inline plan", () => {
+        const current = docOf(paragraph("hello"));
+        let parseCount = 0;
+        const harness = createEditorHarness(
+            current,
+            positionIn(current, 0, 0),
+            positionIn(current, 0, 5),
+            () => { parseCount += 1; },
+        );
+
+        const result = replaceEditorMarkdownPreservingSelection(harness.ctx, "goodbye");
+        const state = harness.state();
+
+        expect(result).toEqual({ applied: true, normalizationOnly: false });
+        expect(parseCount).toBe(1);
+        expect(state.doc.textContent).toBe("goodbye");
+        expect(state.selection.from).toBe(1);
+        expect(state.selection.to).toBe(8);
+    });
+
+    test("keeps the collapsed fast path", () => {
+        const current = docOf(paragraph("hello"));
+        let parseCount = 0;
+        const harness = createEditorHarness(
+            current,
+            positionIn(current, 0, 5),
+            positionIn(current, 0, 5),
+            () => { parseCount += 1; },
+        );
+
+        const result = replaceEditorMarkdownPreservingSelection(harness.ctx, "goodbye");
+        const state = harness.state();
+
+        expect(result.applied).toBe(true);
+        expect(parseCount).toBe(0);
+        expect(state.doc.textContent).toBe("goodbye");
+        expect(state.selection.empty).toBe(true);
     });
 });
 

@@ -1745,15 +1745,22 @@ function buildSyncGroups(doc: ProseNode, nextDoc: ProseNode): SyncGroup[] {
       });
     } else {
       const pairs = alignChangedBlocks(doc, nextDoc, prefix, oldChanged, prefix, newChanged);
+      const pairByOld = new Map(pairs.map((pair) => [pair.oldIndex, pair.newIndex]));
+      const nextPairedTarget = new Array<number>(oldChanged).fill(prefix + newChanged);
+      let nextTarget = prefix + newChanged;
+      for (let offset = oldChanged - 1; offset >= 0; offset -= 1) {
+        const paired = pairByOld.get(offset);
+        if (paired !== undefined) nextTarget = prefix + paired;
+        nextPairedTarget[offset] = nextTarget;
+      }
       for (let offset = 0; offset < oldChanged; offset += 1) {
-        const pair = pairs.find((candidate) => candidate.oldIndex === offset);
-        const nextPair = pairs.find((candidate) => candidate.oldIndex > offset);
-        const target = pair ? prefix + pair.newIndex : nextPair ? prefix + nextPair.newIndex : prefix + newChanged;
+        const paired = pairByOld.get(offset);
+        const target = paired !== undefined ? prefix + paired : nextPairedTarget[offset]!;
         groups.push({
           oldStart: prefix + offset,
           oldEnd: prefix + offset + 1,
           newStart: target,
-          newEnd: pair ? target + 1 : target,
+          newEnd: paired !== undefined ? target + 1 : target,
           same: false,
         });
       }
@@ -2337,7 +2344,7 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
   // literal "\n\n" inside the current textblock instead of splitting it, and
   // the serializer can still round-trip to the same Markdown even though the
   // receiver's ProseMirror structure now differs from the sender's.
-  if (!containsLineBreak) {
+  if (!containsLineBreak && view.state.selection.empty) {
     const textMap = proseTextMap(view.state.doc);
     const segments = alignMarkdownToText(current, textMap.text);
     const fromText = markdownOffsetToTextOffset(segments, change.from);
@@ -2437,7 +2444,10 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
             plan: plan.kind,
           });
         }
-        if (plan.kind === 'replace') {
+        if (!oldSelection.empty || plan.kind === 'replace') {
+          // A non-collapsed selection must use the block/text mapper even for
+          // an inline plan; ProseMirror's ReplaceStep mapping would collapse a
+          // whole-block selection onto a replacement edge.
           setMappedSelection(transaction);
         } else if (selectionInTyping && newTyping !== null) {
           transaction.setSelection(TextSelection.create(transaction.doc, newTyping));

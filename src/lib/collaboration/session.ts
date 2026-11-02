@@ -220,6 +220,8 @@ export class CollabSession {
     private reconnectAttempt = 0;
     private updateTimer: ReturnType<typeof setTimeout> | null = null;
     private presenceTimer: ReturnType<typeof setTimeout> | null = null;
+    private presenceInflight = false;
+    private presencePending = false;
     private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     private queuedUpdates: Uint8Array[] = [];
     private presence: CollabPresenceWire[] = [];
@@ -422,6 +424,12 @@ export class CollabSession {
         this.lastSelection = selection;
         this.lastRelativeSelection = this.relativeSelectionFor(selection);
         if (!this.clientId) return;
+        if (this.presenceInflight) {
+            // Coalesce to the latest selection; the in-flight POST finishes
+            // first, then a single follow-up carries this position.
+            this.presencePending = true;
+            return;
+        }
         this.schedulePresenceFlush(PRESENCE_FLUSH_MS);
     }
 
@@ -645,11 +653,10 @@ export class CollabSession {
                 return;
             }
             if (!response.ok) {
-                // Keep the work locally and retry; the next local edit or the
-                // scheduled attempt resends the diff.
+                // Keep the work locally; the finally block re-arms a retry now
+                // that this request is no longer counted as in flight.
                 this.pendingAck = null;
                 this.queuedUpdates.unshift(merged);
-                this.scheduleUpdateRetry();
                 return;
             }
             try {
@@ -668,6 +675,15 @@ export class CollabSession {
         } finally {
             this.inflightUpdates = Math.max(0, this.inflightUpdates - 1);
             this.settlePendingAck();
+            if (
+                this.queuedUpdates.length > 0
+                && this.inflightUpdates === 0
+                && this.status === "connected"
+            ) {
+                // A failed/non-ok POST requeued the diff; re-arm after the
+                // in-flight count drops so the next attempt actually runs.
+                this.scheduleUpdateRetry();
+            }
             if (
                 this.queuedUpdates.length === 0
                 && this.inflightUpdates === 0
@@ -753,6 +769,11 @@ export class CollabSession {
     }
 
     private async flushPresence(): Promise<void> {
+        if (this.destroyed) return;
+        if (this.presenceInflight) {
+            this.presencePending = true;
+            return;
+        }
         const selection = this.lastSelection;
         const relative = this.lastRelativeSelection ?? (selection ? this.relativeSelectionFor(selection) : null);
         if (
@@ -777,6 +798,8 @@ export class CollabSession {
             return;
         }
 
+        this.presenceInflight = true;
+        this.presencePending = false;
         try {
             await fetch(
                 `/api/v1/collab/documents/${encodeURIComponent(this.options.documentId)}/presence`,
@@ -799,6 +822,12 @@ export class CollabSession {
             );
         } catch {
             // Presence is best-effort and must never interrupt typing.
+        } finally {
+            this.presenceInflight = false;
+            if (this.presencePending && !this.destroyed) {
+                this.presencePending = false;
+                this.schedulePresenceFlush(0);
+            }
         }
     }
 
