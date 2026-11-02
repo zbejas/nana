@@ -29,6 +29,7 @@ export const COLLAB_REMOTE_ORIGIN = "nana-collab-remote";
 export const COLLAB_RESET_ORIGIN = "nana-collab-reset";
 const UPDATE_FLUSH_MS = 70;
 const PRESENCE_FLUSH_MS = 120;
+const PRESENCE_DEFER_MS = 40;
 const HEARTBEAT_MS = 15_000;
 const RECONNECT_MAX_MS = 10_000;
 // A long-suspended tab can keep a dead SSE reader without ever firing an error.
@@ -194,6 +195,15 @@ export function classifyCollabContentOrigin(origin: unknown): CollabContentOrigi
     if (origin === COLLAB_REMOTE_ORIGIN) return "remote";
     if (origin === COLLAB_RESET_ORIGIN) return "reset";
     return "local";
+}
+
+/**
+ * Presence offsets point into the local Yjs replica. They are only meaningful
+ * to peers after the local updates that contain their target structs reach the
+ * room, so a presence POST must wait for the update queue to settle.
+ */
+export function canSendPresence(queuedUpdates: number, inflightUpdates: number): boolean {
+    return queuedUpdates === 0 && inflightUpdates === 0;
 }
 
 export class CollabSession {
@@ -411,11 +421,16 @@ export class CollabSession {
         this.lastSelection = selection;
         this.lastRelativeSelection = this.relativeSelectionFor(selection);
         if (!this.clientId) return;
-        if (this.presenceTimer) return;
+        this.schedulePresenceFlush(PRESENCE_FLUSH_MS);
+    }
+
+    /** Coalesce presence sends; the latest selection/relative pair wins. */
+    private schedulePresenceFlush(delay: number): void {
+        if (this.destroyed || !this.clientId || this.presenceTimer) return;
         this.presenceTimer = setTimeout(() => {
             this.presenceTimer = null;
-            this.flushPresence();
-        }, PRESENCE_FLUSH_MS);
+            void this.flushPresence();
+        }, delay);
     }
 
     private relativeSelectionFor(selection: CollabSelection): {
@@ -630,6 +645,15 @@ export class CollabSession {
         } finally {
             this.inflightUpdates = Math.max(0, this.inflightUpdates - 1);
             this.settlePendingAck();
+            if (
+                this.queuedUpdates.length === 0
+                && this.inflightUpdates === 0
+                && this.lastSelection
+            ) {
+                // The room has now applied the local structs; a deferred
+                // presence position can resolve safely on the peer.
+                this.schedulePresenceFlush(0);
+            }
         }
     }
 
@@ -715,6 +739,15 @@ export class CollabSession {
             || !this.clientId
             || this.status !== "connected"
         ) {
+            return;
+        }
+        if (!canSendPresence(this.queuedUpdates.length, this.inflightUpdates)) {
+            // The peer cannot resolve a struct it has not received yet. Retry
+            // shortly while an update POST is in flight or its flush timer is
+            // pending; the latest selection always wins over this stale one.
+            if (this.inflightUpdates > 0 || this.updateTimer) {
+                this.schedulePresenceFlush(PRESENCE_DEFER_MS);
+            }
             return;
         }
 

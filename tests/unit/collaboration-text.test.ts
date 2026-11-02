@@ -351,13 +351,31 @@ describe("multiTextChanges", () => {
         expect(result).toBe(next);
     });
 
-    test("falls back to one exact splice over the diff cell cap", () => {
-        const current = "a\n".repeat(1_000);
-        const next = `${current}Z`;
+    test("trims unchanged lines so a large note keeps separate hunks", () => {
+        const lines = Array.from({ length: 1_000 }, (_value, index) => `line ${index}\n`);
+        const current = lines.join("");
+        lines[100] = "line 100A\n";
+        lines[900] = "line 900B\n";
+        const next = lines.join("");
+        const changes = multiTextChanges(current, next);
+
+        expect(changes).toHaveLength(2);
+        for (let index = 1; index < changes.length; index += 1) {
+            expect(changes[index]!.from).toBeGreaterThanOrEqual(changes[index - 1]!.to);
+        }
+    });
+
+    test("falls back to one exact splice when no lines are shared", () => {
+        const current = "a\n".repeat(1_500);
+        const next = "b\n".repeat(1_500);
         const changes = multiTextChanges(current, next);
 
         expect(changes).toHaveLength(1);
-        expect(changes[0]).toEqual({ from: current.length, to: current.length, insert: "Z" });
+        let result = current;
+        for (const change of [...changes].reverse()) {
+            result = applyTextChange(result, change);
+        }
+        expect(result).toBe(next);
     });
 });
 

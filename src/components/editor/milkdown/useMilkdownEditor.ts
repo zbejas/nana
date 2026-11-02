@@ -12,6 +12,7 @@ import {
   setCollaboratorHighlights,
   setEditorEditable,
   withSuppressedDocumentChange,
+  type EditorApplyResult,
   type SlashTriggerPosition,
 } from './createEditor';
 import {
@@ -336,15 +337,15 @@ export function useMilkdownEditor({
           lastAppliedRef.current = markdown;
           lastEmittedRef.current = markdown;
           lastCanonicalRef.current = markdown;
-          let applied = false;
+          let result: EditorApplyResult = { applied: false, normalizationOnly: false };
           runExternalApply(() => {
             const current = editorRef.current;
-            applied = current?.action(
+            result = current?.action(
               (ctx) => replaceEditorMarkdownPreservingSelection(ctx, markdown),
-            ) ?? false;
+            ) ?? result;
           });
           refreshToolbar();
-          return applied;
+          return result;
         },
       },
       lastCanonicalRef.current,

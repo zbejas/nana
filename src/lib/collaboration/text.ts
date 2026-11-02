@@ -137,7 +137,7 @@ interface LineDiffHunk {
 function diffLineHunks(current: string[], next: string[]): LineDiffHunk[] | null {
     const n = current.length;
     const m = next.length;
-    if (n * m > 400_000) return null;
+    if (n * m > 2_000_000) return null;
 
     const width = m + 1;
     const dp = new Uint32Array((n + 1) * width);
@@ -198,8 +198,35 @@ export function multiTextChanges(current: string, next: string): TextChange[] {
 
     const currentLines = splitLinesWithEndings(before);
     const nextLines = splitLinesWithEndings(after);
-    const hunks = diffLineHunks(currentLines, nextLines);
-    if (!hunks) return opsFallback(before, after);
+
+    // Trim equal lines outside the edit before the LCS. A long note with two
+    // separated remote edits must not trip the DP cap into one splice.
+    let prefixLines = 0;
+    while (
+        prefixLines < currentLines.length
+        && prefixLines < nextLines.length
+        && currentLines[prefixLines] === nextLines[prefixLines]
+    ) {
+        prefixLines += 1;
+    }
+    let suffixLines = 0;
+    while (
+        suffixLines < currentLines.length - prefixLines
+        && suffixLines < nextLines.length - prefixLines
+        && currentLines[currentLines.length - 1 - suffixLines]
+            === nextLines[nextLines.length - 1 - suffixLines]
+    ) {
+        suffixLines += 1;
+    }
+    const currentMiddle = currentLines.slice(prefixLines, currentLines.length - suffixLines);
+    const nextMiddle = nextLines.slice(prefixLines, nextLines.length - suffixLines);
+    const midHunks = diffLineHunks(currentMiddle, nextMiddle);
+    if (!midHunks) return opsFallback(before, after);
+    const hunks = midHunks.map((hunk) => ({
+        start: hunk.start + prefixLines,
+        end: hunk.end + prefixLines,
+        lines: hunk.lines,
+    }));
 
     let currentStarts: number[] = [];
     {

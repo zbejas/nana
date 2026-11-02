@@ -374,16 +374,12 @@ function collaboratorDecorations(
   const focused = collaborators.filter((collaborator) => collaborator.focused);
   if (focused.length === 0) return DecorationSet.empty;
 
-  const map = proseTextMap(doc);
-  const segments = alignMarkdownToText(markdown, map.text);
   const decorations: Decoration[] = [];
 
   for (const collaborator of focused) {
-    const anchorText = markdownOffsetToTextOffset(segments, collaborator.anchor);
-    const headText = markdownOffsetToTextOffset(segments, collaborator.head);
-    if (anchorText === null || headText === null) continue;
-    const anchor = prosePositionAt(map, anchorText, 'previous-text');
-    const head = prosePositionAt(map, headText, 'previous-text');
+    const anchor = editorPositionForPresenceOffset(doc, markdown, collaborator.anchor);
+    const head = editorPositionForPresenceOffset(doc, markdown, collaborator.head);
+    if (anchor === null || head === null) continue;
     const from = Math.min(anchor, head);
     const to = Math.max(anchor, head);
 
@@ -1115,27 +1111,144 @@ export function proseTextOffsetAt(map: ProseTextMap, position: number): number {
   return fallback;
 }
 
+/** Drop the local-only trailing typing paragraph from a doc projection. */
+export function withoutTrailingTypingParagraph(doc: ProseNode): ProseNode {
+  if (doc.childCount <= 1 || !hasTrailingEmptyParagraph(doc)) return doc;
+  const last = doc.child(doc.childCount - 1);
+  return doc.copy(doc.content.cut(0, doc.content.size - last.nodeSize));
+}
+
+/** Top-level empty paragraphs that serialize as a canonical `<br />` line. */
+export function contentEmptyParagraphIndices(doc: ProseNode): number[] {
+  const indices: number[] = [];
+  const trailingTyping = doc.childCount > 1 && hasTrailingEmptyParagraph(doc);
+  doc.forEach((node, _offset, index) => {
+    if (node.type.name !== 'paragraph' || node.content.size !== 0) return;
+    if (trailingTyping && index === doc.childCount - 1) return;
+    indices.push(index);
+  });
+  return indices;
+}
+
+interface EmptyParagraphMarker {
+  start: number;
+  end: number;
+}
+
+/** Offsets of lone `<br />` empty-paragraph markers outside fenced code. */
+export function emptyParagraphMarkers(markdown: string): EmptyParagraphMarker[] {
+  const markers: EmptyParagraphMarker[] = [];
+  const source = typeof markdown === 'string' ? markdown : '';
+  let offset = 0;
+  let fence: string | null = null;
+  for (const line of source.match(/[^\n]*\n|[^\n]+$/g) ?? []) {
+    const text = line.replace(/\r?\n$/, '');
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(text);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1]![0] === fence[0] && fenceMatch[1]!.length >= fence.length) {
+        fence = null;
+      }
+    } else if (fenceMatch) {
+      fence = fenceMatch[1]!;
+    } else {
+      const trimmed = text.trim();
+      const marker = /^<br\s*\/?>$/i.exec(trimmed);
+      if (marker) {
+        const start = offset + text.indexOf('<br');
+        markers.push({ start, end: start + marker[0].length });
+      }
+    }
+    offset += line.length;
+  }
+  return markers;
+}
+
+/**
+ * Map one canonical Markdown offset to an editor position for presence.
+ *
+ * The local trailing typing paragraph is not canonical, so a peer caret at the
+ * canonical end stays on the last canonical textblock. A caret inside a
+ * serialized empty paragraph (`<br />`) maps to that content paragraph rather
+ * than collapsing onto the previous block.
+ */
+export function editorPositionForPresenceOffset(
+  doc: ProseNode,
+  markdown: string,
+  rawOffset: number,
+): number | null {
+  if (doc.childCount === 0) return null;
+  const canonical = typeof markdown === 'string' ? markdown : '';
+  const offset = Math.max(0, Math.min(rawOffset, canonical.length));
+  const starts = topLevelStarts(doc);
+
+  const emptyIndices = contentEmptyParagraphIndices(doc);
+  const markers = emptyParagraphMarkers(canonical);
+  for (let index = 0; index < Math.min(emptyIndices.length, markers.length); index += 1) {
+    const marker = markers[index]!;
+    if (offset >= marker.start && offset <= marker.end) {
+      return starts[emptyIndices[index]!]! + 1;
+    }
+  }
+
+  if (hasTrailingEmptyParagraph(doc) && doc.childCount === 1) {
+    return starts[0]! + 1;
+  }
+
+  const presenceDoc = withoutTrailingTypingParagraph(doc);
+  if (presenceDoc.childCount === 0) return null;
+  const map = proseTextMap(presenceDoc);
+  const segments = alignMarkdownToText(canonical, map.text);
+  const textOffset = markdownOffsetToTextOffset(segments, offset);
+  if (textOffset === null) return null;
+  return prosePositionAt(map, textOffset, 'previous-text');
+}
+
+/**
+ * Map one editor position to a canonical Markdown offset for presence.
+ * Trailing typing and content-empty paragraphs each get their real canonical
+ * target: the end of the body and the relevant `<br />` marker.
+ */
+export function presenceMarkdownOffsetForEditorPosition(
+  doc: ProseNode,
+  markdown: string,
+  position: number,
+): number | null {
+  if (doc.childCount === 0) return null;
+  const canonical = typeof markdown === 'string' ? markdown : '';
+  const index = topLevelIndexAt(doc, position);
+  if (index < 0) return null;
+  const node = doc.child(index);
+  if (node.type.name === 'paragraph' && node.content.size === 0) {
+    if (hasTrailingEmptyParagraph(doc) && (doc.childCount === 1 || index === doc.childCount - 1)) {
+      return canonical.length;
+    }
+    const emptyIndex = contentEmptyParagraphIndices(doc).indexOf(index);
+    const marker = emptyIndex >= 0 ? emptyParagraphMarkers(canonical)[emptyIndex] : null;
+    if (marker) return marker.start;
+  }
+
+  const presenceDoc = withoutTrailingTypingParagraph(doc);
+  const map = proseTextMap(presenceDoc);
+  const segments = alignMarkdownToText(canonical, map.text);
+  const textOffset = proseTextOffsetAt(map, position);
+  return textOffsetToMarkdownOffset(segments, textOffset);
+}
+
 /** Project the ProseMirror caret into Markdown source offsets. */
 export function getMarkdownSelection(ctx: Ctx): { anchor: number; head: number } | null {
   const view = ctx.get(editorViewCtx);
   if (view.isDestroyed) return null;
   const markdown = getEditorMarkdown(ctx);
-  // The trailing typing paragraph is local-only and absent from Markdown. A
-  // caret inside it belongs at the canonical end, not at the previous block.
-  const typing = trailingTypingParagraphPosition(view.state.doc);
-  if (
-    typing !== null
-    && view.state.selection.empty
-    && view.state.selection.from === typing
-  ) {
-    return { anchor: markdown.length, head: markdown.length };
-  }
-  const map = proseTextMap(view.state.doc);
-  const segments = alignMarkdownToText(markdown, map.text);
-  const anchorText = proseTextOffsetAt(map, view.state.selection.anchor);
-  const headText = proseTextOffsetAt(map, view.state.selection.head);
-  const anchor = textOffsetToMarkdownOffset(segments, anchorText);
-  const head = textOffsetToMarkdownOffset(segments, headText);
+  const anchor = presenceMarkdownOffsetForEditorPosition(
+    view.state.doc,
+    markdown,
+    view.state.selection.anchor,
+  );
+  const head = presenceMarkdownOffsetForEditorPosition(
+    view.state.doc,
+    markdown,
+    view.state.selection.head,
+  );
   if (anchor === null || head === null) return null;
   return { anchor, head };
 }
@@ -1163,6 +1276,14 @@ export interface DocumentSyncPlan {
   steps: DocumentSyncStep[];
   /** Map selection through this many steps, then through the rest backward. */
   selectionStepCount?: number;
+}
+
+/** Result of one external editor body apply. */
+export interface EditorApplyResult {
+  /** False only when the editor could not become the target document. */
+  applied: boolean;
+  /** True when the target applied but serializes to a normalized body. */
+  normalizationOnly: boolean;
 }
 
 function topLevelStarts(doc: ProseNode): number[] {
@@ -1396,6 +1517,108 @@ interface SyncGroup {
   same: boolean;
 }
 
+function topLevelBlockText(doc: ProseNode, index: number, entries?: readonly TextblockEntry[]): string {
+  const blocks = entries ?? collectTextblockEntries(doc);
+  return blocks
+    .filter((entry) => entry.topIndex === index)
+    .map((entry) => entry.text)
+    .join('');
+}
+
+/** Text similarity used to align changed blocks without positional guessing. */
+function blockSimilarity(oldText: string, newText: string): number {
+  if (oldText === newText) return oldText.length > 0 ? 4 : 2;
+  if (!oldText || !newText) return -2;
+
+  let prefix = 0;
+  while (prefix < oldText.length && prefix < newText.length && oldText[prefix] === newText[prefix]) {
+    prefix += 1;
+  }
+  let suffix = 0;
+  while (
+    suffix < oldText.length - prefix
+    && suffix < newText.length - prefix
+    && oldText[oldText.length - 1 - suffix] === newText[newText.length - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+  const ratio = (prefix + suffix) / Math.max(oldText.length, newText.length);
+  if (oldText.includes(newText) || newText.includes(oldText)) return 2 + ratio;
+  if (prefix + suffix > 0) return 1 + ratio;
+  // Both blocks still changed; pair them in order after stronger matches.
+  return 0.25;
+}
+
+interface BlockPair {
+  oldIndex: number;
+  newIndex: number;
+}
+
+/**
+ * Monotonic sequence alignment for changed blocks. Exact and prefix/suffix
+ * similarity win; synthetic trailing empty paragraphs score as gaps unless an
+ * old block is itself empty. This keeps `[A, B]` paired with `[AC, BD]`, not
+ * positionally with `[BD, ""]`.
+ */
+function alignChangedBlocks(
+  doc: ProseNode,
+  nextDoc: ProseNode,
+  oldStart: number,
+  oldCount: number,
+  newStart: number,
+  newCount: number,
+): BlockPair[] {
+  if (oldCount <= 0 || newCount <= 0) return [];
+  const oldEntries = collectTextblockEntries(doc);
+  const newEntries = collectTextblockEntries(nextDoc);
+  const oldTexts = Array.from({ length: oldCount }, (_value, index) =>
+    topLevelBlockText(doc, oldStart + index, oldEntries));
+  const newTexts = Array.from({ length: newCount }, (_value, index) =>
+    topLevelBlockText(nextDoc, newStart + index, newEntries));
+  const scores = oldTexts.map((oldText) =>
+    newTexts.map((newText) => blockSimilarity(oldText, newText)));
+
+  const width = newCount + 1;
+  const dp = new Float64Array((oldCount + 1) * width);
+  for (let old = 1; old <= oldCount; old += 1) {
+    for (let next = 1; next <= newCount; next += 1) {
+      const pairScore = scores[old - 1]![next - 1]!;
+      const paired = pairScore > 0
+        ? dp[(old - 1) * width + next - 1]! + pairScore
+        : Number.NEGATIVE_INFINITY;
+      dp[old * width + next] = Math.max(
+        dp[(old - 1) * width + next]!,
+        dp[old * width + next - 1]!,
+        paired,
+      );
+    }
+  }
+
+  const pairs: BlockPair[] = [];
+  let old = oldCount;
+  let next = newCount;
+  while (old > 0 || next > 0) {
+    if (old > 0 && next > 0) {
+      const pairScore = scores[old - 1]![next - 1]!;
+      const paired = pairScore > 0
+        ? dp[(old - 1) * width + next - 1]! + pairScore
+        : Number.NEGATIVE_INFINITY;
+      if (pairScore > 0 && Math.abs(dp[old * width + next]! - paired) < 1e-9) {
+        pairs.push({ oldIndex: old - 1, newIndex: next - 1 });
+        old -= 1;
+        next -= 1;
+        continue;
+      }
+    }
+    if (old > 0 && dp[old * width + next]! === dp[(old - 1) * width + next]!) {
+      old -= 1;
+    } else {
+      next -= 1;
+    }
+  }
+  return pairs.reverse();
+}
+
 /** Pair changed top-level blocks so a selection can be mapped block-aware. */
 function buildSyncGroups(doc: ProseNode, nextDoc: ProseNode): SyncGroup[] {
   const { prefix, suffix } = sharedTopLevelRange(doc, nextDoc);
@@ -1413,17 +1636,33 @@ function buildSyncGroups(doc: ProseNode, nextDoc: ProseNode): SyncGroup[] {
   const oldChanged = doc.childCount - prefix - suffix;
   const newChanged = nextDoc.childCount - prefix - suffix;
   if (oldChanged > 0) {
-    if (oldChanged === 1 || newChanged === 1 || oldChanged === newChanged) {
-      if (oldChanged === newChanged) {
-        for (let index = 0; index < oldChanged; index += 1) {
-          groups.push({
-            oldStart: prefix + index,
-            oldEnd: prefix + index + 1,
-            newStart: prefix + index,
-            newEnd: prefix + index + 1,
-            same: false,
-          });
+    if (oldChanged === 1 && newChanged > 1) {
+      const oldEntries = collectTextblockEntries(doc);
+      const newEntries = collectTextblockEntries(nextDoc);
+      const oldText = topLevelBlockText(doc, prefix, oldEntries);
+      const newTexts = Array.from({ length: newChanged }, (_value, index) =>
+        topLevelBlockText(nextDoc, prefix + index, newEntries));
+      const newText = newTexts.join('');
+      let bestIndex = 0;
+      let bestScore = Number.NEGATIVE_INFINITY;
+      for (let index = 0; index < newTexts.length; index += 1) {
+        const score = blockSimilarity(oldText, newTexts[index]!);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = index;
         }
+      }
+      if (!isGenuineTextblockSplit(oldText, newText) && bestScore >= 1) {
+        // One edited block plus other inserted/reconciled blocks: pair the
+        // content match and leave the extras unpaired instead of concatenating
+        // unrelated text into one selection target.
+        groups.push({
+          oldStart: prefix,
+          oldEnd: prefix + 1,
+          newStart: prefix + bestIndex,
+          newEnd: prefix + bestIndex + 1,
+          same: false,
+        });
       } else {
         groups.push({
           oldStart: prefix,
@@ -1433,15 +1672,25 @@ function buildSyncGroups(doc: ProseNode, nextDoc: ProseNode): SyncGroup[] {
           same: false,
         });
       }
+    } else if (oldChanged === 1 || newChanged === 1) {
+      groups.push({
+        oldStart: prefix,
+        oldEnd: prefix + oldChanged,
+        newStart: prefix,
+        newEnd: prefix + newChanged,
+        same: false,
+      });
     } else {
-      // Rough proportional pairing for uneven batch edits. Selection mapping
-      // stays inside the corresponding new block instead of a document edge.
-      for (let index = 0; index < newChanged; index += 1) {
+      const pairs = alignChangedBlocks(doc, nextDoc, prefix, oldChanged, prefix, newChanged);
+      for (let offset = 0; offset < oldChanged; offset += 1) {
+        const pair = pairs.find((candidate) => candidate.oldIndex === offset);
+        const nextPair = pairs.find((candidate) => candidate.oldIndex > offset);
+        const target = pair ? prefix + pair.newIndex : nextPair ? prefix + nextPair.newIndex : prefix + newChanged;
         groups.push({
-          oldStart: prefix + Math.floor((index * oldChanged) / newChanged),
-          oldEnd: prefix + Math.floor(((index + 1) * oldChanged) / newChanged),
-          newStart: prefix + index,
-          newEnd: prefix + index + 1,
+          oldStart: prefix + offset,
+          oldEnd: prefix + offset + 1,
+          newStart: target,
+          newEnd: pair ? target + 1 : target,
           same: false,
         });
       }
@@ -1465,7 +1714,12 @@ function groupForBlock(groups: readonly SyncGroup[], blockIndex: number): SyncGr
 }
 
 /** Map an offset through a common prefix/suffix edit. */
-function mapAffixOffset(before: string, after: string, offset: number): number {
+function mapAffixOffset(
+  before: string,
+  after: string,
+  offset: number,
+  clampExactEnd: boolean,
+): number {
   const start = Math.max(0, Math.min(offset, before.length));
   if (before === after) return start;
   let prefix = 0;
@@ -1479,10 +1733,29 @@ function mapAffixOffset(before: string, after: string, offset: number): number {
     afterEnd -= 1;
   }
   if (start <= prefix) return start;
-  if (start >= beforeEnd) return afterEnd + Math.max(0, start - beforeEnd);
-  // An endpoint inside a replaced middle must not expand the selection over
-  // the whole replacement. Collapse it to the replacement start.
+  if (start > beforeEnd) return afterEnd + (start - beforeEnd);
+  if (start === beforeEnd && !clampExactEnd) return afterEnd;
+  // An endpoint inside (or exactly at the old end of) a replaced middle must
+  // not expand a non-collapsed selection over the whole replacement.
   return prefix;
+}
+
+/**
+ * A one-to-many target is a genuine block split only when the new text equals
+ * the old text or drops a short whitespace separator at the break. Appending a
+ * synthetic typing paragraph does not count, so an end-of-block caret stays at
+ * the end of the real content instead of moving into the blank target block.
+ */
+function isGenuineTextblockSplit(oldText: string, newText: string): boolean {
+  if (oldText === newText) return oldText.length > 0;
+  if (!oldText || !newText) return false;
+  const change = minimalTextChange(oldText, newText);
+  if (!change) return true;
+  if (change.insert.length > 0) return false;
+  const removed = oldText.slice(change.from, change.to);
+  return removed.length > 0
+    && removed.length <= 4
+    && /^[ \t\r\n]*$/.test(removed);
 }
 
 function resolveGroupOffset(
@@ -1492,6 +1765,7 @@ function resolveGroupOffset(
   preferNextAtBoundary = false,
 ): number | null {
   if (entries.length === 0) return null;
+  const totalText = entries.reduce((total, entry) => total + entry.text.length, 0);
   let cursor = 0;
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index]!;
@@ -1500,7 +1774,7 @@ function resolveGroupOffset(
       const local = Math.max(0, offset - cursor);
       return entry.start + textOffsetToContentOffset(entry.node, local);
     }
-    if (offset === end && index + 1 < entries.length) {
+    if (offset === end && index + 1 < entries.length && offset < totalText) {
       if (preferNextAtBoundary || assoc > 0) return entries[index + 1]!.start;
     }
     if (offset === end) {
@@ -1560,6 +1834,11 @@ export function mapSelectionThroughDocuments(
       newGroupEntries = newEntries.filter((entry) => entry.topIndex === targetIndex);
     }
     if (newGroupEntries.length === 0) return null;
+    if (group.newStart === group.newEnd && found.entry.node.content.size !== 0) {
+      // This old block was removed rather than paired; land at the nearest
+      // surviving block instead of diffing it into the following text.
+      return newGroupEntries[0]!.start;
+    }
 
     if (found.entry.node.content.size === 0) {
       const empty = newGroupEntries.find((entry) => entry.node.content.size === 0);
@@ -1590,8 +1869,10 @@ export function mapSelectionThroughDocuments(
     }
     const oldText = oldGroupEntries.map((entry) => entry.text).join('');
     const newText = newGroupEntries.map((entry) => entry.text).join('');
-    const newOffset = mapAffixOffset(oldText, newText, oldOffset);
-    const splitBoundary = oldGroupEntries.length === 1 && newGroupEntries.length > 1;
+    const newOffset = mapAffixOffset(oldText, newText, oldOffset, !collapsed);
+    const splitBoundary = oldGroupEntries.length === 1
+      && newGroupEntries.length > 1
+      && isGenuineTextblockSplit(oldText, newText);
     return resolveGroupOffset(newGroupEntries, newOffset, assoc, splitBoundary);
   };
 
@@ -1950,20 +2231,20 @@ export function planDocumentSync(doc: ProseNode, nextDoc: ProseNode): DocumentSy
  * so a remote keystroke elsewhere does not move the local caret.
  */
 /**
- * Returns true when the editor's canonical Markdown equals `markdown` after
- * the apply, so the binding can refuse to publish a later local edit from a
- * diverged editor/canonical pair.
+ * Reports whether the editor became the target document and whether its
+ * serializer produced a normalization-only body. The binding uses the second
+ * signal to avoid writing marker/blank-line normalization back as local text.
  */
-export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: string): boolean {
+export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: string): EditorApplyResult {
   const view = ctx.get(editorViewCtx);
   const parser = ctx.get(parserCtx);
   const serializer = ctx.get(serializerCtx);
   const current = getEditorMarkdown(ctx);
   const next = normalizeMarkdown(markdown);
-  if (current === next) return true;
+  if (current === next) return { applied: true, normalizationOnly: false };
 
   const change = minimalTextChange(current, next);
-  if (!change) return false;
+  if (!change) return { applied: false, normalizationOnly: false };
 
   const deletedText = current.slice(change.from, change.to);
   const containsLineBreak = /[\r\n]/.test(change.insert) || /[\r\n]/.test(deletedText);
@@ -2001,7 +2282,7 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
         if (change.insert) transaction.insertText(change.insert, from);
         if (normalizeMarkdown(serializer(transaction.doc)) === next) {
           view.dispatch(transaction);
-          return true;
+          return { applied: true, normalizationOnly: false };
         }
       }
     }
@@ -2013,10 +2294,10 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
   // replacement leaves every other block (and the selection mapping through
   // it) untouched. Only the changed top-level range is replaced.
   const parsed = parser(next);
-  if (!parsed) return false;
+  if (!parsed) return { applied: false, normalizationOnly: false };
   const oldDoc = view.state.doc;
   const targetDoc = reconcileEditorTarget(oldDoc, parsed, next);
-  if (oldDoc.eq(targetDoc)) return true;
+  if (oldDoc.eq(targetDoc)) return { applied: true, normalizationOnly: false };
 
   const oldSelection = view.state.selection;
   const oldMarkdownSelection = getMarkdownSelection(ctx);
@@ -2065,7 +2346,8 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
     try {
       applyDocumentSyncSteps(transaction, plan.steps);
       if (transaction.doc.eq(targetDoc)) {
-        if (normalizeMarkdown(serializer(transaction.doc)) !== next) {
+        const normalizationOnly = normalizeMarkdown(serializer(transaction.doc)) !== next;
+        if (normalizationOnly) {
           // The structure is exactly the parsed target; only Markdown
           // serialization (for example a list marker) differs. Keep the apply.
           logger.debug('Targeted document sync normalized the remote Markdown', {
@@ -2105,7 +2387,7 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
           }
         }
         view.dispatch(transaction);
-        return true;
+        return { applied: true, normalizationOnly };
       }
       logger.debug('Targeted document sync did not reproduce the remote body', {
         plan: plan.kind,
@@ -2125,13 +2407,14 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
   setMappedSelection(transaction);
   view.dispatch(transaction);
 
-  if (normalizeMarkdown(serializer(transaction.doc)) !== next) {
+  const normalizationOnly = normalizeMarkdown(serializer(transaction.doc)) !== next;
+  if (normalizationOnly) {
     // The conservative apply replaced the whole document with the parsed
     // target; a remaining difference is Markdown normalization, not a partial
     // apply. The binding may still publish local edits from this base.
     logger.debug('Conservative document sync normalized the remote Markdown');
   }
-  return transaction.doc.eq(targetDoc);
+  return { applied: transaction.doc.eq(targetDoc), normalizationOnly };
 }
 
 export function replaceEditorMarkdown(ctx: Ctx, markdown: string): void {

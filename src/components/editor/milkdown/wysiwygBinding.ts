@@ -20,7 +20,7 @@
  */
 
 import type { CanonicalOp } from '../../../lib/collaboration/ops';
-import { opsFromMinimalTextChange } from '../../../lib/collaboration/ops';
+import { applyOps, opsFromMinimalTextChange } from '../../../lib/collaboration/ops';
 import type { CollabContentChange } from '../../../lib/collaboration/session';
 import { createLogger } from '../../../lib/logger';
 import { normalizeMarkdown } from './helpers';
@@ -40,14 +40,20 @@ export interface WysiwygSessionPort {
   observeContent(listener: (change: CollabContentChange) => void): () => void;
 }
 
+export type WysiwygApplyResult =
+  | boolean
+  | { applied: boolean; normalizationOnly?: boolean }
+  | void;
+
 export interface WysiwygBindingHost {
   /** Markdown currently rendered by the editor. */
   getMarkdown(): string;
   /**
    * Replace the editor document without publishing it back to the session.
-   * Returns false only when the editor could not reproduce the target.
+   * A richer result distinguishes a structural apply from normalization-only
+   * serialization; `false` means the editor could not become the target.
    */
-  applyMarkdown(markdown: string): boolean | void;
+  applyMarkdown(markdown: string): WysiwygApplyResult;
 }
 
 /**
@@ -104,6 +110,8 @@ export class WysiwygSessionBinding {
   /** Editor body after the last remote/local apply, for divergence checks. */
   private lastEditorMarkdown: string;
   private applyFailed = false;
+  private normalizationOnly = false;
+  private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly session: WysiwygSessionPort,
@@ -138,6 +146,7 @@ export class WysiwygSessionBinding {
       this.lastCanonicalMarkdown = normalizeMarkdown(this.host.getMarkdown());
       this.lastEditorMarkdown = this.lastCanonicalMarkdown;
       this.applyFailed = false;
+      this.normalizationOnly = false;
       return;
     }
     this.applyRemote(canonical);
@@ -155,23 +164,38 @@ export class WysiwygSessionBinding {
     const previous = this.lastCanonicalMarkdown;
     if (normalized === previous) return false;
 
-    // A remote apply that could not reproduce the canonical target leaves the
-    // editor on a different base. Publishing a diff from that base would write
-    // the divergence into Yjs, so keep local text local until the next remote
-    // apply repairs the editor. The remote path itself stays synchronous.
+    // A remote apply that could not reproduce the canonical target is retried
+    // once on the next tick. If the retry also fails, the latch is cleared so
+    // a failed apply can never swallow local typing forever.
     if (this.applyFailed) {
-      logger.debug('Skipped a local publish after a diverged remote apply', {
+      logger.debug('Skipped a local publish while a diverged remote apply retries', {
         canonicalLength: previous.length,
         editorLength: this.lastEditorMarkdown.length,
       });
       return false;
     }
 
+    let nextCanonical = normalized;
+    let ops: CanonicalOp[];
+    if (
+      this.normalizationOnly
+      && this.lastEditorMarkdown.length === previous.length
+    ) {
+      // The editor serializes the same structure with a different marker or
+      // blank-line spelling. Diff the local edit against the editor's own
+      // previous body, then apply that same edit to the canonical body so the
+      // normalization is not written into Yjs.
+      ops = opsFromMinimalTextChange(this.lastEditorMarkdown, normalized);
+      nextCanonical = applyOps(previous, ops) as string;
+    } else {
+      ops = wysiwygLocalOps(previous, normalized);
+    }
+
     // Update the baseline before applying so a synchronous observer callback
     // cannot see a stale canonical position.
-    this.lastCanonicalMarkdown = normalized;
+    this.lastCanonicalMarkdown = nextCanonical;
     this.lastEditorMarkdown = normalized;
-    const ops = wysiwygLocalOps(previous, normalized);
+    this.normalizationOnly = normalized !== nextCanonical;
     if (ops.length > 0) this.session.applyLocalOps(ops, WYSIWYG_BINDING_ORIGIN);
     return true;
   }
@@ -179,6 +203,10 @@ export class WysiwygSessionBinding {
   dispose(): void {
     const unsubscribe = this.unsubscribe;
     this.unsubscribe = null;
+    if (this.recoveryTimer) {
+      clearTimeout(this.recoveryTimer);
+      this.recoveryTimer = null;
+    }
     unsubscribe?.();
   }
 
@@ -193,20 +221,67 @@ export class WysiwygSessionBinding {
     if (normalized === normalizeMarkdown(this.host.getMarkdown())) {
       this.lastEditorMarkdown = normalized;
       this.applyFailed = false;
+      this.normalizationOnly = false;
+      this.clearRecovery();
       return;
     }
-    const applied = this.host.applyMarkdown(normalized);
+    const result = this.host.applyMarkdown(normalized);
     this.lastEditorMarkdown = normalizeMarkdown(this.host.getMarkdown());
+    const applied = typeof result === 'boolean'
+      ? result
+      : result && typeof result === 'object'
+        ? result.applied
+        : undefined;
+    const normalizationOnly = result && typeof result === 'object'
+      ? result.normalizationOnly === true
+      : false;
     // A real editor reports structural success. A host that does not return a
     // result (an older/test host) falls back to comparing its body.
     this.applyFailed = applied === undefined
       ? this.lastEditorMarkdown !== normalized
       : applied === false;
+    this.normalizationOnly = !this.applyFailed
+      && (normalizationOnly || this.lastEditorMarkdown !== normalized);
     if (this.applyFailed) {
       logger.debug('Remote Markdown did not reproduce the canonical body', {
         targetLength: normalized.length,
         editorLength: this.lastEditorMarkdown.length,
       });
+      this.scheduleRecovery();
+    } else {
+      this.clearRecovery();
     }
+  }
+
+  /** One bounded repair attempt; never leaves a permanent publish latch. */
+  private scheduleRecovery(): void {
+    if (this.recoveryTimer) return;
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = null;
+      if (!this.applyFailed) return;
+      const result = this.host.applyMarkdown(this.lastCanonicalMarkdown);
+      const editor = normalizeMarkdown(this.host.getMarkdown());
+      const applied = typeof result === 'boolean'
+        ? result
+        : result && typeof result === 'object'
+          ? result.applied
+          : editor === this.lastCanonicalMarkdown;
+      if (applied || editor === this.lastCanonicalMarkdown) {
+        this.lastEditorMarkdown = editor;
+        this.applyFailed = false;
+        this.normalizationOnly = editor !== this.lastCanonicalMarkdown;
+        return;
+      }
+      // The conservative apply already ran inside the editor. Do not turn a
+      // normalization edge into permanently dropped keystrokes.
+      this.applyFailed = false;
+      logger.debug('Cleared a remote-apply divergence latch after one retry');
+    }, 0);
+  }
+
+  private clearRecovery(): void {
+    if (!this.recoveryTimer) return;
+    clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = null;
   }
 }

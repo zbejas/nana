@@ -290,13 +290,24 @@ describe('multiTextChanges', () => {
     expect(transaction.state.selection.main.head).toBe(7);
   });
 
-  test('falls back to an exact single splice at the size cap', () => {
-    const current = 'a\n'.repeat(1_000);
-    const next = `${current}Z`;
+  test('keeps a middle selection through two edits in a large note', () => {
+    const lines = Array.from({ length: 1_000 }, (_value, index) => `line ${index}\n`);
+    const current = lines.join('');
+    const caretLine = lines[500]!;
+    const caret = current.indexOf(caretLine) + caretLine.length;
+    lines[100] = 'line 100A\n';
+    lines[900] = 'line 900B\n';
+    const next = lines.join('');
     const changes = multiTextChanges(current, next);
 
-    expect(changes).toHaveLength(1);
-    expect(changes[0]).toMatchObject({ from: current.length, to: current.length, insert: 'Z' });
+    expect(changes).toHaveLength(2);
+    const state = EditorState.create({ doc: current, selection: { anchor: caret } });
+    const transaction = state.update({ changes });
+
+    expect(transaction.state.doc.toString()).toBe(next);
+    const $caret = transaction.state.selection.main.head;
+    expect(transaction.state.doc.sliceString($caret - caretLine.length, $caret))
+      .toBe(caretLine);
   });
 });
 

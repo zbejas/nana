@@ -49,6 +49,8 @@ class FakeSession implements WysiwygSessionPort {
 class FakeHost implements WysiwygBindingHost {
   readonly applied: string[] = [];
   ignoreApply = false;
+  normalizeTo: string | null = null;
+  resultOverride: { applied: boolean; normalizationOnly?: boolean } | null = null;
 
   constructor(public markdown: string) {}
 
@@ -56,11 +58,11 @@ class FakeHost implements WysiwygBindingHost {
     return this.markdown;
   }
 
-  applyMarkdown(markdown: string): boolean {
+  applyMarkdown(markdown: string): boolean | { applied: boolean; normalizationOnly?: boolean } {
     this.applied.push(markdown);
     if (this.ignoreApply) return false;
-    this.markdown = markdown;
-    return true;
+    this.markdown = this.normalizeTo ?? markdown;
+    return this.resultOverride ?? true;
   }
 }
 
@@ -205,6 +207,42 @@ describe('WysiwygSessionBinding', () => {
 
     expect(binding.publishLocal('Remote text plus local')).toBe(false);
     expect(session.localOps).toEqual([]);
+  });
+
+  test('recovers the publish path after a failed remote apply retry', async () => {
+    const session = new FakeSession();
+    session.markdown = 'Start';
+    const host = new FakeHost('Start');
+    const binding = new WysiwygSessionBinding(session, host);
+    binding.attach();
+
+    host.ignoreApply = true;
+    session.emit(change('Remote text', REMOTE_ORIGIN));
+    expect(binding.publishLocal('Remote text plus local')).toBe(false);
+
+    host.ignoreApply = false;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(binding.publishLocal('Remote text plus local')).toBe(true);
+    expect(session.localOps.at(-1)?.ops).toEqual([
+      { type: 'insert', index: 11, text: ' plus local' },
+    ]);
+  });
+
+  test('does not write normalization-only markers back on a local edit', () => {
+    const session = new FakeSession();
+    session.markdown = '- a';
+    const host = new FakeHost('* a');
+    host.normalizeTo = '* a';
+    host.resultOverride = { applied: true, normalizationOnly: true };
+    const binding = new WysiwygSessionBinding(session, host);
+    binding.attach();
+
+    expect(binding.publishLocal('* ab')).toBe(true);
+    expect(session.markdown).toBe('- ab');
+    expect(session.localOps.at(-1)?.ops).toEqual([
+      { type: 'insert', index: 3, text: 'b' },
+    ]);
   });
 
   test('publishes text typed in the preserved trailing paragraph at the end', () => {

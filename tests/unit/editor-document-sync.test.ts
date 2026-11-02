@@ -5,9 +5,11 @@ import { Transform } from "@milkdown/kit/prose/transform";
 import {
     applyDocumentSyncSteps,
     caretAssocForMarkdown,
+    editorPositionForPresenceOffset,
     hasTrailingEmptyParagraph,
     mapSelectionThroughDocuments,
     planDocumentSync,
+    presenceMarkdownOffsetForEditorPosition,
     reconcileEditorTarget,
     trailingTypingParagraphPosition,
     withSuppressedDocumentChange,
@@ -427,6 +429,41 @@ describe("typing area reconciliation", () => {
     });
 });
 
+describe("presence Markdown mapping", () => {
+    test("keeps a canonical end caret out of the local trailing typing paragraph", () => {
+        const doc = docOf(paragraph("X"), paragraph(""));
+        const typing = trailingTypingParagraphPosition(doc)!;
+
+        expect(presenceMarkdownOffsetForEditorPosition(doc, "X", typing)).toBe(1);
+        expect(editorPositionForPresenceOffset(doc, "X", 1)).toBe(
+            positionIn(doc, 0, 1),
+        );
+    });
+
+    test("maps content-empty and typing-empty paragraphs distinctly", () => {
+        const doc = docOf(paragraph("A"), paragraph(""), paragraph(""));
+        const markdown = "A\n\n<br />";
+        const contentEmpty = positionIn(doc, 1, 0);
+        const typingEmpty = positionIn(doc, 2, 0);
+        const markerStart = markdown.indexOf("<br />");
+
+        expect(presenceMarkdownOffsetForEditorPosition(doc, markdown, contentEmpty))
+            .toBe(markerStart);
+        expect(presenceMarkdownOffsetForEditorPosition(doc, markdown, typingEmpty))
+            .toBe(markdown.length);
+        expect(editorPositionForPresenceOffset(doc, markdown, markerStart))
+            .toBe(contentEmpty);
+        expect(editorPositionForPresenceOffset(doc, markdown, markdown.length))
+            .toBe(contentEmpty);
+    });
+
+    test("maps an empty document caret to its only paragraph", () => {
+        const doc = docOf(paragraph(""));
+        expect(presenceMarkdownOffsetForEditorPosition(doc, "", 1)).toBe(0);
+        expect(editorPositionForPresenceOffset(doc, "", 0)).toBe(1);
+    });
+});
+
 describe("mapSelectionThroughDocuments", () => {
     test("keeps carets in two adjacent paragraphs changed in one batch", () => {
         const current = docOf(paragraph("one"), paragraph("two"), paragraph("three"));
@@ -442,6 +479,57 @@ describe("mapSelectionThroughDocuments", () => {
             expect($caret.parent.textContent).toBe(newText);
             expect($caret.parentOffset).toBe(offset + (newText === "oneA" ? 0 : 1));
         }
+    });
+
+    test("pairs changed blocks by content, not position, with trailing empties", () => {
+        const current = docOf(paragraph("A"), paragraph("B"));
+        const next = docOf(
+            paragraph("AC"),
+            paragraph("BD"),
+            paragraph(""),
+            paragraph(""),
+        );
+
+        for (const [oldIndex, text] of [[0, "AC"], [1, "BD"]] as const) {
+            const caret = positionIn(current, oldIndex, 1);
+            const mapped = mappedSelection(current, next, caret, caret);
+            const $caret = next.resolve(mapped.anchor);
+            expect($caret.parent.textContent).toBe(text);
+            expect($caret.parentOffset).toBeLessThanOrEqual(text.length);
+        }
+    });
+
+    test("pairs one changed block with its content match among extras", () => {
+        const current = docOf(paragraph("B"));
+        const next = docOf(paragraph("AC"), paragraph("BD"), paragraph(""), paragraph(""));
+        const caret = positionIn(current, 0, 1);
+        const mapped = mappedSelection(current, next, caret, caret);
+        const $caret = next.resolve(mapped.anchor);
+
+        expect($caret.parent.textContent).toBe("BD");
+        expect($caret.parentOffset).toBe(1);
+    });
+
+    test("does not pull an end caret into an appended typing paragraph", () => {
+        const current = docOf(paragraph("A"));
+        const next = docOf(paragraph("BA"), paragraph(""), paragraph(""));
+        const caret = positionIn(current, 0, 1);
+        const mapped = mappedSelection(current, next, caret, caret);
+        const $caret = next.resolve(mapped.anchor);
+
+        expect($caret.parent.textContent).toBe("BA");
+        expect($caret.parentOffset).toBe(2);
+    });
+
+    test("does not pull a genuine split end caret into the typing paragraph", () => {
+        const current = docOf(paragraph("helloworld"));
+        const next = docOf(paragraph("hel"), paragraph("lowor"), paragraph("ld"), paragraph(""));
+        const caret = positionIn(current, 0, 10);
+        const mapped = mappedSelection(current, next, caret, caret);
+        const $caret = next.resolve(mapped.anchor);
+
+        expect($caret.parent.textContent).toBe("ld");
+        expect($caret.parentOffset).toBe(2);
     });
 
     test("maps a caret into each block of a repeated-Enter split", () => {
@@ -550,6 +638,20 @@ describe("mapSelectionThroughDocuments", () => {
             next,
             positionIn(current, 0, 1),
             positionIn(current, 0, 4),
+        );
+
+        expect(mapped.anchor).toBe(mapped.head);
+        expect(next.resolve(mapped.anchor).parent.textContent).toBe("goodbye");
+    });
+
+    test("does not expand a selection ending exactly at the replaced text end", () => {
+        const current = docOf(paragraph("hello"));
+        const next = docOf(paragraph("goodbye"));
+        const mapped = mappedSelection(
+            current,
+            next,
+            positionIn(current, 0, 1),
+            positionIn(current, 0, 5),
         );
 
         expect(mapped.anchor).toBe(mapped.head);

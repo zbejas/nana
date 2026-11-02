@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { caretAssocForMarkdown } from '../../src/lib/collaboration/text';
 import {
+    canSendPresence,
     isCollabPersistencePhase,
     reduceCollabAck,
     reduceCollabConflict,
@@ -161,6 +162,15 @@ describe('reduceCollabConflict', () => {
     });
 });
 
+describe('presence ordering', () => {
+    test('waits for queued or in-flight local Yjs updates', () => {
+        expect(canSendPresence(0, 0)).toBe(true);
+        expect(canSendPresence(1, 0)).toBe(false);
+        expect(canSendPresence(0, 1)).toBe(false);
+        expect(canSendPresence(2, 1)).toBe(false);
+    });
+});
+
 describe('presence relative-position association', () => {
     test('a left-associated line-end caret stays before a peer newline run', () => {
         const local = new Y.Doc();
@@ -185,6 +195,24 @@ describe('presence relative-position association', () => {
         expect(local.getText('content').toString()).toBe('abc\n\n\ndef');
         expect(resolve(left)).toBe(3);
         expect(resolve(right)).toBe(5);
+    });
+
+    test('a relative selection is unresolvable until the text update arrives', () => {
+        const sender = new Y.Doc();
+        const receiver = new Y.Doc();
+        sender.getText('content').insert(0, 'abc');
+        const relative = Y.createRelativePositionFromTypeIndex(
+            sender.getText('content'),
+            2,
+            -1,
+        );
+
+        expect(Y.createAbsolutePositionFromRelativePosition(relative, receiver)).toBeNull();
+
+        Y.applyUpdate(receiver, Y.encodeStateAsUpdate(sender));
+        expect(
+            Y.createAbsolutePositionFromRelativePosition(relative, receiver)?.index,
+        ).toBe(2);
     });
 
     test('mid-text association follows the character as before', () => {
