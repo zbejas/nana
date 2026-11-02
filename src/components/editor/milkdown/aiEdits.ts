@@ -2,7 +2,7 @@ import { editorViewCtx, parserCtx, type Editor } from '@milkdown/kit/core';
 import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model';
 import { changedCharacterCount, diffText } from './aiDiff';
 import { claimAiDiffFlash } from './aiDiffView';
-import { normalizeMarkdown } from './helpers';
+import { canonicalEditorMarkdown, normalizeMarkdown } from './helpers';
 import {
   aiDiffFallbackRanges,
   getEditorMarkdown,
@@ -12,6 +12,8 @@ import {
   setAiHighlights,
   type AiHighlightRange,
 } from './createEditor';
+
+export { canonicalEditorMarkdown, isSameEditorMarkdown } from './helpers';
 
 export interface AiChangedSection {
   heading?: string | null;
@@ -33,72 +35,6 @@ function normalize(value: string): string {
 
 function textOf(node: ProseMirrorNode): string {
   return normalize(node.textBetween(0, node.content.size, ' '));
-}
-
-const FENCE_PATTERN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-
-/**
- * Replace every fenced code block with one placeholder line. Blank lines
- * inside a fence are content the editor serializes verbatim, so the prose
- * canonicalization below must not touch them. An unclosed fence masks the
- * rest of the body, which is stricter but never looser.
- */
-function maskFencedCode(markdown: string): { masked: string; blocks: string[] } {
-  const lines = markdown.split('\n');
-  const masked: string[] = [];
-  const blocks: string[] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    const opening = FENCE_PATTERN.exec(lines[index]!);
-    if (!opening) {
-      masked.push(lines[index]!);
-      index += 1;
-      continue;
-    }
-
-    const marker = opening[1]!;
-    let end = index + 1;
-    while (end < lines.length) {
-      const closing = FENCE_PATTERN.exec(lines[end]!);
-      if (
-        closing
-        && closing[1]![0] === marker[0]
-        && closing[1]!.length >= marker.length
-        && closing[2]!.trim() === ''
-      ) {
-        break;
-      }
-      end += 1;
-    }
-
-    const blockEnd = Math.min(end, lines.length - 1);
-    blocks.push(lines.slice(index, blockEnd + 1).join('\n'));
-    masked.push(`\u0000${blocks.length - 1}\u0000`);
-    index = blockEnd + 1;
-  }
-
-  return { masked: masked.join('\n'), blocks };
-}
-
-/**
- * Canonical form of a body as the rendered editor serializes it. `normalizeMarkdown`
- * already removes CRLF and trailing newlines; outside fenced code the only
- * remaining blank-line difference is a run of three or more newlines, which
- * the editor writes as one empty line (`\n\n`). Fenced-code bodies stay exact,
- * so the comparison cannot make two different code bodies match, and every
- * non-blank character is always compared exactly.
- */
-export function canonicalEditorMarkdown(value: string): string {
-  const { masked, blocks } = maskFencedCode(normalizeMarkdown(value));
-  return masked
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/\u0000(\d+)\u0000/g, (_match, index: string) => blocks[Number(index)] ?? '');
-}
-
-/** Exact body equality under the editor's blank-line serialization. */
-export function isSameEditorMarkdown(left: string, right: string): boolean {
-  return canonicalEditorMarkdown(left) === canonicalEditorMarkdown(right);
 }
 
 /**
