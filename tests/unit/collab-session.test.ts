@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, jest, test } from 'bun:test';
 import * as Y from 'yjs';
 import { caretAssocForMarkdown } from '../../src/lib/collaboration/text';
 import {
@@ -291,6 +291,159 @@ describe('presence ordering', () => {
         } finally {
             session.destroy();
             globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('persistent 500s stop after bounded backoff and keep queued work', async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: string[] = [];
+        globalThis.fetch = (async (input: string | URL | Request) => {
+            calls.push(String(input));
+            return new Response('{}', { status: 500 });
+        }) as typeof fetch;
+
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: '',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            const internals = session as unknown as {
+                clientId: string;
+                status: string;
+                canEdit: boolean;
+                queuedUpdates: Uint8Array[];
+                updateTimer: ReturnType<typeof setTimeout> | null;
+                updateRetryAttempt: number;
+                updateRetryTerminal: boolean;
+                reconnectTimer: ReturnType<typeof setTimeout> | null;
+                flushUpdates: () => Promise<void>;
+            };
+            internals.clientId = 'client';
+            internals.status = 'connected';
+            internals.canEdit = true;
+            internals.queuedUpdates = [Y.encodeStateAsUpdate(new Y.Doc())];
+
+            for (let attempt = 0; attempt < 5; attempt += 1) {
+                await internals.flushUpdates();
+                if (internals.updateTimer) {
+                    clearTimeout(internals.updateTimer);
+                    internals.updateTimer = null;
+                }
+            }
+
+            expect(calls).toHaveLength(5);
+            expect(internals.updateRetryAttempt).toBe(4);
+            expect(internals.updateRetryTerminal).toBe(true);
+            expect(internals.status).toBe('offline');
+            expect(internals.reconnectTimer).not.toBeNull();
+            expect(internals.queuedUpdates.length).toBeGreaterThan(0);
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('a successful update POST resets retry backoff', async () => {
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch;
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: '',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            const internals = session as unknown as {
+                clientId: string;
+                status: string;
+                canEdit: boolean;
+                queuedUpdates: Uint8Array[];
+                updateRetryAttempt: number;
+                updateRetryTerminal: boolean;
+                flushUpdates: () => Promise<void>;
+            };
+            internals.clientId = 'client';
+            internals.status = 'connected';
+            internals.canEdit = true;
+            internals.updateRetryAttempt = 3;
+            internals.updateRetryTerminal = true;
+            internals.queuedUpdates = [Y.encodeStateAsUpdate(new Y.Doc())];
+
+            await internals.flushUpdates();
+
+            expect(internals.updateRetryAttempt).toBe(0);
+            expect(internals.updateRetryTerminal).toBe(false);
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('a hung presence POST times out and releases the in-flight guard', async () => {
+        jest.useFakeTimers();
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () => {
+                    reject(new DOMException('Aborted', 'AbortError'));
+                });
+            })) as typeof fetch;
+
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: 'abc',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            const internals = session as unknown as {
+                clientId: string;
+                status: string;
+                synced: boolean;
+                canEdit: boolean;
+                updateTimer: ReturnType<typeof setTimeout> | null;
+                presenceTimer: ReturnType<typeof setTimeout> | null;
+                presenceInflight: boolean;
+                queuedUpdates: Uint8Array[];
+                flushPresence: () => Promise<void>;
+            };
+            internals.clientId = 'client';
+            internals.status = 'connected';
+            internals.synced = true;
+            internals.canEdit = true;
+            session.applyLocalMarkdown('abc');
+            internals.queuedUpdates = [];
+            if (internals.updateTimer) clearTimeout(internals.updateTimer);
+            internals.updateTimer = null;
+
+            session.sendSelection({ anchor: 1, head: 1, focused: true });
+            if (internals.presenceTimer) clearTimeout(internals.presenceTimer);
+            internals.presenceTimer = null;
+
+            const pending = internals.flushPresence();
+            expect(internals.presenceInflight).toBe(true);
+            jest.advanceTimersByTime(8_000);
+            await pending;
+
+            expect(internals.presenceInflight).toBe(false);
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+            jest.useRealTimers();
         }
     });
 

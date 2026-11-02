@@ -283,7 +283,24 @@ export class WysiwygSessionBinding {
       this.recoveryTimer = null;
       if (!this.applyFailed) return;
       this.recoveryAttempts += 1;
-      const result = this.host.applyMarkdown(this.lastCanonicalMarkdown);
+      let result: WysiwygApplyResult = false;
+      let failure: unknown = null;
+      try {
+        result = this.host.applyMarkdown(this.lastCanonicalMarkdown);
+      } catch (error) {
+        failure = error;
+      } finally {
+        if (failure !== null) {
+          // A throwing host must not strand the timer/latch: keep retrying
+          // within the bound, or keep the conservative latch after the last try.
+          if (this.recoveryAttempts < RECOVERY_DELAYS_MS.length) {
+            this.scheduleRecovery();
+          } else {
+            logger.debug('Keeping divergence publish latch after a thrown retry');
+          }
+        }
+      }
+      if (failure !== null) return;
       const editor = normalizeMarkdown(this.host.getMarkdown());
       const applied = typeof result === 'boolean'
         ? result

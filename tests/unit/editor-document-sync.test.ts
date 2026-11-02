@@ -570,6 +570,21 @@ describe("presence Markdown mapping", () => {
         expect(markdown.slice(markers[0]!.start, markers[0]!.end)).toBe("<BR />");
     });
 
+    test("ignores <br /> lines inside a top-level HTML block", () => {
+        const markdown = [
+            "<div>",
+            "<br />",
+            "<br />",
+            "</div>",
+            "",
+            "<br />",
+        ].join("\n");
+        const markers = emptyParagraphMarkers(markdown);
+
+        expect(markers).toHaveLength(1);
+        expect(markdown.slice(markers[0]!.start, markers[0]!.end)).toBe("<br />");
+    });
+
     test("maps an empty document caret to its only paragraph", () => {
         const doc = docOf(paragraph(""));
         expect(presenceMarkdownOffsetForEditorPosition(doc, "", 1)).toBe(0);

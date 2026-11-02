@@ -49,6 +49,7 @@ class FakeSession implements WysiwygSessionPort {
 class FakeHost implements WysiwygBindingHost {
   readonly applied: string[] = [];
   ignoreApply = false;
+  throwOnApply = false;
   normalizeTo: string | null = null;
   resultOverride: { applied: boolean; normalizationOnly?: boolean } | null = null;
 
@@ -60,6 +61,7 @@ class FakeHost implements WysiwygBindingHost {
 
   applyMarkdown(markdown: string): boolean | { applied: boolean; normalizationOnly?: boolean } {
     this.applied.push(markdown);
+    if (this.throwOnApply) throw new Error('apply failed');
     if (this.ignoreApply) return false;
     this.markdown = this.normalizeTo ?? markdown;
     return this.resultOverride ?? true;
@@ -238,6 +240,24 @@ describe('WysiwygSessionBinding', () => {
 
     host.ignoreApply = true;
     session.emit(change('Remote text', REMOTE_ORIGIN));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(binding.publishLocal('Remote text plus stale local')).toBe(false);
+    expect(session.localOps).toEqual([]);
+    binding.dispose();
+  });
+
+  test('keeps the latch when a recovery host throws', async () => {
+    const session = new FakeSession();
+    session.markdown = 'Start';
+    const host = new FakeHost('Start');
+    const binding = new WysiwygSessionBinding(session, host);
+    binding.attach();
+
+    host.ignoreApply = true;
+    session.emit(change('Remote text', REMOTE_ORIGIN));
+    host.ignoreApply = false;
+    host.throwOnApply = true;
     await new Promise((resolve) => setTimeout(resolve, 5));
 
     expect(binding.publishLocal('Remote text plus stale local')).toBe(false);

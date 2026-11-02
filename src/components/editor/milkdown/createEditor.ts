@@ -41,6 +41,7 @@ import {
   textOffsetToMarkdownOffset,
 } from '../../../lib/collaboration/text';
 import { createLogger } from '../../../lib/logger';
+import { scanMarkdownBlocks } from '../../../lib/collaboration/markdownIndex';
 import type { Collaborator } from '../../../lib/collaboration/types';
 
 const logger = createLogger('Editor');
@@ -1151,6 +1152,9 @@ interface EmptyParagraphMarker {
 export function emptyParagraphMarkers(markdown: string): EmptyParagraphMarker[] {
   const markers: EmptyParagraphMarker[] = [];
   const source = typeof markdown === 'string' ? markdown : '';
+  // A lone <br /> line is the serializer placeholder. The same tag inside a
+  // larger top-level HTML block is user content, not an empty paragraph.
+  const htmlBlocks = scanMarkdownBlocks(source).filter((block) => block.kind === 'html');
   let offset = 0;
   let fence: string | null = null;
   for (const line of source.match(/[^\n]*\n|[^\n]+$/g) ?? []) {
@@ -1173,7 +1177,12 @@ export function emptyParagraphMarkers(markdown: string): EmptyParagraphMarker[] 
       const marker = /<br\s*\/?>/i.exec(text);
       if (marker && /^\s*<br\s*\/?>\s*$/i.test(text)) {
         const start = offset + marker.index;
-        markers.push({ start, end: start + marker[0].length });
+        const inHtmlBlock = htmlBlocks.some(
+          (block) => start >= block.mdStart && start < block.mdEnd,
+        );
+        if (!inHtmlBlock) {
+          markers.push({ start, end: start + marker[0].length });
+        }
       }
     }
     offset += line.length;

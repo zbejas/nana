@@ -28,9 +28,10 @@ export const COLLAB_LOCAL_ORIGIN = "nana-collab-local";
 export const COLLAB_REMOTE_ORIGIN = "nana-collab-remote";
 export const COLLAB_RESET_ORIGIN = "nana-collab-reset";
 const UPDATE_FLUSH_MS = 70;
-const UPDATE_RETRY_MS = 250;
+const UPDATE_RETRY_DELAYS_MS = [250, 500, 1_000, 2_000] as const;
 const PRESENCE_FLUSH_MS = 120;
 const PRESENCE_DEFER_MS = 40;
+const PRESENCE_TIMEOUT_MS = 8_000;
 const HEARTBEAT_MS = 15_000;
 const RECONNECT_MAX_MS = 10_000;
 // A long-suspended tab can keep a dead SSE reader without ever firing an error.
@@ -219,6 +220,8 @@ export class CollabSession {
     private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private reconnectAttempt = 0;
     private updateTimer: ReturnType<typeof setTimeout> | null = null;
+    private updateRetryAttempt = 0;
+    private updateRetryTerminal = false;
     private presenceTimer: ReturnType<typeof setTimeout> | null = null;
     private presenceInflight = false;
     private presencePending = false;
@@ -607,23 +610,36 @@ export class CollabSession {
     }
 
     /**
-     * A non-ok update POST requeues the diff but leaves no timer. Re-arm a
-     * bounded retry so presence (and content) cannot stall forever.
+     * A non-ok update POST requeues the diff but leaves no timer. Retry with
+     * bounded exponential backoff, then disconnect so the reconnect sync can
+     * reconcile the queued state instead of hammering a failing endpoint.
      */
     private scheduleUpdateRetry(): void {
         if (
             this.destroyed
             || !this.canEdit
+            || this.updateRetryTerminal
             || this.queuedUpdates.length === 0
             || this.inflightUpdates > 0
             || this.updateTimer
         ) {
             return;
         }
+        if (this.updateRetryAttempt >= UPDATE_RETRY_DELAYS_MS.length) {
+            this.updateRetryTerminal = true;
+            logger.debug("Live update retries exhausted", {
+                documentId: this.options.documentId,
+                attempts: this.updateRetryAttempt,
+            });
+            this.disconnectForRetry();
+            return;
+        }
+        const delay = UPDATE_RETRY_DELAYS_MS[this.updateRetryAttempt]!;
+        this.updateRetryAttempt += 1;
         this.updateTimer = setTimeout(() => {
             this.updateTimer = null;
             void this.flushUpdates();
-        }, UPDATE_RETRY_MS);
+        }, delay);
     }
 
     private async flushUpdates(): Promise<void> {
@@ -653,12 +669,24 @@ export class CollabSession {
                 return;
             }
             if (!response.ok) {
-                // Keep the work locally; the finally block re-arms a retry now
-                // that this request is no longer counted as in flight.
+                // Keep the work locally; the finally block re-arms a bounded
+                // retry now that this request is no longer in flight.
                 this.pendingAck = null;
                 this.queuedUpdates.unshift(merged);
+                if (response.status === 400 || response.status === 403) {
+                    // Permanent client/permission rejection: keep the local
+                    // work for the next edit or reconnect, but do not loop on
+                    // the same rejected payload.
+                    this.updateRetryTerminal = true;
+                    logger.debug("Live update rejected without retry", {
+                        documentId: this.options.documentId,
+                        status: response.status,
+                    });
+                }
                 return;
             }
+            this.updateRetryAttempt = 0;
+            this.updateRetryTerminal = false;
             try {
                 const payload = (await response.json()) as unknown;
                 const seq = isRecord(payload) ? finiteNumber(payload.seq) : null;
@@ -800,6 +828,8 @@ export class CollabSession {
 
         this.presenceInflight = true;
         this.presencePending = false;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), PRESENCE_TIMEOUT_MS);
         try {
             await fetch(
                 `/api/v1/collab/documents/${encodeURIComponent(this.options.documentId)}/presence`,
@@ -818,11 +848,13 @@ export class CollabSession {
                             focused: relative.focused,
                         },
                     }),
+                    signal: controller.signal,
                 },
             );
         } catch {
             // Presence is best-effort and must never interrupt typing.
         } finally {
+            clearTimeout(timeout);
             this.presenceInflight = false;
             if (this.presencePending && !this.destroyed) {
                 this.presencePending = false;
@@ -1002,6 +1034,8 @@ export class CollabSession {
 
     private handleSync(event: Record<string, unknown>): void {
         if (typeof event.clientId !== "string") return;
+        this.updateRetryAttempt = 0;
+        this.updateRetryTerminal = false;
         const epoch = typeof event.epoch === "string" ? event.epoch : "";
         const roomChanged = Boolean(this.roomEpoch && epoch && epoch !== this.roomEpoch);
         if (epoch) this.roomEpoch = epoch;
