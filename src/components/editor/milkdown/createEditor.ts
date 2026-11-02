@@ -30,7 +30,6 @@ import {
   formatAiDiffDeleteText,
   groupAiDiffHunks,
   pickAiDiffScrollTarget,
-  prefersReducedMotion,
   type AiDiffScrollHunk,
 } from './aiDiffView';
 import { normalizeMarkdown } from './helpers';
@@ -431,11 +430,10 @@ function collaboratorPresencePlugin() {
 function scrollEditorTo(view: EditorView, top: number): void {
   if (view.isDestroyed) return;
   const target = Math.max(0, Math.min(top, view.dom.scrollHeight - view.dom.clientHeight));
-  if (prefersReducedMotion()) {
-    view.dom.scrollTop = target;
-    return;
-  }
-  view.dom.scrollTo({ top: target, behavior: 'smooth' });
+  // AI diffs use an instant jump even with normal motion. The flash is only
+  // 1.1s long, so a smooth scroll would spend most of it before the hunk is
+  // visible. Non-AI scrolling keeps its own behavior elsewhere.
+  view.dom.scrollTop = target;
 }
 
 function scrollToAiDiffTarget(view: EditorView, hunks: readonly AiDiffScrollHunk[]): void {
@@ -466,6 +464,7 @@ function textHunkRects(
       rects.push({
         top: startCoords.top - domTop + scrollTop,
         bottom: Math.max(startCoords.top, endCoords.bottom) - domTop + scrollTop,
+        hasInsert: hunk.changes.some((change) => change.type === 'insert'),
       });
     } catch {
       // A position that cannot be measured simply does not participate in
@@ -540,11 +539,28 @@ export function setAiDiffHighlights(
 
   const animate = options.animate ?? true;
   const insertClass = animate ? 'nana-ai-diff-insert' : 'nana-ai-diff-insert nana-ai-diff-static';
+  const insertBlockClass = animate
+    ? 'nana-ai-diff-insert-block'
+    : 'nana-ai-diff-insert-block nana-ai-diff-static';
   const deleteClass = animate ? 'nana-ai-diff-delete' : 'nana-ai-diff-delete nana-ai-diff-static';
   const decorations: Decoration[] = [];
 
   for (const change of changes) {
     if (change.type === 'insert') {
+      if (change.block || change.start === change.end) {
+        // A structural insertion has no visible text to wash. Paint a small
+        // green gap marker at the block boundary instead; the inline range
+        // loop below would otherwise skip it as an empty range.
+        const marker = document.createElement('span');
+        marker.className = insertBlockClass;
+        marker.setAttribute('aria-hidden', 'true');
+        decorations.push(Decoration.widget(
+          prosePositionAt(map, change.start, 'next-block'),
+          marker,
+          { side: 1 },
+        ));
+        continue;
+      }
       for (const segment of map.textSegments) {
         const from = Math.max(change.start, segment.textStart);
         const to = Math.min(change.end, segment.textEnd);

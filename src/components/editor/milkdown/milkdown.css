@@ -638,10 +638,28 @@
     animation: nana-ai-diff-delete var(--nana-ai-flash-duration, 1100ms) ease-out both;
   }
 
+  /* A structural insert (blank line or empty paragraph) has no text to wash,
+     so a small green bar marks the gap for the same flash window. */
+  .nana-milkdown .ProseMirror .nana-ai-diff-insert-block,
+  .nana-source .nana-ai-diff-insert-block {
+    display: inline-block;
+    width: 3px;
+    height: 1.05em;
+    margin: 0 2px;
+    border-radius: 2px;
+    background: var(--success);
+    box-shadow: 0 0 0 2px var(--success-soft);
+    vertical-align: -0.15em;
+    user-select: none;
+    animation: nana-ai-diff-insert-block var(--nana-ai-flash-duration, 1100ms) ease-out both;
+  }
+
   /* A pane remounted during the same flash keeps the decoration for the
      remaining lifespan without replaying the entrance animation. */
   .nana-milkdown .ProseMirror .nana-ai-diff-insert.nana-ai-diff-static,
   .nana-source .nana-ai-diff-insert.nana-ai-diff-static,
+  .nana-milkdown .ProseMirror .nana-ai-diff-insert-block.nana-ai-diff-static,
+  .nana-source .nana-ai-diff-insert-block.nana-ai-diff-static,
   .nana-milkdown .ProseMirror .nana-ai-diff-delete.nana-ai-diff-static,
   .nana-source .nana-ai-diff-delete.nana-ai-diff-static {
     animation: none;
@@ -664,6 +682,17 @@
     }
     100% {
       background: transparent;
+    }
+  }
+
+  @keyframes nana-ai-diff-insert-block {
+    0% {
+      background: var(--success);
+      box-shadow: 0 0 0 2px var(--success-soft);
+    }
+    100% {
+      background: transparent;
+      box-shadow: 0 0 0 2px transparent;
     }
   }
 
@@ -714,6 +743,8 @@
 
     .nana-milkdown .ProseMirror .nana-ai-diff-insert,
     .nana-source .nana-ai-diff-insert,
+    .nana-milkdown .ProseMirror .nana-ai-diff-insert-block,
+    .nana-source .nana-ai-diff-insert-block,
     .nana-milkdown .ProseMirror .nana-ai-diff-delete,
     .nana-source .nana-ai-diff-delete {
       animation: none;

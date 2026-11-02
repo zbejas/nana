@@ -22,16 +22,16 @@ import type { DecorationSet } from '@codemirror/view';
 import { cn } from '../../ui';
 import { useSpellcheck } from '../../../lib/settings';
 import type { AiTextChange } from './aiDiff';
+import { recomputeSourceAiDiff } from './aiDiff';
 import {
   AI_DIFF_FLASH_MS,
   claimAiDiffFlash,
   formatAiDiffDeleteText,
   groupAiDiffHunks,
   pickAiDiffScrollTarget,
-  prefersReducedMotion,
   type AiDiffScrollHunk,
 } from './aiDiffView';
-import { isSameMarkdown, normalizeMarkdown } from './helpers';
+import { isSameEditorMarkdown, normalizeMarkdown } from './helpers';
 import { withSuppressedDocumentChange } from './createEditor';
 import { isRemoteSourceTransaction, SourceBinding } from './sourceBinding';
 import { minimalTextChange } from '../../../lib/collaboration/text';
@@ -42,6 +42,8 @@ export interface SourceAiDiff {
   id: string;
   /** Body the decorations were computed against. */
   markdown: string;
+  /** Event-time body used to recompute against the pane's own serialization. */
+  previousMarkdown: string;
   changes: AiTextChange[];
 }
 
@@ -161,6 +163,29 @@ class DeletedTextWidget extends WidgetType {
   }
 }
 
+class InsertedGapWidget extends WidgetType {
+  constructor(readonly animate: boolean) {
+    super();
+  }
+
+  eq(other: InsertedGapWidget): boolean {
+    return other.animate === this.animate;
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement('span');
+    span.className = this.animate
+      ? 'nana-ai-diff-insert-block'
+      : 'nana-ai-diff-insert-block nana-ai-diff-static';
+    span.setAttribute('aria-hidden', 'true');
+    return span;
+  }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
 function sourceDiffDecorations(
   length: number,
   changes: readonly AiTextChange[],
@@ -170,6 +195,14 @@ function sourceDiffDecorations(
   const insertClass = animate ? 'nana-ai-diff-insert' : 'nana-ai-diff-insert nana-ai-diff-static';
   for (const change of changes) {
     if (change.type === 'insert') {
+      if (change.block || change.start === change.end) {
+        const pos = Math.max(0, Math.min(change.start, length));
+        ranges.push(Decoration.widget({
+          widget: new InsertedGapWidget(animate),
+          side: 1,
+        }).range(pos));
+        continue;
+      }
       const from = Math.max(0, Math.min(change.start, length));
       const to = Math.max(from, Math.min(change.end, length));
       if (from < to) {
@@ -200,6 +233,7 @@ function sourceDiffHunks(view: EditorView, changes: readonly AiTextChange[]): Ai
     rects.push({
       top: first.top + padding,
       bottom: last.top + last.height + padding,
+      hasInsert: hunk.changes.some((change) => change.type === 'insert'),
     });
   }
 
@@ -213,11 +247,8 @@ function scrollSourceToDiff(view: EditorView, changes: readonly AiTextChange[]):
     viewportHeight: view.scrollDOM.clientHeight,
     maxScrollTop: view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight,
   });
-  if (prefersReducedMotion()) {
-    view.scrollDOM.scrollTop = target;
-    return;
-  }
-  view.scrollDOM.scrollTo({ top: target, behavior: 'smooth' });
+  // Instant, like the rendered pane: a smooth scroll would outlive the flash.
+  view.scrollDOM.scrollTop = target;
 }
 
 function clearSourceDiff(view: EditorView): void {
@@ -487,10 +518,23 @@ export function NanaSourceEditor({
 
     if (lastAiDiffRef.current !== null) clearSourceDiff(view);
 
-    const matches = () => isSameMarkdown(view.state.doc.toString(), aiDiff.markdown);
-    if (matches()) {
+    const matches = () => isSameEditorMarkdown(view.state.doc.toString(), aiDiff.markdown);
+    const paint = () => {
       lastAiDiffRef.current = aiDiff.id;
-      applySourceDiff(view, aiDiff);
+      // The source pane may serialize a blank run differently from the event
+      // body. Anchor the diff on the text this view actually holds so the
+      // decorations line up instead of waiting for an exact string match.
+      const changes = recomputeSourceAiDiff(aiDiff.previousMarkdown, view.state.doc.toString());
+      if (changes.length === 0) return;
+      applySourceDiff(view, {
+        id: aiDiff.id,
+        markdown: aiDiff.markdown,
+        previousMarkdown: aiDiff.previousMarkdown,
+        changes,
+      });
+    };
+    if (matches()) {
+      paint();
       return;
     }
 
@@ -507,8 +551,7 @@ export function NanaSourceEditor({
       }
       if (matches()) {
         window.clearInterval(timer);
-        lastAiDiffRef.current = aiDiff.id;
-        applySourceDiff(view, aiDiff);
+        paint();
         return;
       }
       if (Date.now() - startedAt >= 1000) window.clearInterval(timer);

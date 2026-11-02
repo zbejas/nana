@@ -21,6 +21,10 @@ function insertAt(start: number, text: string): AiTextChange {
   return { type: 'insert', start, end: start + text.length, text };
 }
 
+function blockAt(start: number): AiTextChange {
+  return { type: 'insert', start, end: start, text: '', block: true };
+}
+
 describe('AI diff hunk presentation', () => {
   test('groups a replacement at one anchor into one hunk', () => {
     const hunks = groupAiDiffHunks([
@@ -62,6 +66,19 @@ describe('AI diff hunk presentation', () => {
     expect(aiDiffSummaryLabel(3)).toBe('Nana changed 3 places');
     expect(aiDiffSummaryLabel(1)).toBe('Nana changed this note');
   });
+
+  test('counts a structural insertion as a hunk without characters', () => {
+    const changes = [blockAt(10)];
+    const hunks = groupAiDiffHunks(changes);
+
+    expect(hunks).toHaveLength(1);
+    expect(hunks[0]).toMatchObject({ start: 10, end: 10, insertedChars: 0 });
+    expect(summarizeAiDiff(changes)).toEqual({
+      hunkCount: 1,
+      deletedChars: 0,
+      insertedChars: 0,
+    });
+  });
 });
 
 describe('AI diff scroll target', () => {
@@ -76,23 +93,45 @@ describe('AI diff scroll target', () => {
   test('centers the union of nearby hunks that fit in one view', () => {
     expect(pickAiDiffScrollTarget({
       hunks: [
-        { top: 100, bottom: 160 },
-        { top: 300, bottom: 400 },
+        { top: 100, bottom: 160, hasInsert: false },
+        { top: 300, bottom: 400, hasInsert: true },
       ],
       viewportHeight: 300,
       maxScrollTop: 2_000,
     })).toBe(100);
   });
 
-  test('targets the first hunk when later hunks are far apart', () => {
+  test('targets the first hunk when deletion-only hunks are far apart', () => {
     expect(pickAiDiffScrollTarget({
       hunks: [
-        { top: 100, bottom: 200 },
-        { top: 1_000, bottom: 1_100 },
+        { top: 100, bottom: 200, hasInsert: false },
+        { top: 1_000, bottom: 1_100, hasInsert: false },
       ],
       viewportHeight: 300,
       maxScrollTop: 2_000,
     })).toBe(0);
+  });
+
+  test('targets a far-apart insertion instead of an earlier deletion', () => {
+    expect(pickAiDiffScrollTarget({
+      hunks: [
+        { top: 100, bottom: 200, hasInsert: false },
+        { top: 1_000, bottom: 1_100, hasInsert: true },
+      ],
+      viewportHeight: 300,
+      maxScrollTop: 2_000,
+    })).toBe(900);
+  });
+
+  test('targets a far-apart block insert marker', () => {
+    expect(pickAiDiffScrollTarget({
+      hunks: [
+        { top: 100, bottom: 200, hasInsert: false },
+        { top: 900, bottom: 980, hasInsert: true },
+      ],
+      viewportHeight: 200,
+      maxScrollTop: 300,
+    })).toBe(300);
   });
 
   test('clamps to the scroll range and tolerates an empty change set', () => {

@@ -125,6 +125,12 @@ export interface AiDiffScrollHunk {
   top: number;
   /** Bottom in the scroll container's document coordinates. */
   bottom: number;
+  /**
+   * True when this hunk contains inserted text or a structural insertion.
+   * Far-apart hunks prefer the first insertion so the green addition is the
+   * one the user sees; a deletion-only set keeps the original first hunk.
+   */
+  hasInsert?: boolean;
 }
 
 export interface AiDiffScrollTargetInput {
@@ -140,8 +146,9 @@ function clamp(value: number, min: number, max: number): number {
 
 /**
  * One hunk centers itself. Nearby hunks that fit in ~1.4 viewports center their
- * union so both are visible. Far-apart hunks keep the first edit in view and
- * rely on the banner count for the rest.
+ * union so both are visible. Far-apart hunks keep an addition in view when
+ * there is one, because the green side is what the edit produced; a
+ * deletion-only set keeps the first hunk. The banner counts the rest.
  */
 export function pickAiDiffScrollTarget(input: AiDiffScrollTargetInput): number {
   const viewportHeight = Math.max(1, input.viewportHeight);
@@ -162,7 +169,7 @@ export function pickAiDiffScrollTarget(input: AiDiffScrollTargetInput): number {
   const unionHeight = Math.max(0, unionBottom - unionTop);
   const target = hunks.length === 1 || unionHeight <= viewportHeight * fitViewports
     ? { top: unionTop, bottom: unionBottom }
-    : first;
+    : hunks.find((hunk) => hunk.hasInsert) ?? first;
 
   const center = (target.top + target.bottom) / 2;
   return clamp(center - viewportHeight / 2, 0, input.maxScrollTop);
