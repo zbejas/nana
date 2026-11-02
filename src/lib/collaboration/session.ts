@@ -12,7 +12,7 @@ import * as Y from "yjs";
 import { createLogger } from "../logger";
 import { normalizeCollabMarkdown } from "./normalize";
 import { applyOps, type CanonicalOp } from "./ops";
-import { minimalTextChange } from "./text";
+import { caretAssocForMarkdown, minimalTextChange } from "./text";
 import { mergeConcurrentMarkdown } from "./merge";
 import type {
     CollabAckFrame,
@@ -28,7 +28,10 @@ export const COLLAB_LOCAL_ORIGIN = "nana-collab-local";
 export const COLLAB_REMOTE_ORIGIN = "nana-collab-remote";
 export const COLLAB_RESET_ORIGIN = "nana-collab-reset";
 const UPDATE_FLUSH_MS = 70;
+const UPDATE_RETRY_DELAYS_MS = [250, 500, 1_000, 2_000] as const;
 const PRESENCE_FLUSH_MS = 120;
+const PRESENCE_DEFER_MS = 40;
+const PRESENCE_TIMEOUT_MS = 8_000;
 const HEARTBEAT_MS = 15_000;
 const RECONNECT_MAX_MS = 10_000;
 // A long-suspended tab can keep a dead SSE reader without ever firing an error.
@@ -196,6 +199,15 @@ export function classifyCollabContentOrigin(origin: unknown): CollabContentOrigi
     return "local";
 }
 
+/**
+ * Presence offsets point into the local Yjs replica. They are only meaningful
+ * to peers after the local updates that contain their target structs reach the
+ * room, so a presence POST must wait for the update queue to settle.
+ */
+export function canSendPresence(queuedUpdates: number, inflightUpdates: number): boolean {
+    return queuedUpdates === 0 && inflightUpdates === 0;
+}
+
 export class CollabSession {
     readonly doc = new Y.Doc();
     readonly text: Y.Text;
@@ -208,7 +220,11 @@ export class CollabSession {
     private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private reconnectAttempt = 0;
     private updateTimer: ReturnType<typeof setTimeout> | null = null;
+    private updateRetryAttempt = 0;
+    private updateRetryTerminal = false;
     private presenceTimer: ReturnType<typeof setTimeout> | null = null;
+    private presenceInflight = false;
+    private presencePending = false;
     private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     private queuedUpdates: Uint8Array[] = [];
     private presence: CollabPresenceWire[] = [];
@@ -411,11 +427,22 @@ export class CollabSession {
         this.lastSelection = selection;
         this.lastRelativeSelection = this.relativeSelectionFor(selection);
         if (!this.clientId) return;
-        if (this.presenceTimer) return;
+        if (this.presenceInflight) {
+            // Coalesce to the latest selection; the in-flight POST finishes
+            // first, then a single follow-up carries this position.
+            this.presencePending = true;
+            return;
+        }
+        this.schedulePresenceFlush(PRESENCE_FLUSH_MS);
+    }
+
+    /** Coalesce presence sends; the latest selection/relative pair wins. */
+    private schedulePresenceFlush(delay: number): void {
+        if (this.destroyed || !this.clientId || this.presenceTimer) return;
         this.presenceTimer = setTimeout(() => {
             this.presenceTimer = null;
-            this.flushPresence();
-        }, PRESENCE_FLUSH_MS);
+            void this.flushPresence();
+        }, delay);
     }
 
     private relativeSelectionFor(selection: CollabSelection): {
@@ -426,15 +453,74 @@ export class CollabSession {
         const max = Math.max(0, this.text.length);
         const anchor = Math.max(0, Math.min(selection.anchor, max));
         const head = Math.max(0, Math.min(selection.head, max));
+        const collapsed = anchor === head;
+        // A collapsed caret at a line end uses left affinity, so a peer
+        // insertion at that boundary lands after the caret instead of pushing
+        // it onto the inserted newline. Ranges keep a left anchor and a right
+        // head, the conventional selection association.
+        const assoc = collapsed ? caretAssocForMarkdown(this.text.toString(), head) : null;
         try {
             return {
-                anchor: Y.createRelativePositionFromTypeIndex(this.text, anchor),
-                head: Y.createRelativePositionFromTypeIndex(this.text, head),
+                anchor: Y.createRelativePositionFromTypeIndex(
+                    this.text,
+                    anchor,
+                    collapsed ? assoc! : -1,
+                ),
+                head: Y.createRelativePositionFromTypeIndex(
+                    this.text,
+                    head,
+                    collapsed ? assoc! : 1,
+                ),
                 focused: selection.focused,
             };
         } catch {
             return null;
         }
+    }
+
+    /**
+     * Re-resolve the cached relative selection after remote text changes it.
+     * Yjs already tracks the position; rebuilding it refreshes the affinity
+     * against the new line boundaries so a peer newline cannot leave a cached
+     * right-associated caret at the old line end.
+     */
+    private reanchorPresence(): void {
+        const previous = this.lastRelativeSelection;
+        if (!previous) return;
+        const resolve = (relative: unknown): number | null => {
+            try {
+                const absolute = Y.createAbsolutePositionFromRelativePosition(
+                    relative as Y.RelativePosition,
+                    this.doc,
+                );
+                return absolute ? absolute.index : null;
+            } catch {
+                return null;
+            }
+        };
+        const anchor = resolve(previous.anchor);
+        const head = resolve(previous.head);
+        if (anchor === null || head === null) {
+            this.lastRelativeSelection = null;
+            return;
+        }
+        const collapsed = anchor === head;
+        const assoc = collapsed
+            ? caretAssocForMarkdown(this.text.toString(), head)
+            : null;
+        this.lastRelativeSelection = {
+            anchor: Y.createRelativePositionFromTypeIndex(
+                this.text,
+                anchor,
+                collapsed ? assoc! : -1,
+            ),
+            head: Y.createRelativePositionFromTypeIndex(
+                this.text,
+                head,
+                collapsed ? assoc! : 1,
+            ),
+            focused: previous.focused,
+        };
     }
 
     destroy(): void {
@@ -504,6 +590,7 @@ export class CollabSession {
             if (changed && !this.applyingSync && this.synced) {
                 this.options.onRemoteText(next);
             }
+            this.reanchorPresence();
             return;
         }
         if (origin === COLLAB_RESET_ORIGIN) return;
@@ -520,6 +607,39 @@ export class CollabSession {
             this.updateTimer = null;
             void this.flushUpdates();
         }, UPDATE_FLUSH_MS);
+    }
+
+    /**
+     * A non-ok update POST requeues the diff but leaves no timer. Retry with
+     * bounded exponential backoff, then disconnect so the reconnect sync can
+     * reconcile the queued state instead of hammering a failing endpoint.
+     */
+    private scheduleUpdateRetry(): void {
+        if (
+            this.destroyed
+            || !this.canEdit
+            || this.updateRetryTerminal
+            || this.queuedUpdates.length === 0
+            || this.inflightUpdates > 0
+            || this.updateTimer
+        ) {
+            return;
+        }
+        if (this.updateRetryAttempt >= UPDATE_RETRY_DELAYS_MS.length) {
+            this.updateRetryTerminal = true;
+            logger.debug("Live update retries exhausted", {
+                documentId: this.options.documentId,
+                attempts: this.updateRetryAttempt,
+            });
+            this.disconnectForRetry();
+            return;
+        }
+        const delay = UPDATE_RETRY_DELAYS_MS[this.updateRetryAttempt]!;
+        this.updateRetryAttempt += 1;
+        this.updateTimer = setTimeout(() => {
+            this.updateTimer = null;
+            void this.flushUpdates();
+        }, delay);
     }
 
     private async flushUpdates(): Promise<void> {
@@ -549,11 +669,24 @@ export class CollabSession {
                 return;
             }
             if (!response.ok) {
-                // Keep the work locally; a later sync resends the state diff.
+                // Keep the work locally; the finally block re-arms a bounded
+                // retry now that this request is no longer in flight.
                 this.pendingAck = null;
                 this.queuedUpdates.unshift(merged);
+                if (response.status === 400 || response.status === 403) {
+                    // Permanent client/permission rejection: keep the local
+                    // work for the next edit or reconnect, but do not loop on
+                    // the same rejected payload.
+                    this.updateRetryTerminal = true;
+                    logger.debug("Live update rejected without retry", {
+                        documentId: this.options.documentId,
+                        status: response.status,
+                    });
+                }
                 return;
             }
+            this.updateRetryAttempt = 0;
+            this.updateRetryTerminal = false;
             try {
                 const payload = (await response.json()) as unknown;
                 const seq = isRecord(payload) ? finiteNumber(payload.seq) : null;
@@ -570,6 +703,24 @@ export class CollabSession {
         } finally {
             this.inflightUpdates = Math.max(0, this.inflightUpdates - 1);
             this.settlePendingAck();
+            if (
+                this.queuedUpdates.length > 0
+                && this.inflightUpdates === 0
+                && this.status === "connected"
+            ) {
+                // A failed/non-ok POST requeued the diff; re-arm after the
+                // in-flight count drops so the next attempt actually runs.
+                this.scheduleUpdateRetry();
+            }
+            if (
+                this.queuedUpdates.length === 0
+                && this.inflightUpdates === 0
+                && this.lastSelection
+            ) {
+                // The room has now applied the local structs; a deferred
+                // presence position can resolve safely on the peer.
+                this.schedulePresenceFlush(0);
+            }
         }
     }
 
@@ -646,6 +797,11 @@ export class CollabSession {
     }
 
     private async flushPresence(): Promise<void> {
+        if (this.destroyed) return;
+        if (this.presenceInflight) {
+            this.presencePending = true;
+            return;
+        }
         const selection = this.lastSelection;
         const relative = this.lastRelativeSelection ?? (selection ? this.relativeSelectionFor(selection) : null);
         if (
@@ -657,7 +813,23 @@ export class CollabSession {
         ) {
             return;
         }
+        if (!canSendPresence(this.queuedUpdates.length, this.inflightUpdates)) {
+            // A non-ok POST can leave queued content with no timer. Re-arm the
+            // update retry first so presence can follow once the room applies
+            // those structs. The latest selection always wins over this one.
+            if (this.queuedUpdates.length > 0 && this.inflightUpdates === 0) {
+                this.scheduleUpdateRetry();
+            }
+            if (this.inflightUpdates > 0 || this.updateTimer) {
+                this.schedulePresenceFlush(PRESENCE_DEFER_MS);
+            }
+            return;
+        }
 
+        this.presenceInflight = true;
+        this.presencePending = false;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), PRESENCE_TIMEOUT_MS);
         try {
             await fetch(
                 `/api/v1/collab/documents/${encodeURIComponent(this.options.documentId)}/presence`,
@@ -676,10 +848,18 @@ export class CollabSession {
                             focused: relative.focused,
                         },
                     }),
+                    signal: controller.signal,
                 },
             );
         } catch {
             // Presence is best-effort and must never interrupt typing.
+        } finally {
+            clearTimeout(timeout);
+            this.presenceInflight = false;
+            if (this.presencePending && !this.destroyed) {
+                this.presencePending = false;
+                this.schedulePresenceFlush(0);
+            }
         }
     }
 
@@ -854,6 +1034,8 @@ export class CollabSession {
 
     private handleSync(event: Record<string, unknown>): void {
         if (typeof event.clientId !== "string") return;
+        this.updateRetryAttempt = 0;
+        this.updateRetryTerminal = false;
         const epoch = typeof event.epoch === "string" ? event.epoch : "";
         const roomChanged = Boolean(this.roomEpoch && epoch && epoch !== this.roomEpoch);
         if (epoch) this.roomEpoch = epoch;

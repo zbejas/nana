@@ -7,8 +7,11 @@
  *
  * - `minimalTextChange` describes the smallest single splice between two
  *   strings, using offsets into the current string.
+ * - `multiTextChanges` lists separate line/character hunks for a remote
+ *   source-pane update, so an unchanged middle selection does not collapse.
  * - `applyTextChange` applies such a splice.
  * - `mapOffsetThroughChange` moves a cursor offset through a splice.
+ * - `caretAssocForMarkdown` chooses the left/right Yjs affinity for a caret.
  * - `alignMarkdownToText` builds line segments between Markdown source and the
  *   editor's plain text.
  * - `markdownOffsetToTextOffset` / `textOffsetToMarkdownOffset` translate
@@ -104,6 +107,237 @@ export function minimalTextChange(current: string, next: string): TextChange | n
     };
 }
 
+/**
+ * Relative-position association for a caret in Markdown.
+ *
+ * A caret at the end of a line has no following character, so it is associated
+ * with the character before it (left affinity). A peer insertion at that line
+ * end then lands after the caret instead of pushing it onto the inserted text.
+ * Mid-line carets stay associated with the following character.
+ */
+export function caretAssocForMarkdown(markdown: string, offset: number | null): -1 | 1 {
+    if (offset === null || offset < 0 || offset >= markdown.length) return -1;
+    const rest = markdown.slice(offset);
+    if (/^<br\s*\/?>/i.test(rest)) return -1;
+    const next = markdown.charAt(offset);
+    return next === '\n' || next === '\r' ? -1 : 1;
+}
+
+/** Split text into lines while keeping each line's newline terminator. */
+function splitLinesWithEndings(value: string): string[] {
+    const lines = value.match(/[^\n]*\n|[^\n]+$/g);
+    return lines ?? [];
+}
+
+interface LineDiffHunk {
+    start: number;
+    end: number;
+    lines: string[];
+}
+
+const LINE_DIFF_CELL_LIMIT = 2_000_000;
+
+/** Find a shared interior line so a large middle can be diffed in halves. */
+function splitLineDiffAnchor(
+    current: string[],
+    next: string[],
+): { currentIndex: number; nextIndex: number } | null {
+    const n = current.length;
+    const m = next.length;
+    const middle = Math.floor(Math.min(n, m) / 2);
+    const reach = Math.floor(Math.min(n, m) / 2);
+    for (let offset = 0; offset <= reach; offset += 1) {
+        for (const currentIndex of [middle + offset, middle - offset]) {
+            if (currentIndex <= 0 || currentIndex >= n - 1) continue;
+            const nextIndex = next.indexOf(current[currentIndex]!);
+            if (nextIndex > 0 && nextIndex < m - 1) {
+                return { currentIndex, nextIndex };
+            }
+        }
+    }
+    return null;
+}
+
+/** Line-level LCS diff. Large interiors split at a shared line or fall back. */
+function diffLineHunks(
+    current: string[],
+    next: string[],
+    depth = 0,
+): LineDiffHunk[] | null {
+    const n = current.length;
+    const m = next.length;
+    if (n === 0) return m === 0 ? [] : [{ start: 0, end: 0, lines: next }];
+    if (m === 0) return [{ start: 0, end: n, lines: [] }];
+    if (n * m > LINE_DIFF_CELL_LIMIT) {
+        if (depth >= 24) return null;
+        const anchor = splitLineDiffAnchor(current, next);
+        if (!anchor) return null;
+        const left = diffLineHunks(
+            current.slice(0, anchor.currentIndex),
+            next.slice(0, anchor.nextIndex),
+            depth + 1,
+        );
+        const right = diffLineHunks(
+            current.slice(anchor.currentIndex + 1),
+            next.slice(anchor.nextIndex + 1),
+            depth + 1,
+        );
+        if (!left || !right) return null;
+        return [
+            ...left,
+            ...right.map((hunk) => ({
+                start: hunk.start + anchor.currentIndex + 1,
+                end: hunk.end + anchor.currentIndex + 1,
+                lines: hunk.lines,
+            })),
+        ];
+    }
+
+    const width = m + 1;
+    const dp = new Uint32Array((n + 1) * width);
+    for (let i = n - 1; i >= 0; i -= 1) {
+        for (let j = m - 1; j >= 0; j -= 1) {
+            dp[i * width + j] = current[i] === next[j]
+                ? dp[(i + 1) * width + j + 1]! + 1
+                : Math.max(dp[(i + 1) * width + j]!, dp[i * width + j + 1]!);
+        }
+    }
+
+    const hunks: LineDiffHunk[] = [];
+    let i = 0;
+    let j = 0;
+    let open: LineDiffHunk | null = null;
+    const close = () => {
+        if (!open) return;
+        hunks.push(open);
+        open = null;
+    };
+
+    while (i < n || j < m) {
+        if (i < n && j < m && current[i] === next[j]) {
+            close();
+            i += 1;
+            j += 1;
+            continue;
+        }
+        const right = j < m ? dp[i * width + j + 1]! : -1;
+        const down = i < n ? dp[(i + 1) * width + j]! : -1;
+        if (!open) open = { start: i, end: i, lines: [] };
+        if (j < m && (i === n || right > down)) {
+            open.lines.push(next[j]!);
+            j += 1;
+        } else {
+            i += 1;
+        }
+        open.end = i;
+    }
+    close();
+    return hunks;
+}
+
+/**
+ * Describe every local region that differs between two bodies.
+ *
+ * Remote source-pane updates use this instead of one minimal splice so a caret
+ * in an unchanged middle line stays where it is when a peer edits two separate
+ * lines. One-to-one changed lines are narrowed to a character diff; larger
+ * replacements stay whole-line. The result is ordered by pre-change offset and
+ * never overlaps. When the line diff is too large it falls back to one splice,
+ * which is still exact but may move a selection inside the changed region.
+ */
+export function multiTextChanges(current: string, next: string): TextChange[] {
+    const before = typeof current === 'string' ? current : '';
+    const after = typeof next === 'string' ? next : '';
+    if (before === after) return [];
+
+    const currentLines = splitLinesWithEndings(before);
+    const nextLines = splitLinesWithEndings(after);
+
+    // Trim equal lines outside the edit before the LCS. A long note with two
+    // separated remote edits must not trip the DP cap into one splice.
+    let prefixLines = 0;
+    while (
+        prefixLines < currentLines.length
+        && prefixLines < nextLines.length
+        && currentLines[prefixLines] === nextLines[prefixLines]
+    ) {
+        prefixLines += 1;
+    }
+    let suffixLines = 0;
+    while (
+        suffixLines < currentLines.length - prefixLines
+        && suffixLines < nextLines.length - prefixLines
+        && currentLines[currentLines.length - 1 - suffixLines]
+            === nextLines[nextLines.length - 1 - suffixLines]
+    ) {
+        suffixLines += 1;
+    }
+    const currentMiddle = currentLines.slice(prefixLines, currentLines.length - suffixLines);
+    const nextMiddle = nextLines.slice(prefixLines, nextLines.length - suffixLines);
+    const midHunks = diffLineHunks(currentMiddle, nextMiddle);
+    if (!midHunks) return opsFallback(before, after);
+    const hunks = midHunks.map((hunk) => ({
+        start: hunk.start + prefixLines,
+        end: hunk.end + prefixLines,
+        lines: hunk.lines,
+    }));
+
+    let currentStarts: number[] = [];
+    {
+        let offset = 0;
+        currentStarts = currentLines.map((line) => {
+            const start = offset;
+            offset += line.length;
+            return start;
+        });
+        currentStarts.push(offset);
+    }
+
+    const changes: TextChange[] = [];
+    for (const hunk of hunks) {
+        const oldLines = currentLines.slice(hunk.start, hunk.end);
+        if (oldLines.length === hunk.lines.length) {
+            let offset = currentStarts[hunk.start]!;
+            for (let index = 0; index < hunk.lines.length; index += 1) {
+                const oldLine = oldLines[index]!;
+                const newLine = hunk.lines[index]!;
+                const change = minimalTextChange(oldLine, newLine);
+                if (change) {
+                    changes.push({
+                        from: offset + change.from,
+                        to: offset + change.to,
+                        insert: change.insert,
+                    });
+                }
+                offset += oldLine.length;
+            }
+            continue;
+        }
+        changes.push({
+            from: currentStarts[hunk.start]!,
+            to: currentStarts[hunk.end]!,
+            insert: hunk.lines.join(''),
+        });
+    }
+
+    // Verify the hunk list against the exact target. A malformed diff must
+    // never replace the source pane with a near-copy.
+    let result = '';
+    let cursor = 0;
+    for (const change of changes) {
+        if (change.from < cursor || change.to < change.from) return opsFallback(before, after);
+        result += before.slice(cursor, change.from) + change.insert;
+        cursor = change.to;
+    }
+    result += before.slice(cursor);
+    return result === after ? changes : opsFallback(before, after);
+}
+
+function opsFallback(before: string, after: string): TextChange[] {
+    const change = minimalTextChange(before, after);
+    return change ? [change] : [];
+}
+
 /** Apply a change to a string, clamping bad offsets instead of throwing. */
 export function applyTextChange(current: string, change: TextChange): string {
     const before = typeof current === 'string' ? current : '';
@@ -134,6 +368,34 @@ export function mapOffsetThroughChange(
     if (base < from) return Math.max(0, base);
     if (base > to) return Math.max(0, base + delta);
     return assoc < 0 ? from : from + insert.length;
+}
+
+/**
+ * Move an offset through an ordered change list. Used to rebase a local edit
+ * from the editor's serialized body onto the canonical body when the two
+ * differ only by Markdown normalization.
+ *
+ * Offsets at a change boundary use `assoc`: right (default) places insertions
+ * after a normalization insertion, left keeps them before it.
+ */
+export function mapOffsetThroughChanges(
+    offset: number,
+    changes: readonly TextChange[],
+    assoc: -1 | 1 = 1,
+): number {
+    let base = Number.isFinite(offset) ? Math.max(0, Math.trunc(offset)) : 0;
+    let delta = 0;
+    for (const change of changes) {
+        const from = clampIndex(change.from, Number.MAX_SAFE_INTEGER);
+        const to = Math.max(from, clampIndex(change.to, Number.MAX_SAFE_INTEGER));
+        const insert = typeof change.insert === 'string' ? change.insert : '';
+        if (base < from) return Math.max(0, base + delta);
+        if (base <= to) {
+            return Math.max(0, from + delta + (assoc > 0 ? insert.length : 0));
+        }
+        delta += insert.length - (to - from);
+    }
+    return Math.max(0, base + delta);
 }
 
 /** A pasted/typed block of new lines moves a collapsed caret to its far side. */

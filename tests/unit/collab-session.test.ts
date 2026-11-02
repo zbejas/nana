@@ -1,5 +1,9 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, jest, test } from 'bun:test';
+import * as Y from 'yjs';
+import { caretAssocForMarkdown } from '../../src/lib/collaboration/text';
 import {
+    canSendPresence,
+    CollabSession,
     isCollabPersistencePhase,
     reduceCollabAck,
     reduceCollabConflict,
@@ -156,6 +160,397 @@ describe('reduceCollabConflict', () => {
         expect(next.phase).toBe('conflict');
         expect(next.revision).toBe(9);
         expect(next.conflict?.serverMarkdown).toBe('# Server');
+    });
+});
+
+describe('presence ordering', () => {
+    test('waits for queued or in-flight local Yjs updates', () => {
+        expect(canSendPresence(0, 0)).toBe(true);
+        expect(canSendPresence(1, 0)).toBe(false);
+        expect(canSendPresence(0, 1)).toBe(false);
+        expect(canSendPresence(2, 1)).toBe(false);
+    });
+
+    test('a non-ok update POST re-arms retry after inflight settles', async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: string[] = [];
+        globalThis.fetch = (async (input: string | URL | Request) => {
+            calls.push(String(input));
+            return new Response('{}', { status: 500 });
+        }) as typeof fetch;
+
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: '',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            (session as unknown as { clientId: string }).clientId = 'client';
+            (session as unknown as { status: string }).status = 'connected';
+            (session as unknown as { canEdit: boolean }).canEdit = true;
+            (session as unknown as { queuedUpdates: Uint8Array[] }).queuedUpdates = [
+                Y.encodeStateAsUpdate(new Y.Doc()),
+            ];
+
+            await (session as unknown as { flushUpdates: () => Promise<void> })
+                .flushUpdates();
+
+            expect(calls).toHaveLength(1);
+            expect((session as unknown as { inflightUpdates: number }).inflightUpdates)
+                .toBe(0);
+            expect((session as unknown as { updateTimer: unknown }).updateTimer)
+                .not.toBeNull();
+
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            expect(calls.length).toBeGreaterThanOrEqual(2);
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('presence POSTs serialize and the latest selection wins', async () => {
+        const originalFetch = globalThis.fetch;
+        const bodies: Array<{ presence: { anchor: unknown } }> = [];
+        let releaseFirst: (() => void) | null = null;
+        globalThis.fetch = (async (
+            input: string | URL | Request,
+            init?: RequestInit,
+        ) => {
+            if (String(input).includes('/presence')) {
+                bodies.push(JSON.parse(String(init?.body ?? '{}')));
+                if (bodies.length === 1) {
+                    return new Promise<Response>((resolve) => {
+                        releaseFirst = () => resolve(new Response('{}', { status: 200 }));
+                    });
+                }
+            }
+            return new Response('{}', { status: 200 });
+        }) as typeof fetch;
+
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: 'abc',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            const internals = session as unknown as {
+                clientId: string;
+                status: string;
+                synced: boolean;
+                canEdit: boolean;
+                updateTimer: ReturnType<typeof setTimeout> | null;
+                presenceTimer: ReturnType<typeof setTimeout> | null;
+                presenceInflight: boolean;
+                queuedUpdates: Uint8Array[];
+                flushPresence: () => Promise<void>;
+            };
+            internals.clientId = 'client';
+            internals.status = 'connected';
+            internals.synced = true;
+            internals.canEdit = true;
+            session.applyLocalMarkdown('abc');
+            internals.queuedUpdates = [];
+            if (internals.updateTimer) clearTimeout(internals.updateTimer);
+            internals.updateTimer = null;
+
+            session.sendSelection({ anchor: 0, head: 0, focused: true });
+            if (internals.presenceTimer) clearTimeout(internals.presenceTimer);
+            internals.presenceTimer = null;
+
+            const first = internals.flushPresence();
+            expect(bodies).toHaveLength(1);
+            expect(internals.presenceInflight).toBe(true);
+
+            session.sendSelection({ anchor: 2, head: 2, focused: true });
+            releaseFirst!();
+            await first;
+            await new Promise((resolve) => setTimeout(resolve, 5));
+
+            expect(bodies).toHaveLength(2);
+            const firstPosition = Y.createAbsolutePositionFromRelativePosition(
+                bodies[0]!.presence.anchor as Y.RelativePosition,
+                session.doc,
+            );
+            const secondPosition = Y.createAbsolutePositionFromRelativePosition(
+                bodies[1]!.presence.anchor as Y.RelativePosition,
+                session.doc,
+            );
+            expect(firstPosition?.index).toBe(0);
+            expect(secondPosition?.index).toBe(2);
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('persistent 500s stop after bounded backoff and keep queued work', async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: string[] = [];
+        globalThis.fetch = (async (input: string | URL | Request) => {
+            calls.push(String(input));
+            return new Response('{}', { status: 500 });
+        }) as typeof fetch;
+
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: '',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            const internals = session as unknown as {
+                clientId: string;
+                status: string;
+                canEdit: boolean;
+                queuedUpdates: Uint8Array[];
+                updateTimer: ReturnType<typeof setTimeout> | null;
+                updateRetryAttempt: number;
+                updateRetryTerminal: boolean;
+                reconnectTimer: ReturnType<typeof setTimeout> | null;
+                flushUpdates: () => Promise<void>;
+            };
+            internals.clientId = 'client';
+            internals.status = 'connected';
+            internals.canEdit = true;
+            internals.queuedUpdates = [Y.encodeStateAsUpdate(new Y.Doc())];
+
+            for (let attempt = 0; attempt < 5; attempt += 1) {
+                await internals.flushUpdates();
+                if (internals.updateTimer) {
+                    clearTimeout(internals.updateTimer);
+                    internals.updateTimer = null;
+                }
+            }
+
+            expect(calls).toHaveLength(5);
+            expect(internals.updateRetryAttempt).toBe(4);
+            expect(internals.updateRetryTerminal).toBe(true);
+            expect(internals.status).toBe('offline');
+            expect(internals.reconnectTimer).not.toBeNull();
+            expect(internals.queuedUpdates.length).toBeGreaterThan(0);
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('a successful update POST resets retry backoff', async () => {
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch;
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: '',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            const internals = session as unknown as {
+                clientId: string;
+                status: string;
+                canEdit: boolean;
+                queuedUpdates: Uint8Array[];
+                updateRetryAttempt: number;
+                updateRetryTerminal: boolean;
+                flushUpdates: () => Promise<void>;
+            };
+            internals.clientId = 'client';
+            internals.status = 'connected';
+            internals.canEdit = true;
+            internals.updateRetryAttempt = 3;
+            internals.updateRetryTerminal = true;
+            internals.queuedUpdates = [Y.encodeStateAsUpdate(new Y.Doc())];
+
+            await internals.flushUpdates();
+
+            expect(internals.updateRetryAttempt).toBe(0);
+            expect(internals.updateRetryTerminal).toBe(false);
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('a hung presence POST times out and releases the in-flight guard', async () => {
+        jest.useFakeTimers();
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () => {
+                    reject(new DOMException('Aborted', 'AbortError'));
+                });
+            })) as typeof fetch;
+
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: 'abc',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            const internals = session as unknown as {
+                clientId: string;
+                status: string;
+                synced: boolean;
+                canEdit: boolean;
+                updateTimer: ReturnType<typeof setTimeout> | null;
+                presenceTimer: ReturnType<typeof setTimeout> | null;
+                presenceInflight: boolean;
+                queuedUpdates: Uint8Array[];
+                flushPresence: () => Promise<void>;
+            };
+            internals.clientId = 'client';
+            internals.status = 'connected';
+            internals.synced = true;
+            internals.canEdit = true;
+            session.applyLocalMarkdown('abc');
+            internals.queuedUpdates = [];
+            if (internals.updateTimer) clearTimeout(internals.updateTimer);
+            internals.updateTimer = null;
+
+            session.sendSelection({ anchor: 1, head: 1, focused: true });
+            if (internals.presenceTimer) clearTimeout(internals.presenceTimer);
+            internals.presenceTimer = null;
+
+            const pending = internals.flushPresence();
+            expect(internals.presenceInflight).toBe(true);
+            jest.advanceTimersByTime(8_000);
+            await pending;
+
+            expect(internals.presenceInflight).toBe(false);
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+            jest.useRealTimers();
+        }
+    });
+
+    test('a queued update with no timer re-arms retry before presence', async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: string[] = [];
+        globalThis.fetch = (async (input: string | URL | Request) => {
+            calls.push(String(input));
+            return new Response('{}', { status: 500 });
+        }) as typeof fetch;
+
+        const session = new CollabSession({
+            documentId: 'doc',
+            initialContent: '',
+            getToken: () => '',
+            onRemoteText: () => {},
+            onPresence: () => {},
+            onStatus: () => {},
+            onPermission: () => {},
+        });
+
+        try {
+            (session as unknown as { clientId: string }).clientId = 'client';
+            (session as unknown as { status: string }).status = 'connected';
+            (session as unknown as { canEdit: boolean }).canEdit = true;
+            (session as unknown as { lastSelection: unknown }).lastSelection = {
+                anchor: 0,
+                head: 0,
+                focused: true,
+            };
+            (session as unknown as { queuedUpdates: Uint8Array[] }).queuedUpdates = [
+                new Uint8Array([1]),
+            ];
+
+            await (session as unknown as { flushPresence: () => Promise<void> })
+                .flushPresence();
+
+            expect(calls).toEqual([]);
+            expect((session as unknown as { updateTimer: unknown }).updateTimer)
+                .not.toBeNull();
+            expect((session as unknown as { presenceTimer: unknown }).presenceTimer)
+                .not.toBeNull();
+        } finally {
+            session.destroy();
+            globalThis.fetch = originalFetch;
+        }
+    });
+});
+
+describe('presence relative-position association', () => {
+    test('a left-associated line-end caret stays before a peer newline run', () => {
+        const local = new Y.Doc();
+        const peer = new Y.Doc();
+        local.getText('content').insert(0, 'abc\ndef');
+        Y.applyUpdate(peer, Y.encodeStateAsUpdate(local));
+
+        const text = local.getText('content');
+        const markdown = text.toString();
+        expect(caretAssocForMarkdown(markdown, 3)).toBe(-1);
+
+        const left = Y.createRelativePositionFromTypeIndex(text, 3, -1);
+        const right = Y.createRelativePositionFromTypeIndex(text, 3, 0);
+
+        peer.getText('content').insert(3, '\n\n');
+        Y.applyUpdate(local, Y.encodeStateAsUpdate(peer, Y.encodeStateVector(local)));
+        Y.applyUpdate(peer, Y.encodeStateAsUpdate(local, Y.encodeStateVector(peer)));
+
+        const resolve = (position: Y.RelativePosition) =>
+            Y.createAbsolutePositionFromRelativePosition(position, local)?.index ?? -1;
+
+        expect(local.getText('content').toString()).toBe('abc\n\n\ndef');
+        expect(resolve(left)).toBe(3);
+        expect(resolve(right)).toBe(5);
+    });
+
+    test('a relative selection is unresolvable until the text update arrives', () => {
+        const sender = new Y.Doc();
+        const receiver = new Y.Doc();
+        sender.getText('content').insert(0, 'abc');
+        const relative = Y.createRelativePositionFromTypeIndex(
+            sender.getText('content'),
+            2,
+            -1,
+        );
+
+        expect(Y.createAbsolutePositionFromRelativePosition(relative, receiver)).toBeNull();
+
+        Y.applyUpdate(receiver, Y.encodeStateAsUpdate(sender));
+        expect(
+            Y.createAbsolutePositionFromRelativePosition(relative, receiver)?.index,
+        ).toBe(2);
+    });
+
+    test('mid-text association follows the character as before', () => {
+        const local = new Y.Doc();
+        const peer = new Y.Doc();
+        local.getText('content').insert(0, 'abcdef');
+        Y.applyUpdate(peer, Y.encodeStateAsUpdate(local));
+
+        const text = local.getText('content');
+        expect(caretAssocForMarkdown(text.toString(), 2)).toBe(1);
+        const right = Y.createRelativePositionFromTypeIndex(text, 2, 1);
+
+        peer.getText('content').insert(0, 'XY');
+        Y.applyUpdate(local, Y.encodeStateAsUpdate(peer, Y.encodeStateVector(local)));
+
+        expect(Y.createAbsolutePositionFromRelativePosition(right, local)?.index).toBe(4);
     });
 });
 

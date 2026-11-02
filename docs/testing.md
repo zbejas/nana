@@ -153,7 +153,7 @@ Do not point the test stack at real data. The entrypoint deletes and recreates i
 
 The fresh database is migrated with `pocketbase migrate up` before either process starts, so the suite runs with `0000035_group_chat.js` applied. There is no separate "apply migration" step in a test file.
 
-On failure the entrypoint prints the tail of both server logs. On success it reports per-phase and total duration.
+On failure the entrypoint prints the tail of both server logs. On success it reports per-phase and total duration. The unit phase reports 681 tests across 57 files (as of v0.4.14, 2026-11-02).
 
 ### Isolation model
 
@@ -297,7 +297,13 @@ Rules:
 | Manifest, service worker, icons, SPA fallback | `tests/api/static.test.ts` |
 | Save/list/read/restore version history, dedupe, stale revisions, owner scoping | `tests/api/versions.test.ts` |
 | Live Yjs sync, concurrent edits at different/same offsets, presence, viewer/editor permissions, revision forwarding | `tests/api/collaboration.test.ts` |
-| Markdown/text offset alignment, collapsed-caret mapping, and three-way merge | `tests/unit/collaboration-text.test.ts` + `tests/unit/collaboration-merge.test.ts` |
+| Markdown/text offset alignment, collapsed-caret mapping, multi-hunk source changes, and three-way merge | `tests/unit/collaboration-text.test.ts` + `tests/unit/collaboration-merge.test.ts` + `tests/unit/source-binding.test.ts` |
+| WYSIWYG trailing typing paragraph preserved across remote applies; content-empty `<br />` paragraphs stay distinct | `tests/unit/editor-document-sync.test.ts` |
+| Multi-block remote apply: inline per-block batches, non-collapsed ranges, nested list/code mapping, large-batch fallback | `tests/unit/editor-document-sync.test.ts` |
+| Presence line-end affinity, deferred and serialized POSTs, latest-selection wins, 8-second timeout | `tests/unit/collab-session.test.ts` |
+| Update retry backoff bounds, 400/403 terminal stop, reconnect after exhaustion, presence re-arm | `tests/unit/collab-session.test.ts` |
+| Source multi-hunk selection preservation, large-note chunking, exact single-splice fallback | `tests/unit/collaboration-text.test.ts` + `tests/unit/source-binding.test.ts` |
+| Divergence publish latch, bounded recovery, normalization rebase | `tests/unit/wysiwyg-binding.test.ts` |
 | Git store commit/tree/list/read and note locking | `tests/unit/versioning-store.test.ts` |
 | Version repository cleanup after permanent note/folder delete | `tests/api/versions.test.ts` |
 | New PocketBase hook | `tests/pocketbase/hooks/` |
