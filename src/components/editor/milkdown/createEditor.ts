@@ -17,7 +17,7 @@ import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
 import { upload, uploadConfig } from '@milkdown/kit/plugin/upload';
 import { $prose, $view } from '@milkdown/kit/utils';
 import { Fragment, Slice, type Attrs, type Node as ProseNode, type NodeType } from '@milkdown/kit/prose/model';
-import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state';
+import { Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state';
 import { Transform } from '@milkdown/kit/prose/transform';
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view';
 import { prism } from '@milkdown/plugin-prism';
@@ -33,8 +33,21 @@ import {
   type AiDiffScrollHunk,
 } from './aiDiffView';
 import { normalizeMarkdown } from './helpers';
-import { alignMarkdownToText, mapSelectionThroughChange, markdownOffsetToTextOffset, minimalTextChange, textOffsetToMarkdownOffset } from '../../../lib/collaboration/text';
+import {
+  alignMarkdownToText,
+  caretAssocForMarkdown,
+  markdownOffsetToTextOffset,
+  minimalTextChange,
+  textOffsetToMarkdownOffset,
+} from '../../../lib/collaboration/text';
+import { createLogger } from '../../../lib/logger';
 import type { Collaborator } from '../../../lib/collaboration/types';
+
+const logger = createLogger('Editor');
+
+// Kept here for the existing editor tests and callers; the pure helper lives
+// with the other collaboration text primitives.
+export { caretAssocForMarkdown } from '../../../lib/collaboration/text';
 
 export interface SlashTriggerPosition {
   left: number;
@@ -1107,6 +1120,16 @@ export function getMarkdownSelection(ctx: Ctx): { anchor: number; head: number }
   const view = ctx.get(editorViewCtx);
   if (view.isDestroyed) return null;
   const markdown = getEditorMarkdown(ctx);
+  // The trailing typing paragraph is local-only and absent from Markdown. A
+  // caret inside it belongs at the canonical end, not at the previous block.
+  const typing = trailingTypingParagraphPosition(view.state.doc);
+  if (
+    typing !== null
+    && view.state.selection.empty
+    && view.state.selection.from === typing
+  ) {
+    return { anchor: markdown.length, head: markdown.length };
+  }
   const map = proseTextMap(view.state.doc);
   const segments = alignMarkdownToText(markdown, map.text);
   const anchorText = proseTextOffsetAt(map, view.state.selection.anchor);
@@ -1115,29 +1138,6 @@ export function getMarkdownSelection(ctx: Ctx): { anchor: number; head: number }
   const head = textOffsetToMarkdownOffset(segments, headText);
   if (anchor === null || head === null) return null;
   return { anchor, head };
-}
-
-/** Resolve a Markdown offset to a ProseMirror position, when alignable. */
-function prosePositionForMarkdownOffset(doc: ProseNode, markdown: string, offset: number): number | null {
-  const map = proseTextMap(doc);
-  const segments = alignMarkdownToText(markdown, map.text);
-  const textOffset = markdownOffsetToTextOffset(segments, offset);
-  if (textOffset === null) return null;
-  // Selection restoration is caret-like: an offset at a paragraph end stays
-  // on that paragraph instead of jumping into the following block.
-  return prosePositionAt(map, textOffset, 'previous-text');
-}
-
-/**
- * Keep a collapsed caret attached to the character that follows it. A caret at
- * the end of a line has no following character, so it stays before content
- * inserted there; a caret at the start or middle follows its text into a newly
- * inserted block. This is the content-anchoring rule remote splices need.
- */
-export function caretAssocForMarkdown(markdown: string, offset: number | null): -1 | 1 {
-  if (offset === null || offset < 0 || offset >= markdown.length) return -1;
-  const next = markdown.charAt(offset);
-  return next === '\n' || next === '\r' ? -1 : 1;
 }
 
 /**
@@ -1236,6 +1236,370 @@ function textOffsetToContentOffset(node: ProseNode, textOffset: number): number 
     content += child.nodeSize;
   }
   return content;
+}
+
+/** Convert a content offset (breaks count as one) back into a text offset. */
+function contentOffsetToTextOffset(node: ProseNode, contentOffset: number): number {
+  let text = 0;
+  let content = 0;
+  const limit = Math.max(0, Math.min(contentOffset, node.content.size));
+  for (let index = 0; index < node.childCount; index += 1) {
+    const child = node.child(index);
+    if (child.isText) {
+      const length = child.text?.length ?? 0;
+      if (limit <= content + length) return text + Math.max(0, limit - content);
+      text += length;
+      content += length;
+      continue;
+    }
+    if (isLineBreakNode(child)) {
+      if (limit <= content) return text;
+      text += 1;
+      content += 1;
+      continue;
+    }
+    content += child.nodeSize;
+  }
+  return text;
+}
+
+/** True when the document ends with the serializer-skipped typing paragraph. */
+export function hasTrailingEmptyParagraph(doc: ProseNode): boolean {
+  if (doc.childCount === 0) return false;
+  const last = doc.child(doc.childCount - 1);
+  return last.type.name === 'paragraph' && last.content.size === 0;
+}
+
+/** Append one empty paragraph as the local-only typing area. */
+export function appendTrailingTypingParagraph(doc: ProseNode): ProseNode {
+  const paragraph = doc.type.schema.nodes.paragraph;
+  if (!paragraph) return doc;
+  return doc.copy(doc.content.addToEnd(paragraph.create()));
+}
+
+/**
+ * Construct the editor document for an incoming canonical body.
+ *
+ * The Markdown serializer skips the last empty paragraph, so a bare trailing
+ * empty paragraph is local-only and must survive every remote apply. A parsed
+ * target that itself ends with an empty paragraph needs one more paragraph so
+ * that content still serializes as `<br />`. An empty body stays one paragraph:
+ * that paragraph is both content and typing area.
+ */
+export function reconcileEditorTarget(
+  currentDoc: ProseNode,
+  targetDoc: ProseNode,
+  targetMarkdown: string,
+): ProseNode {
+  const canonical = normalizeMarkdown(targetMarkdown);
+  if (canonical.length === 0) return targetDoc;
+  if (!hasTrailingEmptyParagraph(targetDoc) && !hasTrailingEmptyParagraph(currentDoc)) {
+    return targetDoc;
+  }
+  return appendTrailingTypingParagraph(targetDoc);
+}
+
+/** Caret position inside the trailing typing paragraph, or null. */
+export function trailingTypingParagraphPosition(doc: ProseNode): number | null {
+  if (!hasTrailingEmptyParagraph(doc)) return null;
+  const starts = topLevelStarts(doc);
+  return starts[doc.childCount - 1]! + 1;
+}
+
+interface TextblockEntry {
+  topIndex: number;
+  node: ProseNode;
+  /** Content start position inside the textblock. */
+  start: number;
+  /** Content end position inside the textblock. */
+  end: number;
+  text: string;
+}
+
+/** Every textblock in document order, including textblocks nested in blocks. */
+function collectTextblockEntries(doc: ProseNode): TextblockEntry[] {
+  const entries: TextblockEntry[] = [];
+  const walk = (node: ProseNode, pos: number): void => {
+    if (node.isTextblock) {
+      entries.push({
+        topIndex: -1,
+        node,
+        start: pos + 1,
+        end: pos + 1 + node.content.size,
+        text: textWithBreaks(node),
+      });
+      return;
+    }
+    if (!node.isBlock) return;
+    const contentStart = pos + 1;
+    node.forEach((child, offset) => {
+      walk(child, contentStart + offset);
+    });
+  };
+
+  doc.forEach((node, offset, index) => {
+    const before = entries.length;
+    walk(node, offset);
+    for (let entry = before; entry < entries.length; entry += 1) {
+      entries[entry]!.topIndex = index;
+    }
+  });
+  return entries;
+}
+
+function topLevelIndexAt(doc: ProseNode, position: number): number {
+  if (doc.childCount === 0) return -1;
+  if (position <= 0) return 0;
+  if (position >= doc.content.size) return doc.childCount - 1;
+  try {
+    return Math.min(doc.resolve(position).index(0), doc.childCount - 1);
+  } catch {
+    return 0;
+  }
+}
+
+function textOffsetForContentPosition(entry: TextblockEntry, position: number): number {
+  return contentOffsetToTextOffset(entry.node, position - entry.start);
+}
+
+function entryForPosition(
+  doc: ProseNode,
+  entries: readonly TextblockEntry[],
+  position: number,
+): { entry: TextblockEntry; offset: number } | null {
+  for (const entry of entries) {
+    if (position >= entry.start && position <= entry.end) {
+      return { entry, offset: textOffsetForContentPosition(entry, position) };
+    }
+  }
+  const topIndex = topLevelIndexAt(doc, position);
+  let nearest: TextblockEntry | null = null;
+  let distance = Number.POSITIVE_INFINITY;
+  for (const entry of entries) {
+    if (entry.topIndex !== topIndex) continue;
+    const local = position < entry.start ? entry.start - position : position > entry.end ? position - entry.end : 0;
+    if (local < distance) {
+      nearest = entry;
+      distance = local;
+    }
+  }
+  if (!nearest) return null;
+  const clamped = Math.max(nearest.start, Math.min(position, nearest.end));
+  return { entry: nearest, offset: textOffsetForContentPosition(nearest, clamped) };
+}
+
+interface SyncGroup {
+  oldStart: number;
+  oldEnd: number;
+  newStart: number;
+  newEnd: number;
+  same: boolean;
+}
+
+/** Pair changed top-level blocks so a selection can be mapped block-aware. */
+function buildSyncGroups(doc: ProseNode, nextDoc: ProseNode): SyncGroup[] {
+  const { prefix, suffix } = sharedTopLevelRange(doc, nextDoc);
+  const groups: SyncGroup[] = [];
+  for (let index = 0; index < prefix; index += 1) {
+    groups.push({
+      oldStart: index,
+      oldEnd: index + 1,
+      newStart: index,
+      newEnd: index + 1,
+      same: true,
+    });
+  }
+
+  const oldChanged = doc.childCount - prefix - suffix;
+  const newChanged = nextDoc.childCount - prefix - suffix;
+  if (oldChanged > 0) {
+    if (oldChanged === 1 || newChanged === 1 || oldChanged === newChanged) {
+      if (oldChanged === newChanged) {
+        for (let index = 0; index < oldChanged; index += 1) {
+          groups.push({
+            oldStart: prefix + index,
+            oldEnd: prefix + index + 1,
+            newStart: prefix + index,
+            newEnd: prefix + index + 1,
+            same: false,
+          });
+        }
+      } else {
+        groups.push({
+          oldStart: prefix,
+          oldEnd: prefix + oldChanged,
+          newStart: prefix,
+          newEnd: prefix + newChanged,
+          same: false,
+        });
+      }
+    } else {
+      // Rough proportional pairing for uneven batch edits. Selection mapping
+      // stays inside the corresponding new block instead of a document edge.
+      for (let index = 0; index < newChanged; index += 1) {
+        groups.push({
+          oldStart: prefix + Math.floor((index * oldChanged) / newChanged),
+          oldEnd: prefix + Math.floor(((index + 1) * oldChanged) / newChanged),
+          newStart: prefix + index,
+          newEnd: prefix + index + 1,
+          same: false,
+        });
+      }
+    }
+  }
+
+  for (let index = 0; index < suffix; index += 1) {
+    groups.push({
+      oldStart: doc.childCount - suffix + index,
+      oldEnd: doc.childCount - suffix + index + 1,
+      newStart: nextDoc.childCount - suffix + index,
+      newEnd: nextDoc.childCount - suffix + index + 1,
+      same: true,
+    });
+  }
+  return groups.sort((left, right) => left.oldStart - right.oldStart);
+}
+
+function groupForBlock(groups: readonly SyncGroup[], blockIndex: number): SyncGroup | null {
+  return groups.find((group) => blockIndex >= group.oldStart && blockIndex < group.oldEnd) ?? null;
+}
+
+/** Map an offset through a common prefix/suffix edit. */
+function mapAffixOffset(before: string, after: string, offset: number): number {
+  const start = Math.max(0, Math.min(offset, before.length));
+  if (before === after) return start;
+  let prefix = 0;
+  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) {
+    prefix += 1;
+  }
+  let beforeEnd = before.length;
+  let afterEnd = after.length;
+  while (beforeEnd > prefix && afterEnd > prefix && before[beforeEnd - 1] === after[afterEnd - 1]) {
+    beforeEnd -= 1;
+    afterEnd -= 1;
+  }
+  if (start <= prefix) return start;
+  if (start >= beforeEnd) return afterEnd + Math.max(0, start - beforeEnd);
+  // An endpoint inside a replaced middle must not expand the selection over
+  // the whole replacement. Collapse it to the replacement start.
+  return prefix;
+}
+
+function resolveGroupOffset(
+  entries: readonly TextblockEntry[],
+  offset: number,
+  assoc: -1 | 1,
+  preferNextAtBoundary = false,
+): number | null {
+  if (entries.length === 0) return null;
+  let cursor = 0;
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]!;
+    const end = cursor + entry.text.length;
+    if (offset < end) {
+      const local = Math.max(0, offset - cursor);
+      return entry.start + textOffsetToContentOffset(entry.node, local);
+    }
+    if (offset === end && index + 1 < entries.length) {
+      if (preferNextAtBoundary || assoc > 0) return entries[index + 1]!.start;
+    }
+    if (offset === end) {
+      return entry.start + textOffsetToContentOffset(entry.node, entry.text.length);
+    }
+    cursor = end;
+  }
+  const last = entries[entries.length - 1]!;
+  return last.start + textOffsetToContentOffset(last.node, last.text.length);
+}
+
+function validCaretPosition(doc: ProseNode, position: number): boolean {
+  if (!Number.isFinite(position) || position < 0 || position > doc.content.size) return false;
+  try {
+    return doc.resolve(position).parent.inlineContent;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Map one selection from an old document to a replacement target without
+ * trusting ProseMirror's ReplaceStep edge mapping.
+ *
+ * Unchanged blocks keep their relative text offset. Changed blocks use common
+ * prefix/suffix mapping. A block split across consecutive targets maps the
+ * offset across the concatenated text, and merged blocks map into the merged
+ * block. Nested textblocks map through their top-level block; an endpoint that
+ * cannot land inside an inline-content block returns null and leaves the
+ * editor's own mapping alone.
+ */
+export function mapSelectionThroughDocuments(
+  oldDoc: ProseNode,
+  newDoc: ProseNode,
+  selection: { anchor: number; head: number },
+  collapsedAssoc: -1 | 1 = -1,
+): { anchor: number; head: number } | null {
+  if (oldDoc.childCount === 0 || newDoc.childCount === 0) return null;
+  const oldEntries = collectTextblockEntries(oldDoc);
+  const newEntries = collectTextblockEntries(newDoc);
+  if (oldEntries.length === 0 || newEntries.length === 0) return null;
+  const groups = buildSyncGroups(oldDoc, newDoc);
+  const collapsed = selection.anchor === selection.head;
+
+  const mapEndpoint = (position: number, assoc: -1 | 1): number | null => {
+    const found = entryForPosition(oldDoc, oldEntries, position);
+    if (!found) return null;
+    const group = groupForBlock(groups, found.entry.topIndex);
+    if (!group) return null;
+    let newGroupEntries = newEntries.filter(
+      (entry) => entry.topIndex >= group.newStart && entry.topIndex < group.newEnd,
+    );
+    if (newGroupEntries.length === 0) {
+      // A pure deletion in this block range has no paired target block. Land
+      // on the textblock nearest the range instead of a document boundary.
+      const targetIndex = Math.max(0, Math.min(group.newStart, newDoc.childCount - 1));
+      newGroupEntries = newEntries.filter((entry) => entry.topIndex === targetIndex);
+    }
+    if (newGroupEntries.length === 0) return null;
+
+    if (found.entry.node.content.size === 0) {
+      const empty = newGroupEntries.find((entry) => entry.node.content.size === 0);
+      return (empty ?? newGroupEntries[0]!).start;
+    }
+
+    if (group.same) {
+      const oldGroupEntries = oldEntries.filter(
+        (entry) => entry.topIndex >= group.oldStart && entry.topIndex < group.oldEnd,
+      );
+      const relative = oldGroupEntries.indexOf(found.entry);
+      const paired = newGroupEntries[Math.min(Math.max(0, relative), newGroupEntries.length - 1)]!;
+      if (paired.text === found.entry.text) {
+        return paired.start + textOffsetToContentOffset(paired.node, found.offset);
+      }
+    }
+
+    const oldGroupEntries = oldEntries.filter(
+      (entry) => entry.topIndex >= group.oldStart && entry.topIndex < group.oldEnd,
+    );
+    let oldOffset = 0;
+    for (const entry of oldGroupEntries) {
+      if (entry === found.entry) {
+        oldOffset += found.offset;
+        break;
+      }
+      oldOffset += entry.text.length;
+    }
+    const oldText = oldGroupEntries.map((entry) => entry.text).join('');
+    const newText = newGroupEntries.map((entry) => entry.text).join('');
+    const newOffset = mapAffixOffset(oldText, newText, oldOffset);
+    const splitBoundary = oldGroupEntries.length === 1 && newGroupEntries.length > 1;
+    return resolveGroupOffset(newGroupEntries, newOffset, assoc, splitBoundary);
+  };
+
+  const anchor = mapEndpoint(selection.anchor, collapsed ? collapsedAssoc : -1);
+  const head = mapEndpoint(selection.head, collapsed ? collapsedAssoc : 1);
+  if (anchor === null || head === null) return null;
+  if (!validCaretPosition(newDoc, anchor) || !validCaretPosition(newDoc, head)) return null;
+  return { anchor, head };
 }
 
 function sharedTopLevelRange(doc: ProseNode, nextDoc: ProseNode): { prefix: number; suffix: number } {
@@ -1418,6 +1782,73 @@ function planTextblockInline(
   return steps.length > 0 ? steps : null;
 }
 
+/**
+ * Apply one inline splice per changed block when a batch changes several plain
+ * textblocks without changing their count. This is the common Enter-free
+ * collision case: `one\n\ntwo` → `oneA\n\nBtwo` must not become one block
+ * replacement that drags both local carets to an edge.
+ */
+function planFlatTextblockInline(
+  doc: ProseNode,
+  nextDoc: ProseNode,
+  prefix: number,
+  suffix: number,
+): DocumentSyncStep[] | null {
+  const count = doc.childCount - prefix - suffix;
+  if (count < 2 || count !== nextDoc.childCount - prefix - suffix) return null;
+
+  const changes: Array<TextChangeLike | null> = [];
+  for (let index = 0; index < count; index += 1) {
+    const current = doc.child(prefix + index);
+    const next = nextDoc.child(prefix + index);
+    if (!sameTextblockMarkup(current, next)) return null;
+    if (!isUnmarkedTextblock(current) || !isUnmarkedTextblock(next)) return null;
+    const currentText = textWithBreaks(current);
+    const nextText = textWithBreaks(next);
+    const change = minimalTextChange(currentText, nextText);
+    if (!change) {
+      changes.push(null);
+      continue;
+    }
+    if (/[\r\n]/.test(change.insert) || /[\r\n]/.test(currentText.slice(change.from, change.to))) {
+      return null;
+    }
+    changes.push(change);
+  }
+  if (changes.every((change) => change === null)) return null;
+
+  const steps: DocumentSyncStep[] = [];
+  const probe = new Transform(doc);
+  for (let index = 0; index < count; index += 1) {
+    const change = changes[index];
+    if (!change) continue;
+    const starts = topLevelStarts(probe.doc);
+    const block = probe.doc.child(prefix + index);
+    const start = starts[prefix + index]! + 1;
+    const from = textOffsetToContentOffset(block, change.from);
+    const to = textOffsetToContentOffset(block, change.to);
+    if (to > from) {
+      steps.push({ type: 'delete', from: start + from, to: start + to });
+      probe.delete(start + from, start + to);
+    }
+    if (change.insert) {
+      steps.push({
+        type: 'insert',
+        pos: start + from,
+        content: Fragment.from(block.type.schema.text(change.insert)),
+      });
+      probe.replaceWith(start + from, start + from, Fragment.from(block.type.schema.text(change.insert)));
+    }
+  }
+  return steps.length > 0 ? steps : null;
+}
+
+interface TextChangeLike {
+  from: number;
+  to: number;
+  insert: string;
+}
+
 /** Replace only the changed top-level block range; the rest of the doc is intact. */
 function planTopLevelReplace(
   doc: ProseNode,
@@ -1492,6 +1923,9 @@ export function planDocumentSync(doc: ProseNode, nextDoc: ProseNode): DocumentSy
   const inline = planTextblockInline(doc, nextDoc, prefix, suffix);
   if (inline) candidates.push({ kind: 'inline', steps: inline });
 
+  const flatInline = planFlatTextblockInline(doc, nextDoc, prefix, suffix);
+  if (flatInline) candidates.push({ kind: 'inline', steps: flatInline });
+
   candidates.push({
     kind: 'replace',
     steps: planTopLevelReplace(doc, nextDoc, prefix, suffix),
@@ -1515,16 +1949,21 @@ export function planDocumentSync(doc: ProseNode, nextDoc: ProseNode): DocumentSy
  * small region changed. The selection is projected through the Markdown edit,
  * so a remote keystroke elsewhere does not move the local caret.
  */
-export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: string): void {
+/**
+ * Returns true when the editor's canonical Markdown equals `markdown` after
+ * the apply, so the binding can refuse to publish a later local edit from a
+ * diverged editor/canonical pair.
+ */
+export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: string): boolean {
   const view = ctx.get(editorViewCtx);
   const parser = ctx.get(parserCtx);
   const serializer = ctx.get(serializerCtx);
   const current = getEditorMarkdown(ctx);
   const next = normalizeMarkdown(markdown);
-  if (current === next) return;
+  if (current === next) return true;
 
   const change = minimalTextChange(current, next);
-  if (!change) return;
+  if (!change) return false;
 
   const deletedText = current.slice(change.from, change.to);
   const containsLineBreak = /[\r\n]/.test(change.insert) || /[\r\n]/.test(deletedText);
@@ -1562,39 +2001,86 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
         if (change.insert) transaction.insertText(change.insert, from);
         if (normalizeMarkdown(serializer(transaction.doc)) === next) {
           view.dispatch(transaction);
-          return;
+          return true;
         }
       }
     }
   }
 
-  // Structural or formatting change. Parse the target and apply the narrowest
-  // transaction that reproduces it. A textblock split/merge keeps the caret on
-  // the text that moved; a block replacement leaves every other block (and the
-  // selection mapping through it) untouched. Only the changed top-level range
-  // is replaced, never the whole document.
-  const nextDoc = parser(next);
-  if (!nextDoc) return;
-  if (view.state.doc.eq(nextDoc)) return;
+  // Structural or formatting change. Parse the target, keep the local typing
+  // paragraph, and apply the narrowest transaction that reproduces it. A
+  // textblock split/merge keeps the caret on the text that moved; a block
+  // replacement leaves every other block (and the selection mapping through
+  // it) untouched. Only the changed top-level range is replaced.
+  const parsed = parser(next);
+  if (!parsed) return false;
+  const oldDoc = view.state.doc;
+  const targetDoc = reconcileEditorTarget(oldDoc, parsed, next);
+  if (oldDoc.eq(targetDoc)) return true;
 
   const oldSelection = view.state.selection;
   const oldMarkdownSelection = getMarkdownSelection(ctx);
   const collapsedAssoc = oldMarkdownSelection
     ? caretAssocForMarkdown(current, oldMarkdownSelection.head)
     : -1;
+  const oldTyping = trailingTypingParagraphPosition(oldDoc);
+  const newTyping = trailingTypingParagraphPosition(targetDoc);
+  const selectionInTyping = oldTyping !== null
+    && oldSelection.empty
+    && oldSelection.from === oldTyping;
 
-  const plan = planDocumentSync(view.state.doc, nextDoc);
+  const setMappedSelection = (transaction: Transaction): void => {
+    if (!transaction.docChanged) return;
+    const mapped = selectionInTyping && newTyping !== null
+      ? { anchor: newTyping, head: newTyping }
+      : mapSelectionThroughDocuments(
+        oldDoc,
+        targetDoc,
+        { anchor: oldSelection.anchor, head: oldSelection.head },
+        collapsedAssoc,
+      );
+    if (!mapped) {
+      // Leave ProseMirror's own mapping rather than forcing an endpoint whose
+      // parent is the doc node.
+      return;
+    }
+    const max = transaction.doc.content.size;
+    const from = Math.max(0, Math.min(mapped.anchor, max));
+    const to = Math.max(0, Math.min(mapped.head, max));
+    try {
+      transaction.setSelection(TextSelection.create(
+        transaction.doc,
+        Math.min(from, to),
+        Math.max(from, to),
+      ));
+    } catch {
+      // A node selection cannot be restored as a text selection; leave
+      // ProseMirror's mapped selection in place.
+    }
+  };
+
+  const plan = planDocumentSync(oldDoc, targetDoc);
   if (plan) {
     const transaction = view.state.tr.setMeta('addToHistory', false);
     try {
       applyDocumentSyncSteps(transaction, plan.steps);
-      if (transaction.doc.eq(nextDoc)) {
-        // Map the caret through the structural part first, then through any
-        // content inserted at the same boundary with backward association. A
-        // remote block inserted at the caret must not drag the local caret into
-        // the remote writer's text; the local user's following keystroke must
-        // stay in its own block.
-        if (transaction.docChanged) {
+      if (transaction.doc.eq(targetDoc)) {
+        if (normalizeMarkdown(serializer(transaction.doc)) !== next) {
+          // The structure is exactly the parsed target; only Markdown
+          // serialization (for example a list marker) differs. Keep the apply.
+          logger.debug('Targeted document sync normalized the remote Markdown', {
+            plan: plan.kind,
+          });
+        }
+        if (plan.kind === 'replace') {
+          setMappedSelection(transaction);
+        } else if (selectionInTyping && newTyping !== null) {
+          transaction.setSelection(TextSelection.create(transaction.doc, newTyping));
+        } else if (transaction.docChanged) {
+          // Map the caret through the structural part first, then through any
+          // content inserted at the same boundary with backward association. A
+          // remote block inserted at the caret must not drag the local caret
+          // into the remote writer's text.
           const selectionStepCount = plan.selectionStepCount ?? plan.steps.length;
           const structural = transaction.mapping.slice(0, selectionStepCount);
           const tail = transaction.mapping.slice(selectionStepCount);
@@ -1615,54 +2101,37 @@ export function replaceEditorMarkdownPreservingSelection(ctx: Ctx, markdown: str
               Math.max(anchor, head),
             ));
           } catch {
-            // A node selection cannot be restored as a text selection; leave
-            // ProseMirror's mapped selection in place.
+            // Leave ProseMirror's mapped selection in place.
           }
         }
         view.dispatch(transaction);
-        return;
+        return true;
       }
+      logger.debug('Targeted document sync did not reproduce the remote body', {
+        plan: plan.kind,
+      });
     } catch {
       // The schema rejected a targeted step; use the conservative fallback.
     }
   }
 
-  // Conservative fallback for documents the targeted diff cannot represent.
-  // Map the selection against the transaction's own document. When the
-  // Markdown projection cannot place it, leave ProseMirror's step mapping in
-  // charge rather than forcing the caret to the document end.
-  const selection = getMarkdownSelection(ctx);
-  const mapped = selection
-    ? mapSelectionThroughChange(selection.anchor, selection.head, change)
-    : null;
-  const anchor = mapped?.anchor ?? null;
-  const head = mapped?.head ?? null;
-
+  // Conservative fallback: replace with the exact constructed target and map
+  // the old selection block-aware. If the serializer still cannot reproduce
+  // the incoming Markdown, the apply is still synchronous and the binding
+  // verifies it before publishing anything local.
   const transaction = view.state.tr
-    .replace(0, view.state.doc.content.size, new Slice(nextDoc.content, 0, 0))
+    .replace(0, oldDoc.content.size, new Slice(targetDoc.content, 0, 0))
     .setMeta('addToHistory', false);
-
-  if (anchor !== null && head !== null) {
-    const anchorPosition = prosePositionForMarkdownOffset(transaction.doc, next, anchor);
-    const headPosition = prosePositionForMarkdownOffset(transaction.doc, next, head);
-    if (anchorPosition !== null && headPosition !== null) {
-      const max = Math.max(1, transaction.doc.content.size);
-      const from = Math.max(0, Math.min(anchorPosition, max));
-      const to = Math.max(0, Math.min(headPosition, max));
-      try {
-        transaction.setSelection(TextSelection.create(
-          transaction.doc,
-          Math.min(from, to),
-          Math.max(from, to),
-        ));
-      } catch {
-        // The mapped point landed on a node boundary; leave the selection to
-        // ProseMirror's default mapping rather than failing the update.
-      }
-    }
-  }
-
+  setMappedSelection(transaction);
   view.dispatch(transaction);
+
+  if (normalizeMarkdown(serializer(transaction.doc)) !== next) {
+    // The conservative apply replaced the whole document with the parsed
+    // target; a remaining difference is Markdown normalization, not a partial
+    // apply. The binding may still publish local edits from this base.
+    logger.debug('Conservative document sync normalized the remote Markdown');
+  }
+  return transaction.doc.eq(targetDoc);
 }
 
 export function replaceEditorMarkdown(ctx: Ctx, markdown: string): void {

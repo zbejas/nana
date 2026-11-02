@@ -48,6 +48,7 @@ class FakeSession implements WysiwygSessionPort {
 
 class FakeHost implements WysiwygBindingHost {
   readonly applied: string[] = [];
+  ignoreApply = false;
 
   constructor(public markdown: string) {}
 
@@ -55,9 +56,11 @@ class FakeHost implements WysiwygBindingHost {
     return this.markdown;
   }
 
-  applyMarkdown(markdown: string): void {
+  applyMarkdown(markdown: string): boolean {
     this.applied.push(markdown);
+    if (this.ignoreApply) return false;
     this.markdown = markdown;
+    return true;
   }
 }
 
@@ -187,6 +190,35 @@ describe('WysiwygSessionBinding', () => {
       origin: WYSIWYG_BINDING_ORIGIN,
     });
     expect(host.applied).toEqual(['Remote text']);
+  });
+
+  test('refuses to publish a local edit after a diverged remote apply', () => {
+    const session = new FakeSession();
+    session.markdown = 'Start';
+    const host = new FakeHost('Start');
+    const binding = new WysiwygSessionBinding(session, host);
+    binding.attach();
+
+    host.ignoreApply = true;
+    session.emit(change('Remote text', REMOTE_ORIGIN));
+    expect(host.markdown).toBe('Start');
+
+    expect(binding.publishLocal('Remote text plus local')).toBe(false);
+    expect(session.localOps).toEqual([]);
+  });
+
+  test('publishes text typed in the preserved trailing paragraph at the end', () => {
+    const session = new FakeSession();
+    session.markdown = 'A';
+    const host = new FakeHost('A');
+    const binding = new WysiwygSessionBinding(session, host);
+    binding.attach();
+
+    expect(binding.publishLocal('A\n\nQ')).toBe(true);
+    expect(session.localOps[0]).toEqual({
+      ops: [{ type: 'insert', index: 1, text: '\n\nQ' }],
+      origin: WYSIWYG_BINDING_ORIGIN,
+    });
   });
 
   test('treats an AI/restore snapshot as external content, not a local echo', () => {

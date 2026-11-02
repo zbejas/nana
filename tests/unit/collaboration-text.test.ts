@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
     alignMarkdownToText,
     applyTextChange,
+    caretAssocForMarkdown,
     mapOffsetThroughChange,
     mapSelectionThroughChange,
     markdownOffsetToTextOffset,
     minimalTextChange,
+    multiTextChanges,
     textOffsetToMarkdownOffset,
     type MarkdownTextSegment,
     type TextChange,
@@ -305,6 +307,57 @@ describe("offset mapping", () => {
         const textGap = "One" + "\n".repeat(10) + "Two";
         const textSegments = alignMarkdownToText("One\n\nTwo", textGap);
         expect(textOffsetToMarkdownOffset(textSegments, 8)).toBeNull();
+    });
+});
+
+describe("caretAssocForMarkdown", () => {
+    test("uses left affinity at line ends and right affinity mid-line", () => {
+        expect(caretAssocForMarkdown("alpha beta", 0)).toBe(1);
+        expect(caretAssocForMarkdown("alpha beta", 3)).toBe(1);
+        expect(caretAssocForMarkdown("alpha\nbeta", 5)).toBe(-1);
+        expect(caretAssocForMarkdown("alpha\r\nbeta", 5)).toBe(-1);
+        expect(caretAssocForMarkdown("alpha\nbeta", 6)).toBe(1);
+        expect(caretAssocForMarkdown("alpha", 5)).toBe(-1);
+        expect(caretAssocForMarkdown("", 0)).toBe(-1);
+        expect(caretAssocForMarkdown("alpha", null)).toBe(-1);
+    });
+});
+
+describe("multiTextChanges", () => {
+    test("reports no changes for equal bodies", () => {
+        expect(multiTextChanges("same", "same")).toEqual([]);
+    });
+
+    test("splits separate line edits into separate hunks", () => {
+        expect(multiTextChanges(
+            "one\ntwo\nthree\nfour\nfive",
+            "oneA\ntwo\nthree\nfourB\nfive",
+        )).toEqual([
+            { from: 3, to: 3, insert: "A" },
+            { from: 18, to: 18, insert: "B" },
+        ]);
+    });
+
+    test("preserves exact text for insertions, deletions, and CRLF", () => {
+        const current = "one\r\ntwo\r\nthree\r\n";
+        const next = "one\r\ntwo\r\nthreeB\r\n";
+        const changes = multiTextChanges(current, next);
+
+        expect(changes).toEqual([{ from: 15, to: 15, insert: "B" }]);
+        let result = current;
+        for (const change of [...changes].reverse()) {
+            result = applyTextChange(result, change);
+        }
+        expect(result).toBe(next);
+    });
+
+    test("falls back to one exact splice over the diff cell cap", () => {
+        const current = "a\n".repeat(1_000);
+        const next = `${current}Z`;
+        const changes = multiTextChanges(current, next);
+
+        expect(changes).toHaveLength(1);
+        expect(changes[0]).toEqual({ from: current.length, to: current.length, insert: "Z" });
     });
 });
 

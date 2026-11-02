@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import * as Y from 'yjs';
+import { caretAssocForMarkdown } from '../../src/lib/collaboration/text';
 import {
     isCollabPersistencePhase,
     reduceCollabAck,
@@ -156,6 +158,49 @@ describe('reduceCollabConflict', () => {
         expect(next.phase).toBe('conflict');
         expect(next.revision).toBe(9);
         expect(next.conflict?.serverMarkdown).toBe('# Server');
+    });
+});
+
+describe('presence relative-position association', () => {
+    test('a left-associated line-end caret stays before a peer newline run', () => {
+        const local = new Y.Doc();
+        const peer = new Y.Doc();
+        local.getText('content').insert(0, 'abc\ndef');
+        Y.applyUpdate(peer, Y.encodeStateAsUpdate(local));
+
+        const text = local.getText('content');
+        const markdown = text.toString();
+        expect(caretAssocForMarkdown(markdown, 3)).toBe(-1);
+
+        const left = Y.createRelativePositionFromTypeIndex(text, 3, -1);
+        const right = Y.createRelativePositionFromTypeIndex(text, 3, 0);
+
+        peer.getText('content').insert(3, '\n\n');
+        Y.applyUpdate(local, Y.encodeStateAsUpdate(peer, Y.encodeStateVector(local)));
+        Y.applyUpdate(peer, Y.encodeStateAsUpdate(local, Y.encodeStateVector(peer)));
+
+        const resolve = (position: Y.RelativePosition) =>
+            Y.createAbsolutePositionFromRelativePosition(position, local)?.index ?? -1;
+
+        expect(local.getText('content').toString()).toBe('abc\n\n\ndef');
+        expect(resolve(left)).toBe(3);
+        expect(resolve(right)).toBe(5);
+    });
+
+    test('mid-text association follows the character as before', () => {
+        const local = new Y.Doc();
+        const peer = new Y.Doc();
+        local.getText('content').insert(0, 'abcdef');
+        Y.applyUpdate(peer, Y.encodeStateAsUpdate(local));
+
+        const text = local.getText('content');
+        expect(caretAssocForMarkdown(text.toString(), 2)).toBe(1);
+        const right = Y.createRelativePositionFromTypeIndex(text, 2, 1);
+
+        peer.getText('content').insert(0, 'XY');
+        Y.applyUpdate(local, Y.encodeStateAsUpdate(peer, Y.encodeStateVector(local)));
+
+        expect(Y.createAbsolutePositionFromRelativePosition(right, local)?.index).toBe(4);
     });
 });
 

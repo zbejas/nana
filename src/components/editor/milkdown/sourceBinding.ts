@@ -28,7 +28,7 @@ import type {
   CollabContentChange,
   CollabSession,
 } from '../../../lib/collaboration/session';
-import { minimalTextChange } from '../../../lib/collaboration/text';
+import { multiTextChanges } from '../../../lib/collaboration/text';
 
 /**
  * Transaction origin owned by this binding. The session listener ignores
@@ -170,13 +170,14 @@ export class SourceBinding {
   private applyRemote(markdown: string): void {
     const current = this.view.state.doc.toString();
     if (current === markdown) return;
-    const change = minimalTextChange(current, markdown);
-    if (!change) return;
+    const changes = multiTextChanges(current, markdown);
+    if (changes.length === 0) return;
 
-    // A minimal splice maps the local selection through the remote edit
-    // instead of replacing the document and collapsing the caret.
+    // Multiple hunks keep a local selection in an unchanged middle block
+    // intact when a peer edits two separate lines. CodeMirror maps the
+    // selection through the whole change list, not one encompassing splice.
     this.view.dispatch({
-      changes: change,
+      changes,
       annotations: [
         sourceRemoteAnnotation.of(true),
         Transaction.addToHistory.of(false),

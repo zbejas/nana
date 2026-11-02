@@ -336,11 +336,15 @@ export function useMilkdownEditor({
           lastAppliedRef.current = markdown;
           lastEmittedRef.current = markdown;
           lastCanonicalRef.current = markdown;
+          let applied = false;
           runExternalApply(() => {
             const current = editorRef.current;
-            current?.action((ctx) => replaceEditorMarkdownPreservingSelection(ctx, markdown));
+            applied = current?.action(
+              (ctx) => replaceEditorMarkdownPreservingSelection(ctx, markdown),
+            ) ?? false;
           });
           refreshToolbar();
+          return applied;
         },
       },
       lastCanonicalRef.current,

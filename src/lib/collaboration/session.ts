@@ -12,7 +12,7 @@ import * as Y from "yjs";
 import { createLogger } from "../logger";
 import { normalizeCollabMarkdown } from "./normalize";
 import { applyOps, type CanonicalOp } from "./ops";
-import { minimalTextChange } from "./text";
+import { caretAssocForMarkdown, minimalTextChange } from "./text";
 import { mergeConcurrentMarkdown } from "./merge";
 import type {
     CollabAckFrame,
@@ -426,15 +426,74 @@ export class CollabSession {
         const max = Math.max(0, this.text.length);
         const anchor = Math.max(0, Math.min(selection.anchor, max));
         const head = Math.max(0, Math.min(selection.head, max));
+        const collapsed = anchor === head;
+        // A collapsed caret at a line end uses left affinity, so a peer
+        // insertion at that boundary lands after the caret instead of pushing
+        // it onto the inserted newline. Ranges keep a left anchor and a right
+        // head, the conventional selection association.
+        const assoc = collapsed ? caretAssocForMarkdown(this.text.toString(), head) : null;
         try {
             return {
-                anchor: Y.createRelativePositionFromTypeIndex(this.text, anchor),
-                head: Y.createRelativePositionFromTypeIndex(this.text, head),
+                anchor: Y.createRelativePositionFromTypeIndex(
+                    this.text,
+                    anchor,
+                    collapsed ? assoc! : -1,
+                ),
+                head: Y.createRelativePositionFromTypeIndex(
+                    this.text,
+                    head,
+                    collapsed ? assoc! : 1,
+                ),
                 focused: selection.focused,
             };
         } catch {
             return null;
         }
+    }
+
+    /**
+     * Re-resolve the cached relative selection after remote text changes it.
+     * Yjs already tracks the position; rebuilding it refreshes the affinity
+     * against the new line boundaries so a peer newline cannot leave a cached
+     * right-associated caret at the old line end.
+     */
+    private reanchorPresence(): void {
+        const previous = this.lastRelativeSelection;
+        if (!previous) return;
+        const resolve = (relative: unknown): number | null => {
+            try {
+                const absolute = Y.createAbsolutePositionFromRelativePosition(
+                    relative as Y.RelativePosition,
+                    this.doc,
+                );
+                return absolute ? absolute.index : null;
+            } catch {
+                return null;
+            }
+        };
+        const anchor = resolve(previous.anchor);
+        const head = resolve(previous.head);
+        if (anchor === null || head === null) {
+            this.lastRelativeSelection = null;
+            return;
+        }
+        const collapsed = anchor === head;
+        const assoc = collapsed
+            ? caretAssocForMarkdown(this.text.toString(), head)
+            : null;
+        this.lastRelativeSelection = {
+            anchor: Y.createRelativePositionFromTypeIndex(
+                this.text,
+                anchor,
+                collapsed ? assoc! : -1,
+            ),
+            head: Y.createRelativePositionFromTypeIndex(
+                this.text,
+                head,
+                collapsed ? assoc! : 1,
+            ),
+            focused: previous.focused,
+        };
     }
 
     destroy(): void {
@@ -504,6 +563,7 @@ export class CollabSession {
             if (changed && !this.applyingSync && this.synced) {
                 this.options.onRemoteText(next);
             }
+            this.reanchorPresence();
             return;
         }
         if (origin === COLLAB_RESET_ORIGIN) return;

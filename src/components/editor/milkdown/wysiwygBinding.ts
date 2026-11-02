@@ -22,7 +22,10 @@
 import type { CanonicalOp } from '../../../lib/collaboration/ops';
 import { opsFromMinimalTextChange } from '../../../lib/collaboration/ops';
 import type { CollabContentChange } from '../../../lib/collaboration/session';
+import { createLogger } from '../../../lib/logger';
 import { normalizeMarkdown } from './helpers';
+
+const logger = createLogger('WysiwygBinding');
 
 /** Raw Yjs origin used only by the WYSIWYG pane's own ProseMirror edits. */
 export const WYSIWYG_BINDING_ORIGIN = 'nana-collab-wysiwyg';
@@ -40,8 +43,11 @@ export interface WysiwygSessionPort {
 export interface WysiwygBindingHost {
   /** Markdown currently rendered by the editor. */
   getMarkdown(): string;
-  /** Replace the editor document without publishing it back to the session. */
-  applyMarkdown(markdown: string): void;
+  /**
+   * Replace the editor document without publishing it back to the session.
+   * Returns false only when the editor could not reproduce the target.
+   */
+  applyMarkdown(markdown: string): boolean | void;
 }
 
 /**
@@ -95,6 +101,9 @@ export function initialWysiwygMarkdown(
 export class WysiwygSessionBinding {
   private unsubscribe: (() => void) | null = null;
   private lastCanonicalMarkdown: string;
+  /** Editor body after the last remote/local apply, for divergence checks. */
+  private lastEditorMarkdown: string;
+  private applyFailed = false;
 
   constructor(
     private readonly session: WysiwygSessionPort,
@@ -102,6 +111,7 @@ export class WysiwygSessionBinding {
     initialMarkdown?: string,
   ) {
     this.lastCanonicalMarkdown = normalizeMarkdown(initialMarkdown ?? host.getMarkdown());
+    this.lastEditorMarkdown = normalizeMarkdown(host.getMarkdown());
   }
 
   /** Last Markdown the WYSIWYG pane believes the canonical text contains. */
@@ -126,6 +136,8 @@ export class WysiwygSessionBinding {
     const canonical = normalizeMarkdown(this.session.markdown);
     if (canonical.length === 0) {
       this.lastCanonicalMarkdown = normalizeMarkdown(this.host.getMarkdown());
+      this.lastEditorMarkdown = this.lastCanonicalMarkdown;
+      this.applyFailed = false;
       return;
     }
     this.applyRemote(canonical);
@@ -143,9 +155,22 @@ export class WysiwygSessionBinding {
     const previous = this.lastCanonicalMarkdown;
     if (normalized === previous) return false;
 
+    // A remote apply that could not reproduce the canonical target leaves the
+    // editor on a different base. Publishing a diff from that base would write
+    // the divergence into Yjs, so keep local text local until the next remote
+    // apply repairs the editor. The remote path itself stays synchronous.
+    if (this.applyFailed) {
+      logger.debug('Skipped a local publish after a diverged remote apply', {
+        canonicalLength: previous.length,
+        editorLength: this.lastEditorMarkdown.length,
+      });
+      return false;
+    }
+
     // Update the baseline before applying so a synchronous observer callback
     // cannot see a stale canonical position.
     this.lastCanonicalMarkdown = normalized;
+    this.lastEditorMarkdown = normalized;
     const ops = wysiwygLocalOps(previous, normalized);
     if (ops.length > 0) this.session.applyLocalOps(ops, WYSIWYG_BINDING_ORIGIN);
     return true;
@@ -165,7 +190,23 @@ export class WysiwygSessionBinding {
   private applyRemote(markdown: string): void {
     const normalized = normalizeMarkdown(markdown);
     this.lastCanonicalMarkdown = normalized;
-    if (normalized === normalizeMarkdown(this.host.getMarkdown())) return;
-    this.host.applyMarkdown(normalized);
+    if (normalized === normalizeMarkdown(this.host.getMarkdown())) {
+      this.lastEditorMarkdown = normalized;
+      this.applyFailed = false;
+      return;
+    }
+    const applied = this.host.applyMarkdown(normalized);
+    this.lastEditorMarkdown = normalizeMarkdown(this.host.getMarkdown());
+    // A real editor reports structural success. A host that does not return a
+    // result (an older/test host) falls back to comparing its body.
+    this.applyFailed = applied === undefined
+      ? this.lastEditorMarkdown !== normalized
+      : applied === false;
+    if (this.applyFailed) {
+      logger.debug('Remote Markdown did not reproduce the canonical body', {
+        targetLength: normalized.length,
+        editorLength: this.lastEditorMarkdown.length,
+      });
+    }
   }
 }
