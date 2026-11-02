@@ -22,6 +22,7 @@ import {
   shouldApplySourceContent,
   sourceRemoteAnnotation,
 } from '../../src/components/editor/milkdown/sourceBinding';
+import { multiTextChanges } from '../../src/lib/collaboration/text';
 
 interface FakeChange {
   from: number;
@@ -37,7 +38,7 @@ function fakeDoc(value: string) {
 function createFakeView(initial: string) {
   let text = initial;
   const dispatches: Array<{
-    changes?: FakeChange;
+    changes?: FakeChange | FakeChange[];
     annotations?: readonly unknown[];
   }> = [];
 
@@ -46,15 +47,20 @@ function createFakeView(initial: string) {
       return { doc: fakeDoc(text) };
     },
     dispatch(spec: {
-      changes?: FakeChange;
+      changes?: FakeChange | FakeChange[];
       annotations?: readonly unknown[];
       effects?: unknown;
     }) {
       dispatches.push(spec);
       if (spec.changes) {
-        text = text.slice(0, spec.changes.from)
-          + (spec.changes.insert ?? '')
-          + text.slice(spec.changes.to);
+        const list = (Array.isArray(spec.changes) ? spec.changes : [spec.changes])
+          .slice()
+          .sort((left, right) => right.from - left.from);
+        for (const change of list) {
+          text = text.slice(0, change.from)
+            + (change.insert ?? '')
+            + text.slice(change.to);
+        }
       }
     },
   };
@@ -258,6 +264,53 @@ describe('shouldApplySourceContent', () => {
   });
 });
 
+describe('multiTextChanges', () => {
+  test('returns separate hunks for two edited lines', () => {
+    const changes = multiTextChanges(
+      'one\ntwo\nthree\nfour\nfive',
+      'oneA\ntwo\nthree\nfourB\nfive',
+    );
+
+    expect(changes).toEqual([
+      { from: 3, to: 3, insert: 'A' },
+      { from: 18, to: 18, insert: 'B' },
+    ]);
+  });
+
+  test('keeps a source caret in an unchanged middle line', () => {
+    const state = EditorState.create({
+      doc: 'one\ntwo\nthree',
+      selection: { anchor: 6 },
+    });
+    const transaction = state.update({
+      changes: multiTextChanges('one\ntwo\nthree', 'oneA\ntwo\nthreeB'),
+    });
+
+    expect(transaction.state.doc.toString()).toBe('oneA\ntwo\nthreeB');
+    expect(transaction.state.selection.main.head).toBe(7);
+  });
+
+  test('keeps a middle selection through two edits in a large note', () => {
+    const lines = Array.from({ length: 1_000 }, (_value, index) => `line ${index}\n`);
+    const current = lines.join('');
+    const caretLine = lines[500]!;
+    const caret = current.indexOf(caretLine) + caretLine.length;
+    lines[100] = 'line 100A\n';
+    lines[900] = 'line 900B\n';
+    const next = lines.join('');
+    const changes = multiTextChanges(current, next);
+
+    expect(changes).toHaveLength(2);
+    const state = EditorState.create({ doc: current, selection: { anchor: caret } });
+    const transaction = state.update({ changes });
+
+    expect(transaction.state.doc.toString()).toBe(next);
+    const $caret = transaction.state.selection.main.head;
+    expect(transaction.state.doc.sliceString($caret - caretLine.length, $caret))
+      .toBe(caretLine);
+  });
+});
+
 describe('SourceBinding', () => {
   test('aligns the pane to a non-empty canonical snapshot on attach', () => {
     const view = createFakeView('loaded draft');
@@ -304,6 +357,20 @@ describe('SourceBinding', () => {
 
     expect(view.text()).toBe('start plus remote');
     expect(changes).toEqual([]);
+    binding.destroy();
+  });
+
+  test('applies two remote line edits as separate changes', () => {
+    const view = createFakeView('one\ntwo\nthree\nfour\nfive');
+    const session = createFakeSession('one\ntwo\nthree\nfour\nfive');
+    const binding = new SourceBinding({ view: view.view, session: session.session });
+
+    session.emit('oneA\ntwo\nthree\nfourB\nfive', COLLAB_REMOTE_ORIGIN);
+
+    expect(view.text()).toBe('oneA\ntwo\nthree\nfourB\nfive');
+    expect(view.dispatches).toHaveLength(1);
+    expect(Array.isArray(view.dispatches[0]?.changes)).toBe(true);
+    expect(view.dispatches[0]?.changes).toHaveLength(2);
     binding.destroy();
   });
 
