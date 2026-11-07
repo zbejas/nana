@@ -34,6 +34,7 @@ export interface ChatTaskSummary {
     startDate: string | null;
     taskNumber: number | null;
     labels: string[];
+    attachments: TaskDto["attachments"];
     assigneeId: string | null;
     noteId: string | null;
     boardId: string;
@@ -51,6 +52,7 @@ function summarizeTask(task: TaskDto): ChatTaskSummary {
         startDate: task.startDate,
         taskNumber: task.taskNumber,
         labels: task.labels,
+        attachments: task.attachments,
         assigneeId: task.assigneeId,
         noteId: task.noteId,
         boardId: task.boardId,

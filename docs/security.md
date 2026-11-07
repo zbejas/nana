@@ -98,7 +98,8 @@ Production compose exposes only `:3000`. PocketBase binds to `127.0.0.1:8090`, a
 | Server-side admin reads | Auto-provisioned PocketBase superuser token. |
 | Chat tools | The caller's raw `Authorization` header and user id; edit-mode writes add `actor: "ai"` but keep the same token. |
 | Shared-note chat | `verifyAuth` session only. Status and every group send re-resolve effective person access for the bound note; the note owner is the conversation author. Public links never grant access. |
-| Chat attachments | `verifyAuth` session only; owner-scoped `chat_attachments` rows; protected files fetched with a short-lived PocketBase file token. API keys and MCP are rejected. |
+| Chat attachments | `verifyAuth` session only; owner-scoped `chat_attachments` rows; protected files fetched with a short-lived PocketBase file token. API keys and MCP are rejected for the chat upload routes. |
+| Task attachments | MCP reads require a visible task through the workspace service, then fetch the protected file with the caller's short-lived PocketBase file token. Responses are capped at 10 MB; public board links never expose task files. |
 | REST/MCP workspace services | The caller's refreshed token, user id, and a `Surface` (`user` or `ai`). |
 | Public docs | `/docs`, `/docs/json`, `/docs/scalar.js`, and the `/docs/geist*.woff2` fonts require no token. |
 
@@ -214,7 +215,7 @@ The superuser token appears in this flow only to read the hashed key record and 
 
 ### Chat attachments
 
-Attachments are a session-only chat feature. `POST /api/chat/attachments` and `DELETE /api/chat/attachments/:id` call `verifyAuth`; API keys and MCP have no attachment route, and the collection is absent from the generic browser-facade allowlist.
+Attachments are a session-only chat feature. `POST /api/chat/attachments` and `DELETE /api/chat/attachments/:id` call `verifyAuth`; API keys and MCP have no chat upload route, and the collection is absent from the generic browser-facade allowlist. Task files are separate: the owner surface uploads them through the browser facade, and MCP exposes bounded read-only asset tools for a visible task.
 
 - **Byte validation.** MIME and kind come from magic bytes plus UTF-8 validation, not the browser type. PNG/JPEG/WebP/GIF, PDF, and text/Markdown are accepted; SVG and binary/unknown content are `415`. File size, per-send count, and total bytes are checked before a conversation exists.
 - **Ownership and drafts.** Every row carries the caller's `author`; rules require `author = @request.auth.id`. Send resolution rejects foreign/missing ids as `404`, already-bound rows as `400`, and binds only after the user message exists. Draft-only DELETE returns `409` once bound.
@@ -289,7 +290,7 @@ The first user is auto-assigned `admin = true` and `verified = true`. After that
 - Trashed records are hidden by `documents`/`folders` list rules; the read-only `trash_*` views are the only owner-visible path.
 - Document `content` is sanitized at the edge; PocketBase file rules and file tokens still protect attachments.
 - Admin routes require `admin = true`; settings routes are admin-only.
-- File routes allowlist `documents`, `users`, `trash_documents`, and `chat_attachments`.
+- File routes allowlist `documents`, `tasks`, `users`, `trash_documents`, and `chat_attachments`.
 - Realtime relays PocketBase SSE; the subscription POST requires the user token.
 - Live editing is session-only: the event stream and presence/update POSTs require a valid JWT, the room only accepts updates from a connected `clientId` owned by the caller, and `view`/`comment` grantees cannot publish text. Rooms are ephemeral and never expose another document's state.
 - No superuser token is ever injected into browser traffic.

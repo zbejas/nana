@@ -1,0 +1,136 @@
+/* Task attachment tiles: compact previews with a clear remove control. */
+
+.task-attachments {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+
+@media (min-width: 640px) {
+  .task-attachments {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.task-attachments--dragging {
+  outline: 2px dashed var(--signal);
+  outline-offset: 4px;
+  border-radius: var(--radius-panel);
+}
+
+.task-attachment {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+}
+
+.task-attachment__open {
+  display: block;
+  width: 100%;
+  min-height: 5.4rem;
+  text-align: left;
+}
+
+.task-attachment__image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--surface);
+}
+
+.task-attachment__caption {
+  display: block;
+  overflow: hidden;
+  padding: 0.4rem 0.5rem;
+  color: var(--ink-secondary);
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-attachment__file {
+  display: flex;
+  min-height: 5.4rem;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  color: var(--ink-muted);
+}
+
+.task-attachment__name {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-secondary);
+  font-size: 10.5px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.task-attachment__actions {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  display: flex;
+  gap: 0.2rem;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.task-attachment:hover .task-attachment__actions,
+.task-attachment:focus-within .task-attachment__actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .task-attachment__actions {
+    opacity: 1;
+  }
+}
+
+.task-attachment--add,
+.task-attachments__empty {
+  display: flex;
+  min-height: 5.4rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  padding: 0.75rem;
+  color: var(--ink-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-align: center;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.task-attachments__empty {
+  width: 100%;
+  min-height: 4.6rem;
+}
+
+.task-attachment--add:hover,
+.task-attachments__empty:hover {
+  border-color: var(--signal);
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+
+.task-attachment__hint {
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-weight: 400;
+}

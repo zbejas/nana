@@ -6,7 +6,7 @@
 // usable and the repair route able to finish the job later.
 
 const DEFAULT_COLUMNS = [
-  { slug: "backlog", name: "Backlog", icon: "inbox", color: "muted", position: 0, final: false },
+  { slug: "backlog", name: "Todo", icon: "inbox", color: "muted", position: 0, final: false },
   { slug: "next", name: "Next up", icon: "queue", color: "warning", position: 1, final: false },
   { slug: "progress", name: "In progress", icon: "bolt", color: "signal", position: 2, final: false },
   { slug: "done", name: "Done", icon: "check", color: "success", position: 3, final: true },

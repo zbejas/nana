@@ -5,4 +5,5 @@ export * from "./folders";
 export * from "./notes";
 export * from "./boards";
 export * from "./tasks";
+export * from "./task-assets";
 export type { ToolContext } from "../pocketbase/client";

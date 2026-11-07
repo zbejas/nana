@@ -117,6 +117,7 @@ export function BoardToolbar({
   const [sheetSection, setSheetSection] = useState<'filter' | 'sort' | 'display'>('filter');
   const internalSearchRef = useRef<HTMLInputElement>(null);
   const filterCount = activeFilterCount(filters) + (query.trim() ? 1 : 0);
+  const showMeta = filterCount > 0 || (!dragEnabled && view === 'board');
 
   const openPanel = (next: Exclude<Panel, null>, element: HTMLElement) => {
     if (isMobile) {
@@ -180,7 +181,7 @@ export function BoardToolbar({
             aria-expanded={panel === 'filter'}
             onClick={(event) => openPanel('filter', event.currentTarget)}
           >
-            <span className="hidden min-[370px]:inline">Filter</span>
+            <span className="hidden sm:inline">Filter</span>
             {filterCount > 0 && (
               <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-signal-soft px-1 text-[10px] font-semibold tabular-nums text-signal">
                 {filterCount}
@@ -196,7 +197,7 @@ export function BoardToolbar({
             aria-expanded={panel === 'sort'}
             onClick={(event) => openPanel('sort', event.currentTarget)}
           >
-            <span className="hidden min-[370px]:inline">Sort</span>
+            <span className="hidden sm:inline">Sort</span>
           </Button>
           {!isMobile && (
             <Button
@@ -237,24 +238,26 @@ export function BoardToolbar({
         </div>
       </div>
 
-      <div className="board-toolbar-meta mt-2 flex min-w-0 flex-wrap items-center gap-2">
-        <FilterChipRow
-          filters={filters}
-          columns={columns}
-          members={members}
-          query={query}
-          resultCount={resultCount}
-          totalCount={totalCount}
-          onRemove={onRemoveFilter}
-          onClearSearch={onClearSearch}
-          onClearAll={onClearAll}
-        />
-        {!dragEnabled && view === 'board' && (
-          <p className="text-[11px] text-ink-muted lg:ml-auto">
-            Drag paused · <button type="button" onClick={onResetToManual} className="font-medium text-signal hover:text-signal-strong">Reset filters</button>
-          </p>
-        )}
-      </div>
+      {showMeta && (
+        <div className="board-toolbar-meta mt-2 flex min-w-0 flex-wrap items-center gap-2">
+          <FilterChipRow
+            filters={filters}
+            columns={columns}
+            members={members}
+            query={query}
+            resultCount={resultCount}
+            totalCount={totalCount}
+            onRemove={onRemoveFilter}
+            onClearSearch={onClearSearch}
+            onClearAll={onClearAll}
+          />
+          {!dragEnabled && view === 'board' && (
+            <p className="text-[11px] text-ink-muted lg:ml-auto">
+              Drag paused · <button type="button" onClick={onResetToManual} className="font-medium text-signal hover:text-signal-strong">Reset filters</button>
+            </p>
+          )}
+        </div>
+      )}
 
       <MenuSurface
         open={!isMobile && panel !== null}

@@ -129,6 +129,7 @@ describe("board workflow columns", () => {
         await expectStatus(columnsRes, 200, "list columns");
         const columns = await readJson<BoardColumnDto[]>(columnsRes, "list columns");
         expect(columns.map((column) => column.slug)).toEqual(["backlog", "next", "progress", "done"]);
+        expect(columns.map((column) => column.name)).toEqual(["Todo", "Next up", "In progress", "Done"]);
         expect(columns.find((column) => column.slug === "done")?.isFinal).toBe(true);
 
         const reviewRes = await post(`/boards/${board.id}/columns`, {

@@ -81,7 +81,7 @@ import { useBoardMetadata } from '../components/board/useBoardMetadata';
 import { defaultLabelColor, type BoardLabel } from '../components/board/board-config';
 import { formatRelativeDate } from '../components/board/dates';
 import { menuPositionFromRect, useIsMobile } from '../components/board/TaskQuickPickers';
-import { ShareButton } from '../components/sharing';
+import { SharePanel, useSharePanel } from '../components/sharing';
 import '../components/board/board.css';
 
 function isNotFound(error: unknown): boolean {
@@ -156,6 +156,7 @@ export function BoardPage() {
   const { user } = useAuth();
   const { showToast } = useToasts();
   const isMobile = useIsMobile();
+  const { target: shareTarget, openSharePanel, closeSharePanel } = useSharePanel();
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -1031,7 +1032,7 @@ export function BoardPage() {
     <PageShell
       width="wide"
       scroll={editOpen ? 'page' : 'content'}
-      className="board-page"
+      className={cn('board-page', editOpen && 'board-page--settings')}
       contentClassName="desktop-page-content-enter board-page-content"
     >
       <PageHeader
@@ -1062,9 +1063,11 @@ export function BoardPage() {
                   Public
                 </Badge>
               )}
-              <Badge tone="outline" className="hidden shrink-0 sm:inline-flex">
-                {user?.id && user.id === board.author ? 'Owner' : 'Shared'}
-              </Badge>
+              <span className="hidden shrink-0 sm:inline-flex">
+                <Badge tone="outline">
+                  {user?.id && user.id === board.author ? 'Owner' : 'Shared'}
+                </Badge>
+              </span>
             </span>
           ) : (
             'Board'
@@ -1109,46 +1112,41 @@ export function BoardPage() {
                   <span className="sm:hidden">New</span>
                 </Button>
               )}
-              {isBoardOwner && (
-                isMobile ? (
-                  <ShareButton
-                    targetType="board"
-                    targetId={board.id}
-                    targetTitle={board.name}
-                    folderId={board.folder}
-                    label="Share board"
-                    iconOnly
-                    className="h-11 w-11"
-                    onChanged={() => setReloadToken((token) => token + 1)}
-                  />
-                ) : (
-                  <ShareButton
-                    targetType="board"
-                    targetId={board.id}
-                    targetTitle={board.name}
-                    folderId={board.folder}
-                    label="Share"
-                    variant="secondary"
-                    className="h-9"
-                    onChanged={() => setReloadToken((token) => token + 1)}
-                  />
-                )
+              {isBoardOwner && !isMobile && (
+                <Button
+                  variant="secondary"
+                  icon={<ShareIcon />}
+                  className="h-9"
+                  onClick={() =>
+                    openSharePanel({
+                      targetType: 'board',
+                      targetId: board.id,
+                      targetTitle: board.name,
+                      folderId: board.folder,
+                      onChanged: () => setReloadToken((token) => token + 1),
+                    })
+                  }
+                >
+                  Share
+                </Button>
               )}
               {isBoardOwner && (
-                <IconButton
-                  ref={editButtonRef}
-                  label="Board settings"
-                  variant="secondary"
-                  className="h-11 w-11 sm:h-9 sm:w-9"
-                  aria-expanded={editOpen}
-                  onClick={() => {
-                    setEditNewBoard(false);
-                    setEditAutoFocus(true);
-                    setEditOpen(true);
-                  }}
-                >
-                  <Cog6ToothIcon />
-                </IconButton>
+                <span className="hidden sm:inline-flex">
+                  <IconButton
+                    ref={editButtonRef}
+                    label="Board settings"
+                    variant="secondary"
+                    className="h-11 w-11 sm:h-9 sm:w-9"
+                    aria-expanded={editOpen}
+                    onClick={() => {
+                      setEditNewBoard(false);
+                      setEditAutoFocus(true);
+                      setEditOpen(true);
+                    }}
+                  >
+                    <Cog6ToothIcon />
+                  </IconButton>
+                </span>
               )}
               <IconButton
                 label="More board actions"
@@ -1323,18 +1321,42 @@ export function BoardPage() {
               onOpenShortcuts={() => setShortcutsOpen(true)}
             />
 
-            <div className="board-page-hint mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-muted">
+            <div className="board-page-hint mb-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-ink-muted">
+              <span className="tabular-nums">
+                {viewTasks.length} {viewTasks.length === 1 ? 'task' : 'tasks'}
+              </span>
               {view === 'board' && (
                 <>
-                  <span className="md:hidden">Swipe between columns · Tap a card to open.</span>
-                  <span className="hidden md:inline xl:hidden">Scroll between columns · Drag to reorder.</span>
-                  <span className="hidden xl:inline">Drag between columns · Alt + arrows move a focused card.</span>
+                  <span aria-hidden="true" className="text-line-strong">·</span>
+                  <span className="md:hidden">Swipe columns · Tap a card</span>
+                  <span className="hidden md:inline xl:hidden">Scroll columns · Drag to reorder</span>
+                  <span className="hidden xl:inline">Drag between columns · Alt + arrows move a focused card</span>
                 </>
               )}
-              {view === 'list' && <span>Grouped by column · Click a cell to change a property.</span>}
-              {view === 'backlog' && <span>Drag rows between Planned and Archived.</span>}
-              {view === 'calendar' && <span>Month grid · {isMobile ? 'agenda below' : 'unscheduled tasks on the right'}.</span>}
-              {view === 'gantt' && <span>91-day timeline · Drag bars to move dates, or use arrow keys.</span>}
+              {view === 'list' && (
+                <>
+                  <span aria-hidden="true" className="text-line-strong">·</span>
+                  <span>Grouped by column · Click a cell to change a property</span>
+                </>
+              )}
+              {view === 'backlog' && (
+                <>
+                  <span aria-hidden="true" className="text-line-strong">·</span>
+                  <span>Drag rows between Planned and Archived</span>
+                </>
+              )}
+              {view === 'calendar' && (
+                <>
+                  <span aria-hidden="true" className="text-line-strong">·</span>
+                  <span>Month grid · {isMobile ? 'agenda below' : 'unscheduled tasks on the right'}</span>
+                </>
+              )}
+              {view === 'gantt' && (
+                <>
+                  <span aria-hidden="true" className="text-line-strong">·</span>
+                  <span>91-day timeline · Drag bars to move dates, or use arrow keys</span>
+                </>
+              )}
               {!dragEnabled && view === 'board' && (
                 <span className="text-ink-muted">Drag is paused while filters or another sort are active.</span>
               )}
@@ -1645,6 +1667,22 @@ export function BoardPage() {
         )}
         {isBoardOwner && (
           <MenuItem
+            icon={<ShareIcon />}
+            label="Share board"
+            onClick={() => {
+              setMoreAnchor(null);
+              openSharePanel({
+                targetType: 'board',
+                targetId: board?.id ?? '',
+                targetTitle: board?.name ?? 'Board',
+                folderId: board?.folder,
+                onChanged: () => setReloadToken((token) => token + 1),
+              });
+            }}
+          />
+        )}
+        {isBoardOwner && (
+          <MenuItem
             icon={<Cog6ToothIcon />}
             label="Board settings"
             onClick={() => {
@@ -1673,21 +1711,6 @@ export function BoardPage() {
             resetPreferences();
           }}
         />
-        {isBoardOwner && (
-          <>
-            <MenuSeparator />
-            <MenuItem
-              icon={<Cog6ToothIcon />}
-              label="Board settings"
-              onClick={() => {
-                setMoreAnchor(null);
-                setEditNewBoard(false);
-                setEditAutoFocus(false);
-                setEditOpen(true);
-              }}
-            />
-          </>
-        )}
       </MenuSurface>
 
       {board && !board.archived && canEditBoard && (
@@ -1700,6 +1723,19 @@ export function BoardPage() {
             new Set(tasks.map((task) => task.document).filter((id): id is string => Boolean(id)))
           }
           onImport={handleImport}
+        />
+      )}
+
+      {shareTarget && (
+        <SharePanel
+          open
+          onClose={closeSharePanel}
+          targetType={shareTarget.targetType}
+          targetId={shareTarget.targetId}
+          targetTitle={shareTarget.targetTitle}
+          folderId={shareTarget.folderId}
+          folderName={shareTarget.folderName}
+          onChanged={shareTarget.onChanged}
         />
       )}
     </PageShell>

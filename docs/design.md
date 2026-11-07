@@ -58,7 +58,7 @@ Rules:
 - **No `dark:` / `light:` variants.** Theme is a `data-theme` value and the tokens flip.
 - **No gradients, grain, glass, glow, or serif faces.** Flat fills, tonal panels, and hairlines carry the surface.
 - **Light `ink-muted` stays dark enough for small text.** `#6b6b65` on the light canvas is 5.1:1. Do not lighten it for softness.
-- **Status dots are the only permanent colour in a board lane.** Backlog is `ink-muted`, Next up is `warning`, In progress is `signal`, Done is `success`.
+- **Status dots are the only permanent colour in a board lane.** Todo (slug `backlog`) is `ink-muted`, Next up is `warning`, In progress is `signal`, Done is `success`.
 
 ## Type
 

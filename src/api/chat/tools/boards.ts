@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { describeAttachment, normalizeAttachmentNames } from "../../../lib/attachments";
 import { aiVisibilityConditions, boardIsLocked, loadAiVisibility } from "../../workspace/privacy";
 import { isVirtualTaskStatus } from "../../workspace/types";
 import { pbGet, queryString, type PBListResponse, type ToolContext, type ToolFailure, type ToolResult } from "./http";
@@ -76,6 +77,7 @@ interface PBTaskRecord {
     completed_at?: string;
     board_order?: number;
     labels?: unknown;
+    attachments?: unknown;
     document?: string;
     note?: string;
     board?: string;
@@ -137,6 +139,7 @@ export interface BoardTaskSummary {
     taskNumber: number | null;
     assignee: { id: string; name: string } | null;
     labels: string[];
+    attachments: ReturnType<typeof describeAttachment>[];
     boardOrder: number;
     noteId: string | null;
     descriptionExcerpt: string;
@@ -201,6 +204,7 @@ function taskSummary(record: PBTaskRecord): BoardTaskSummary {
             }
             : null,
         labels: normalizeStringList(record.labels),
+        attachments: normalizeAttachmentNames(record.attachments).map(describeAttachment),
         boardOrder: typeof record.board_order === "number" ? record.board_order : 0,
         noteId: record.document || record.note || null,
         descriptionExcerpt: plainTextExcerpt(record.description || "", 400),

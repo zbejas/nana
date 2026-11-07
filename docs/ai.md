@@ -8,7 +8,7 @@ Both surfaces use the caller's PocketBase token, enforce author scoping, and app
 
 Shared-note chat is not a second workspace surface. It authorizes one document by person sharing, never by a public link, and registers only the note tools. A grantee's personal chat opened on that shared note becomes note-scoped for the same reason.
 
-There is no embeddings pipeline and no vector store. Chat accepts per-message attachments (images, PDFs, and text/Markdown) when an admin enables them; MCP has no attachment surface. Chat tool definitions use the AI SDK's `tool()` / `streamText()` API; MCP uses `@modelcontextprotocol/sdk`. PocketBase remains the authority for note, board, task, and attachment access.
+There is no embeddings pipeline and no vector store. Chat accepts per-message attachments (images, PDFs, and text/Markdown) when an admin enables them. Tasks can carry screenshots and files; MCP lists them and can return image, text, or embedded-resource content from a visible task. Chat tool definitions use the AI SDK's `tool()` / `streamText()` API; MCP uses `@modelcontextprotocol/sdk`. PocketBase remains the authority for note, board, task, and attachment access.
 
 ## Key files
 
@@ -40,6 +40,7 @@ There is no embeddings pipeline and no vector store. Chat accepts per-message at
 | `src/api/chat/types.ts` | `ChatSendRequest`, `ChatMode`, `ChatContext`, `ChatAttachmentRef`, `ChatMessage`, `ChatEditDto`, `ChatStatusResponse`, empty-response copy. |
 | `src/api/workspace/notes.ts` | `createNote`, `editNoteRecord`, `restoreNoteSnapshot`, revision-aware note updates, and live-room body/revision adoption. |
 | `src/api/workspace/live.ts` | `flushLiveNoteBeforeExternalWrite()`, `adoptLiveNoteContent()`, and `adoptLiveNoteRevision()` for AI/REST/MCP writes against an open room. |
+| `src/api/workspace/task-assets.ts` | MCP task attachment metadata and bounded protected-file reads through a short-lived file token. |
 | `src/api/workspace/shared.ts` | `Surface` selection, `assertWritable()`, `visibilityFor()`, relation checks, paging bounds. |
 | `src/api/pocketbase/client.ts` | Caller-token PocketBase client; adds `X-Nana-Actor: ai` when `ToolContext.actor` is `"ai"`. |
 | `src/lib/markdown/sections.ts` | `applySectionEdits()`, `MarkdownSectionError`, and `closestTextLines()`; anchor validation, retry suggestions for a missing anchor, and section-scoped replacement without re-sanitizing untouched sections. |
@@ -56,6 +57,7 @@ There is no embeddings pipeline and no vector store. Chat accepts per-message at
 | `pocketbase/pb_migrations/0000032_remove_document_versions.js` | Drops the legacy `document_versions` store and `documents.published`; version history is server-side git from this migration on. |
 | `pocketbase/pb_migrations/0000033_message_parts.js` | Adds `messages.parts`, the ordered text/reasoning/tool/edit timeline used by the transcript. |
 | `pocketbase/pb_migrations/0000035_group_chat.js` | Adds `conversations.scope`/`document`, the unique note conversation, `messages.author`/`author_label`, and group-aware conversation/message/`chat_edits` rules. |
+| `pocketbase/pb_migrations/0000036_task_attachments.js` | Adds protected task file attachments and screenshot thumbnails. |
 | `tests/api/chat-group.test.ts` | Integration coverage for shared-note status/access, one group conversation, sender labels, paused history, public-link exclusion, attachment/regenerate rejection, and transcript isolation. |
 | `tests/api/collab-persistence.test.ts` | Integration coverage for room merge/metadata adoption, hard persistence errors, explicit flush, and the `read_note` flush-before-read path. |
 | `tests/api/chat-tools.test.ts` | Integration coverage for whole-note and windowed reads, completeness notices, scoping, truncation, error mapping, and private fixtures. |
@@ -279,8 +281,8 @@ A strict `noteScope` is a different registry, not a filter over the normal set: 
 | `read_note` | `noteId`, `offset` (1-based, no schema maximum; checked against the actual line count), optional `limit` (1–2000 lines). Omit `limit` to read the whole note. | The returned body and note metadata plus `totalLines`, `returnedLines`, `complete`, `hasMore`, `omittedBefore`, `omittedAfter`, `omittedLines`, `nextOffset`, `notice`, `truncated`, `tailUnavailable`, `clippedLines`, `revision`, and `versionToken`. |
 | `list_boards` | `includeArchived` (default false), `page`, `perPage`. | Boards with open/done/total and per-column task counts. Trashed boards only when requested. |
 | `read_board` | `boardId`, optional `column` (`backlog`, `next`, `progress`, `done`), `page`, `perPage`. | Board summary and paged task summaries: title, status, priority, due date, labels, order, note id, 400-character plain-text excerpt. |
-| `list_tasks` | `boardId`, optional `status` (column slug, `planned`, or `archived`), `page`, `perPage`. | Board tasks with status, priority, dates, labels, assignee id, note id, order, and bounded metadata. |
-| `read_task` | `taskId`. | One task with its board name, up to 20,000 characters of description, completion/recurrence metadata, and a truncation flag. |
+| `list_tasks` | `boardId`, optional `status` (column slug, `planned`, or `archived`), `page`, `perPage`. | Board tasks with status, priority, dates, labels, attachment metadata, assignee id, note id, order, and bounded metadata. |
+| `read_task` | `taskId`. | One task with its board name, up to 20,000 characters of description, completion/recurrence metadata, attachment metadata, and a truncation flag. |
 
 Bounds enforced in `src/api/chat/tools/`:
 
@@ -373,9 +375,11 @@ The tool families:
 - **Folders:** `list_folders`, `create_folder`.
 - **Notes:** `list_notes`, `read_note` (the chat executors), plus `create_note`, `update_note`, `move_note`, `delete_note` (workspace services).
 - **Boards:** `list_boards`, `read_board` (the chat executors), plus `create_board`, `update_board`, `move_board`, `restore_board`, `delete_board`.
-- **Tasks:** `list_tasks`, `create_task`, `update_task`, `move_task`, `delete_task`, `add_note_to_board`.
+- **Tasks:** `list_tasks`, `list_task_relations`, `list_task_activity`, `list_task_attachments`, `read_task_attachment`, `create_task`, `update_task`, `move_task`, `delete_task`, `add_note_to_board`.
 
-MCP instructions tell the model to read before writing, use only ids returned by a tool, never bypass the private lock, and treat note/task text as untrusted. The server does not ask for human confirmation; the authorization boundary is the user token, author scoping, the private lock, and the explicit destructive tool list. A prompt-injected note can at worst cause writes inside the caller's own visible workspace; it cannot reach another user or a private record.
+`list_task_attachments` reports the stored filename, display name, coarse kind, and MIME type for a task the caller can see. `read_task_attachment` uses the caller's short-lived PocketBase file token to fetch one file. It returns images as MCP image content, text as a named text block, and PDFs or other files as an embedded resource. The read is capped at 10 MB, and hidden boards or tasks return `not_found`. Attachment content is untrusted data, never instructions.
+
+MCP instructions tell the model to read before writing, use only ids returned by a tool, never bypass the private lock, and treat note, task, and attachment content as untrusted. The server does not ask for human confirmation; the authorization boundary is the user token, author scoping, the private lock, and the explicit destructive tool list. A prompt-injected note can at worst cause writes inside the caller's own visible workspace; it cannot reach another user or a private record.
 
 ### MCP credential scopes
 

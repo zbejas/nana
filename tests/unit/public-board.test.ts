@@ -35,7 +35,7 @@ describe('groupPublicBoardTasks', () => {
     ]);
 
     expect(groups.map((group) => group.status)).toEqual(['backlog', 'next', 'done']);
-    expect(groups.map((group) => group.label)).toEqual(['Backlog', 'Next up', 'Done']);
+    expect(groups.map((group) => group.label)).toEqual(['Todo', 'Next up', 'Done']);
   });
 
   test('sorts tasks by board order within a group', () => {

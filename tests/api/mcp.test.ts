@@ -4,6 +4,7 @@ import {
     expectJsonError,
     expectStatus,
     pbGetRecord,
+    pbRequest,
     pbRecordExists,
     readJson,
 } from "../helpers/client";
@@ -27,9 +28,21 @@ import { authHeaders, uniqueSuffix } from "../helpers/setup";
 
 const MCP_PATH = "/mcp";
 const ACCEPT = "application/json, text/event-stream";
+const PNG_BYTES = Uint8Array.from(
+    atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),
+    (char) => char.charCodeAt(0),
+);
+
+interface McpToolContent {
+    type: string;
+    text?: string;
+    data?: string;
+    mimeType?: string;
+    resource?: { uri?: string; mimeType?: string; blob?: string };
+}
 
 interface McpToolResult {
-    content?: Array<{ type: string; text: string }>;
+    content?: McpToolContent[];
     isError?: boolean;
     [key: string]: unknown;
 }
@@ -294,6 +307,8 @@ describe("MCP transport", () => {
                 "create_task",
                 "delete_task",
                 "add_note_to_board",
+                "list_task_attachments",
+                "read_task_attachment",
             ]),
         );
     });
@@ -463,9 +478,49 @@ describe("board and task tools", () => {
         const activity = activityCall.payload as unknown as Array<{ type: string }>;
         expect(activity.map((entry) => entry.type)).toContain("created");
 
+        const attachmentForm = new FormData();
+        attachmentForm.append(
+            "attachments",
+            new File([PNG_BYTES], "screenshot.png", { type: "image/png" }),
+        );
+        const attachRes = await pbRequest(`/collections/tasks/records/${task.id}`, {
+            method: "PATCH",
+            headers: { Authorization: owner.token },
+            body: attachmentForm,
+        });
+        await expectStatus(attachRes, 200, "attach task screenshot");
+        const attached = await readJson<{ attachments: string[] }>(attachRes, "task attachment");
+        expect(attached.attachments).toHaveLength(1);
+
         const tasksCall = await mcpCall(owner.token, "list_tasks", { boardId: board.id });
         const tasks = tasksCall.payload as unknown as { items: TaskDto[] };
-        expect(tasks.items.map((item) => item.id)).toContain(task.id);
+        const listedTask = tasks.items.find((item) => item.id === task.id);
+        expect(listedTask).toBeDefined();
+        expect(listedTask?.attachments).toMatchObject([
+            { filename: attached.attachments[0], name: "screenshot.png", kind: "image", mimeType: "image/png" },
+        ]);
+
+        const attachmentListCall = await mcpCall(owner.token, "list_task_attachments", {
+            taskId: task.id,
+        });
+        expect(attachmentListCall.isError).toBe(false);
+        expect(attachmentListCall.payload).toMatchObject({
+            taskId: task.id,
+            attachments: [
+                { filename: attached.attachments[0], name: "screenshot.png", kind: "image" },
+            ],
+        });
+
+        const attachmentReadCall = await mcpCall(owner.token, "read_task_attachment", {
+            taskId: task.id,
+            filename: attached.attachments[0],
+        });
+        expect(attachmentReadCall.isError).toBe(false);
+        const attachmentContent = attachmentReadCall.response.result?.content ?? [];
+        expect(attachmentContent[0]?.type).toBe("text");
+        expect(attachmentContent[1]).toMatchObject({ type: "image", mimeType: "image/png" });
+        expect(typeof attachmentContent[1]?.data).toBe("string");
+        expect((attachmentContent[1]?.data ?? "").length).toBeGreaterThan(0);
 
         const updatedTitle = `MCP Task Updated ${suffix}`;
         const updateCall = await mcpCall(owner.token, "update_task", {

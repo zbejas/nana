@@ -72,7 +72,7 @@ Groups:
 
 ### Migrations
 
-Files are sequential and zero-padded. **The next migration is `0000036_<description>.js`.**
+Files are sequential and zero-padded. **The next migration is `0000038_<description>.js`.**
 
 | Migration | Purpose |
 | --- | --- |
@@ -111,6 +111,8 @@ Files are sequential and zero-padded. **The next migration is `0000036_<descript
 | `0000033_message_parts.js` | Adds `messages.parts`, the ordered chat timeline. |
 | `0000034_disable_auth_alerts.js` | Disables PocketBase's default "new device login" auth alert emails for users and superusers. |
 | `0000035_group_chat.js` | Adds `conversations.scope`/`document`, a unique note-conversation index, `messages.author`/`author_label`, and group-aware rules for conversations, messages, and `chat_edits`; backfills existing personal rows. |
+| `0000036_task_attachments.js` | Adds the protected `tasks.attachments` file field (up to 20 files, 50 MB each) with image thumbnails. |
+| `0000037_rename_default_backlog_column.js` | Renames the default `backlog` column label from Backlog to Todo without changing its stable slug. |
 
 Use the migration API, not `module.exports`:
 
@@ -279,7 +281,7 @@ Rules:
 
 A board moves to trash through `POST /api/trash/move-board` (or `PATCH { "archived": true }`); restore clears the flag through `POST /api/trash/restore-board` (or `PATCH { "archived": false }`). Permanent delete is only possible for a trashed board and cascades its tasks and columns. Tasks deleted this way are not moved to trash.
 
-New boards are seeded with four default columns (`backlog`, `next`, `progress`, `done`) by `pb_hooks/boards/seed_columns.js`. A column slug is immutable while tasks reference it; a column cannot be deleted while tasks use it. `tasks.status` stores the column slug, or the virtual `planned`/`archived` statuses used by the backlog.
+New boards are seeded with four default columns (`backlog`, `next`, `progress`, `done`) by `pb_hooks/boards/seed_columns.js`; the first is labelled Todo, while `backlog` stays its stable slug. A column slug is immutable while tasks reference it; a column cannot be deleted while tasks use it. `tasks.status` stores the column slug, or the virtual `planned`/`archived` statuses used by the backlog.
 
 #### Board folder guard
 
@@ -308,10 +310,11 @@ The Bun workspace service and the browser facade check the same ownership before
 | `task_number` | Number | Per-board number allocated server-side; not client-writable. |
 | `board_order` | Number | Optional, minimum 0; scoped to a column by the client. |
 | `labels` | JSON | String array of label names. |
+| `attachments` | File | Protected; up to 20 files, 50 MB each, with 100/300/800px image thumbnails. |
 | `board` | Relation → `boards` | Required, `cascadeDelete: true`. |
 | `document` | Relation → `documents` | Optional, `cascadeDelete: false`. |
 
-Tasks have no `author` field. Ownership is `board.author`; the board is required and cascades, so a task cannot outlive its board.
+Tasks have no `author` field. Ownership is `board.author`; the board is required and cascades, so a task cannot outlive its board. A task's `attachments` use the task collection's view rule, so a board owner or grantee who can read the task can read its protected files through a short-lived file token; public board links expose task metadata only, not task files.
 
 Indexes:
 
@@ -562,7 +565,7 @@ The Bun server reads the same credentials to obtain a token for admin-only setti
 - **API keys are hashed, not encrypted.** `key_hash` is SHA-256 of the full `nana_…` secret. Never add the plaintext, a reversible encoding, or the hash to an API response. The hash lookup uses the superuser only after the key itself is presented.
 - **`api_keys` has no public rules.** It is server-managed on purpose. Do not add it to the browser facade allowlist or expose it through a collection route.
 - **API keys cascade with the user.** `api_keys.author` uses `cascadeDelete: true`; `api_keys.folders` does not cascade from folders, so a deleted scope root grants nothing.
-- **The next migration is `0000036`.** `0000035_group_chat` is the current head; never edit an applied migration in place.
+- **The next migration is `0000038`.** `0000037_rename_default_backlog_column` is the current head; never edit an applied migration in place.
 
 ## Related docs
 

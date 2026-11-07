@@ -322,7 +322,7 @@ Browser facade behavior:
 - **Read-only collections.** Trash collections accept only reads; writes return `405`.
 - **Query pass-through.** Reads forward PocketBase `filter`, `sort`, `expand`, `fields`, `page`, `perPage`, and `skipTotal`. This preserves the SPA's raw PB queries without exposing arbitrary system collections.
 - **Error shape.** The facade preserves PocketBase's `{ code, message, data }` error envelope and status codes so the client's field-error and auth handling stays intact.
-- **Files.** Only `documents`, `users`, `trash_documents`, and `chat_attachments` file paths are allowlisted. Protected files still require a PocketBase file token or a public-share route; chat attachment bytes are fetched server-side with the caller's short-lived file token.
+- **Files.** Only `documents`, `tasks`, `users`, `trash_documents`, and `chat_attachments` file paths are allowlisted. Protected files still require a PocketBase file token or a public-share route; chat and MCP attachment bytes are fetched server-side with the caller's short-lived file token.
 - **Realtime.** The SSE handshake is unauthenticated, like PocketBase; the subscription POST requires the user token. Elysia sets the Bun timeout to `0` for `/api/v1/realtime`.
 
 #### Live editing
@@ -373,9 +373,9 @@ The server registers tools for folders, notes, boards, and tasks; the table belo
 | Folders | `list_folders`, `create_folder` | List visible folders; create a folder under a visible parent. |
 | Notes | `list_notes`, `read_note`, `create_note`, `update_note`, `move_note`, `delete_note` | Metadata/list and bounded body reads; create, update, move, or trash a note. `delete_note` returns `{ deleted, trashDocumentId }`. |
 | Boards | `list_boards`, `read_board`, `create_board`, `update_board`, `move_board`, `restore_board`, `delete_board` | List with task counts; read a non-trashed board; create/update/move; restore from trash; move to trash. |
-| Tasks | `list_tasks`, `create_task`, `update_task`, `move_task`, `delete_task`, `add_note_to_board` | List, create, update, move, or permanently delete tasks; copy a note onto a board. |
+| Tasks | `list_tasks`, `list_task_relations`, `list_task_activity`, `list_task_attachments`, `read_task_attachment`, `create_task`, `update_task`, `move_task`, `delete_task`, `add_note_to_board` | List, create, update, move, or permanently delete tasks; read relations and activity; list task files; return one screenshot/file as MCP image, text, or embedded-resource content; copy a note onto a board. |
 
-MCP is an AI surface, so private notes, boards, folders, and private-folder subtrees are omitted from lists and look missing by id. A tool that tries to write to a hidden record returns `not_found`. API-key scope is an additional envelope: a folder-scoped key sees only those subtrees and never the root; a root-only key sees no folders; a read-only key is not offered write tools at all. See [`ai.md`](ai.md) for the privacy rules and tool semantics.
+MCP is an AI surface, so private notes, boards, folders, and private-folder subtrees are omitted from lists and look missing by id. A tool that tries to write to a hidden record returns `not_found`. API-key scope is an additional envelope: a folder-scoped key sees only those subtrees and never the root; a root-only key sees no folders; a read-only key is not offered write tools at all. `read_task_attachment` returns metadata plus image, text, or embedded-resource content; files larger than 10 MB and hidden tasks return an `isError` result. See [`ai.md`](ai.md) for the privacy rules and tool semantics.
 
 ### Bun application routes
 
