@@ -2,9 +2,11 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { bunRequest, expectStatus, readJson } from "../helpers/client";
 import {
     createAdmin,
+    createBoard,
     createFolder,
     createNote,
     createNoteWithAttachment,
+    createTask,
     createUser,
     type TestUser,
 } from "../helpers/factories";
@@ -27,6 +29,11 @@ const jsonHeaders = (token: string) => authHeaders(token, true);
 function api(path: string): string {
     return `${BROWSER_API}${path}`;
 }
+
+const PNG_BYTES = Uint8Array.from(
+    atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),
+    (char) => char.charCodeAt(0),
+);
 
 describe("browser auth facade", () => {
     beforeAll(async () => {
@@ -187,6 +194,57 @@ describe("browser record facade", () => {
             body: JSON.stringify({ title: "Nope", status: "next", board: "missingboard123" }),
         });
         await expectStatus(foreignTask, 404, "missing board rejected");
+    });
+
+    test("stores task attachments through the facade and serves protected files", async () => {
+        const suffix = uniqueSuffix();
+        const board = await createBoard(user, { name: `Attachment board ${suffix}` });
+        const task = await createTask(user, board.id, {
+            title: `Attachment task ${suffix}`,
+            status: "backlog",
+        });
+
+        const upload = new FormData();
+        upload.append(
+            "attachments",
+            new File([PNG_BYTES], "screenshot.png", { type: "image/png" }),
+        );
+        const uploadRes = await bunRequest(api(`/records/tasks/${task.id}`), {
+            method: "PATCH",
+            headers: authHeaders(user.token),
+            body: upload,
+        });
+        await expectStatus(uploadRes, 200, "task attachment upload");
+        const stored = await readJson<{ attachments: string[] }>(uploadRes, "task attachment upload");
+        expect(stored.attachments).toHaveLength(1);
+        const filename = stored.attachments[0]!;
+        expect(filename).toContain(".png");
+
+        const tokenRes = await bunRequest(api("/files/token"), {
+            method: "POST",
+            headers: authHeaders(user.token),
+        });
+        await expectStatus(tokenRes, 200, "file token");
+        const fileToken = (await readJson<{ token?: string }>(tokenRes, "file token")).token;
+        expect(typeof fileToken).toBe("string");
+
+        const fileRes = await bunRequest(
+            api(`/files/tasks/${task.id}/${encodeURIComponent(filename)}?token=${encodeURIComponent(fileToken ?? "")}`),
+            { headers: authHeaders(user.token) },
+        );
+        await expectStatus(fileRes, 200, "task attachment file");
+        expect(fileRes.headers.get("Content-Type")).toContain("image/png");
+        expect(new Uint8Array(await fileRes.arrayBuffer())).toEqual(PNG_BYTES);
+
+        const clear = new FormData();
+        clear.append("attachments", "");
+        const clearRes = await bunRequest(api(`/records/tasks/${task.id}`), {
+            method: "PATCH",
+            headers: authHeaders(user.token),
+            body: clear,
+        });
+        await expectStatus(clearRes, 200, "task attachment clear");
+        expect((await readJson<{ attachments: string[] }>(clearRes)).attachments).toEqual([]);
     });
 
     test("supports workflow columns, task fields, and read-only relations", async () => {

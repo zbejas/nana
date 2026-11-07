@@ -45,7 +45,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 | | |
 |---|---|
 | **Markdown editor** | Rendered Editor, Source, and Split views, rich formatting, and attachment support. |
-| **Boards** | Multiple kanbans with custom columns, drag-and-drop, board/list/calendar views, labels, assignees, subtasks, relations, comments, note import, folders, private boards, public read-only links, trash with restore, and permanent delete for trashed boards. |
+| **Boards** | Multiple kanbans with custom columns, drag-and-drop, board/list/calendar views, labels, assignees, subtasks, relations, comments, screenshot and file attachments, note import, folders, private boards, public read-only links, trash with restore, and permanent delete for trashed boards. |
 | **AI chat** | Work is the default: ask about your notes and boards, or ask Nana to create, rename, and move folders, notes, and boards, manage tasks, and trash/restore boards. Ask is the read-only lock. Deletes require an explicit confirmation card; sharing and privacy changes stay out of chat. On a shared note, switch the dock to **Shared** for one conversation for everyone with access; view and comment participants get Ask only. The composer rings the selected model's context usage and opens a token breakdown on click. |
 | **API and MCP** | Reach the same workspace from your own tools with a JSON API and a stateless MCP endpoint. Private records stay hidden from AI. |
 | **Folders and tags** | Organize documents with nested folders, tags, and a timeline of recent notes and boards. |
@@ -58,7 +58,7 @@ Nana is for people who want their notes, documents, AI tools, and attachments in
 
 Boards live in the same folder tree as notes. The timeline, sidebar library, and folder view show boards beside their notes; drag a board into another folder, choose **New board** in a folder to file it there, or move it from the board's settings. Right-click a board to open, edit, share, export, or move it to trash. A public board link opens a read-only page with its tasks, while private boards stay out of every public and AI surface. Boards move to Trash with their tasks and can be restored or deleted forever; a folder never deletes the boards inside it: move a folder to trash and its boards return to the root with their tasks.
 
-Open a note, board, or folder’s **Share** panel to invite another account at **Can view**, **Can comment**, or **Can edit**. Folder access flows down to its notes, boards, and subfolders; inherited access is shown in the panel. **Shared with me** collects everything another account has shared with you. Sharing is between accounts on the same Nana instance.
+Add screenshots and files to a task from its **Attachments** section; the board card shows a paperclip count, and an MCP client can list and read the same files. Open a note, board, or folder’s **Share** panel to invite another account at **Can view**, **Can comment**, or **Can edit**. Folder access flows down to its notes, boards, and subfolders; inherited access is shown in the panel. **Shared with me** collects everything another account has shared with you. Sharing is between accounts on the same Nana instance.
 
 Mark a note, board, or folder **Private** to keep it out of AI chat and MCP and to prevent people-sharing it. It stays in your workspace and you can still open and edit it.
 

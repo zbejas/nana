@@ -14,7 +14,7 @@ export interface BoardColumn {
 }
 
 export const BOARD_COLUMNS: BoardColumn[] = [
-  { status: 'backlog', index: '01', label: 'Backlog', hint: 'Someday, unsorted' },
+  { status: 'backlog', index: '01', label: 'Todo', hint: 'Someday, unsorted' },
   { status: 'next', index: '02', label: 'Next up', hint: 'Committed, not started' },
   { status: 'progress', index: '03', label: 'In progress', hint: 'Actively moving' },
   { status: 'done', index: '04', label: 'Done', hint: 'Finished work' },

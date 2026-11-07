@@ -22,7 +22,7 @@ The scene: a desk at night, a low lamp, a browser window that should feel like p
 | Surface | Job |
 | --- | --- |
 | Timeline | Find and reopen recent notes and boards; filter by date and type; open a board's menu or public share. |
-| Boards | Keep several boards of work; file them in folders beside notes; move tasks through Backlog → Next up → In progress → Done; import a note as a task; mark a board private; share a read-only public board page; move a board to trash without deleting its tasks. |
+| Boards | Keep several boards of work; file them in folders beside notes; move tasks through Todo → Next up → In progress → Done; import a note as a task; mark a board private; share a read-only public board page; move a board to trash without deleting its tasks. |
 | Board trash | Restore a trashed board, or delete it permanently and remove its tasks while keeping the source notes. |
 | Folders | Browse and reorganise notes, boards, and folders. |
 | Document editor | Write Markdown, attach files, save version history, share. |

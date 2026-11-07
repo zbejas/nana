@@ -100,6 +100,17 @@ export interface BoardColumnDto {
     updated: string;
 }
 
+export type TaskAttachmentKind = "image" | "pdf" | "text" | "file";
+
+export interface TaskAttachmentDto {
+    /** Stored PocketBase filename, including its random suffix. */
+    filename: string;
+    /** Original display name with the random suffix removed. */
+    name: string;
+    kind: TaskAttachmentKind;
+    mimeType: string;
+}
+
 export interface TaskDto {
     id: string;
     title: string;
@@ -111,6 +122,7 @@ export interface TaskDto {
     completedAt: string | null;
     boardOrder: number;
     labels: string[];
+    attachments: TaskAttachmentDto[];
     noteId: string | null;
     boardId: string;
     assigneeId: string | null;

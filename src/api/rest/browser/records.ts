@@ -45,6 +45,7 @@ const CREATE_FIELDS: Record<string, Set<string>> = {
     tasks: new Set([
         "title", "description", "status", "priority", "due_date", "start_date",
         "board_order", "labels", "board", "document", "assignee", "recurrence",
+        "attachments",
     ]),
     users: new Set([
         "email", "password", "passwordConfirm", "name", "admin", "emailVisibility",
@@ -55,7 +56,7 @@ const CREATE_FIELDS: Record<string, Set<string>> = {
 // A task's board is fixed at creation; the facade never forwards it on update.
 const TASK_UPDATE_FIELDS = new Set([
     "title", "description", "status", "priority", "due_date", "start_date",
-    "board_order", "labels", "document", "assignee", "recurrence",
+    "board_order", "labels", "document", "assignee", "recurrence", "attachments",
 ]);
 
 const UPDATE_FIELDS: Record<string, Set<string>> = {

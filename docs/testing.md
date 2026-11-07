@@ -15,7 +15,7 @@ The Docker suite runs both layers in an isolated container with a disposable dat
 | `tests/pocketbase/guards/` | Collection rules and request guards: users, trash views, tasks, boards, relation integrity. |
 | `tests/pocketbase/hooks/` | Document hooks: stats, cascades. |
 | `tests/pocketbase/routes/` | Custom PocketBase routes: trash, admin, public shares, check-users, folder board rehoming. |
-| `tests/api/` | Bun routes plus chat read/write/group tools, Elysia `/api/v1`, MCP, and version history: app version, versions, export, chat, security, static, rest, mcp. |
+| `tests/api/` | Bun routes plus chat read/write/group tools, Elysia `/api/v1`, MCP, and version history: app version, versions, export, chat, security, static, rest, mcp, browser attachment uploads, and MCP task-asset reads. |
 | `tests/helpers/setup.ts` | URLs, credentials, auth, signup, unique names. |
 | `tests/helpers/client.ts` | HTTP and PocketBase collection helpers with status assertions. |
 | `tests/helpers/factories.ts` | Isolated users and records for integration files. |
@@ -43,6 +43,7 @@ tests/
     ai-edit-lifecycle.test.ts
     ai-visibility.test.ts
     api-key-scope.test.ts
+    attachments.test.ts
     board-dates.test.ts
     chat-activity.test.ts
     chat-attachments.test.ts

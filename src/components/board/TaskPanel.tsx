@@ -46,6 +46,7 @@ import {
 } from '../ui';
 import { NanaInlineMarkdownEditor } from '../editor/milkdown/NanaInlineMarkdownEditor';
 import { isSameMarkdown, normalizeMarkdown } from '../editor/milkdown/helpers';
+import { TaskAttachments } from './TaskAttachments';
 import { TaskProperties } from './TaskProperties';
 import {
   PopoverAction,
@@ -1219,6 +1220,21 @@ export function TaskPanel({
                     <p className="px-0.5 py-1 text-[12.5px] text-ink-muted">No description.</p>
                   )}
                 </TaskSection>
+
+                <TaskAttachments
+                  key={`attachments-${task.id}`}
+                  task={task}
+                  canEdit={canEditTask}
+                  onUpdated={(updated) => {
+                    setTaskState((currentTask) => ({
+                      ...currentTask,
+                      ...updated,
+                      expand: currentTask.expand,
+                    }));
+                    onChanged(updated);
+                    setActivityVersion((value) => value + 1);
+                  }}
+                />
 
                 {contextError && (
                   <div className="task-panel__context-error">

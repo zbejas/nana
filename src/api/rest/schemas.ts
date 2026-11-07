@@ -290,6 +290,27 @@ export const BoardColumnListSchema = t.Array(BoardColumnDtoSchema, {
     description: "The board's columns, sorted by position then creation time.",
 });
 
+export const TaskAttachmentDtoSchema = t.Object({
+    filename: t.String({
+        description: "Stored PocketBase filename. Use it with the task attachment read endpoint or MCP asset tool.",
+        examples: ["screenshot_ab12cd34.png"],
+    }),
+    name: t.String({
+        description: "Original display name with PocketBase's random suffix removed.",
+        examples: ["screenshot.png"],
+    }),
+    kind: t.Union(
+        (["image", "pdf", "text", "file"] as const).map((kind) => t.Literal(kind)),
+        { description: "Coarse attachment kind derived from the file extension.", examples: ["image"] },
+    ),
+    mimeType: t.String({
+        description: "MIME type derived from the extension.",
+        examples: ["image/png"],
+    }),
+}, {
+    description: "A protected file attached to a task.",
+});
+
 export const TaskDtoSchema = t.Object({
     id: t.String({ description: "Task id.", examples: ["task123"] }),
     title: t.String({ description: "Task title.", examples: ["Draft release notes"] }),
@@ -309,6 +330,9 @@ export const TaskDtoSchema = t.Object({
     labels: t.Array(t.String({ description: "Label.", examples: ["release"] }), {
         description: "Up to 20 labels.",
         examples: [["release"]],
+    }),
+    attachments: t.Array(TaskAttachmentDtoSchema, {
+        description: "Protected files attached to the task. Use MCP `read_task_attachment` to inspect their bytes.",
     }),
     noteId: nullableString("Linked note id, or null when unset.", ["note123"]),
     boardId: t.String({ description: "Owning board id.", examples: ["board123"] }),
@@ -334,6 +358,7 @@ export const TaskDtoSchema = t.Object({
         completedAt: null,
         boardOrder: 0,
         labels: ["release"],
+        attachments: [{ filename: "screenshot_ab12cd34.png", name: "screenshot.png", kind: "image", mimeType: "image/png" }],
         noteId: "note123",
         boardId: "board123",
         assigneeId: "user123",

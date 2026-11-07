@@ -132,11 +132,17 @@ export async function ensureAttachmentFileToken(forceRefresh: boolean = false): 
     return fileTokenRefreshPromise;
 }
 
-// Get attachment URL for a document
-export function getAttachmentUrl(document: Document, filename: string, thumb?: string): string {
+export interface AttachmentRecord {
+    id: string;
+    collectionId?: string;
+    collectionName?: string;
+}
+
+// Get attachment URL for any protected file record (documents, tasks, …).
+export function getAttachmentUrl(record: AttachmentRecord, filename: string, thumb?: string): string {
     // Use PocketBase's getURL method which handles token and formatting correctly
     // Then ensure it uses our proxy by checking if it's absolute
-    const url = pb.files.getURL(document, filename, { thumb });
+    const url = pb.files.getURL(record, filename, { thumb });
 
     // If URL is relative, it's already correct (same-origin /api/v1 file path)
     // If URL is absolute, replace the base with our proxy

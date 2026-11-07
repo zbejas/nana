@@ -2,6 +2,8 @@ import type { RecordModel } from '../record-model';
 import { pb } from '../pocketbase';
 import type { BoardColumn } from '../boards';
 import type { Document } from '../documents';
+import { normalizeAttachmentNames } from '../attachments';
+import { getAttachmentUrl } from '../documents/attachments';
 import { stripMarkdown } from './text';
 
 export { stripMarkdown, plainTextExcerpt } from './text';
@@ -65,6 +67,7 @@ export interface Task extends RecordModel {
   completed_at: string;
   board_order: number;
   labels: string[];
+  attachments: string[];
   board: string;
   document?: string;
   assignee?: string;
@@ -246,6 +249,7 @@ function normalizeTask(task: Task): Task {
     completed_at: task.completed_at ?? '',
     board_order: typeof task.board_order === 'number' ? task.board_order : 0,
     labels: normalizeLabels(task.labels),
+    attachments: normalizeAttachmentNames(task.attachments),
     board: task.board ?? '',
     assignee: task.assignee ?? '',
     recurrence: normalizeRecurrence(task.recurrence),
@@ -325,6 +329,43 @@ export async function updateTask(id: string, data: UpdateTaskData): Promise<Task
 
   const record = await pb.collection(COLLECTION).update<Task>(id, payload);
   return normalizeTask(record);
+}
+
+export interface UpdateTaskAttachmentsInput {
+  /** Stored filenames to preserve. Omit or pass the current list. */
+  keep?: string[];
+  /** New files to append in the same write. */
+  add?: File[];
+}
+
+/**
+ * Replace a task's attachment set in one multipart write. PocketBase keeps the
+ * files whose stored filenames are submitted and stores the new ones; an empty
+ * result clears the field.
+ */
+export async function updateTaskAttachments(
+  id: string,
+  input: UpdateTaskAttachmentsInput
+): Promise<Task> {
+  const keep = normalizeAttachmentNames(input.keep);
+  const added = input.add ?? [];
+  const form = new FormData();
+
+  for (const filename of keep) form.append('attachments', filename);
+  for (const file of added) form.append('attachments', file);
+  if (keep.length === 0 && added.length === 0) form.append('attachments', '');
+
+  const record = await pb.collection(COLLECTION).update<Task>(id, form);
+  return normalizeTask(record);
+}
+
+/** A protected file URL for a task attachment, with optional thumbnail size. */
+export function getTaskAttachmentUrl(
+  task: Task,
+  filename: string,
+  thumb?: string
+): string {
+  return getAttachmentUrl(task, filename, thumb);
 }
 
 export async function deleteTask(id: string): Promise<void> {

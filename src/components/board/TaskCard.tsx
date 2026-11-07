@@ -5,6 +5,7 @@ import {
   CheckIcon,
   DocumentTextIcon,
   EllipsisHorizontalIcon,
+  PaperClipIcon,
   PlusIcon,
 } from '@heroicons/react/20/solid';
 import type { Task } from '../../lib/tasks';
@@ -109,6 +110,7 @@ export function TaskCard({
       : null);
   const linkedNote = task.expand?.document;
   const extras = taskExtras(task);
+  const attachmentCount = Array.isArray(task.attachments) ? task.attachments.length : 0;
   const colorMap = labelColorMap(labels);
   const visibleLabels = display.labels ? task.labels.slice(0, 2) : [];
   const extraLabelCount = display.labels ? Math.max(0, task.labels.length - 2) : 0;
@@ -118,6 +120,7 @@ export function TaskCard({
     visibleLabels.length > 0 ||
     (display.subtasks && extras.subtaskTotal > 0) ||
     (display.comments && extras.commentCount > 0) ||
+    attachmentCount > 0 ||
     (display.note && Boolean(linkedNote)) ||
     (display.assignee && Boolean(member));
 
@@ -340,6 +343,16 @@ export function TaskCard({
               <span className="inline-flex shrink-0 items-center gap-1 tabular-nums" title="Comments">
                 <ChatBubbleLeftIcon className="h-3 w-3" aria-hidden="true" />
                 {extras.commentCount}
+              </span>
+            )}
+
+            {attachmentCount > 0 && (
+              <span
+                className="inline-flex shrink-0 items-center gap-1 tabular-nums"
+                title={`${attachmentCount} attachment${attachmentCount === 1 ? '' : 's'}`}
+              >
+                <PaperClipIcon className="h-3 w-3" aria-hidden="true" />
+                {attachmentCount}
               </span>
             )}
 

@@ -1,3 +1,4 @@
+import { describeAttachment, normalizeAttachmentNames } from "../../lib/attachments";
 import { stripMarkdown } from "../../lib/tasks/text";
 import { sanitizeHtml } from "../../lib/sanitize";
 import { escapeFilterString } from "../chat/tools/text";
@@ -44,6 +45,7 @@ interface PBTaskRecord {
     completed_at?: string;
     board_order?: number;
     labels?: unknown;
+    attachments?: unknown;
     document?: string;
     board?: string;
     assignee?: string;
@@ -129,6 +131,7 @@ const TASK_FIELDS = [
     "completed_at",
     "board_order",
     "labels",
+    "attachments",
     "document",
     "board",
     "assignee",
@@ -182,6 +185,7 @@ function toTaskDto(record: PBTaskRecord): TaskDto {
         completedAt: record.completed_at || null,
         boardOrder: typeof record.board_order === "number" ? record.board_order : 0,
         labels: normalizeStringArray(record.labels),
+        attachments: normalizeAttachmentNames(record.attachments).map(describeAttachment),
         noteId: record.document || null,
         boardId: record.board || "",
         assigneeId: record.assignee || null,
